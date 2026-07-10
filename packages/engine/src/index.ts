@@ -14,3 +14,14 @@ export {
   EngineSerializer,
   EngineWorld,
 } from './Services.js';
+export {
+  ExperienceRegistry,
+  type BooleanSetting,
+  type ExperienceCapabilities,
+  type ExperienceDefinition,
+  type ExperienceKind,
+  type ExperienceMode,
+  type ExperienceSetting,
+  type NumberSetting,
+  type SelectSetting,
+} from './Experience.js';
