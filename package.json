@@ -1,0 +1,23 @@
+{
+  "name": "@hooksjam/gl-game-lab",
+  "private": true,
+  "version": "0.0.0",
+  "description": "GPU-first TypeScript game engine and experience lab",
+  "type": "module",
+  "scripts": {
+    "build": "pnpm --recursive --if-present build",
+    "typecheck": "pnpm --recursive --if-present typecheck",
+    "test": "pnpm --recursive --if-present test",
+    "clean": "pnpm --recursive --if-present clean"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.4.0",
+    "vitest": "^1.6.0"
+  },
+  "engines": {
+    "node": ">=20",
+    "pnpm": ">=9"
+  },
+  "packageManager": "pnpm@10.33.0"
+}

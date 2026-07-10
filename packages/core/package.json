@@ -1,0 +1,25 @@
+{
+  "name": "@hooksjam/gl-game-lab-core",
+  "version": "0.0.0",
+  "description": "Platform-independent GLGameLab engine contracts and kernel",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc --build --force tsconfig.json",
+    "typecheck": "tsc --noEmit --project tsconfig.json",
+    "test": "vitest run --passWithNoTests",
+    "clean": "tsc --build --clean tsconfig.json"
+  },
+  "license": "UNLICENSED"
+}
