@@ -7,6 +7,7 @@ export {
   EngineAssets,
   EngineEvents,
   EngineHierarchy,
+  EngineInput,
   EngineSchedule,
   EngineScenes,
   EngineSchemas,

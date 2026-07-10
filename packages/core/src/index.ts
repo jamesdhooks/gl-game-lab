@@ -172,3 +172,13 @@ export {
   type SaveSchema,
   type SaveSnapshot,
 } from './serialization/SaveSnapshot.js';
+export {
+  InputState,
+  type InputEvent,
+  type InputSnapshot,
+  type KeyInputEvent,
+  type PointerInputEvent,
+  type PointerPhase,
+  type PointerSnapshot,
+  type WheelInputEvent,
+} from './input/InputState.js';

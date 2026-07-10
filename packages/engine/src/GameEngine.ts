@@ -3,6 +3,7 @@ import {
   Engine,
   EventBus,
   Hierarchy,
+  InputState,
   SceneManager,
   Schedule,
   ScheduleRunner,
@@ -17,6 +18,7 @@ import {
   EngineAssets,
   EngineEvents,
   EngineHierarchy,
+  EngineInput,
   EngineSchedule,
   EngineScenes,
   EngineSchemas,
@@ -36,6 +38,7 @@ export class GameEngine {
   readonly world = new World();
   readonly hierarchy = new Hierarchy(this.world);
   readonly events = new EventBus();
+  readonly input = new InputState();
   readonly assets: AssetManager;
   readonly schedule = new Schedule();
   readonly scenes: SceneManager;
@@ -68,6 +71,7 @@ export class GameEngine {
     if (this.kernel.state !== 'running') {
       throw new Error(`Game engine cannot run a frame while ${this.kernel.state}`);
     }
+    this.input.advanceFrame();
     this.runner.runFrame(realDeltaSeconds);
   }
 
@@ -88,6 +92,7 @@ export class GameEngine {
         context.provide(EngineWorld, this.world);
         context.provide(EngineHierarchy, this.hierarchy);
         context.provide(EngineEvents, this.events);
+        context.provide(EngineInput, this.input);
         context.provide(EngineAssets, this.assets);
         context.provide(EngineSchedule, this.schedule);
         context.provide(EngineScenes, this.scenes);

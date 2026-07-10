@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   GAME_ENGINE_RUNTIME_PLUGIN_ID,
   EngineSchedule,
+  EngineInput,
   EngineWorld,
   GameEngine,
 } from '../index.js';
@@ -16,6 +17,7 @@ describe('GameEngine', () => {
         dependencies: [{ id: GAME_ENGINE_RUNTIME_PLUGIN_ID }],
         install: (context) => {
           expect(context.get(EngineWorld)).toBe(engine.world);
+          expect(context.get(EngineInput)).toBe(engine.input);
           context.get(EngineSchedule).addSystem({
             id: 'game.example.update',
             stage: 'update',
