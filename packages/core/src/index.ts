@@ -35,3 +35,42 @@ export {
   DeferredEntity,
   type EntityTarget,
 } from './ecs/CommandBuffer.js';
+export {
+  createResourceToken,
+  Resources,
+  type ResourceToken,
+} from './ecs/Resources.js';
+export {
+  vec3,
+  vec3One,
+  vec3Zero,
+  type Vec3,
+} from './math/Vec3.js';
+export {
+  quatFromZRotation,
+  quatIdentity,
+  type Quaternion,
+} from './math/Quaternion.js';
+export {
+  mat4FromTransform,
+  mat4Identity,
+  mat4Multiply,
+  type Mat4,
+} from './math/Mat4.js';
+export {
+  ActiveComponent,
+  ChildrenComponent,
+  GlobalTransformComponent,
+  LayerMaskComponent,
+  NameComponent,
+  ParentComponent,
+  StableIdComponent,
+  TransformComponent,
+  VisibilityComponent,
+  createTransform,
+  createTransform2D,
+  type GlobalTransform,
+  type Transform,
+  type Visibility,
+} from './scene/Transform.js';
+export { Hierarchy } from './scene/Hierarchy.js';

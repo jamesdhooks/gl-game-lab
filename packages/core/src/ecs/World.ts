@@ -1,5 +1,6 @@
 import type { ComponentType, ComponentValue } from './Component.js';
 import { assertEntityShape, type Entity } from './Entity.js';
+import { Resources } from './Resources.js';
 import { SparseSet } from './SparseSet.js';
 
 export interface ComponentEntry<T> {
@@ -29,12 +30,14 @@ export class WorldMutationError extends Error {
 }
 
 export class World {
+  readonly resources = new Resources();
   private readonly generations: number[] = [];
   private readonly alive: boolean[] = [];
   private readonly freeIndices: number[] = [];
   private readonly storages = new Map<string, RegisteredStorage>();
   private queryDepth = 0;
   private livingCount = 0;
+  private readonly beforeDespawnListeners = new Set<(world: World, entity: Entity) => void>();
 
   get entityCount(): number {
     return this.livingCount;
@@ -55,6 +58,7 @@ export class World {
   despawn(entity: Entity): void {
     this.assertStructurallyMutable();
     this.assertAlive(entity);
+    for (const listener of this.beforeDespawnListeners) listener(this, entity);
     for (const storage of this.storages.values()) storage.values.delete(entity.index);
     this.alive[entity.index] = false;
     this.generations[entity.index] = entity.generation + 1;
@@ -65,6 +69,11 @@ export class World {
   isAlive(entity: Entity): boolean {
     assertEntityShape(entity);
     return this.alive[entity.index] === true && this.generations[entity.index] === entity.generation;
+  }
+
+  onBeforeDespawn(listener: (world: World, entity: Entity) => void): () => void {
+    this.beforeDespawnListeners.add(listener);
+    return () => { this.beforeDespawnListeners.delete(listener); };
   }
 
   insert<T>(entity: Entity, type: ComponentType<T>, value: T): void {
