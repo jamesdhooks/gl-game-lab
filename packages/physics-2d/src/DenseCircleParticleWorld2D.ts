@@ -259,7 +259,9 @@ export class DenseCircleParticleWorld2D {
       this.projectBounds(stepDelta);
       for (let pass = 0; pass < this.settings.solverIterations; pass += 1) {
         this.buildGrid();
-        const hits = this.solveGrid(stepDelta);
+        const passFraction = pass / Math.max(1, this.settings.solverIterations - 1);
+        const relaxation = 0.76 - 0.16 * passFraction;
+        const hits = this.solveGrid(stepDelta, relaxation);
         this.projectBounds(stepDelta);
         if (hits === 0) break;
       }
@@ -333,42 +335,42 @@ export class DenseCircleParticleWorld2D {
     }
   }
 
-  private solveGrid(deltaSeconds: number): number {
+  private solveGrid(deltaSeconds: number, relaxation: number): number {
     const initialHits = this.collisionHits;
     for (let index = 0; index < this.activeCellCount; index += 1) {
       const cell = this.activeCells[index] ?? -1;
       if (cell < 0) continue;
       const x = cell % this.gridColumns;
       const y = Math.floor(cell / this.gridColumns);
-      this.solveSelfCell(cell, deltaSeconds);
-      if (x + 1 < this.gridColumns) this.solveCellPair(cell, cell + 1, deltaSeconds);
+      this.solveSelfCell(cell, deltaSeconds, relaxation);
+      if (x + 1 < this.gridColumns) this.solveCellPair(cell, cell + 1, deltaSeconds, relaxation);
       if (y + 1 < this.gridRows) {
         const nextRow = cell + this.gridColumns;
-        this.solveCellPair(cell, nextRow, deltaSeconds);
-        if (x > 0) this.solveCellPair(cell, nextRow - 1, deltaSeconds);
-        if (x + 1 < this.gridColumns) this.solveCellPair(cell, nextRow + 1, deltaSeconds);
+        this.solveCellPair(cell, nextRow, deltaSeconds, relaxation);
+        if (x > 0) this.solveCellPair(cell, nextRow - 1, deltaSeconds, relaxation);
+        if (x + 1 < this.gridColumns) this.solveCellPair(cell, nextRow + 1, deltaSeconds, relaxation);
       }
     }
     return this.collisionHits - initialHits;
   }
 
-  private solveSelfCell(cell: number, deltaSeconds: number): void {
+  private solveSelfCell(cell: number, deltaSeconds: number, relaxation: number): void {
     for (let left = this.heads[cell] ?? -1; left !== -1; left = this.next[left] ?? -1) {
       for (let right = this.next[left] ?? -1; right !== -1; right = this.next[right] ?? -1) {
-        this.solvePair(left, right, deltaSeconds);
+        this.solvePair(left, right, deltaSeconds, relaxation);
       }
     }
   }
 
-  private solveCellPair(leftCell: number, rightCell: number, deltaSeconds: number): void {
+  private solveCellPair(leftCell: number, rightCell: number, deltaSeconds: number, relaxation: number): void {
     for (let left = this.heads[leftCell] ?? -1; left !== -1; left = this.next[left] ?? -1) {
       for (let right = this.heads[rightCell] ?? -1; right !== -1; right = this.next[right] ?? -1) {
-        this.solvePair(left, right, deltaSeconds);
+        this.solvePair(left, right, deltaSeconds, relaxation);
       }
     }
   }
 
-  private solvePair(left: number, right: number, deltaSeconds: number): void {
+  private solvePair(left: number, right: number, deltaSeconds: number, relaxation: number): void {
     const leftOffset = left * 2;
     const rightOffset = right * 2;
     let dx = floatAt(this.positions, rightOffset) - floatAt(this.positions, leftOffset);
@@ -392,7 +394,7 @@ export class DenseCircleParticleWorld2D {
     if (totalWeight <= 0) return;
     const penetration = target - distance;
     const maximum = target * 0.5 * this.settings.maxPairPush;
-    const correction = Math.min(penetration * this.settings.collisionSoftness, maximum) / totalWeight;
+    const correction = Math.min(penetration * this.settings.collisionSoftness * relaxation, maximum) / totalWeight;
     this.positions[leftOffset] = floatAt(this.positions, leftOffset) - dx * correction * leftWeight;
     this.positions[leftOffset + 1] = floatAt(this.positions, leftOffset + 1) - dy * correction * leftWeight;
     this.positions[rightOffset] = floatAt(this.positions, rightOffset) + dx * correction * rightWeight;

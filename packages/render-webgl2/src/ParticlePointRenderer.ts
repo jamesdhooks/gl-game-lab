@@ -244,11 +244,17 @@ uniform int u_paletteCount;
 uniform float u_opacity;
 flat in float v_colorSeed;
 out vec4 outColor;
+uint hashId(int id) {
+  uint value = uint(id) * 747796405u + 2891336453u;
+  value = ((value >> 16) ^ value) * 2246822519u;
+  value = ((value >> 13) ^ value) * 3266489917u;
+  return (value >> 16) ^ value;
+}
 void main() {
   vec2 centered = gl_PointCoord * 2.0 - 1.0;
   float distance2 = dot(centered, centered);
   if (distance2 > 1.0) discard;
-  int paletteIndex = int(mod(abs(v_colorSeed), float(max(1, u_paletteCount))));
+  int paletteIndex = int(hashId(int(abs(v_colorSeed) + 0.5)) % uint(max(1, u_paletteCount)));
   vec4 color = u_palette[paletteIndex];
   float edge = smoothstep(1.0, 0.86, distance2);
   float z = sqrt(max(0.0, 1.0 - distance2 * 0.45));

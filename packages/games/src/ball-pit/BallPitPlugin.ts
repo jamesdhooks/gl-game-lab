@@ -204,12 +204,17 @@ export function createBallPitPlugin(
 
   function spawnOne(world: DenseCircleParticleWorld2D, x: number, y: number): void {
     const noise = nextRandom() * 2 - 1;
-    world.addCircle(x, y, {
-      radiusNoise: noise,
-      velocityX: (nextRandom() - 0.5) * 80,
-      velocityY: (nextRandom() - 0.5) * 40,
-      colorSeed: Math.floor(nextRandom() * 0x1_0000),
-    });
+    const spread = currentConfig.radius * 2.8;
+    world.addCircle(
+      x + (nextRandom() * 2 - 1) * spread,
+      y + (nextRandom() * 2 - 1) * spread,
+      {
+        radiusNoise: noise,
+        velocityX: nextRandom() * 180 - 90,
+        velocityY: nextRandom() * 140 - 60,
+        colorSeed: Math.floor(nextRandom() * 10_000),
+      },
+    );
   }
 
   function nextRandom(): number {

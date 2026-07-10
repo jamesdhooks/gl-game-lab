@@ -173,5 +173,12 @@ describe('Ball Pit experience', () => {
     engine.frame(0.25);
     expect(engine.kernel.get(BallPitControllerService).bodyCount).toBe(3);
     await engine.destroy();
+
+    const demoEngine = new GameEngine({ plugins: [fakeRendererPlugin, ...ballPitDefinition.createPlugins({ profile: 'demo', seed: 7 })] });
+    await demoEngine.initialize();
+    await demoEngine.start();
+    for (let frame = 0; frame < 60; frame += 1) demoEngine.frame(1 / 60);
+    expect(demoEngine.kernel.get(BallPitControllerService).bodyCount).toBe(BALL_PIT_DEFAULTS.spawnRate);
+    await demoEngine.destroy();
   });
 });
