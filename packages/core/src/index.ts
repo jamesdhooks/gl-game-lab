@@ -118,3 +118,21 @@ export {
   type SceneSnapshot,
   type SceneState,
 } from './scene/SceneManager.js';
+export {
+  AssetFailedEvent,
+  AssetGroup,
+  AssetLease,
+  AssetLoadingEvent,
+  AssetManager,
+  AssetReadyEvent,
+  AssetUnloadedEvent,
+  createAssetType,
+  type AssetLifecycleEvent,
+  type AssetLoader,
+  type AssetLoaderContext,
+  type AssetManagerOptions,
+  type AssetRequest,
+  type AssetSnapshot,
+  type AssetState,
+  type AssetType,
+} from './assets/AssetManager.js';
