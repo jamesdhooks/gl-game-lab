@@ -10,6 +10,7 @@ import {
 import { WebGL2Device, type WebGL2DeviceOptions } from './WebGL2Device.js';
 import { ParticlePointRenderer, ParticlePointRenderQueue } from './ParticlePointRenderer.js';
 import { BloomPostProcess, type BloomOptions } from './BloomPostProcess.js';
+import { PaletteBackdropRenderer, type PaletteBackdropOptions } from './PaletteBackdropRenderer.js';
 
 export interface WebGL2RendererOptions {
   readonly device?: WebGL2DeviceOptions;
@@ -61,6 +62,7 @@ export class WebGL2Renderer {
   private readonly spriteRenderer: SpriteRenderer;
   private readonly particleRenderer: ParticlePointRenderer;
   private readonly bloom: BloomPostProcess;
+  private readonly backdrop: PaletteBackdropRenderer;
   private clearColor: readonly [number, number, number, number];
   private destroyed = false;
 
@@ -76,6 +78,7 @@ export class WebGL2Renderer {
     this.spriteRenderer = new SpriteRenderer(this.device);
     this.particleRenderer = new ParticlePointRenderer(this.device);
     this.bloom = new BloomPostProcess(this.device, options.bloom);
+    this.backdrop = new PaletteBackdropRenderer(this.device);
     this.clearColor = options.clearColor ?? [0, 0, 0, 0];
   }
 
@@ -104,6 +107,11 @@ export class WebGL2Renderer {
   setBloom(options: BloomOptions): void {
     this.assertUsable();
     this.bloom.configure(options);
+  }
+
+  setPaletteBackdrop(options: PaletteBackdropOptions | undefined): void {
+    this.assertUsable();
+    this.backdrop.configure(options);
   }
 
   get bloomConfiguration() {
@@ -140,6 +148,7 @@ export class WebGL2Renderer {
     if (scene) this.bloom.clearScene(this.clearColor);
     else this.device.clear(...this.clearColor);
     const target = scene ? { resource: scene } : undefined;
+    this.backdrop.render(target);
     this.particleRenderer.render(this.particles.buildPlan(), this.sprites.activeCamera, target);
     this.spriteRenderer.render(this.sprites.buildPlan(), this.sprites.activeCamera, target);
     if (scene) this.bloom.composite();
@@ -153,6 +162,7 @@ export class WebGL2Renderer {
     this.particleRenderer.destroy();
     this.spriteRenderer.destroy();
     this.bloom.destroy();
+    this.backdrop.destroy();
     this.device.destroy();
   }
 

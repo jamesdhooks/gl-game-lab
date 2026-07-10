@@ -67,3 +67,10 @@ absolute luminance error `0.18322`. Both browser error lists were empty. The
 failure is expected evidence: the frozen scene currently has a palette-driven
 side-view backdrop, larger shaded spheres, and a different occupied-pixel
 distribution. Those gaps must be closed before the visual gate can pass.
+
+After moving the frozen side-view palette backdrop and sphere/rim lighting into
+shared renderer passes, the same capture improved to `0.18752` SSIM and reduced
+mean absolute luminance error to `0.15857`. The remaining dominant mismatch is
+the per-particle spatial distribution, which requires a scene-specific dynamic
+sequence metric rather than treating independently solved particle coordinates
+as a static pixel image.

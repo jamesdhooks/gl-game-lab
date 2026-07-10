@@ -1,4 +1,10 @@
 export {
+  PaletteBackdropRenderer,
+  normalizePaletteBackdropOptions,
+  type NormalizedPaletteBackdropOptions,
+  type PaletteBackdropOptions,
+} from './PaletteBackdropRenderer.js';
+export {
   BloomPostProcess,
   normalizeBloomOptions,
   type BloomOptions,

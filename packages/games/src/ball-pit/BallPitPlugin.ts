@@ -243,10 +243,14 @@ function configureWorld(world: DenseCircleParticleWorld2D, config: BallPitConfig
 function applyStyle(renderer: {
   setClearColor(color: readonly [number, number, number, number]): void;
   setBloom(options: { readonly enabled: boolean; readonly threshold?: number; readonly intensity?: number; readonly radius?: number; readonly iterations?: number }): void;
+  setPaletteBackdrop(options: { readonly base: readonly [number, number, number, number]; readonly palette: readonly (readonly [number, number, number, number])[]; readonly tier?: number; readonly blendStrength?: number } | undefined): void;
 }, styleId: string): void {
   const style = BALL_PIT_STYLE_MANIFEST.styles.find((candidate) => candidate.id === styleId);
   if (!style) throw new Error(`Unknown Ball Pit style: ${styleId}`);
-  renderer.setClearColor(rgbHexToRgba(style.background));
+  const background = rgbHexToRgba(style.background);
+  const palette = requirePalette(styleId);
+  renderer.setClearColor(background);
+  renderer.setPaletteBackdrop({ base: background, palette, tier: 0.55, blendStrength: 0.12 });
   renderer.setBloom(styleId === 'neon'
     ? { enabled: true, threshold: 0.48, intensity: 1.15, radius: 1.15, iterations: 4 }
     : { enabled: false });

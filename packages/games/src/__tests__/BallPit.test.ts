@@ -106,6 +106,7 @@ describe('Ball Pit experience', () => {
       particles,
       setClearColor: (color: readonly number[]) => { clearColor = color; },
       setBloom: (options: { readonly enabled?: boolean }) => { bloomEnabled = options.enabled === true; },
+      setPaletteBackdrop: () => undefined,
     } as unknown as WebGL2Renderer;
     const fakeRendererPlugin = {
       id: WEBGL2_RENDERER_PLUGIN_ID,
@@ -154,6 +155,7 @@ describe('Ball Pit experience', () => {
       particles,
       setClearColor: () => undefined,
       setBloom: () => undefined,
+      setPaletteBackdrop: () => undefined,
     } as unknown as WebGL2Renderer;
     const fakeRendererPlugin = {
       id: WEBGL2_RENDERER_PLUGIN_ID,
