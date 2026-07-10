@@ -166,3 +166,9 @@ export {
   type SerializedEntity,
   type SerializedWorld,
 } from './serialization/WorldSerializer.js';
+export {
+  SaveSnapshotCodec,
+  type RestoredSave,
+  type SaveSchema,
+  type SaveSnapshot,
+} from './serialization/SaveSnapshot.js';
