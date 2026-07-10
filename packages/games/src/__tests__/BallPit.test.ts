@@ -98,12 +98,14 @@ describe('Ball Pit experience', () => {
 
   it('runs as a vertical engine plugin and responds to pointer input', async () => {
     let clearColor: readonly number[] = [];
+    let bloomEnabled = false;
     const sprites = new SpriteRenderQueue(800, 600);
     const particles = new ParticlePointRenderQueue();
     const renderer = {
       sprites,
       particles,
       setClearColor: (color: readonly number[]) => { clearColor = color; },
+      setBloom: (options: { readonly enabled?: boolean }) => { bloomEnabled = options.enabled === true; },
     } as unknown as WebGL2Renderer;
     const fakeRendererPlugin = {
       id: WEBGL2_RENDERER_PLUGIN_ID,
@@ -128,8 +130,11 @@ describe('Ball Pit experience', () => {
     engine.frame(1 / 60);
     expect(controller.bodyCount).toBe(1);
     expect(particles.count).toBe(1);
+    controller.setStyle('neon');
+    expect(bloomEnabled).toBe(true);
     controller.setStyle('ocean');
     expect(controller.styleId).toBe('ocean');
+    expect(bloomEnabled).toBe(false);
     expect(clearColor).toEqual([3 / 255, 21 / 255, 37 / 255, 1]);
     controller.setMode('stream');
     controller.setSetting('spawnRate', 50);
@@ -148,6 +153,7 @@ describe('Ball Pit experience', () => {
       sprites,
       particles,
       setClearColor: () => undefined,
+      setBloom: () => undefined,
     } as unknown as WebGL2Renderer;
     const fakeRendererPlugin = {
       id: WEBGL2_RENDERER_PLUGIN_ID,

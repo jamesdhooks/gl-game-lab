@@ -240,10 +240,16 @@ function configureWorld(world: DenseCircleParticleWorld2D, config: BallPitConfig
   });
 }
 
-function applyStyle(renderer: { setClearColor(color: readonly [number, number, number, number]): void }, styleId: string): void {
+function applyStyle(renderer: {
+  setClearColor(color: readonly [number, number, number, number]): void;
+  setBloom(options: { readonly enabled: boolean; readonly threshold?: number; readonly intensity?: number; readonly radius?: number; readonly iterations?: number }): void;
+}, styleId: string): void {
   const style = BALL_PIT_STYLE_MANIFEST.styles.find((candidate) => candidate.id === styleId);
   if (!style) throw new Error(`Unknown Ball Pit style: ${styleId}`);
   renderer.setClearColor(rgbHexToRgba(style.background));
+  renderer.setBloom(styleId === 'neon'
+    ? { enabled: true, threshold: 0.48, intensity: 1.15, radius: 1.15, iterations: 4 }
+    : { enabled: false });
 }
 
 function requirePalette(styleId: string): readonly (readonly [number, number, number, number])[] {

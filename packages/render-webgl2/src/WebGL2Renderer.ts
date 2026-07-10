@@ -9,10 +9,12 @@ import {
 } from './SpriteRenderer.js';
 import { WebGL2Device, type WebGL2DeviceOptions } from './WebGL2Device.js';
 import { ParticlePointRenderer, ParticlePointRenderQueue } from './ParticlePointRenderer.js';
+import { BloomPostProcess, type BloomOptions } from './BloomPostProcess.js';
 
 export interface WebGL2RendererOptions {
   readonly device?: WebGL2DeviceOptions;
   readonly clearColor?: readonly [number, number, number, number];
+  readonly bloom?: BloomOptions;
 }
 
 export class SpriteRenderQueue {
@@ -58,6 +60,7 @@ export class WebGL2Renderer {
   readonly particles: ParticlePointRenderQueue;
   private readonly spriteRenderer: SpriteRenderer;
   private readonly particleRenderer: ParticlePointRenderer;
+  private readonly bloom: BloomPostProcess;
   private clearColor: readonly [number, number, number, number];
   private destroyed = false;
 
@@ -72,6 +75,7 @@ export class WebGL2Renderer {
     this.particles = new ParticlePointRenderQueue();
     this.spriteRenderer = new SpriteRenderer(this.device);
     this.particleRenderer = new ParticlePointRenderer(this.device);
+    this.bloom = new BloomPostProcess(this.device, options.bloom);
     this.clearColor = options.clearColor ?? [0, 0, 0, 0];
   }
 
@@ -97,11 +101,28 @@ export class WebGL2Renderer {
     return this.clearColor;
   }
 
+  setBloom(options: BloomOptions): void {
+    this.assertUsable();
+    this.bloom.configure(options);
+  }
+
+  get bloomConfiguration() {
+    return this.bloom.configuration;
+  }
+
+  get postProcessStats() {
+    return this.bloom.stats;
+  }
+
   render(): void {
     this.assertUsable();
-    this.device.clear(...this.clearColor);
-    this.particleRenderer.render(this.particles.buildPlan(), this.sprites.activeCamera);
-    this.spriteRenderer.render(this.sprites.buildPlan(), this.sprites.activeCamera);
+    const scene = this.bloom.sceneTarget;
+    if (scene) this.bloom.clearScene(this.clearColor);
+    else this.device.clear(...this.clearColor);
+    const target = scene ? { resource: scene } : undefined;
+    this.particleRenderer.render(this.particles.buildPlan(), this.sprites.activeCamera, target);
+    this.spriteRenderer.render(this.sprites.buildPlan(), this.sprites.activeCamera, target);
+    if (scene) this.bloom.composite();
   }
 
   destroy(): void {
@@ -111,6 +132,7 @@ export class WebGL2Renderer {
     this.particles.clear();
     this.particleRenderer.destroy();
     this.spriteRenderer.destroy();
+    this.bloom.destroy();
     this.device.destroy();
   }
 

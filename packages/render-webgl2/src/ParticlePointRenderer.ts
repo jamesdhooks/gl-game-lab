@@ -1,4 +1,4 @@
-import type { BlendMode, SpriteCamera2D } from './SpriteRenderer.js';
+import type { BlendMode, SpriteCamera2D, SpriteRenderTarget } from './SpriteRenderer.js';
 import type { WebGL2Device } from './WebGL2Device.js';
 
 export const MAX_PARTICLE_PALETTE_COLORS = 16;
@@ -87,19 +87,22 @@ export class ParticlePointRenderer {
     this.configureGeometry();
   }
 
-  render(plan: ParticlePointDrawPlan, camera: SpriteCamera2D): void {
+  render(plan: ParticlePointDrawPlan, camera: SpriteCamera2D, target?: SpriteRenderTarget): void {
     this.assertUsable();
     if (plan.particleCount === 0) return;
     const gl = this.gl;
     gl.useProgram(this.program);
-    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-    gl.viewport(0, 0, this.device.canvas.width, this.device.canvas.height);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, target?.resource.framebuffer ?? null);
+    const targetWidth = target?.resource.descriptor.width ?? this.device.canvas.width;
+    const targetHeight = target?.resource.descriptor.height ?? this.device.canvas.height;
+    gl.viewport(0, 0, targetWidth, targetHeight);
     gl.uniform4f(this.cameraLocation, camera.centerX, camera.centerY, camera.zoom, 0);
     gl.uniform2f(this.viewportLocation, camera.viewportWidth, camera.viewportHeight);
-    gl.uniform1f(this.pixelRatioLocation, this.device.canvas.width / camera.viewportWidth);
+    gl.uniform1f(this.pixelRatioLocation, targetWidth / camera.viewportWidth);
     gl.bindVertexArray(this.vao);
     for (const batch of plan.batches) this.drawBatch(batch);
     gl.bindVertexArray(null);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
   }
 
   destroy(): void {

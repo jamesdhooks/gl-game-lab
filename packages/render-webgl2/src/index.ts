@@ -1,4 +1,11 @@
 export {
+  BloomPostProcess,
+  normalizeBloomOptions,
+  type BloomOptions,
+  type BloomPostProcessStats,
+  type NormalizedBloomOptions,
+} from './BloomPostProcess.js';
+export {
   RenderGraph,
   type RenderPass,
   type RenderPassContext,
