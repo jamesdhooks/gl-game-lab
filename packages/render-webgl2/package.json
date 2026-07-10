@@ -19,7 +19,8 @@
     "clean": "tsc --build --clean tsconfig.json"
   },
   "dependencies": {
-    "@hooksjam/gl-game-lab-core": "workspace:*"
+    "@hooksjam/gl-game-lab-core": "workspace:*",
+    "@hooksjam/gl-game-lab-engine": "workspace:*"
   },
   "license": "UNLICENSED"
 }

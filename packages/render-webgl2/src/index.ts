@@ -30,3 +30,12 @@ export {
   type SpriteRenderTarget,
   type SpriteTexture,
 } from './SpriteRenderer.js';
+export {
+  WEBGL2_RENDERER_PLUGIN_ID,
+  SpriteRenderQueue,
+  SpriteRenderQueueService,
+  WebGL2Renderer,
+  WebGL2RendererService,
+  createWebGL2RendererPlugin,
+  type WebGL2RendererOptions,
+} from './WebGL2Renderer.js';

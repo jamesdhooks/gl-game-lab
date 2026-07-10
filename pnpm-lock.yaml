@@ -34,6 +34,9 @@ importers:
       '@hooksjam/gl-game-lab-core':
         specifier: workspace:*
         version: link:../core
+      '@hooksjam/gl-game-lab-engine':
+        specifier: workspace:*
+        version: link:../engine
 
 packages:
 
