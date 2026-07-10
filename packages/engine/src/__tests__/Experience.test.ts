@@ -12,6 +12,21 @@ const example: ExperienceDefinition = {
   capabilities: { interactive: true, reset: true },
   modes: [{ id: 'single', label: 'Single' }],
   settings: [{ type: 'number', key: 'radius', label: 'Radius', default: 12, min: 2, max: 64, step: 0.5 }],
+  styleManifest: {
+    defaultStyleId: 'rainbow',
+    renderLayers: ['primitive'],
+    passes: ['primitive'],
+    qualities: ['raw'],
+    styles: [{
+      id: 'rainbow',
+      name: 'Rainbow',
+      description: 'Bright colors.',
+      palette: [0xff0000, 0x00ff00],
+      background: 0x000000,
+      passes: ['primitive'],
+    }],
+  },
+  tutorialPages: [{ icon: '●', title: 'Tap', body: 'Tap to add a ball.' }],
   createPlugins: () => [],
 };
 
@@ -30,5 +45,18 @@ describe('ExperienceRegistry', () => {
       id: 'invalid',
       settings: [{ type: 'number', key: 'radius', label: 'Radius', default: 100, min: 2, max: 64, step: 1 }],
     })).toThrow('invalid bounds');
+  });
+
+  it('validates reusable presentation contracts', () => {
+    expect(() => new ExperienceRegistry().register({
+      ...example,
+      id: 'invalid-style',
+      styleManifest: { ...example.styleManifest!, defaultStyleId: 'missing' },
+    })).toThrow('default style');
+    expect(() => new ExperienceRegistry().register({
+      ...example,
+      id: 'invalid-tutorial',
+      tutorialPages: [{ icon: '', title: 'Tap', body: 'Tap to add a ball.' }],
+    })).toThrow('tutorial pages');
   });
 });

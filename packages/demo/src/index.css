@@ -21,6 +21,50 @@ body { margin: 0; min-width: 320px; min-height: 100vh; }
 h1 { margin: 0; font-size: clamp(2.4rem, 8vw, 5rem); letter-spacing: -.06em; }
 .intro p:last-child { max-width: 40rem; color: #a7bedb; line-height: 1.65; }
 
-.surface { position: relative; width: min(100%, 72rem); aspect-ratio: 16 / 9; overflow: hidden; border: 1px solid #2a4b77; border-radius: 1.25rem; box-shadow: 0 1.5rem 5rem #0008; }
+.surface { position: relative; width: min(100%, 72rem); }
+.gl-experience-runtime { display: grid; gap: .75rem; }
+.gl-experience-toolbar { display: flex; align-items: center; justify-content: space-between; gap: .75rem; flex-wrap: wrap; }
+.gl-experience-modes, .gl-experience-actions { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
+.gl-experience-toolbar button, .gl-experience-toolbar select, .gl-experience-settings button, .gl-experience-settings input, .gl-experience-settings select, .gl-experience-tutorial button {
+  border: 1px solid #4a6f9f;
+  border-radius: .55rem;
+  background: #0a1729;
+  color: #d9ecff;
+  font: inherit;
+}
+.gl-experience-toolbar button, .gl-experience-tutorial button { min-height: 2.35rem; padding: .45rem .75rem; cursor: pointer; }
+.gl-experience-toolbar button[aria-pressed="true"] { border-color: #70c5ff; background: #17365c; box-shadow: 0 0 0 1px #70c5ff55 inset; }
+.gl-experience-mode { display: inline-flex; gap: .38rem; align-items: center; }
+.gl-experience-style-label { display: inline-flex; align-items: center; gap: .45rem; color: #9ebbdc; font-size: .82rem; }
+.gl-experience-style-label select { min-height: 2.35rem; padding: .35rem .55rem; }
+.gl-experience-stage { position: relative; aspect-ratio: 16 / 9; overflow: hidden; border: 1px solid #2a4b77; border-radius: 1.25rem; box-shadow: 0 1.5rem 5rem #0008; }
 .game-canvas { display: block; width: 100%; height: 100%; touch-action: none; }
-.caption { position: absolute; right: 1rem; bottom: 1rem; padding: .45rem .65rem; border: 1px solid #5c8dcc88; border-radius: .5rem; background: #07101fcc; color: #bcd8fc; font-size: .75rem; backdrop-filter: blur(8px); }
+.gl-experience-settings { position: absolute; z-index: 5; top: 3.2rem; right: 0; width: min(24rem, calc(100vw - 2rem)); max-height: min(70vh, 42rem); overflow: auto; padding: 1rem; border: 1px solid #456c9d; border-radius: .85rem; background: #071321f5; box-shadow: 0 1.5rem 4rem #000b; backdrop-filter: blur(16px); }
+.gl-experience-panel-heading { display: flex; align-items: center; justify-content: space-between; }
+.gl-experience-panel-heading h2 { margin: 0; font-size: 1rem; }
+.gl-experience-panel-heading button { width: 2rem; height: 2rem; cursor: pointer; }
+.gl-experience-advanced-toggle { display: flex; justify-content: flex-end; gap: .45rem; margin: .65rem 0; color: #a9c5e6; font-size: .8rem; }
+.gl-experience-setting-list { display: grid; gap: .35rem; }
+.gl-experience-setting { display: grid; grid-template-columns: minmax(7rem, 1fr) minmax(8rem, 1.35fr); align-items: center; gap: .75rem; min-height: 2.5rem; color: #bcd4ee; font-size: .82rem; }
+.gl-experience-number-control { display: grid; grid-template-columns: 1fr 4.5rem; align-items: center; gap: .5rem; }
+.gl-experience-number-control output { text-align: right; color: #f1f7ff; font-variant-numeric: tabular-nums; }
+.gl-experience-setting input[type="range"] { width: 100%; accent-color: #56bfff; }
+.gl-experience-setting input[type="number"], .gl-experience-setting select { width: 100%; min-height: 2rem; padding: .3rem .45rem; }
+.gl-experience-setting-boolean input { justify-self: end; accent-color: #56bfff; }
+.gl-experience-tutorial-backdrop { position: absolute; z-index: 8; inset: 0; display: grid; place-items: center; padding: 1rem; border-radius: 1rem; background: #020711c9; backdrop-filter: blur(9px); }
+.gl-experience-tutorial { width: min(28rem, 100%); padding: 1.5rem; border: 1px solid #4d77aa; border-radius: 1rem; background: #0b192c; text-align: center; box-shadow: 0 2rem 5rem #000c; }
+.gl-experience-tutorial-icon { font-size: 2.5rem; }
+.gl-experience-tutorial h2 { margin: .55rem 0; }
+.gl-experience-tutorial p { min-height: 3rem; color: #b9cfe7; line-height: 1.55; }
+.gl-experience-tutorial-progress { display: flex; justify-content: center; gap: .4rem; margin: 1rem; }
+.gl-experience-tutorial-progress span { width: .45rem; height: .45rem; border-radius: 50%; background: #3e5775; }
+.gl-experience-tutorial-progress span[data-active="true"] { background: #69c5ff; }
+.gl-experience-tutorial-actions { display: flex; justify-content: flex-end; gap: .55rem; }
+.gl-experience-tutorial button:disabled { opacity: .4; cursor: default; }
+
+@media (max-width: 720px) {
+  .gl-experience-toolbar { align-items: stretch; }
+  .gl-experience-modes, .gl-experience-actions { width: 100%; }
+  .gl-experience-mode { flex: 1; justify-content: center; }
+  .gl-experience-actions { justify-content: flex-end; }
+}

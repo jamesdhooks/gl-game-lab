@@ -1,4 +1,4 @@
-import { GameCanvas } from '@hooksjam/gl-game-lab-react';
+import { ExperienceRuntime } from '@hooksjam/gl-game-lab-react';
 import { ballPitDefinition } from '@hooksjam/gl-game-lab-games';
 import './index.css';
 
@@ -10,10 +10,11 @@ export function App(): JSX.Element {
         <h1>{ballPitDefinition.name}</h1>
         <p>{ballPitDefinition.long}</p>
       </section>
-      <section className="surface" aria-label="Engine render preview">
-        <GameCanvas createPlugins={ballPitDefinition.createPlugins} className="game-canvas" />
-        <div className="caption">Tap to add a ball · native engine physics and rendering</div>
-      </section>
+      <ExperienceRuntime
+        definition={ballPitDefinition}
+        className="surface"
+        canvasClassName="game-canvas"
+      />
     </main>
   );
 }

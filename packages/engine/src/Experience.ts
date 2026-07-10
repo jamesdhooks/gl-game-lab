@@ -1,4 +1,4 @@
-import type { EnginePlugin } from '@hooksjam/gl-game-lab-core';
+import { createExtensionToken, type EnginePlugin } from '@hooksjam/gl-game-lab-core';
 
 export type ExperienceKind = 'game' | 'simulation' | 'ambient' | 'effect' | 'toy';
 
@@ -18,6 +18,9 @@ export interface ExperienceCapabilities {
   readonly score?: boolean;
   readonly audio?: boolean;
   readonly accessibility?: boolean;
+  readonly aiAutoplay?: boolean;
+  readonly screensaver?: boolean;
+  readonly qualityModes?: readonly string[];
 }
 
 interface SettingBase {
@@ -34,6 +37,7 @@ export interface NumberSetting extends SettingBase {
   readonly min: number;
   readonly max: number;
   readonly step: number;
+  readonly numericScale?: 'linear' | 'powerOfTwo';
 }
 
 export interface BooleanSetting extends SettingBase {
@@ -49,6 +53,64 @@ export interface SelectSetting extends SettingBase {
 
 export type ExperienceSetting = NumberSetting | BooleanSetting | SelectSetting;
 
+export interface ExperienceStyle {
+  readonly id: string;
+  readonly name: string;
+  readonly description: string;
+  readonly palette: readonly number[];
+  readonly background: number;
+  readonly passes: readonly string[];
+}
+
+export interface ExperienceStyleManifest {
+  readonly defaultStyleId: string;
+  readonly renderLayers: readonly string[];
+  readonly passes: readonly string[];
+  readonly qualities: readonly string[];
+  readonly styles: readonly ExperienceStyle[];
+}
+
+export interface ExperienceTutorialPage {
+  readonly icon: string;
+  readonly title: string;
+  readonly body: string;
+}
+
+export interface ExperiencePhysicsDescriptor {
+  readonly renderer: string;
+  readonly engine: string;
+  readonly portability: 'reusable-core' | 'experience-local';
+  readonly supportedShapes: readonly string[];
+  readonly reusableFor: readonly string[];
+  readonly caveats: readonly string[];
+}
+
+export type ExperienceLaunchProfile = 'play' | 'preview' | 'demo';
+export type ExperienceSettingValue = number | boolean | string;
+
+export interface ExperienceLaunchOptions {
+  readonly profile?: ExperienceLaunchProfile;
+  readonly modeId?: string;
+  readonly styleId?: string;
+  readonly settings?: Readonly<Record<string, ExperienceSettingValue>>;
+  readonly seed?: number;
+}
+
+export interface ExperienceRuntimeController {
+  readonly modeId: string;
+  readonly styleId: string;
+  readonly settings: Readonly<Record<string, ExperienceSettingValue>>;
+  readonly entityCount?: number;
+  setMode(modeId: string): void;
+  setStyle(styleId: string): void;
+  setSetting(key: string, value: ExperienceSettingValue): void;
+  reset(): void;
+}
+
+export const ExperienceRuntimeControllerService = createExtensionToken<ExperienceRuntimeController>(
+  'gl-game-lab.experience.runtime-controller',
+);
+
 export interface ExperienceDefinition {
   readonly id: string;
   readonly kind: ExperienceKind;
@@ -57,11 +119,15 @@ export interface ExperienceDefinition {
   readonly long: string;
   readonly icon: string;
   readonly tags: readonly string[];
+  readonly paletteHint?: string;
   readonly capabilities: ExperienceCapabilities;
   readonly configDefaults?: Readonly<Record<string, unknown>>;
   readonly modes?: readonly ExperienceMode[];
   readonly settings?: readonly ExperienceSetting[];
-  createPlugins(): readonly EnginePlugin[];
+  readonly styleManifest?: ExperienceStyleManifest;
+  readonly tutorialPages?: readonly ExperienceTutorialPage[];
+  readonly physics?: ExperiencePhysicsDescriptor;
+  createPlugins(options?: ExperienceLaunchOptions): readonly EnginePlugin[];
 }
 
 export class ExperienceRegistry {
@@ -120,6 +186,36 @@ function validateDefinition(definition: ExperienceDefinition): void {
       }
     }
   }
+  validateStyles(definition);
+  for (const page of definition.tutorialPages ?? []) {
+    if (page.icon.trim().length === 0 || page.title.trim().length === 0 || page.body.trim().length === 0) {
+      throw new Error(`Experience ${definition.id} tutorial pages must be complete`);
+    }
+  }
+}
+
+function validateStyles(definition: ExperienceDefinition): void {
+  const manifest = definition.styleManifest;
+  if (!manifest) return;
+  const styleIds = new Set<string>();
+  for (const style of manifest.styles) {
+    const id = normalizeId(style.id, 'Experience style');
+    if (styleIds.has(id)) throw new Error(`Duplicate style ${id} in experience ${definition.id}`);
+    styleIds.add(id);
+    if (style.name.trim().length === 0 || style.description.trim().length === 0) {
+      throw new Error(`Experience style ${id} must have a name and description`);
+    }
+    if (style.palette.length === 0 || !style.palette.every(isRgbColor) || !isRgbColor(style.background)) {
+      throw new Error(`Experience style ${id} has an invalid palette`);
+    }
+  }
+  if (!styleIds.has(manifest.defaultStyleId)) {
+    throw new Error(`Experience ${definition.id} default style is not registered`);
+  }
+}
+
+function isRgbColor(value: number): boolean {
+  return Number.isSafeInteger(value) && value >= 0 && value <= 0xff_ff_ff;
 }
 
 function normalizeId(id: string, label: string): string {

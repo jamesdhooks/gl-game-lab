@@ -16,12 +16,21 @@ export {
 } from './Services.js';
 export {
   ExperienceRegistry,
+  ExperienceRuntimeControllerService,
   type BooleanSetting,
   type ExperienceCapabilities,
   type ExperienceDefinition,
   type ExperienceKind,
+  type ExperienceLaunchOptions,
+  type ExperienceLaunchProfile,
   type ExperienceMode,
+  type ExperiencePhysicsDescriptor,
+  type ExperienceRuntimeController,
   type ExperienceSetting,
+  type ExperienceSettingValue,
+  type ExperienceStyle,
+  type ExperienceStyleManifest,
+  type ExperienceTutorialPage,
   type NumberSetting,
   type SelectSetting,
 } from './Experience.js';
