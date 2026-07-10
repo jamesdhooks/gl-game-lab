@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "reference": {
+    "coreCleanRevision": "1273b5f4145c5e9e87123cba535f5cc939a77a61",
+    "historicalMainRevision": "aef49f4b71cb4a75189b6eab9b630aab14aca760"
+  },
+  "visualTolerance": {
+    "staticSsimMinimum": 0.97,
+    "maximumP95FrameTimeRegression": 0.1
+  },
+  "experiences": [
+    { "id": "ball-pit", "status": "pending" },
+    { "id": "alien-vascular-tree", "status": "pending" },
+    { "id": "chain-rain", "status": "pending" },
+    { "id": "fireworks", "status": "pending" },
+    { "id": "fluid-tank", "status": "pending" },
+    { "id": "harmonic-sand", "status": "pending" },
+    { "id": "lava-lamp", "status": "pending" },
+    { "id": "mycelium", "status": "pending" },
+    { "id": "orbital-shrapnel", "status": "pending" },
+    { "id": "particle-fluid", "status": "pending" },
+    { "id": "soft-body-blob", "status": "pending" },
+    { "id": "sparks", "status": "pending" },
+    { "id": "splash-mpm", "status": "pending" },
+    { "id": "turing-skin", "status": "pending" },
+    { "id": "water-tank", "status": "pending" }
+  ]
+}
