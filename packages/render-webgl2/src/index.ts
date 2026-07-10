@@ -17,6 +17,7 @@ export {
   type TextureWrap,
   type WebGL2DeviceOptions,
   type WebGLImageTextureDescriptor,
+  type WebGLRgbaTextureDescriptor,
   type WebGLTextureDescriptor,
 } from './WebGL2Device.js';
 export {

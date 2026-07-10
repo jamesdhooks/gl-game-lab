@@ -38,6 +38,11 @@ export interface WebGLImageTextureDescriptor extends Omit<WebGLTextureDescriptor
   readonly flipY?: boolean;
 }
 
+export interface WebGLRgbaTextureDescriptor extends Omit<WebGLTextureDescriptor, 'width' | 'height' | 'format'> {
+  readonly width: number;
+  readonly height: number;
+}
+
 export class WebGLTextureResource {
   private disposed = false;
 
@@ -189,6 +194,42 @@ export class WebGL2Device {
       throw error;
     } finally {
       this.gl.pixelStorei(this.gl.UNPACK_FLIP_Y_WEBGL, 0);
+      this.gl.bindTexture(this.gl.TEXTURE_2D, null);
+    }
+  }
+
+  createTextureFromRgbaPixels(pixels: Uint8Array, descriptor: WebGLRgbaTextureDescriptor): WebGLTextureResource {
+    this.assertUsable();
+    const normalized = normalizeTextureDescriptor({ ...descriptor, format: 'rgba8' });
+    if (pixels.length !== normalized.width * normalized.height * 4) {
+      throw new Error('RGBA pixel data length does not match texture dimensions');
+    }
+    const texture = this.gl.createTexture();
+    if (!texture) throw new Error('Unable to allocate WebGL texture');
+    try {
+      this.gl.bindTexture(this.gl.TEXTURE_2D, texture);
+      this.gl.texParameteri(this.gl.TEXTURE_2D, this.gl.TEXTURE_MIN_FILTER, textureFilter(this.gl, normalized.filter));
+      this.gl.texParameteri(this.gl.TEXTURE_2D, this.gl.TEXTURE_MAG_FILTER, textureFilter(this.gl, normalized.filter));
+      this.gl.texParameteri(this.gl.TEXTURE_2D, this.gl.TEXTURE_WRAP_S, textureWrap(this.gl, normalized.wrap));
+      this.gl.texParameteri(this.gl.TEXTURE_2D, this.gl.TEXTURE_WRAP_T, textureWrap(this.gl, normalized.wrap));
+      this.gl.texImage2D(
+        this.gl.TEXTURE_2D,
+        0,
+        this.gl.RGBA8,
+        normalized.width,
+        normalized.height,
+        0,
+        this.gl.RGBA,
+        this.gl.UNSIGNED_BYTE,
+        pixels,
+      );
+      const resource = this.trackTexture(texture, undefined, normalized);
+      this.resources.add(resource);
+      return resource;
+    } catch (error) {
+      this.gl.deleteTexture(texture);
+      throw error;
+    } finally {
       this.gl.bindTexture(this.gl.TEXTURE_2D, null);
     }
   }
