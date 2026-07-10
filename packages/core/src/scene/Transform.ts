@@ -25,6 +25,7 @@ export const ChildrenComponent = createComponentType<readonly Entity[]>('engine.
 export const ActiveComponent = createComponentType<boolean>('engine.active');
 export const VisibilityComponent = createComponentType<Visibility>('engine.visibility');
 export const LayerMaskComponent = createComponentType<number>('engine.layer-mask');
+export const RuntimeOnlyComponent = createComponentType<boolean>('engine.runtime-only');
 
 export function createTransform(): Transform {
   return { translation: vec3Zero(), rotation: quatIdentity(), scale: vec3One() };

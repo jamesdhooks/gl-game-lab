@@ -129,6 +129,17 @@ export class World {
     }
   }
 
+  *entities(): IterableIterator<Entity> {
+    this.queryDepth += 1;
+    try {
+      for (let index = 0; index < this.alive.length; index += 1) {
+        if (this.alive[index] === true) yield this.entityAt(index);
+      }
+    } finally {
+      this.queryDepth -= 1;
+    }
+  }
+
   withStructuralChangesDeferred<T>(operation: () => T): T {
     this.structuralLockDepth += 1;
     try {

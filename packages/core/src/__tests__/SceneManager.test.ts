@@ -72,7 +72,7 @@ describe('SceneManager', () => {
     const sceneChildren = world.get(scene.root, ChildrenComponent);
     expect(sceneChildren).toHaveLength(1);
     const prefabRoot = sceneChildren[0];
-    expect(prefabRoot && world.get(prefabRoot, PrefabInstanceComponent)).toBe('game.enemy');
+    expect(prefabRoot && world.get(prefabRoot, PrefabInstanceComponent)).toEqual({ id: 'game.enemy' });
     expect(prefabRoot && world.get(prefabRoot, ChildrenComponent)).toHaveLength(1);
     await manager.unload('level');
     expect(world.entityCount).toBe(0);

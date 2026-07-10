@@ -3,7 +3,11 @@ import type { Entity } from '../ecs/Entity.js';
 import type { ComponentEntry, World } from '../ecs/World.js';
 import { EventBus, createEventToken } from '../events/EventBus.js';
 import type { Hierarchy } from './Hierarchy.js';
-import { PrefabRegistry, type PrefabDefinition } from './Prefab.js';
+import {
+  PrefabRegistry,
+  type PrefabDefinition,
+  type PrefabInstanceMetadata,
+} from './Prefab.js';
 import { NameComponent, StableIdComponent, TransformComponent, createTransform } from './Transform.js';
 
 export type SceneState = 'loading' | 'loaded' | 'active' | 'suspended' | 'unloading';
@@ -72,8 +76,12 @@ export class SceneContext {
     }
   }
 
-  instantiate<Props>(prefab: PrefabDefinition<Props>, props: Props): Entity {
-    return this.prefabs.instantiate(prefab, props, this.root);
+  instantiate<Props>(
+    prefab: PrefabDefinition<Props>,
+    props: Props,
+    metadata: PrefabInstanceMetadata = {},
+  ): Entity {
+    return this.prefabs.instantiate(prefab, props, this.root, metadata);
   }
 }
 

@@ -64,6 +64,7 @@ export {
   LayerMaskComponent,
   NameComponent,
   ParentComponent,
+  RuntimeOnlyComponent,
   StableIdComponent,
   TransformComponent,
   VisibilityComponent,
@@ -101,6 +102,8 @@ export {
   PrefabInstanceComponent,
   PrefabRegistry,
   type PrefabDefinition,
+  type PrefabInstance,
+  type PrefabInstanceMetadata,
 } from './scene/Prefab.js';
 export {
   SceneActivatedEvent,
@@ -136,3 +139,30 @@ export {
   type AssetState,
   type AssetType,
 } from './assets/AssetManager.js';
+export {
+  assertJsonValue,
+  requireJsonBoolean,
+  requireJsonNumber,
+  requireJsonObject,
+  requireJsonString,
+  type JsonArray,
+  type JsonObject,
+  type JsonPrimitive,
+  type JsonValue,
+} from './serialization/Json.js';
+export {
+  ComponentSchemaRegistry,
+  type ComponentSchema,
+  type SchemaMigration,
+  type SerializationReadContext,
+  type SerializationWriteContext,
+  type SerializedComponent,
+} from './serialization/SchemaRegistry.js';
+export { createCoreSchemaRegistry } from './serialization/CoreSchemas.js';
+export {
+  WorldSerializer,
+  type DeserializeWorldOptions,
+  type DeserializedWorld,
+  type SerializedEntity,
+  type SerializedWorld,
+} from './serialization/WorldSerializer.js';

@@ -60,6 +60,17 @@ describe('World', () => {
     expect(world.spawn()).toBeDefined();
   });
 
+  it('exposes all live entities without allowing structural mutation during iteration', () => {
+    const world = new World();
+    const first = world.spawn();
+    const second = world.spawn();
+
+    expect([...world.entities()]).toEqual([first, second]);
+    expect(() => {
+      for (const _entity of world.entities()) world.despawn(first);
+    }).toThrow(WorldMutationError);
+  });
+
   it('applies deferred structural commands in order', () => {
     const world = new World();
     const commands = new CommandBuffer();

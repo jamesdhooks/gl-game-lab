@@ -3,6 +3,15 @@ import type { Entity } from '../ecs/Entity.js';
 import type { ComponentEntry, World } from '../ecs/World.js';
 import type { Hierarchy } from './Hierarchy.js';
 import { NameComponent, TransformComponent, createTransform } from './Transform.js';
+import type { JsonValue } from '../serialization/Json.js';
+
+export interface PrefabInstance {
+  readonly id: string;
+  readonly variant?: string;
+  readonly overrides?: Readonly<Record<string, JsonValue>>;
+}
+
+export type PrefabInstanceMetadata = Omit<PrefabInstance, 'id'>;
 
 export interface PrefabDefinition<Props = void> {
   readonly id: string;
@@ -10,7 +19,7 @@ export interface PrefabDefinition<Props = void> {
   build(context: PrefabBuildContext, props: Props): void;
 }
 
-export const PrefabInstanceComponent = createComponentType<string>('engine.prefab-instance');
+export const PrefabInstanceComponent = createComponentType<PrefabInstance>('engine.prefab-instance');
 
 export class PrefabBuildContext {
   constructor(
@@ -31,8 +40,12 @@ export class PrefabBuildContext {
     }
   }
 
-  instantiate<Props>(definition: PrefabDefinition<Props>, props: Props): Entity {
-    return this.prefabs.instantiate(definition, props, this.root);
+  instantiate<Props>(
+    definition: PrefabDefinition<Props>,
+    props: Props,
+    metadata: PrefabInstanceMetadata = {},
+  ): Entity {
+    return this.prefabs.instantiate(definition, props, this.root, metadata);
   }
 }
 
@@ -59,11 +72,16 @@ export class PrefabRegistry {
     return definition;
   }
 
-  instantiate<Props>(definition: PrefabDefinition<Props>, props: Props, parent?: Entity): Entity {
+  instantiate<Props>(
+    definition: PrefabDefinition<Props>,
+    props: Props,
+    parent?: Entity,
+    metadata: PrefabInstanceMetadata = {},
+  ): Entity {
     this.register(definition);
     const root = this.world.spawn([
       { type: NameComponent, value: definition.name ?? definition.id },
-      { type: PrefabInstanceComponent, value: definition.id },
+      { type: PrefabInstanceComponent, value: createPrefabInstance(definition.id, metadata) },
       { type: TransformComponent, value: createTransform() },
     ]);
     try {
@@ -76,6 +94,14 @@ export class PrefabRegistry {
       throw error;
     }
   }
+}
+
+function createPrefabInstance(id: string, metadata: PrefabInstanceMetadata): PrefabInstance {
+  return {
+    id,
+    ...(metadata.variant === undefined ? {} : { variant: metadata.variant }),
+    ...(metadata.overrides === undefined ? {} : { overrides: metadata.overrides }),
+  };
 }
 
 function normalizeId(id: string, label: string): string {
