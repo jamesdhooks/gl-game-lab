@@ -66,6 +66,15 @@ importers:
         specifier: workspace:*
         version: link:../core
 
+  packages/physics-2d:
+    dependencies:
+      '@hooksjam/gl-game-lab-core':
+        specifier: workspace:*
+        version: link:../core
+      '@hooksjam/gl-game-lab-engine':
+        specifier: workspace:*
+        version: link:../engine
+
   packages/platform-web:
     dependencies:
       '@hooksjam/gl-game-lab-core':
