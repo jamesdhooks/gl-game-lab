@@ -23,6 +23,12 @@ importers:
 
   packages/core: {}
 
+  packages/engine:
+    dependencies:
+      '@hooksjam/gl-game-lab-core':
+        specifier: workspace:*
+        version: link:../core
+
 packages:
 
   '@esbuild/aix-ppc64@0.21.5':
