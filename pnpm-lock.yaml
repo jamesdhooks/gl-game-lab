@@ -136,6 +136,12 @@ importers:
         specifier: workspace:*
         version: link:../engine
 
+  packages/tools:
+    dependencies:
+      '@hooksjam/gl-game-lab-core':
+        specifier: workspace:*
+        version: link:../core
+
 packages:
 
   '@babel/code-frame@7.29.7':

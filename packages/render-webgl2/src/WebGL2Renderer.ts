@@ -114,6 +114,26 @@ export class WebGL2Renderer {
     return this.bloom.stats;
   }
 
+  get width(): number {
+    return this.device.canvas.width;
+  }
+
+  get height(): number {
+    return this.device.canvas.height;
+  }
+
+  readRgba(): Uint8Array {
+    this.assertUsable();
+    const gl = this.device.gl;
+    const width = this.width;
+    const height = this.height;
+    const pixels = new Uint8Array(width * height * 4);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.readPixels(0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
+    flipRows(pixels, width, height);
+    return pixels;
+  }
+
   render(): void {
     this.assertUsable();
     const scene = this.bloom.sceneTarget;
@@ -138,6 +158,19 @@ export class WebGL2Renderer {
 
   private assertUsable(): void {
     if (this.destroyed) throw new Error('WebGL2 renderer has been destroyed');
+  }
+}
+
+function flipRows(pixels: Uint8Array, width: number, height: number): void {
+  const stride = width * 4;
+  const temporary = new Uint8Array(stride);
+  for (let top = 0; top < Math.floor(height / 2); top += 1) {
+    const bottom = height - top - 1;
+    const topOffset = top * stride;
+    const bottomOffset = bottom * stride;
+    temporary.set(pixels.subarray(topOffset, topOffset + stride));
+    pixels.copyWithin(topOffset, bottomOffset, bottomOffset + stride);
+    pixels.set(temporary, bottomOffset);
   }
 }
 
