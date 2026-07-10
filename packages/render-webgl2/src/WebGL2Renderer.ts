@@ -8,6 +8,7 @@ import {
   type SpriteInstance,
 } from './SpriteRenderer.js';
 import { WebGL2Device, type WebGL2DeviceOptions } from './WebGL2Device.js';
+import { ParticlePointRenderer, ParticlePointRenderQueue } from './ParticlePointRenderer.js';
 
 export interface WebGL2RendererOptions {
   readonly device?: WebGL2DeviceOptions;
@@ -54,7 +55,9 @@ export class SpriteRenderQueue {
 export class WebGL2Renderer {
   readonly device: WebGL2Device;
   readonly sprites: SpriteRenderQueue;
+  readonly particles: ParticlePointRenderQueue;
   private readonly spriteRenderer: SpriteRenderer;
+  private readonly particleRenderer: ParticlePointRenderer;
   private clearColor: readonly [number, number, number, number];
   private destroyed = false;
 
@@ -66,7 +69,9 @@ export class WebGL2Renderer {
     const width = Math.max(1, canvas.clientWidth || canvas.width || 1);
     const height = Math.max(1, canvas.clientHeight || canvas.height || 1);
     this.sprites = new SpriteRenderQueue(width, height);
+    this.particles = new ParticlePointRenderQueue();
     this.spriteRenderer = new SpriteRenderer(this.device);
+    this.particleRenderer = new ParticlePointRenderer(this.device);
     this.clearColor = options.clearColor ?? [0, 0, 0, 0];
   }
 
@@ -95,6 +100,7 @@ export class WebGL2Renderer {
   render(): void {
     this.assertUsable();
     this.device.clear(...this.clearColor);
+    this.particleRenderer.render(this.particles.buildPlan(), this.sprites.activeCamera);
     this.spriteRenderer.render(this.sprites.buildPlan(), this.sprites.activeCamera);
   }
 
@@ -102,6 +108,8 @@ export class WebGL2Renderer {
     if (this.destroyed) return;
     this.destroyed = true;
     this.sprites.clear();
+    this.particles.clear();
+    this.particleRenderer.destroy();
     this.spriteRenderer.destroy();
     this.device.destroy();
   }
@@ -113,6 +121,7 @@ export class WebGL2Renderer {
 
 export const WebGL2RendererService = createExtensionToken<WebGL2Renderer>('gl-game-lab.render-webgl2.renderer');
 export const SpriteRenderQueueService = createExtensionToken<SpriteRenderQueue>('gl-game-lab.render-webgl2.sprite-queue');
+export const ParticlePointRenderQueueService = createExtensionToken<ParticlePointRenderQueue>('gl-game-lab.render-webgl2.particle-point-queue');
 export const WEBGL2_RENDERER_PLUGIN_ID = 'gl-game-lab.render-webgl2';
 
 export function createWebGL2RendererPlugin(
@@ -127,6 +136,7 @@ export function createWebGL2RendererPlugin(
     install: (context) => {
       context.provide(WebGL2RendererService, renderer);
       context.provide(SpriteRenderQueueService, renderer.sprites);
+      context.provide(ParticlePointRenderQueueService, renderer.particles);
       context.get(EngineSchedule).addSystem({
         id: 'gl-game-lab.render-webgl2.sprites',
         stage: 'render',
@@ -135,7 +145,10 @@ export function createWebGL2RendererPlugin(
       context.get(EngineSchedule).addSystem({
         id: 'gl-game-lab.render-webgl2.clear-sprites',
         stage: 'postRender',
-        run: () => { renderer.sprites.clear(); },
+        run: () => {
+          renderer.sprites.clear();
+          renderer.particles.clear();
+        },
       });
     },
     dispose: () => { renderer.destroy(); },

@@ -33,7 +33,16 @@ export {
   type SpriteTexture,
 } from './SpriteRenderer.js';
 export {
+  MAX_PARTICLE_PALETTE_COLORS,
+  ParticlePointRenderer,
+  ParticlePointRenderQueue,
+  buildParticlePointDrawPlan,
+  type ParticlePointBatch,
+  type ParticlePointDrawPlan,
+} from './ParticlePointRenderer.js';
+export {
   WEBGL2_RENDERER_PLUGIN_ID,
+  ParticlePointRenderQueueService,
   SpriteRenderQueue,
   SpriteRenderQueueService,
   WebGL2Renderer,
