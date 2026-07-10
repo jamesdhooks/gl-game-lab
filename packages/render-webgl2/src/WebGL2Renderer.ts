@@ -55,7 +55,7 @@ export class WebGL2Renderer {
   readonly device: WebGL2Device;
   readonly sprites: SpriteRenderQueue;
   private readonly spriteRenderer: SpriteRenderer;
-  private readonly clearColor: readonly [number, number, number, number];
+  private clearColor: readonly [number, number, number, number];
   private destroyed = false;
 
   constructor(
@@ -79,6 +79,17 @@ export class WebGL2Renderer {
       centerY: previous.centerY,
       zoom: previous.zoom,
     }));
+  }
+
+  setClearColor(color: readonly [number, number, number, number]): void {
+    if (color.length !== 4 || !color.every((component) => Number.isFinite(component) && component >= 0 && component <= 1)) {
+      throw new Error('Renderer clear color components must be between zero and one');
+    }
+    this.clearColor = [...color] as readonly [number, number, number, number];
+  }
+
+  get activeClearColor(): readonly [number, number, number, number] {
+    return this.clearColor;
   }
 
   render(): void {

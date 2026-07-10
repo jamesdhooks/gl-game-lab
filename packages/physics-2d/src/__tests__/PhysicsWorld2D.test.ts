@@ -27,6 +27,30 @@ describe('PhysicsWorld2D', () => {
     expect(body.velocityX).toBeLessThanOrEqual(0);
   });
 
+  it('reconfigures solver behavior without replacing the world', () => {
+    const world = new PhysicsWorld2D({ gravityY: 100, substeps: 1 });
+    const body = world.createCircle({ x: 10, y: 10, radius: 2, friction: 1.5 });
+    world.configure({ gravityY: 0, substeps: 2, solverIterations: 2, collisionSoftness: 1.05, maxPairPush: 0.75, impactBounceThreshold: 150 });
+
+    world.step(0.25);
+
+    expect(body.y).toBe(10);
+    expect(body.friction).toBe(1.5);
+  });
+
+  it('supports open-top worlds for falling-particle simulations', () => {
+    const world = new PhysicsWorld2D({
+      gravityY: 0,
+      openTop: true,
+      bounds: { left: 0, top: 0, right: 100, bottom: 100 },
+    });
+    const body = world.createCircle({ x: 50, y: -10, radius: 2, velocityY: 1 });
+
+    world.step(0.1);
+
+    expect(body.y).toBeLessThan(0);
+  });
+
   it('separates overlapping circles deterministically through the grid broadphase', () => {
     const world = new PhysicsWorld2D({ gravityY: 0, solverIterations: 4, cellSize: 16 });
     const first = world.createCircle({ x: 0, y: 0, radius: 10 });

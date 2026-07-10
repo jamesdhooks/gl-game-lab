@@ -23,10 +23,10 @@ export interface CircleBody {
   y: number;
   velocityX: number;
   velocityY: number;
-  readonly radius: number;
+  radius: number;
   readonly inverseMass: number;
-  readonly restitution: number;
-  readonly friction: number;
+  restitution: number;
+  friction: number;
 }
 
 export interface PhysicsWorld2DOptions {
@@ -35,16 +35,26 @@ export interface PhysicsWorld2DOptions {
   readonly cellSize?: number;
   readonly bounds?: PhysicsBounds;
   readonly boundaryRestitution?: number;
+  readonly substeps?: number;
+  readonly collisionSoftness?: number;
+  readonly maxPairPush?: number;
+  readonly impactBounceThreshold?: number;
+  readonly openTop?: boolean;
 }
 
 export class PhysicsWorld2D {
   private readonly bodies = new Map<number, CircleBody>();
   private nextId = 1;
-  private readonly gravityY: number;
-  private readonly solverIterations: number;
+  private gravityY: number;
+  private solverIterations: number;
   private readonly cellSize: number;
   private bounds: PhysicsBounds | undefined;
-  private readonly boundaryRestitution: number;
+  private boundaryRestitution: number;
+  private substeps: number;
+  private collisionSoftness: number;
+  private maxPairPush: number;
+  private impactBounceThreshold: number;
+  private openTop: boolean;
 
   constructor(options: PhysicsWorld2DOptions = {}) {
     this.gravityY = options.gravityY ?? 980;
@@ -52,6 +62,11 @@ export class PhysicsWorld2D {
     this.cellSize = positiveFinite(options.cellSize ?? 32, 'Cell size');
     this.bounds = options.bounds;
     this.boundaryRestitution = unitInterval(options.boundaryRestitution ?? 0.16, 'Boundary restitution');
+    this.substeps = positiveInteger(options.substeps ?? 1, 'Physics substeps');
+    this.collisionSoftness = positiveFinite(options.collisionSoftness ?? 0.85, 'Collision softness');
+    this.maxPairPush = positiveFinite(options.maxPairPush ?? 0.75, 'Maximum pair push');
+    this.impactBounceThreshold = nonNegativeFinite(options.impactBounceThreshold ?? 0, 'Impact bounce threshold');
+    this.openTop = options.openTop ?? false;
     if (this.bounds) validateBounds(this.bounds);
   }
 
@@ -71,7 +86,7 @@ export class PhysicsWorld2D {
       radius: options.radius,
       inverseMass: mass === Infinity ? 0 : 1 / mass,
       restitution: unitInterval(options.restitution ?? 0.15, 'Body restitution'),
-      friction: unitInterval(options.friction ?? 0.72, 'Body friction'),
+      friction: bounded(options.friction ?? 0.72, 0, 2, 'Body friction'),
     };
     this.nextId += 1;
     this.bodies.set(body.id, body);
@@ -91,6 +106,17 @@ export class PhysicsWorld2D {
     this.bounds = bounds;
   }
 
+  configure(options: Omit<PhysicsWorld2DOptions, 'cellSize' | 'bounds'>): void {
+    if (options.gravityY !== undefined) this.gravityY = finite(options.gravityY, 'Gravity');
+    if (options.solverIterations !== undefined) this.solverIterations = positiveInteger(options.solverIterations, 'Solver iterations');
+    if (options.boundaryRestitution !== undefined) this.boundaryRestitution = unitInterval(options.boundaryRestitution, 'Boundary restitution');
+    if (options.substeps !== undefined) this.substeps = positiveInteger(options.substeps, 'Physics substeps');
+    if (options.collisionSoftness !== undefined) this.collisionSoftness = positiveFinite(options.collisionSoftness, 'Collision softness');
+    if (options.maxPairPush !== undefined) this.maxPairPush = positiveFinite(options.maxPairPush, 'Maximum pair push');
+    if (options.impactBounceThreshold !== undefined) this.impactBounceThreshold = nonNegativeFinite(options.impactBounceThreshold, 'Impact bounce threshold');
+    if (options.openTop !== undefined) this.openTop = options.openTop;
+  }
+
   values(): readonly CircleBody[] {
     return [...this.bodies.values()].sort((left, right) => left.id - right.id);
   }
@@ -98,6 +124,11 @@ export class PhysicsWorld2D {
   step(deltaSeconds: number): void {
     if (!Number.isFinite(deltaSeconds) || deltaSeconds < 0) throw new Error('Physics delta must be non-negative and finite');
     if (deltaSeconds === 0) return;
+    const stepDelta = deltaSeconds / this.substeps;
+    for (let substep = 0; substep < this.substeps; substep += 1) this.runSubstep(stepDelta);
+  }
+
+  private runSubstep(deltaSeconds: number): void {
     const bodies = this.values();
     for (const body of bodies) {
       if (body.inverseMass === 0) continue;
@@ -106,7 +137,9 @@ export class PhysicsWorld2D {
       body.y += body.velocityY * deltaSeconds;
     }
     for (let iteration = 0; iteration < this.solverIterations; iteration += 1) {
-      for (const [left, right] of this.pairs(bodies)) resolveCircleContact(left, right);
+      for (const [left, right] of this.pairs(bodies)) {
+        resolveCircleContact(left, right, this.collisionSoftness, this.maxPairPush, this.impactBounceThreshold);
+      }
       if (this.bounds) for (const body of bodies) this.resolveBounds(body);
     }
   }
@@ -157,7 +190,7 @@ export class PhysicsWorld2D {
       body.x = right - body.radius;
       body.velocityX = -Math.abs(body.velocityX) * this.boundaryRestitution;
     }
-    if (body.y - body.radius < top) {
+    if (!this.openTop && body.y - body.radius < top) {
       body.y = top + body.radius;
       body.velocityY = Math.abs(body.velocityY) * this.boundaryRestitution;
     } else if (body.y + body.radius > bottom) {
@@ -167,7 +200,13 @@ export class PhysicsWorld2D {
   }
 }
 
-function resolveCircleContact(left: CircleBody, right: CircleBody): void {
+function resolveCircleContact(
+  left: CircleBody,
+  right: CircleBody,
+  collisionSoftness: number,
+  maxPairPush: number,
+  impactBounceThreshold: number,
+): void {
   const dx = right.x - left.x;
   const dy = right.y - left.y;
   const target = left.radius + right.radius;
@@ -179,7 +218,8 @@ function resolveCircleContact(left: CircleBody, right: CircleBody): void {
   const inverseMass = left.inverseMass + right.inverseMass;
   if (inverseMass === 0) return;
   const penetration = target - distance;
-  const correction = penetration / inverseMass * 0.85;
+  const maximumCorrection = Math.min(left.radius, right.radius) * maxPairPush;
+  const correction = Math.min(penetration * collisionSoftness, maximumCorrection) / inverseMass;
   if (left.inverseMass > 0) {
     left.x -= normalX * correction * left.inverseMass;
     left.y -= normalY * correction * left.inverseMass;
@@ -192,7 +232,8 @@ function resolveCircleContact(left: CircleBody, right: CircleBody): void {
   const relativeVelocityY = right.velocityY - left.velocityY;
   const normalVelocity = relativeVelocityX * normalX + relativeVelocityY * normalY;
   if (normalVelocity >= 0) return;
-  const impulse = -(1 + Math.min(left.restitution, right.restitution)) * normalVelocity / inverseMass;
+  const restitution = -normalVelocity >= impactBounceThreshold ? Math.min(left.restitution, right.restitution) : 0;
+  const impulse = -(1 + restitution) * normalVelocity / inverseMass;
   if (left.inverseMass > 0) {
     left.velocityX -= normalX * impulse * left.inverseMass;
     left.velocityY -= normalY * impulse * left.inverseMass;
@@ -236,12 +277,27 @@ function positiveFinite(value: number, label: string): number {
   return value;
 }
 
+function nonNegativeFinite(value: number, label: string): number {
+  return bounded(value, 0, Number.MAX_VALUE, label);
+}
+
+function finite(value: number, label: string): number {
+  if (!Number.isFinite(value)) throw new Error(`${label} must be finite`);
+  return value;
+}
+
 function positiveInteger(value: number, label: string): number {
   if (!Number.isSafeInteger(value) || value < 1) throw new Error(`${label} must be a positive integer`);
   return value;
 }
 
 function unitInterval(value: number, label: string): number {
-  if (!Number.isFinite(value) || value < 0 || value > 1) throw new Error(`${label} must be between zero and one`);
+  return bounded(value, 0, 1, label);
+}
+
+function bounded(value: number, minimum: number, maximum: number, label: string): number {
+  if (!Number.isFinite(value) || value < minimum || value > maximum) {
+    throw new Error(`${label} must be between ${minimum} and ${maximum}`);
+  }
   return value;
 }

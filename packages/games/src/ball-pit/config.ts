@@ -1,8 +1,9 @@
-import type { ExperienceSetting } from '@hooksjam/gl-game-lab-engine';
+import type { ExperienceSetting, ExperienceSettingValue } from '@hooksjam/gl-game-lab-engine';
 
 export type BallPitMode = 'single' | 'stream' | 'interact' | 'explosion';
 
 export interface BallPitConfig {
+  readonly screensaverMs: number;
   readonly maxParticles: number;
   readonly radius: number;
   readonly radiusVariation: number;
@@ -23,6 +24,7 @@ export interface BallPitConfig {
 }
 
 export const BALL_PIT_DEFAULTS: BallPitConfig = Object.freeze({
+  screensaverMs: 60_000,
   maxParticles: 65_536,
   radius: 12,
   radiusVariation: 0.15,
@@ -43,7 +45,7 @@ export const BALL_PIT_DEFAULTS: BallPitConfig = Object.freeze({
 });
 
 export const BALL_PIT_SETTINGS: readonly ExperienceSetting[] = [
-  numberSetting('maxParticles', 'Max Particles', 65_536, 1_024, 262_144, 1, 'Physics'),
+  { ...numberSetting('maxParticles', 'Max Particles', 65_536, 1_024, 262_144, 1, 'Physics'), numericScale: 'powerOfTwo' },
   numberSetting('radius', 'Radius', 12, 2, 64, 0.5, 'Physics'),
   numberSetting('radiusVariation', 'Radius Variation', 0.15, 0, 1, 0.01, 'Physics'),
   { ...numberSetting('spawnRate', 'Spawn / sec', 1200, 50, 6_000, 50, 'Input Mode'), visibleModes: ['stream'] },
@@ -61,6 +63,61 @@ export const BALL_PIT_SETTINGS: readonly ExperienceSetting[] = [
   { ...numberSetting('wallBounceAmount', 'Bounce Amount', 0.16, 0, 1, 0.01, 'Physics'), advanced: true },
   { ...numberSetting('impactBounceThreshold', 'Impact Threshold', 150, 0, 500, 10, 'Physics'), advanced: true },
 ] as const;
+
+export function createBallPitConfig(
+  overrides: Readonly<Record<string, ExperienceSettingValue>> = {},
+): BallPitConfig {
+  const values: Record<string, ExperienceSettingValue> = { ...BALL_PIT_DEFAULTS };
+  for (const [key, value] of Object.entries(overrides)) {
+    let normalizedValue = value;
+    if (key === 'screensaverMs') {
+      if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) throw new Error('Invalid Ball Pit setting screensaverMs');
+      values[key] = normalizedValue;
+      continue;
+    }
+    const field = BALL_PIT_SETTINGS.find((setting) => setting.key === key);
+    if (!field) throw new Error(`Unknown Ball Pit setting: ${key}`);
+    if (field.type === 'boolean') {
+      if (typeof value !== 'boolean') throw new Error(`Ball Pit setting ${key} must be boolean`);
+    } else if (field.type === 'number') {
+      if (typeof value !== 'number' || !Number.isFinite(value) || value < field.min || value > field.max) {
+        throw new Error(`Ball Pit setting ${key} is outside its supported range`);
+      }
+      normalizedValue = field.numericScale === 'powerOfTwo'
+        ? 2 ** Math.round(Math.log2(value))
+        : snapNumber(value, field.min, field.step);
+    } else if (typeof value !== 'string' || !field.options.some((option) => option.value === value)) {
+      throw new Error(`Ball Pit setting ${key} is not a supported option`);
+    }
+    values[key] = normalizedValue;
+  }
+  return Object.freeze(values) as unknown as BallPitConfig;
+}
+
+export function ballPitConfigForProfile(config: BallPitConfig, profile: 'play' | 'preview' | 'demo' = 'play'): BallPitConfig {
+  if (profile !== 'preview') return config;
+  return Object.freeze({
+    ...config,
+    maxParticles: 96,
+    radius: 9,
+    radiusVariation: 0.18,
+    solverPasses: 2,
+    substeps: 1,
+    gravity: 1050,
+    airDrag: 0.994,
+    solverDamping: 0.982,
+    maxPairPush: 0.75,
+    friction: 0.72,
+    collisionSoftness: 1.05,
+    impactBounceThreshold: 150,
+  });
+}
+
+function snapNumber(value: number, minimum: number, step: number): number {
+  const snapped = minimum + Math.round((value - minimum) / step) * step;
+  const decimals = step >= 1 ? 0 : Math.min(6, Math.max(0, Math.ceil(-Math.log10(step))));
+  return Number(snapped.toFixed(decimals));
+}
 
 function numberSetting(
   key: string,
