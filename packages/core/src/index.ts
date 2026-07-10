@@ -74,3 +74,19 @@ export {
   type Visibility,
 } from './scene/Transform.js';
 export { Hierarchy } from './scene/Hierarchy.js';
+export {
+  Clock,
+  type ClockOptions,
+  type FrameAdvance,
+  type TimeSnapshot,
+} from './kernel/Time.js';
+export {
+  Schedule,
+  STANDARD_SCHEDULE_STAGES,
+  type ScheduleStageKind,
+  type StandardScheduleStage,
+  type SystemAccess,
+  type SystemContext,
+  type SystemDefinition,
+} from './kernel/Schedule.js';
+export { ScheduleRunner } from './kernel/ScheduleRunner.js';

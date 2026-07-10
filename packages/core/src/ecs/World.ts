@@ -36,6 +36,7 @@ export class World {
   private readonly freeIndices: number[] = [];
   private readonly storages = new Map<string, RegisteredStorage>();
   private queryDepth = 0;
+  private structuralLockDepth = 0;
   private livingCount = 0;
   private readonly beforeDespawnListeners = new Set<(world: World, entity: Entity) => void>();
 
@@ -128,6 +129,15 @@ export class World {
     }
   }
 
+  withStructuralChangesDeferred<T>(operation: () => T): T {
+    this.structuralLockDepth += 1;
+    try {
+      return operation();
+    } finally {
+      this.structuralLockDepth -= 1;
+    }
+  }
+
   private storage<T>(type: ComponentType<T>): SparseSet<T> {
     const existing = this.storages.get(type.id);
     if (existing) {
@@ -159,8 +169,8 @@ export class World {
   }
 
   private assertStructurallyMutable(): void {
-    if (this.queryDepth > 0) {
-      throw new WorldMutationError('World structure cannot change while a query is being iterated');
+    if (this.queryDepth > 0 || this.structuralLockDepth > 0) {
+      throw new WorldMutationError('World structure cannot change during query or system execution; use commands');
     }
   }
 }
