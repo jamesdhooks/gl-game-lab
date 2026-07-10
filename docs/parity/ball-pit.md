@@ -16,8 +16,8 @@ Frozen behavior reference: `1273b5f4145c5e9e87123cba535f5cc939a77a61`.
 | Demo | Partial | Deterministic automatic spawn, timed falling-floor cycle, and escaped-particle pruning are implemented. Rebuild frame-180 capture repeatability is proven; the frozen frame sequence is still required. |
 | AI autoplay | Not applicable | Frozen capability is disabled. |
 | Rendering scale | Partial | Typed-array uniform-grid physics and the dedicated GPU point renderer now avoid per-particle objects. The 65,536 default budget still requires formal p95 evidence and any resulting tuning. |
-| Static visual tolerance | Pending | Requires approved reference and rebuild captures with SSIM at or above `0.97`. |
-| Dynamic visual tolerance | Pending | Requires deterministic frame-sequence comparison for every mode and style. |
+| Static visual tolerance | Pending | The automated frozen/rebuild capture command is operational. Its first valid frame-180 Rainbow comparison scored `0.14656`, exposing backdrop, sphere-shading, size, and distribution gaps that still require tuning. |
+| Dynamic visual tolerance | Pending | Requires deterministic frame-sequence comparison for every mode and style. The current single-frame command is the baseline, not sufficient temporal evidence. |
 | Performance budget | Partial | An equivalent synthetic 65,536-body zero-collision CPU sample measured `52.59 ms` p95 versus `155.15 ms` for the frozen solver. Formal browser CPU/GPU p95 captures under representative collisions are still required. |
 
 The experience ledger must remain `pending` until every pending and partial row

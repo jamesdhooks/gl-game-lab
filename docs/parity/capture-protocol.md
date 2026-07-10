@@ -43,3 +43,27 @@ warnings or errors.
 Static and dynamic parity remain pending until equivalent frozen-reference
 captures are collected and the committed comparison report satisfies the
 required SSIM and temporal tolerances.
+
+## Frozen-reference comparison command
+
+Run the isolated Ball Pit comparison with:
+
+```text
+pnpm parity:capture:ball-pit
+```
+
+The command starts both Vite hosts, launches an installed Chromium browser at
+`960x540` and device scale 1, seeds the frozen host's random source, advances
+its browser clock virtually, drives its public Demo control, and compares the
+isolated visible canvases. Outputs are written under
+`.artifacts/parity/ball-pit/`, which is intentionally excluded from source
+control.
+
+The verifier rejects uniform/blank images before computing SSIM. This prevents
+cleared WebGL drawing buffers from producing false perfect scores.
+
+The first valid frame-180 Rainbow comparison scored `0.14656` SSIM with mean
+absolute luminance error `0.18322`. Both browser error lists were empty. The
+failure is expected evidence: the frozen scene currently has a palette-driven
+side-view backdrop, larger shaded spheres, and a different occupied-pixel
+distribution. Those gaps must be closed before the visual gate can pass.

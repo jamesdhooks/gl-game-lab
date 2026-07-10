@@ -9,10 +9,15 @@
     "typecheck": "pnpm --recursive --if-present typecheck",
     "test": "pnpm --recursive --if-present test",
     "clean": "pnpm --recursive --if-present clean",
-    "reference:capture": "tsx scripts/capture-reference.mjs"
+    "reference:capture": "tsx scripts/capture-reference.mjs",
+    "parity:capture:ball-pit": "pnpm --filter @hooksjam/gl-game-lab-tools build && node scripts/capture-ball-pit-parity.mjs"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
+    "playwright-core": "^1.61.1",
+    "pngjs": "^7.0.0",
+    "playwright-core": "^1.61.1",
+    "pngjs": "^7.0.0",
     "tsx": "^4.20.0",
     "typescript": "^5.4.0",
     "vitest": "^1.6.0"
