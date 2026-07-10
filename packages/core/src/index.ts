@@ -96,3 +96,25 @@ export {
   type EventListener,
   type EventToken,
 } from './events/EventBus.js';
+export {
+  PrefabBuildContext,
+  PrefabInstanceComponent,
+  PrefabRegistry,
+  type PrefabDefinition,
+} from './scene/Prefab.js';
+export {
+  SceneActivatedEvent,
+  SceneContext,
+  SceneFailureEvent,
+  SceneLoadedEvent,
+  SceneManager,
+  SceneRootComponent,
+  SceneSuspendedEvent,
+  SceneUnloadedEvent,
+  type LoadSceneOptions,
+  type SceneDefinition,
+  type SceneEvent,
+  type SceneFailure,
+  type SceneSnapshot,
+  type SceneState,
+} from './scene/SceneManager.js';
