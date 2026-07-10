@@ -90,3 +90,9 @@ export {
   type SystemDefinition,
 } from './kernel/Schedule.js';
 export { ScheduleRunner } from './kernel/ScheduleRunner.js';
+export {
+  createEventToken,
+  EventBus,
+  type EventListener,
+  type EventToken,
+} from './events/EventBus.js';
