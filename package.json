@@ -8,10 +8,12 @@
     "build": "pnpm --recursive --if-present build",
     "typecheck": "pnpm --recursive --if-present typecheck",
     "test": "pnpm --recursive --if-present test",
-    "clean": "pnpm --recursive --if-present clean"
+    "clean": "pnpm --recursive --if-present clean",
+    "reference:capture": "tsx scripts/capture-reference.mjs"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
+    "tsx": "^4.20.0",
     "typescript": "^5.4.0",
     "vitest": "^1.6.0"
   },
