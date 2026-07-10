@@ -29,6 +29,12 @@ importers:
         specifier: workspace:*
         version: link:../core
 
+  packages/render-webgl2:
+    dependencies:
+      '@hooksjam/gl-game-lab-core':
+        specifier: workspace:*
+        version: link:../core
+
 packages:
 
   '@esbuild/aix-ppc64@0.21.5':
