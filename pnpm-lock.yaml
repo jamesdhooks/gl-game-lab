@@ -37,6 +37,9 @@ importers:
       '@hooksjam/gl-game-lab-engine':
         specifier: workspace:*
         version: link:../engine
+      '@hooksjam/gl-game-lab-render-webgl2':
+        specifier: workspace:*
+        version: link:../render-webgl2
 
   packages/render-webgl2:
     dependencies:

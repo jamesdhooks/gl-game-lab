@@ -32,6 +32,12 @@ export interface WebGL2DeviceOptions {
   readonly powerPreference?: WebGLPowerPreference;
 }
 
+export interface WebGLImageTextureDescriptor extends Omit<WebGLTextureDescriptor, 'width' | 'height'> {
+  readonly width: number;
+  readonly height: number;
+  readonly flipY?: boolean;
+}
+
 export class WebGLTextureResource {
   private disposed = false;
 
@@ -40,6 +46,7 @@ export class WebGLTextureResource {
     readonly texture: WebGLTexture,
     readonly framebuffer: WebGLFramebuffer | undefined,
     readonly descriptor: NormalizedTextureDescriptor,
+    private readonly onDispose?: () => void,
   ) {}
 
   get isDisposed(): boolean {
@@ -51,6 +58,7 @@ export class WebGLTextureResource {
     this.disposed = true;
     if (this.framebuffer) this.gl.deleteFramebuffer(this.framebuffer);
     this.gl.deleteTexture(this.texture);
+    this.onDispose?.();
   }
 }
 
@@ -140,7 +148,7 @@ export class WebGL2Device {
           throw new Error('WebGL framebuffer is incomplete');
         }
       }
-      const resource = new WebGLTextureResource(this.gl, texture, framebuffer, normalized);
+      const resource = this.trackTexture(texture, framebuffer, normalized);
       this.resources.add(resource);
       return resource;
     } catch (error) {
@@ -153,12 +161,43 @@ export class WebGL2Device {
     }
   }
 
+  createTextureFromImage(source: TexImageSource, descriptor: WebGLImageTextureDescriptor): WebGLTextureResource {
+    this.assertUsable();
+    const normalized = normalizeTextureDescriptor(descriptor);
+    const texture = this.gl.createTexture();
+    if (!texture) throw new Error('Unable to allocate WebGL texture');
+    try {
+      this.gl.bindTexture(this.gl.TEXTURE_2D, texture);
+      this.gl.pixelStorei(this.gl.UNPACK_FLIP_Y_WEBGL, descriptor.flipY === true ? 1 : 0);
+      this.gl.texParameteri(this.gl.TEXTURE_2D, this.gl.TEXTURE_MIN_FILTER, textureFilter(this.gl, normalized.filter));
+      this.gl.texParameteri(this.gl.TEXTURE_2D, this.gl.TEXTURE_MAG_FILTER, textureFilter(this.gl, normalized.filter));
+      this.gl.texParameteri(this.gl.TEXTURE_2D, this.gl.TEXTURE_WRAP_S, textureWrap(this.gl, normalized.wrap));
+      this.gl.texParameteri(this.gl.TEXTURE_2D, this.gl.TEXTURE_WRAP_T, textureWrap(this.gl, normalized.wrap));
+      this.gl.texImage2D(
+        this.gl.TEXTURE_2D,
+        0,
+        normalized.format === 'rgba16f' ? this.gl.RGBA16F : this.gl.RGBA8,
+        this.gl.RGBA,
+        normalized.format === 'rgba16f' ? this.gl.HALF_FLOAT : this.gl.UNSIGNED_BYTE,
+        source,
+      );
+      const resource = this.trackTexture(texture, undefined, normalized);
+      this.resources.add(resource);
+      return resource;
+    } catch (error) {
+      this.gl.deleteTexture(texture);
+      throw error;
+    } finally {
+      this.gl.pixelStorei(this.gl.UNPACK_FLIP_Y_WEBGL, 0);
+      this.gl.bindTexture(this.gl.TEXTURE_2D, null);
+    }
+  }
+
   textureAllocator(): RenderResourceAllocator<WebGLTextureResource, WebGLTextureDescriptor> {
     return {
       create: (descriptor) => this.createTexture(descriptor),
       destroy: (resource) => {
         resource.dispose();
-        this.resources.delete(resource);
       },
     };
   }
@@ -184,6 +223,18 @@ export class WebGL2Device {
   private assertUsable(): void {
     if (this.destroyed) throw new Error('WebGL2 device has been destroyed');
     if (this.isContextLost) throw new Error('WebGL2 context is lost');
+  }
+
+  private trackTexture(
+    texture: WebGLTexture,
+    framebuffer: WebGLFramebuffer | undefined,
+    descriptor: NormalizedTextureDescriptor,
+  ): WebGLTextureResource {
+    let resource: WebGLTextureResource | undefined;
+    resource = new WebGLTextureResource(this.gl, texture, framebuffer, descriptor, () => {
+      if (resource) this.resources.delete(resource);
+    });
+    return resource;
   }
 }
 
