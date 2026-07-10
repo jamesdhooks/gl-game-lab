@@ -1,14 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import type { PluginInstallContext } from '@hooksjam/gl-game-lab-core';
-import { PHYSICS_2D_PLUGIN_ID } from '@hooksjam/gl-game-lab-physics-2d';
+import { DENSE_CIRCLE_PARTICLE_PLUGIN_ID } from '@hooksjam/gl-game-lab-physics-2d';
 import { GameEngine } from '@hooksjam/gl-game-lab-engine';
 import {
+  ParticlePointRenderQueue,
+  ParticlePointRenderQueueService,
   SpriteRenderQueue,
   SpriteRenderQueueService,
   WEBGL2_RENDERER_PLUGIN_ID,
   WebGL2RendererService,
   type WebGL2Renderer,
-  type WebGLTextureResource,
 } from '@hooksjam/gl-game-lab-render-webgl2';
 import {
   BALL_PIT_DEFAULTS,
@@ -76,7 +77,7 @@ describe('Ball Pit experience', () => {
 
   it('composes reusable physics before its content plugin', () => {
     expect(ballPitDefinition.createPlugins().map(({ id }) => id)).toEqual([
-      PHYSICS_2D_PLUGIN_ID,
+      DENSE_CIRCLE_PARTICLE_PLUGIN_ID,
       BALL_PIT_PLUGIN_ID,
     ]);
   });
@@ -96,16 +97,12 @@ describe('Ball Pit experience', () => {
   });
 
   it('runs as a vertical engine plugin and responds to pointer input', async () => {
-    let textureDisposed = false;
     let clearColor: readonly number[] = [];
-    const queue = new SpriteRenderQueue(800, 600);
-    const resource = {
-      texture: {} as WebGLTexture,
-      dispose: () => { textureDisposed = true; },
-    } as unknown as WebGLTextureResource;
+    const sprites = new SpriteRenderQueue(800, 600);
+    const particles = new ParticlePointRenderQueue();
     const renderer = {
-      device: { createTextureFromRgbaPixels: () => resource },
-      sprites: queue,
+      sprites,
+      particles,
       setClearColor: (color: readonly number[]) => { clearColor = color; },
     } as unknown as WebGL2Renderer;
     const fakeRendererPlugin = {
@@ -114,7 +111,8 @@ describe('Ball Pit experience', () => {
       dependencies: [{ id: 'gl-game-lab.runtime' }],
       install: (context: PluginInstallContext) => {
         context.provide(WebGL2RendererService, renderer);
-        context.provide(SpriteRenderQueueService, queue);
+        context.provide(SpriteRenderQueueService, sprites);
+        context.provide(ParticlePointRenderQueueService, particles);
       },
     };
     const engine = new GameEngine({ plugins: [fakeRendererPlugin, ...ballPitDefinition.createPlugins()] });
@@ -124,12 +122,12 @@ describe('Ball Pit experience', () => {
     engine.frame(1 / 60);
     const controller = engine.kernel.get(BallPitControllerService);
     expect(controller.bodyCount).toBe(0);
-    expect(queue.count).toBe(0);
-    queue.clear();
+    expect(particles.count).toBe(0);
+    particles.clear();
     engine.input.ingest({ kind: 'pointer', phase: 'down', id: 1, x: 400, y: 100, buttons: 1 });
     engine.frame(1 / 60);
     expect(controller.bodyCount).toBe(1);
-    expect(queue.count).toBe(1);
+    expect(particles.count).toBe(1);
     controller.setStyle('ocean');
     expect(controller.styleId).toBe('ocean');
     expect(clearColor).toEqual([3 / 255, 21 / 255, 37 / 255, 1]);
@@ -141,15 +139,14 @@ describe('Ball Pit experience', () => {
     expect(controller.bodyCount).toBe(0);
 
     await engine.destroy();
-    expect(textureDisposed).toBe(true);
   });
 
   it('uses deterministic automatic spawning only for preview and demo profiles', async () => {
-    const queue = new SpriteRenderQueue(800, 600);
-    const resource = { texture: {} as WebGLTexture, dispose: () => undefined } as unknown as WebGLTextureResource;
+    const sprites = new SpriteRenderQueue(800, 600);
+    const particles = new ParticlePointRenderQueue();
     const renderer = {
-      device: { createTextureFromRgbaPixels: () => resource },
-      sprites: queue,
+      sprites,
+      particles,
       setClearColor: () => undefined,
     } as unknown as WebGL2Renderer;
     const fakeRendererPlugin = {
@@ -158,7 +155,8 @@ describe('Ball Pit experience', () => {
       dependencies: [{ id: 'gl-game-lab.runtime' }],
       install: (context: PluginInstallContext) => {
         context.provide(WebGL2RendererService, renderer);
-        context.provide(SpriteRenderQueueService, queue);
+        context.provide(SpriteRenderQueueService, sprites);
+        context.provide(ParticlePointRenderQueueService, particles);
       },
     };
     const engine = new GameEngine({ plugins: [fakeRendererPlugin, ...ballPitDefinition.createPlugins({ profile: 'preview', seed: 7 })] });

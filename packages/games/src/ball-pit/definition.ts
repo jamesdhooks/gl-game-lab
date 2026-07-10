@@ -1,5 +1,5 @@
 import type { ExperienceDefinition, ExperienceTutorialPage } from '@hooksjam/gl-game-lab-engine';
-import { createPhysics2DPlugin } from '@hooksjam/gl-game-lab-physics-2d';
+import { createDenseCircleParticlePlugin } from '@hooksjam/gl-game-lab-physics-2d';
 import { createBallPitPlugin } from './BallPitPlugin.js';
 import { BALL_PIT_DEFAULTS, BALL_PIT_SETTINGS, ballPitConfigForProfile, createBallPitConfig } from './config.js';
 import { BALL_PIT_STYLE_MANIFEST } from './styles.js';
@@ -52,16 +52,26 @@ export const ballPitDefinition: ExperienceDefinition = {
     const config = createBallPitConfig(options.settings);
     const effectiveConfig = ballPitConfigForProfile(config, options.profile);
     return [
-      createPhysics2DPlugin({
-        gravityY: effectiveConfig.gravity,
-        solverIterations: effectiveConfig.solverPasses,
-        substeps: effectiveConfig.substeps,
-        cellSize: effectiveConfig.radius * 2.5,
-        boundaryRestitution: effectiveConfig.wallBounce ? effectiveConfig.wallBounceAmount : 0,
-        collisionSoftness: effectiveConfig.collisionSoftness,
-        maxPairPush: effectiveConfig.maxPairPush,
-        impactBounceThreshold: effectiveConfig.impactBounceThreshold,
-        openTop: true,
+      createDenseCircleParticlePlugin({
+        capacity: options.profile === 'preview' ? 256 : 262_144,
+        ...(options.seed !== undefined ? { seed: options.seed } : {}),
+        settings: {
+          maxParticles: effectiveConfig.maxParticles,
+          radius: effectiveConfig.radius,
+          radiusVariation: effectiveConfig.radiusVariation,
+          gravity: effectiveConfig.gravity,
+          solverIterations: effectiveConfig.solverPasses,
+          substeps: effectiveConfig.substeps,
+          wallBounce: effectiveConfig.wallBounce,
+          boundaryRestitution: effectiveConfig.wallBounceAmount,
+          airDrag: effectiveConfig.airDrag,
+          solverDamping: effectiveConfig.solverDamping,
+          collisionSoftness: effectiveConfig.collisionSoftness,
+          maxPairPush: effectiveConfig.maxPairPush,
+          impactBounceThreshold: effectiveConfig.impactBounceThreshold,
+          contactFriction: effectiveConfig.friction,
+          openTop: true,
+        },
       }),
       createBallPitPlugin(config, options),
     ];

@@ -34,6 +34,8 @@ export interface DenseCircleParticleStats {
   readonly gridRows: number;
   readonly cellSize: number;
   readonly maxVelocity: number;
+  readonly awake: boolean;
+  readonly settledFrames: number;
 }
 
 const DEFAULT_SETTINGS: DenseCircleParticleSettings = Object.freeze({
@@ -71,6 +73,8 @@ export class DenseCircleParticleWorld2D {
 
   private readonly next: Int32Array;
   private heads = new Int32Array(1);
+  private activeCells = new Int32Array(1);
+  private activeCellCount = 0;
   private settings: DenseCircleParticleSettings;
   private activeCount = 0;
   private width = 1;
@@ -82,6 +86,8 @@ export class DenseCircleParticleWorld2D {
   private randomState: number;
   private collisionHits = 0;
   private maxVelocity = 0;
+  private awake = false;
+  private settledFrames = 0;
 
   constructor(readonly capacity: number, settings: Partial<DenseCircleParticleSettings> = {}, seed = 0x9e3779b9) {
     if (!Number.isSafeInteger(capacity) || capacity < 1) throw new Error('Dense particle capacity must be a positive integer');
@@ -117,11 +123,15 @@ export class DenseCircleParticleWorld2D {
       }
     }
     this.rebuildGridShape();
+    this.wake();
   }
 
   setBounds(width: number, height: number): void {
-    this.width = positiveFinite(width, 'Dense particle world width');
-    this.height = positiveFinite(height, 'Dense particle world height');
+    const nextWidth = positiveFinite(width, 'Dense particle world width');
+    const nextHeight = positiveFinite(height, 'Dense particle world height');
+    if (Math.abs(this.width - nextWidth) > 0.01 || Math.abs(this.height - nextHeight) > 0.01) this.wake();
+    this.width = nextWidth;
+    this.height = nextHeight;
     this.rebuildGridShape();
   }
 
@@ -129,6 +139,8 @@ export class DenseCircleParticleWorld2D {
     this.activeCount = 0;
     this.collisionHits = 0;
     this.maxVelocity = 0;
+    this.awake = false;
+    this.settledFrames = 0;
     if (seed !== undefined) this.randomState = normalizeSeed(seed);
   }
 
@@ -153,6 +165,7 @@ export class DenseCircleParticleWorld2D {
     this.radiusNoise[index] = noise;
     this.inverseMasses[index] = nonNegativeFinite(options.inverseMass ?? 1, 'Dense particle inverse mass');
     this.colorSeeds[index] = finite(options.colorSeed ?? Math.floor(this.random() * 0x1_0000), 'Dense particle color seed');
+    this.wake();
     return index;
   }
 
@@ -199,11 +212,13 @@ export class DenseCircleParticleWorld2D {
       this.velocities[offset] = (floatAt(this.velocities, offset) + (x - floatAt(this.positions, offset)) * strength) * 0.84;
       this.velocities[offset + 1] = (floatAt(this.velocities, offset + 1) + (y - floatAt(this.positions, offset + 1)) * strength) * 0.84;
     }
+    if (limit > 0) this.wake();
   }
 
   applyExplosion(x: number, y: number, radius: number, force: number): void {
     const blastRadius = positiveFinite(radius, 'Dense particle explosion radius');
     const strength = nonNegativeFinite(force, 'Dense particle explosion force');
+    let affected = false;
     for (let index = 0; index < this.activeCount; index += 1) {
       const offset = index * 2;
       const dx = floatAt(this.positions, offset) - x;
@@ -214,12 +229,28 @@ export class DenseCircleParticleWorld2D {
       const impulse = strength * falloff * falloff;
       this.velocities[offset] = floatAt(this.velocities, offset) + dx / distance * impulse;
       this.velocities[offset + 1] = floatAt(this.velocities, offset + 1) + dy / distance * impulse;
+      affected = true;
     }
+    if (affected) this.wake();
+  }
+
+  removeBelow(y: number): number {
+    const threshold = finite(y, 'Dense particle removal threshold');
+    let write = 0;
+    for (let read = 0; read < this.activeCount; read += 1) {
+      if (floatAt(this.positions, read * 2 + 1) > threshold) continue;
+      if (write !== read) this.copyParticle(read, write);
+      write += 1;
+    }
+    const removed = this.activeCount - write;
+    this.activeCount = write;
+    if (removed > 0) this.wake();
+    return removed;
   }
 
   step(deltaSeconds: number): DenseCircleParticleStats {
     const frameDelta = Math.min(this.settings.maxFrameDelta, nonNegativeFinite(deltaSeconds, 'Dense particle delta'));
-    if (frameDelta === 0 || this.activeCount === 0) return this.stats();
+    if (frameDelta === 0 || this.activeCount === 0 || !this.awake) return this.stats();
     const stepDelta = frameDelta / this.settings.substeps;
     this.collisionHits = 0;
     this.maxVelocity = 0;
@@ -228,10 +259,17 @@ export class DenseCircleParticleWorld2D {
       this.projectBounds(stepDelta);
       for (let pass = 0; pass < this.settings.solverIterations; pass += 1) {
         this.buildGrid();
-        this.solveGrid(stepDelta);
+        const hits = this.solveGrid(stepDelta);
         this.projectBounds(stepDelta);
+        if (hits === 0) break;
       }
       this.syncVelocities(stepDelta);
+    }
+    if (this.maxVelocity < 8) {
+      this.settledFrames += 1;
+      if (this.settledFrames > 50) this.awake = false;
+    } else {
+      this.settledFrames = 0;
     }
     return this.stats();
   }
@@ -276,31 +314,42 @@ export class DenseCircleParticleWorld2D {
   }
 
   private buildGrid(): void {
-    this.heads.fill(-1);
+    for (let index = 0; index < this.activeCellCount; index += 1) {
+      const cell = this.activeCells[index] ?? -1;
+      if (cell >= 0) this.heads[cell] = -1;
+    }
+    this.activeCellCount = 0;
     for (let index = 0; index < this.activeCount; index += 1) {
       const offset = index * 2;
       const x = clamp(Math.floor(floatAt(this.positions, offset) * this.inverseCellSize), 0, this.gridColumns - 1);
       const y = clamp(Math.floor(floatAt(this.positions, offset + 1) * this.inverseCellSize), 0, this.gridRows - 1);
       const cell = y * this.gridColumns + x;
+      if ((this.heads[cell] ?? -1) === -1) {
+        this.activeCells[this.activeCellCount] = cell;
+        this.activeCellCount += 1;
+      }
       this.next[index] = this.heads[cell] ?? -1;
       this.heads[cell] = index;
     }
   }
 
-  private solveGrid(deltaSeconds: number): void {
-    for (let y = 0; y < this.gridRows; y += 1) {
-      for (let x = 0; x < this.gridColumns; x += 1) {
-        const cell = y * this.gridColumns + x;
-        this.solveSelfCell(cell, deltaSeconds);
-        if (x + 1 < this.gridColumns) this.solveCellPair(cell, cell + 1, deltaSeconds);
-        if (y + 1 < this.gridRows) {
-          const nextRow = cell + this.gridColumns;
-          this.solveCellPair(cell, nextRow, deltaSeconds);
-          if (x > 0) this.solveCellPair(cell, nextRow - 1, deltaSeconds);
-          if (x + 1 < this.gridColumns) this.solveCellPair(cell, nextRow + 1, deltaSeconds);
-        }
+  private solveGrid(deltaSeconds: number): number {
+    const initialHits = this.collisionHits;
+    for (let index = 0; index < this.activeCellCount; index += 1) {
+      const cell = this.activeCells[index] ?? -1;
+      if (cell < 0) continue;
+      const x = cell % this.gridColumns;
+      const y = Math.floor(cell / this.gridColumns);
+      this.solveSelfCell(cell, deltaSeconds);
+      if (x + 1 < this.gridColumns) this.solveCellPair(cell, cell + 1, deltaSeconds);
+      if (y + 1 < this.gridRows) {
+        const nextRow = cell + this.gridColumns;
+        this.solveCellPair(cell, nextRow, deltaSeconds);
+        if (x > 0) this.solveCellPair(cell, nextRow - 1, deltaSeconds);
+        if (x + 1 < this.gridColumns) this.solveCellPair(cell, nextRow + 1, deltaSeconds);
       }
     }
+    return this.collisionHits - initialHits;
   }
 
   private solveSelfCell(cell: number, deltaSeconds: number): void {
@@ -406,8 +455,27 @@ export class DenseCircleParticleWorld2D {
     this.gridColumns = Math.max(1, Math.ceil(this.width / this.cellSize));
     this.gridRows = Math.max(1, Math.ceil(this.height / this.cellSize));
     const cells = this.gridColumns * this.gridRows;
-    if (this.heads.length !== cells) this.heads = new Int32Array(cells);
+    if (this.heads.length !== cells) {
+      this.heads = new Int32Array(cells);
+      this.activeCells = new Int32Array(cells);
+    }
     this.heads.fill(-1);
+    this.activeCellCount = 0;
+  }
+
+  private copyParticle(source: number, target: number): void {
+    const sourceOffset = source * 2;
+    const targetOffset = target * 2;
+    this.positions[targetOffset] = floatAt(this.positions, sourceOffset);
+    this.positions[targetOffset + 1] = floatAt(this.positions, sourceOffset + 1);
+    this.velocities[targetOffset] = floatAt(this.velocities, sourceOffset);
+    this.velocities[targetOffset + 1] = floatAt(this.velocities, sourceOffset + 1);
+    this.previousPositions[targetOffset] = floatAt(this.previousPositions, sourceOffset);
+    this.previousPositions[targetOffset + 1] = floatAt(this.previousPositions, sourceOffset + 1);
+    this.radii[target] = floatAt(this.radii, source);
+    this.inverseMasses[target] = floatAt(this.inverseMasses, source);
+    this.colorSeeds[target] = floatAt(this.colorSeeds, source);
+    this.radiusNoise[target] = floatAt(this.radiusNoise, source);
   }
 
   private radiusForNoise(noise: number): number {
@@ -423,6 +491,8 @@ export class DenseCircleParticleWorld2D {
       gridRows: this.gridRows,
       cellSize: this.cellSize,
       maxVelocity: this.maxVelocity,
+      awake: this.awake,
+      settledFrames: this.settledFrames,
     };
   }
 
@@ -431,6 +501,11 @@ export class DenseCircleParticleWorld2D {
     this.randomState ^= this.randomState >>> 17;
     this.randomState ^= this.randomState << 5;
     return (this.randomState >>> 0) / 0x1_0000_0000;
+  }
+
+  private wake(): void {
+    this.awake = this.activeCount > 0;
+    this.settledFrames = 0;
   }
 }
 

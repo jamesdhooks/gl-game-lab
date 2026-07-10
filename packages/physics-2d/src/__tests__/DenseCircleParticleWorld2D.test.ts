@@ -46,6 +46,18 @@ describe('DenseCircleParticleWorld2D', () => {
     expect(world.addCircle(0, 0)).toBe(-1);
   });
 
+  it('compacts escaped particles while preserving active typed-array order', () => {
+    const world = new DenseCircleParticleWorld2D(8, { maxParticles: 8, gravity: 0 }, 11);
+    world.addCircle(10, 10, { colorSeed: 1 });
+    world.addCircle(20, 200, { colorSeed: 2 });
+    world.addCircle(30, 30, { colorSeed: 3 });
+
+    expect(world.removeBelow(100)).toBe(1);
+    expect(world.count).toBe(2);
+    expect(Array.from(world.positions.subarray(0, 4))).toEqual([10, 10, 30, 30]);
+    expect(Array.from(world.colorSeeds.subarray(0, 2))).toEqual([1, 3]);
+  });
+
   it('resolves dense overlaps through a deterministic uniform grid', () => {
     const world = new DenseCircleParticleWorld2D(8, {
       maxParticles: 8,

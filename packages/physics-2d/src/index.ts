@@ -16,3 +16,9 @@ export {
   type DenseCircleParticleSettings,
   type DenseCircleParticleStats,
 } from './DenseCircleParticleWorld2D.js';
+export {
+  DENSE_CIRCLE_PARTICLE_PLUGIN_ID,
+  DenseCircleParticleWorld2DService,
+  createDenseCircleParticlePlugin,
+  type DenseCircleParticlePluginOptions,
+} from './DenseCircleParticlePlugin.js';
