@@ -12,6 +12,7 @@
   "dependencies": {
     "@hooksjam/gl-game-lab-core": "workspace:*",
     "@hooksjam/gl-game-lab-engine": "workspace:*",
+    "@hooksjam/gl-game-lab-games": "workspace:*",
     "@hooksjam/gl-game-lab-react": "workspace:*",
     "@hooksjam/gl-game-lab-render-webgl2": "workspace:*",
     "react": "^18.3.0",

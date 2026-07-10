@@ -9,6 +9,7 @@ import {
 
 export interface GameCanvasProps {
   readonly plugins?: readonly EnginePlugin[];
+  readonly createPlugins?: () => readonly EnginePlugin[];
   readonly createEngine?: (canvas: HTMLCanvasElement) => GameEngine;
   readonly className?: string;
   readonly style?: CSSProperties;
@@ -18,12 +19,15 @@ export interface GameCanvasProps {
   readonly preventDefaultInput?: boolean;
 }
 
+const EMPTY_ENGINE_PLUGINS: readonly EnginePlugin[] = Object.freeze([]);
+
 export function createBrowserGameEngine(canvas: HTMLCanvasElement, plugins: readonly EnginePlugin[] = []): GameEngine {
   return new GameEngine({ plugins: [createWebGL2RendererPlugin(canvas), ...plugins] });
 }
 
 export function GameCanvas({
-  plugins = [],
+  plugins = EMPTY_ENGINE_PLUGINS,
+  createPlugins,
   createEngine,
   className,
   style,
@@ -37,7 +41,9 @@ export function GameCanvas({
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return undefined;
-    const engine = createEngine?.(canvas) ?? createBrowserGameEngine(canvas, plugins);
+    const engine = createEngine
+      ? createEngine(canvas)
+      : createBrowserGameEngine(canvas, createPlugins?.() ?? plugins);
     let disposed = false;
     let initialized = false;
     let loop: BrowserFrameLoop | undefined;
@@ -54,6 +60,8 @@ export function GameCanvas({
 
     const boot = async (): Promise<void> => {
       try {
+        canvas.dataset.engineState = 'initializing';
+        delete canvas.dataset.engineError;
         await engine.initialize();
         initialized = true;
         if (disposed) {
@@ -81,22 +89,40 @@ export function GameCanvas({
         }
         loop = new BrowserFrameLoop(engine);
         loop.start();
+        canvas.dataset.engineState = 'running';
         onReady?.(engine);
       } catch (error) {
-        onError?.(error);
+        canvas.dataset.engineState = 'error';
+        canvas.dataset.engineError = describeError(error);
+        if (onError) onError(error);
+        else queueMicrotask(() => {
+          throw error;
+        });
       }
     };
     void boot();
 
     return () => {
       disposed = true;
+      canvas.dataset.engineState = 'destroyed';
       observer?.disconnect();
       window.removeEventListener('resize', resize);
       inputAdapter?.destroy();
       loop?.stop();
       if (initialized) void engine.destroy();
     };
-  }, [createEngine, onError, onReady, plugins]);
+  }, [createEngine, createPlugins, onError, onReady, plugins]);
 
-  return <canvas ref={canvasRef} className={className} style={style} aria-label={ariaLabel} />;
+  return <canvas ref={canvasRef} className={className} style={style} aria-label={ariaLabel} data-engine-state="created" />;
+}
+
+function describeError(error: unknown): string {
+  const messages: string[] = [];
+  let current: unknown = error;
+  while (current instanceof Error) {
+    messages.push(current.message);
+    current = current.cause;
+  }
+  if (messages.length === 0) messages.push(String(error));
+  return messages.join(': ');
 }

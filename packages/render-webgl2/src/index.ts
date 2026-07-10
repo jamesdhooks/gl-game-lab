@@ -41,3 +41,8 @@ export {
   createWebGL2RendererPlugin,
   type WebGL2RendererOptions,
 } from './WebGL2Renderer.js';
+export {
+  createCirclePixels,
+  createCircleSpriteTexture,
+  type ManagedSpriteTexture,
+} from './ProceduralTextures.js';

@@ -124,7 +124,6 @@ export function createWebGL2RendererPlugin(
       context.get(EngineSchedule).addSystem({
         id: 'gl-game-lab.render-webgl2.clear-sprites',
         stage: 'postRender',
-        after: ['gl-game-lab.render-webgl2.sprites'],
         run: () => { renderer.sprites.clear(); },
       });
     },

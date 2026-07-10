@@ -16,6 +16,17 @@ describe('PhysicsWorld2D', () => {
     expect(body.velocityY).toBeLessThan(0);
   });
 
+  it('adapts bounds to a resized render viewport', () => {
+    const world = new PhysicsWorld2D({ gravityY: 0 });
+    const body = world.createCircle({ x: 90, y: 50, radius: 10, velocityX: 20 });
+
+    world.setBounds({ left: 0, top: 0, right: 80, bottom: 100 });
+    world.step(1 / 60);
+
+    expect(body.x).toBe(70);
+    expect(body.velocityX).toBeLessThanOrEqual(0);
+  });
+
   it('separates overlapping circles deterministically through the grid broadphase', () => {
     const world = new PhysicsWorld2D({ gravityY: 0, solverIterations: 4, cellSize: 16 });
     const first = world.createCircle({ x: 0, y: 0, radius: 10 });
@@ -31,5 +42,6 @@ describe('PhysicsWorld2D', () => {
     expect(() => new PhysicsWorld2D({ bounds: { left: 1, top: 0, right: 1, bottom: 1 } })).toThrow('positive area');
     const world = new PhysicsWorld2D();
     expect(() => world.createCircle({ x: 0, y: 0, radius: 0 })).toThrow('radius');
+    expect(() => world.setBounds({ left: 1, top: 0, right: 1, bottom: 1 })).toThrow('positive area');
   });
 });

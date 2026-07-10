@@ -43,7 +43,7 @@ export class PhysicsWorld2D {
   private readonly gravityY: number;
   private readonly solverIterations: number;
   private readonly cellSize: number;
-  private readonly bounds: PhysicsBounds | undefined;
+  private bounds: PhysicsBounds | undefined;
   private readonly boundaryRestitution: number;
 
   constructor(options: PhysicsWorld2DOptions = {}) {
@@ -84,6 +84,11 @@ export class PhysicsWorld2D {
 
   clear(): void {
     this.bodies.clear();
+  }
+
+  setBounds(bounds: PhysicsBounds | undefined): void {
+    if (bounds) validateBounds(bounds);
+    this.bounds = bounds;
   }
 
   values(): readonly CircleBody[] {
@@ -195,6 +200,19 @@ function resolveCircleContact(left: CircleBody, right: CircleBody): void {
   if (right.inverseMass > 0) {
     right.velocityX += normalX * impulse * right.inverseMass;
     right.velocityY += normalY * impulse * right.inverseMass;
+  }
+  const tangentX = -normalY;
+  const tangentY = normalX;
+  const tangentVelocity = relativeVelocityX * tangentX + relativeVelocityY * tangentY;
+  const friction = Math.sqrt(left.friction * right.friction);
+  const frictionImpulse = Math.max(-impulse * friction, Math.min(impulse * friction, -tangentVelocity / inverseMass));
+  if (left.inverseMass > 0) {
+    left.velocityX -= tangentX * frictionImpulse * left.inverseMass;
+    left.velocityY -= tangentY * frictionImpulse * left.inverseMass;
+  }
+  if (right.inverseMass > 0) {
+    right.velocityX += tangentX * frictionImpulse * right.inverseMass;
+    right.velocityY += tangentY * frictionImpulse * right.inverseMass;
   }
 }
 
