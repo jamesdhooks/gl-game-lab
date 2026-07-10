@@ -119,6 +119,9 @@ importers:
       '@hooksjam/gl-game-lab-render-webgl2':
         specifier: workspace:*
         version: link:../render-webgl2
+      '@hooksjam/gl-game-lab-tools':
+        specifier: workspace:*
+        version: link:../tools
     devDependencies:
       '@types/react':
         specifier: ^18.3.0

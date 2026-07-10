@@ -22,7 +22,8 @@
     "@hooksjam/gl-game-lab-core": "workspace:*",
     "@hooksjam/gl-game-lab-engine": "workspace:*",
     "@hooksjam/gl-game-lab-platform-web": "workspace:*",
-    "@hooksjam/gl-game-lab-render-webgl2": "workspace:*"
+    "@hooksjam/gl-game-lab-render-webgl2": "workspace:*",
+    "@hooksjam/gl-game-lab-tools": "workspace:*"
   },
   "peerDependencies": {
     "react": ">=18.0.0"

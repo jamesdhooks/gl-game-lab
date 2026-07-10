@@ -12,8 +12,8 @@ Frozen behavior reference: `1273b5f4145c5e9e87123cba535f5cc939a77a61`.
 | Reset | Implemented | Physics state, deterministic seed, pointer picks, and spawn timing reset together. |
 | Normal play | Implemented | Starts empty and responds to deterministic pointer input. |
 | Shared runtime host | Implemented | Browser QA confirmed engine `running`, empty normal play, four mode controls, ten-style selection, mode-filtered settings, power-of-two display, tutorial dialog, point-shader spawn, live Neon bloom switching, and no console warnings or errors. |
-| Preview | Partial | Uses the frozen reduced physics profile and deterministic 14-per-second automatic spawn. A formal capture is still required. |
-| Demo | Partial | Deterministic automatic spawn, timed falling-floor cycle, and escaped-particle pruning are implemented. A formal frame-sequence capture is still required. |
+| Preview | Partial | Uses the frozen reduced physics profile and deterministic 14-per-second automatic spawn. The fixed-step capture route is ready; the equivalent frozen-reference comparison is still required. |
+| Demo | Partial | Deterministic automatic spawn, timed falling-floor cycle, and escaped-particle pruning are implemented. Rebuild frame-180 capture repeatability is proven; the frozen frame sequence is still required. |
 | AI autoplay | Not applicable | Frozen capability is disabled. |
 | Rendering scale | Partial | Typed-array uniform-grid physics and the dedicated GPU point renderer now avoid per-particle objects. The 65,536 default budget still requires formal p95 evidence and any resulting tuning. |
 | Static visual tolerance | Pending | Requires approved reference and rebuild captures with SSIM at or above `0.97`. |
@@ -22,6 +22,9 @@ Frozen behavior reference: `1273b5f4145c5e9e87123cba535f5cc939a77a61`.
 
 The experience ledger must remain `pending` until every pending and partial row
 above has authoritative capture or benchmark evidence.
+
+The reproducible browser protocol and current rebuild-side evidence are recorded
+in [capture-protocol.md](./capture-protocol.md).
 
 ## Current benchmark note
 

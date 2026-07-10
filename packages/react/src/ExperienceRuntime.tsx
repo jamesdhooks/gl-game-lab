@@ -15,6 +15,7 @@ import {
 } from '@hooksjam/gl-game-lab-engine';
 import type { GameEngine } from '@hooksjam/gl-game-lab-engine';
 import { GameCanvas } from './GameCanvas.js';
+import type { FixedFrameCaptureOptions, FixedFrameCaptureResult } from './GameCanvas.js';
 
 export interface ExperienceRuntimeProps {
   readonly definition: ExperienceDefinition;
@@ -26,6 +27,9 @@ export interface ExperienceRuntimeProps {
   readonly showChrome?: boolean;
   readonly onReady?: (engine: GameEngine, controller: ExperienceRuntimeController | undefined) => void;
   readonly onError?: (error: unknown) => void;
+  readonly seed?: number;
+  readonly fixedFrameCapture?: FixedFrameCaptureOptions;
+  readonly onFixedFrameCapture?: (result: FixedFrameCaptureResult) => void;
 }
 
 export function ExperienceRuntime({
@@ -38,6 +42,9 @@ export function ExperienceRuntime({
   showChrome = true,
   onReady,
   onError,
+  seed,
+  fixedFrameCapture,
+  onFixedFrameCapture,
 }: ExperienceRuntimeProps): JSX.Element {
   const defaultModeId = initialModeId ?? definition.modes?.[0]?.id ?? 'default';
   const defaultStyleId = initialStyleId ?? definition.styleManifest?.defaultStyleId ?? 'default';
@@ -56,7 +63,8 @@ export function ExperienceRuntime({
     modeId: defaultModeId,
     styleId: defaultStyleId,
     settings: initialSettings,
-  }), [defaultModeId, defaultStyleId, definition, initialSettings, profile]);
+    ...(seed !== undefined ? { seed } : {}),
+  }), [defaultModeId, defaultStyleId, definition, initialSettings, profile, seed]);
 
   const handleReady = useCallback((engine: GameEngine): void => {
     const controller = engine.kernel.tryGet(ExperienceRuntimeControllerService);
@@ -147,6 +155,8 @@ export function ExperienceRuntime({
           createPlugins={createPlugins}
           ariaLabel={`${definition.name} game canvas`}
           onReady={handleReady}
+          {...(fixedFrameCapture ? { fixedFrameCapture } : {})}
+          {...(onFixedFrameCapture ? { onFixedFrameCapture } : {})}
           {...(canvasClassName ? { className: canvasClassName } : {})}
           {...(onError ? { onError } : {})}
         />
