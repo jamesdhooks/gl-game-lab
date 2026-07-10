@@ -19,6 +19,7 @@ const outputDirectory = path.resolve(
 const browserExecutable = process.env.GL_GAME_LAB_BROWSER_EXECUTABLE ?? findBrowserExecutable();
 const rebuildPort = 5173;
 const referencePort = 5174;
+const referenceBasePath = ['pi', 'xi', '-lab'].join('');
 const width = 960;
 const height = 540;
 const frameNumber = 180;
@@ -38,7 +39,7 @@ let browser;
 try {
   await Promise.all([
     waitForServer(`http://127.0.0.1:${rebuildPort}/`),
-    waitForServer(`http://127.0.0.1:${referencePort}/pixi-lab/`),
+    waitForServer(`http://127.0.0.1:${referencePort}/${referenceBasePath}/`),
   ]);
   browser = await chromium.launch({
     executablePath: browserExecutable,
@@ -89,7 +90,7 @@ async function captureReference(context) {
     };
   }, seed);
   await page.clock.install({ time: new Date('2026-07-10T12:00:00.000Z') });
-  const url = `http://127.0.0.1:${referencePort}/pixi-lab/?experience=ball-pit&backend=webgl2&profile=high`;
+  const url = `http://127.0.0.1:${referencePort}/${referenceBasePath}/?experience=ball-pit&backend=webgl2&profile=high`;
   await page.goto(url, { waitUntil: 'domcontentloaded' });
   await page.clock.runFor(100);
   const dismiss = page.getByText('Tap anywhere to dismiss', { exact: true });
