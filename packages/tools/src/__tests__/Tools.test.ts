@@ -6,6 +6,8 @@ import {
   InputReplay,
   compareCaptureSequences,
   compareRgba,
+  compareRgbaAtScale,
+  downsampleRgba,
 } from '../index.js';
 
 describe('frame capture and visual comparison', () => {
@@ -41,6 +43,36 @@ describe('frame capture and visual comparison', () => {
     left.capture(0);
     right.capture(0);
     expect(compareCaptureSequences(left.frames, right.frames).minimumSsim).toBe(1);
+  });
+
+  it('compares spatial composition at an explicit cell scale', () => {
+    const reference = new Uint8Array([
+      255, 0, 0, 255, 255, 0, 0, 255,
+      0, 0, 255, 255, 0, 0, 255, 255,
+    ]);
+    const candidate = new Uint8Array([
+      0, 0, 255, 255, 0, 0, 255, 255,
+      255, 0, 0, 255, 255, 0, 0, 255,
+    ]);
+    expect(compareRgba(reference, candidate, 2, 2).passed).toBe(false);
+    const scaled = compareRgbaAtScale(reference, candidate, 2, 2, 2, 0.99);
+    expect(scaled.ssim).toBe(1);
+    expect(scaled.spatialSimilarity).toBe(1);
+    expect(scaled.passed).toBe(true);
+    expect(scaled).toMatchObject({ cellSize: 2, width: 1, height: 1 });
+  });
+
+  it('downsamples partial edge cells without changing their average', () => {
+    const pixels = new Uint8Array(3 * 2 * 4).fill(0);
+    for (let offset = 0; offset < pixels.length; offset += 4) {
+      pixels[offset] = 120;
+      pixels[offset + 3] = 255;
+    }
+    expect(downsampleRgba(pixels, 3, 2, 2)).toEqual({
+      data: new Uint8Array([120, 0, 0, 255, 120, 0, 0, 255]),
+      width: 2,
+      height: 1,
+    });
   });
 });
 

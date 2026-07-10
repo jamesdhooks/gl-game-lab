@@ -40,9 +40,13 @@ approximately `25.22 ms` and `24.91 ms`; these are harness smoke measurements,
 not the final performance acceptance result. The browser console contained no
 warnings or errors.
 
-Static and dynamic parity remain pending until equivalent frozen-reference
-captures are collected and the committed comparison report satisfies the
-required SSIM and temporal tolerances.
+The strict static comparison uses frame 1 of the empty Rainbow play scene and
+requires `0.97` SSIM. The temporal comparison uses independently captured demo
+frames 60, 120, and 180. Each image is reduced to 32-pixel spatial cells before
+comparison, and the sequence must achieve at least `0.80` minimum spatial
+similarity and `0.90` mean spatial similarity. Independent browser contexts
+are used for every timestamp so state and WebGL resources cannot leak between
+captures.
 
 ## Frozen-reference comparison command
 
@@ -62,15 +66,13 @@ control.
 The verifier rejects uniform/blank images before computing SSIM. This prevents
 cleared WebGL drawing buffers from producing false perfect scores.
 
-The first valid frame-180 Rainbow comparison scored `0.14656` SSIM with mean
-absolute luminance error `0.18322`. Both browser error lists were empty. The
-failure is expected evidence: the frozen scene currently has a palette-driven
-side-view backdrop, larger shaded spheres, and a different occupied-pixel
-distribution. Those gaps must be closed before the visual gate can pass.
+The empty Rainbow play captures are byte-identical: SSIM `1.0`, zero mean
+absolute error, and matching SHA-256 hashes. With the frozen spawn position,
+velocity, color hash, and per-pass collision relaxation preserved, the demo
+sequence scores `0.82751`, `0.94885`, and `0.94932` spatial similarity at frames
+60, 120, and 180. The minimum is `0.82751` and the mean is `0.90856`, satisfying
+the declared temporal gate without increasing the frozen `1200/sec` spawn
+rate. All reference and rebuild browser error lists are empty.
 
-After moving the frozen side-view palette backdrop and sphere/rim lighting into
-shared renderer passes, the same capture improved to `0.18752` SSIM and reduced
-mean absolute luminance error to `0.15857`. The remaining dominant mismatch is
-the per-particle spatial distribution, which requires a scene-specific dynamic
-sequence metric rather than treating independently solved particle coordinates
-as a static pixel image.
+These numbers certify Rainbow in the Single mode only. The other styles and
+modes remain separate parity obligations.

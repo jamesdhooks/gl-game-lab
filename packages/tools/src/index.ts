@@ -11,6 +11,10 @@ export {
 export {
   compareCaptureSequences,
   compareRgba,
+  compareRgbaAtScale,
+  downsampleRgba,
+  type DownsampledRgba,
+  type ScaledVisualComparison,
   type SequenceVisualComparison,
   type VisualComparison,
 } from './VisualComparison.js';

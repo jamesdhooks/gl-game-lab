@@ -13,11 +13,11 @@ Frozen behavior reference: `1273b5f4145c5e9e87123cba535f5cc939a77a61`.
 | Normal play | Implemented | Starts empty and responds to deterministic pointer input. |
 | Shared runtime host | Implemented | Browser QA confirmed engine `running`, empty normal play, four mode controls, ten-style selection, mode-filtered settings, power-of-two display, tutorial dialog, point-shader spawn, live Neon bloom switching, and no console warnings or errors. |
 | Preview | Partial | Uses the frozen reduced physics profile and deterministic 14-per-second automatic spawn. The fixed-step capture route is ready; the equivalent frozen-reference comparison is still required. |
-| Demo | Partial | Deterministic automatic spawn, timed falling-floor cycle, and escaped-particle pruning are implemented. Rebuild frame-180 capture repeatability is proven; the frozen frame sequence is still required. |
+| Demo | Partial | Deterministic automatic spawn preserves the frozen 1,200-per-second rate, timed falling-floor cycle, and escaped-particle pruning. Rainbow Single passes the frozen three-frame temporal gate; the remaining styles and modes require capture. |
 | AI autoplay | Not applicable | Frozen capability is disabled. |
 | Rendering scale | Partial | Typed-array uniform-grid physics and the dedicated GPU point renderer now avoid per-particle objects. The 65,536 default budget still requires formal p95 evidence and any resulting tuning. |
-| Static visual tolerance | Pending | The automated frozen/rebuild capture command is operational. Shared backdrop and sphere shading raised the frame-180 Rainbow pixel score from `0.14656` to `0.18752`; a dedicated empty/static capture is still required for the `0.97` gate. |
-| Dynamic visual tolerance | Pending | Requires deterministic frame-sequence comparison for every mode and style. The current single-frame command is the baseline, not sufficient temporal evidence. |
+| Static visual tolerance | Partial | Empty Rainbow play captures are byte-identical at frame 1: SSIM `1.0`, zero error, and matching SHA-256 hashes. The other nine styles still require authoritative captures. |
+| Dynamic visual tolerance | Partial | Rainbow Single passes the declared 32-pixel-cell sequence gate: frame similarities `0.82751`, `0.94885`, and `0.94932`; minimum `0.82751` and mean `0.90856`. The remaining mode/style combinations are pending. |
 | Performance budget | Partial | An equivalent synthetic 65,536-body zero-collision CPU sample measured `52.59 ms` p95 versus `155.15 ms` for the frozen solver. Formal browser CPU/GPU p95 captures under representative collisions are still required. |
 
 The experience ledger must remain `pending` until every pending and partial row

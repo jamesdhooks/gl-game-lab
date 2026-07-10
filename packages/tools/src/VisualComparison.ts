@@ -13,6 +13,19 @@ export interface SequenceVisualComparison {
   readonly frames: readonly VisualComparison[];
 }
 
+export interface ScaledVisualComparison extends VisualComparison {
+  readonly spatialSimilarity: number;
+  readonly cellSize: number;
+  readonly width: number;
+  readonly height: number;
+}
+
+export interface DownsampledRgba {
+  readonly data: Uint8Array;
+  readonly width: number;
+  readonly height: number;
+}
+
 export function compareRgba(
   reference: Uint8Array,
   candidate: Uint8Array,
@@ -60,6 +73,64 @@ export function compareCaptureSequences(
   const minimumSsim = Math.min(...values);
   const meanSsim = values.reduce((sum, value) => sum + value, 0) / values.length;
   return Object.freeze({ minimumSsim, meanSsim, passed: frames.every((frame) => frame.passed), frames: Object.freeze(frames) });
+}
+
+export function compareRgbaAtScale(
+  reference: Uint8Array,
+  candidate: Uint8Array,
+  width: number,
+  height: number,
+  cellSize: number,
+  threshold = 0.9,
+): ScaledVisualComparison {
+  validateImages(reference, candidate, width, height);
+  validateThreshold(threshold);
+  const expected = downsampleRgba(reference, width, height, cellSize);
+  const actual = downsampleRgba(candidate, width, height, cellSize);
+  const comparison = compareRgba(expected.data, actual.data, expected.width, expected.height, 0);
+  const spatialSimilarity = 1 - comparison.meanAbsoluteError;
+  return Object.freeze({
+    ...comparison,
+    spatialSimilarity,
+    passed: spatialSimilarity >= threshold,
+    cellSize,
+    width: expected.width,
+    height: expected.height,
+  });
+}
+
+export function downsampleRgba(pixels: Uint8Array, width: number, height: number, cellSize: number): DownsampledRgba {
+  validateImages(pixels, pixels, width, height);
+  if (!Number.isSafeInteger(cellSize) || cellSize < 1 || cellSize > Math.max(width, height)) {
+    throw new Error('Visual cell size must be a positive integer within the image bounds');
+  }
+  const outputWidth = Math.ceil(width / cellSize);
+  const outputHeight = Math.ceil(height / cellSize);
+  const data = new Uint8Array(outputWidth * outputHeight * 4);
+  for (let outputY = 0; outputY < outputHeight; outputY += 1) {
+    for (let outputX = 0; outputX < outputWidth; outputX += 1) {
+      const totals = [0, 0, 0, 0];
+      let count = 0;
+      const endY = Math.min(height, (outputY + 1) * cellSize);
+      const endX = Math.min(width, (outputX + 1) * cellSize);
+      for (let y = outputY * cellSize; y < endY; y += 1) {
+        for (let x = outputX * cellSize; x < endX; x += 1) {
+          const offset = (y * width + x) * 4;
+          totals[0] = (totals[0] ?? 0) + (pixels[offset] ?? 0);
+          totals[1] = (totals[1] ?? 0) + (pixels[offset + 1] ?? 0);
+          totals[2] = (totals[2] ?? 0) + (pixels[offset + 2] ?? 0);
+          totals[3] = (totals[3] ?? 0) + (pixels[offset + 3] ?? 0);
+          count += 1;
+        }
+      }
+      const outputOffset = (outputY * outputWidth + outputX) * 4;
+      data[outputOffset] = Math.round((totals[0] ?? 0) / count);
+      data[outputOffset + 1] = Math.round((totals[1] ?? 0) / count);
+      data[outputOffset + 2] = Math.round((totals[2] ?? 0) / count);
+      data[outputOffset + 3] = Math.round((totals[3] ?? 0) / count);
+    }
+  }
+  return Object.freeze({ data, width: outputWidth, height: outputHeight });
 }
 
 function compareWindow(
