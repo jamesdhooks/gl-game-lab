@@ -51,4 +51,31 @@ describe('GameEngine', () => {
     expect(engine.state).toBe('destroyed');
     expect(() => engine.assets.createGroup('after-destroy')).toThrow('destroyed');
   });
+
+  it('advances platform-fed input before update systems run', async () => {
+    const observed: boolean[] = [];
+    const engine = new GameEngine({
+      plugins: [{
+        id: 'game.input-observer',
+        version: '1.0.0',
+        dependencies: [{ id: GAME_ENGINE_RUNTIME_PLUGIN_ID }],
+        install: (context) => {
+          const input = context.get(EngineInput);
+          context.get(EngineSchedule).addSystem({
+            id: 'game.input-observer.update',
+            stage: 'update',
+            run: () => { observed.push(input.snapshot.isKeyPressed('KeyW')); },
+          });
+        },
+      }],
+    });
+    await engine.initialize();
+    await engine.start();
+    engine.input.ingest({ kind: 'key', phase: 'down', code: 'KeyW', key: 'w' });
+
+    engine.frame(1 / 60);
+
+    expect(observed).toEqual([true]);
+    await engine.destroy();
+  });
 });

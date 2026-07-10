@@ -29,6 +29,15 @@ importers:
         specifier: workspace:*
         version: link:../core
 
+  packages/platform-web:
+    dependencies:
+      '@hooksjam/gl-game-lab-core':
+        specifier: workspace:*
+        version: link:../core
+      '@hooksjam/gl-game-lab-engine':
+        specifier: workspace:*
+        version: link:../engine
+
   packages/render-webgl2:
     dependencies:
       '@hooksjam/gl-game-lab-core':
