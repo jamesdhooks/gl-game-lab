@@ -17,6 +17,11 @@ export {
   type DenseCircleParticleStats,
 } from './DenseCircleParticleWorld2D.js';
 export {
+  ConstrainedCircleParticleWorld2D,
+  type ConstrainedCircleParticleStats,
+  type DistanceConstraintOptions,
+} from './ConstrainedCircleParticleWorld2D.js';
+export {
   DENSE_CIRCLE_PARTICLE_PLUGIN_ID,
   DenseCircleParticleWorld2DService,
   createDenseCircleParticlePlugin,
