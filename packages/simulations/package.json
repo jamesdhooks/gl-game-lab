@@ -1,0 +1,24 @@
+{
+  "name": "@hooksjam/gl-game-lab-simulations",
+  "version": "0.0.0",
+  "description": "GPU-first simulation content for GLGameLab",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": { "import": "./dist/index.js", "types": "./dist/index.d.ts" }
+  },
+  "files": ["dist", "README.md"],
+  "scripts": {
+    "build": "tsc --build --force tsconfig.json",
+    "typecheck": "tsc --noEmit --project tsconfig.json",
+    "test": "vitest run --passWithNoTests",
+    "clean": "tsc --build --clean tsconfig.json"
+  },
+  "dependencies": {
+    "@hooksjam/gl-game-lab-core": "workspace:*",
+    "@hooksjam/gl-game-lab-engine": "workspace:*",
+    "@hooksjam/gl-game-lab-render-webgl2": "workspace:*"
+  },
+  "license": "UNLICENSED"
+}

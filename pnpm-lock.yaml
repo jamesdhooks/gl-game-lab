@@ -46,6 +46,9 @@ importers:
       '@hooksjam/gl-game-lab-render-webgl2':
         specifier: workspace:*
         version: link:../render-webgl2
+      '@hooksjam/gl-game-lab-simulations':
+        specifier: workspace:*
+        version: link:../simulations
       react:
         specifier: ^18.3.0
         version: 18.3.1
@@ -144,6 +147,18 @@ importers:
       '@hooksjam/gl-game-lab-engine':
         specifier: workspace:*
         version: link:../engine
+
+  packages/simulations:
+    dependencies:
+      '@hooksjam/gl-game-lab-core':
+        specifier: workspace:*
+        version: link:../core
+      '@hooksjam/gl-game-lab-engine':
+        specifier: workspace:*
+        version: link:../engine
+      '@hooksjam/gl-game-lab-render-webgl2':
+        specifier: workspace:*
+        version: link:../render-webgl2
 
   packages/tools:
     dependencies:

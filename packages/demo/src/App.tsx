@@ -1,22 +1,26 @@
 import { ExperienceRuntime } from '@hooksjam/gl-game-lab-react';
 import { ballPitDefinition } from '@hooksjam/gl-game-lab-games';
+import { harmonicSandDefinition } from '@hooksjam/gl-game-lab-simulations';
 import './index.css';
 import { parseDemoCaptureOptions } from './captureOptions.js';
 import { ballPitCaptureInputEvents } from './ballPitCaptureScenarios.js';
 
 export function App(): JSX.Element {
   const capture = parseDemoCaptureOptions(window.location.search);
+  const experience = new URLSearchParams(window.location.search).get('experience') === 'harmonic-sand'
+    ? harmonicSandDefinition
+    : ballPitDefinition;
   return (
     <main className={capture.enabled ? 'shell capture-shell' : 'shell'}>
       {!capture.enabled && (
         <section className="intro">
-          <p className="eyebrow">First migrated experience</p>
-          <h1>{ballPitDefinition.name}</h1>
-          <p>{ballPitDefinition.long}</p>
+          <p className="eyebrow">GPU-first experience</p>
+          <h1>{experience.name}</h1>
+          <p>{experience.long}</p>
         </section>
       )}
       <ExperienceRuntime
-        definition={ballPitDefinition}
+        definition={experience}
         profile={capture.enabled ? capture.profile : 'play'}
         {...(capture.enabled ? { seed: capture.seed } : {})}
         {...(capture.enabled && capture.modeId ? { initialModeId: capture.modeId } : {})}
@@ -25,7 +29,7 @@ export function App(): JSX.Element {
         {...(capture.enabled ? { fixedFrameCapture: {
           frameNumber: capture.frameNumber,
           fixedDeltaSeconds: capture.fixedDeltaSeconds,
-          inputEvents: ballPitCaptureInputEvents(capture.scenarioId),
+          inputEvents: experience.id === 'ball-pit' ? ballPitCaptureInputEvents(capture.scenarioId) : [],
         } } : {})}
         className="surface"
         canvasClassName="game-canvas"

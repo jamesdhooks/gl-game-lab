@@ -16,6 +16,7 @@
     "@hooksjam/gl-game-lab-games": "workspace:*",
     "@hooksjam/gl-game-lab-react": "workspace:*",
     "@hooksjam/gl-game-lab-render-webgl2": "workspace:*",
+    "@hooksjam/gl-game-lab-simulations": "workspace:*",
     "react": "^18.3.0",
     "react-dom": "^18.3.0"
   },
