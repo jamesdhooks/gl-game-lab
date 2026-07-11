@@ -1,6 +1,7 @@
 import { createExtensionToken, type EnginePlugin } from '@hooksjam/gl-game-lab-core';
 import {
   EngineRender2D,
+  EngineGpu2D,
   EngineRenderer,
   EngineSchedule,
   EngineWorld,
@@ -57,6 +58,7 @@ import { DensityMetaballRenderer } from './DensityMetaballRenderer.js';
 import { StableFluidField2D } from './StableFluidField2D.js';
 import type { GpuParticleRenderDestination } from './GpuParticleRenderer.js';
 import type { RestorableResourceOwner } from './RestorableResourceOwner.js';
+import { WebGLGpu2DService } from './WebGLGpu2DService.js';
 
 export interface WebGL2RendererOptions {
   readonly device?: WebGL2DeviceOptions;
@@ -168,6 +170,7 @@ export class WebGL2Renderer implements RenderBackend, Render2DService {
   readonly particles: ParticlePointRenderQueue;
   readonly effects: FullscreenEffectRenderQueue;
   readonly gpuPasses: GpuRenderPassQueue;
+  readonly gpu2D: WebGLGpu2DService;
   private spriteRenderer: SpriteRenderer;
   private particleRenderer: ParticlePointRenderer;
   private effectRenderer: FullscreenEffectRenderer;
@@ -216,6 +219,7 @@ export class WebGL2Renderer implements RenderBackend, Render2DService {
     this.particles = new ParticlePointRenderQueue();
     this.effects = new FullscreenEffectRenderQueue();
     this.gpuPasses = new GpuRenderPassQueue();
+    this.gpu2D = new WebGLGpu2DService(this.device, this.gpuPasses);
     this.spriteRenderer = new SpriteRenderer(this.device);
     this.particleRenderer = new ParticlePointRenderer(this.device);
     this.effectRenderer = new FullscreenEffectRenderer(this.device);
@@ -516,6 +520,7 @@ export class WebGL2Renderer implements RenderBackend, Render2DService {
     this.particles.clear();
     this.effects.clear();
     this.gpuPasses.clear();
+    this.gpu2D.destroy();
     for (const field of [...this.fluidFields]) field.dispose();
     this.fluidFields.clear();
     for (const font of [...this.fonts2D.values()]) this.destroyBitmapFont(font.handle);
@@ -590,6 +595,7 @@ export function createWebGL2RendererPlugin(
     dependencies: [{ id: 'gl-game-lab.runtime' }],
     install: (context) => {
       context.provide(EngineRender2D, renderer);
+      context.provide(EngineGpu2D, renderer.gpu2D);
       context.provide(EngineRenderer, renderer);
       context.provide(WebGL2RendererService, renderer);
       context.provide(SpriteRenderQueueService, renderer.sprites);

@@ -13,6 +13,7 @@ export {
   EngineInputSources,
   EngineRenderer,
   EngineRender2D,
+  EngineGpu2D,
   EngineSchedule,
   EngineScenes,
   EngineSchemas,
@@ -75,6 +76,18 @@ export {
   type UvRect,
 } from './Render2D.js';
 export { InputSourceRegistry, type InputSource } from './InputSourceRegistry.js';
+export {
+  type Gpu2DService,
+  type GpuFieldSystem2D,
+  type GpuFieldSystem2DOptions,
+  type GpuRenderTarget2D,
+  type GpuUniform2D,
+  type GpuUniformBinder2D,
+  type GpuUniformEncoder2D,
+  type GpuUniformLocation2D,
+  type GpuUniformLookup2D,
+  type GpuUniforms2D,
+} from './Gpu2D.js';
 export {
   ExperienceRegistry,
   ExperienceRuntimeControllerService,

@@ -1,6 +1,5 @@
 import { createExtensionToken, type EnginePlugin, type PointerInputEvent } from '@hooksjam/gl-game-lab-core';
-import { EngineInput, EngineSchedule, ExperienceRuntimeControllerService, type ExperienceLaunchOptions, type ExperienceRuntimeController, type ExperienceSettingValue } from '@hooksjam/gl-game-lab-engine';
-import { GpuFieldPass, GpuFieldState, GpuRenderPassQueueService, WEBGL2_RENDERER_PLUGIN_ID, WebGL2RendererService } from '@hooksjam/gl-game-lab-render-webgl2';
+import { EngineGpu2D, EngineInput, EngineRender2D, EngineSchedule, ExperienceRuntimeControllerService, type ExperienceLaunchOptions, type ExperienceRuntimeController, type ExperienceSettingValue, type GpuFieldSystem2D } from '@hooksjam/gl-game-lab-engine';
 import { createTuringSkinConfig, TURING_SKIN_DEFAULTS, type TuringSkinConfig } from './config.js';
 import { TURING_DISPLAY_SHADER, TURING_SEED_SHADER, TURING_SPLAT_SHADER, TURING_STEP_SHADER } from './shaders.js';
 import { turingColor3, TURING_SKIN_STYLE_MANIFEST } from './styles.js';
@@ -10,13 +9,6 @@ interface Splat {
   y: number;
   radius: number;
   strength: number;
-}
-interface TuringSkinGpuResources {
-  field: GpuFieldState;
-  readonly seedPass: GpuFieldPass;
-  readonly stepPass: GpuFieldPass;
-  readonly splatPass: GpuFieldPass;
-  readonly displayPass: GpuFieldPass;
 }
 export interface TuringSkinController extends ExperienceRuntimeController {
   readonly mode: TuringSkinMode;
@@ -30,20 +22,11 @@ export function createTuringSkinPlugin(initial: TuringSkinConfig = TURING_SKIN_D
   return {
     id: TURING_SKIN_PLUGIN_ID,
     version: '1.0.0',
-    dependencies: [
-      {
-        id: WEBGL2_RENDERER_PLUGIN_ID
-      }
-    ],
+    dependencies: [{ id: 'gl-game-lab.runtime' }],
     install: context => {
-      const renderer = context.get(WebGL2RendererService), input = context.get(EngineInput), gpuPasses = context.get(GpuRenderPassQueueService), gl = renderer.device.gl;
-      const gpuResources = renderer.device.ownContextResource<TuringSkinGpuResources>({
-        id: `${TURING_SKIN_PLUGIN_ID}.gpu`, priority: 50,
-        create: createGpuResources, dispose: disposeGpuResources,
-        invalidate: () => { randomState = normalizeSeed(launch.seed); },
-        restored: resetCpuState,
-      });
-      cleanup = () => { gpuResources.dispose(); };
+      const renderer = context.get(EngineRender2D), gpu = context.get(EngineGpu2D), input = context.get(EngineInput);
+      let field = createField(), observedGeneration = field.generation;
+      cleanup = () => { field.dispose(); };
       applyStyle();
       const controller: TuringSkinController = {
         get mode() {
@@ -61,10 +44,9 @@ export function createTuringSkinPlugin(initial: TuringSkinConfig = TURING_SKIN_D
           });
         },
         get fieldResolution() {
-          return gpuResources.value.field.width;
+          return field.width;
         },
         get entityCount() {
-          const { field } = gpuResources.value;
           return field.width * field.height;
         },
         setMode: value => {
@@ -88,7 +70,7 @@ export function createTuringSkinPlugin(initial: TuringSkinConfig = TURING_SKIN_D
           rebuild ||= previousResolution !== config.resolution || previousPattern !== config.renderStyle;
         },
         reset: () => {
-          gpuResources.value.field.clear();
+          field.clear();
           randomState = normalizeSeed(launch.seed);
           resetCpuState();
         }
@@ -119,19 +101,21 @@ export function createTuringSkinPlugin(initial: TuringSkinConfig = TURING_SKIN_D
         id: 'gl-game-lab.simulations.turing-skin.render',
         stage: 'renderExtract',
         run: () => {
-          gpuPasses.submit({
-            id: 'turing-skin.reaction-field',
-            execute: destination => {
-              const resources = gpuResources.value;
+          gpu.submit('turing-skin.reaction-field', destination => {
+              if (field.generation !== observedGeneration) {
+                observedGeneration = field.generation;
+                randomState = normalizeSeed(launch.seed);
+                resetCpuState();
+              }
               if (rebuild) {
-                resources.field.dispose();
-                resources.field = createField();
+                field.dispose();
+                field = createField();
+                observedGeneration = field.generation;
                 rebuild = false;
                 needsSeed = true;
               }
-              const { field, seedPass, stepPass, splatPass, displayPass } = resources;
               if (needsSeed) {
-                seedPass.step(field, (g, u) => {
+                field.step('seed', (g, u) => {
                   g.uniform1i(u('uPattern'), config.renderStyle === 'bands' ? 1 : 0);
                   g.uniform1f(u('uSeed'), nextRandom() * 1000);
                 });
@@ -142,7 +126,7 @@ export function createTuringSkinPlugin(initial: TuringSkinConfig = TURING_SKIN_D
               if (dt > 0) {
                 const steps = Math.max(1, Math.min(launch.profile === 'preview' ? 2 : 8, Math.ceil(dt * 90))), subDt = Math.max(0.08, Math.min(1, dt * 60 / steps));
                 for (let index = 0; index < steps; index++)
-                  stepPass.step(field, (g, u) => {
+                  field.step('step', (g, u) => {
                     g.uniform2f(u('uTexel'), 1 / field.width, 1 / field.height);
                     g.uniform1f(u('uFeed'), config.feedRate);
                     g.uniform1f(u('uKill'), config.killRate);
@@ -152,25 +136,24 @@ export function createTuringSkinPlugin(initial: TuringSkinConfig = TURING_SKIN_D
                   });
               }
               for (const splat of splats.splice(0))
-                splatPass.step(field, (g, u) => {
+                field.step('splat', (g, u) => {
                   g.uniform2f(u('uPoint'), splat.x, splat.y);
                   g.uniform1f(u('uRadius'), splat.radius);
                   g.uniform1f(u('uStrength'), splat.strength);
                 });
               const style = requireStyle(), palette = new Float32Array(12);
               style.palette.slice(0, 4).forEach((color, index) => palette.set(turingColor3(color), index * 3));
-              displayPass.render(field, destination, (g, u) => {
+              field.render('display', destination, (g, u) => {
                 g.uniform3fv(u('uPalette[0]'), palette);
                 g.uniform3fv(u('uBackground'), new Float32Array(turingColor3(style.background)));
               });
-            }
           });
         }
       });
       function routePointer(event: PointerInputEvent): void {
         if (event.phase !== 'down' && event.phase !== 'move')
           return;
-        const width = Math.max(1, renderer.sprites.activeCamera.viewportWidth), height = Math.max(1, renderer.sprites.activeCamera.viewportHeight);
+        const width = Math.max(1, renderer.viewport.width), height = Math.max(1, renderer.viewport.height);
         splats.push({
           x: Math.max(0, Math.min(1, event.x / width)),
           y: Math.max(0, Math.min(1, 1 - event.y / height)),
@@ -178,31 +161,15 @@ export function createTuringSkinPlugin(initial: TuringSkinConfig = TURING_SKIN_D
           strength: config.brushStrength * (mode === 'erase' ? -1 : 1)
         });
       }
-      function createField(): GpuFieldState {
-        const requested = config.resolution, resolution = launch.profile === 'preview' ? Math.min(256, requested) : requested, aspect = renderer.sprites.activeCamera.viewportHeight / Math.max(1, renderer.sprites.activeCamera.viewportWidth), rows = Math.max(1, Math.round(resolution * aspect));
-        return new GpuFieldState(gl, {
+      function createField(): GpuFieldSystem2D {
+        const requested = config.resolution, resolution = launch.profile === 'preview' ? Math.min(256, requested) : requested, aspect = renderer.viewport.height / Math.max(1, renderer.viewport.width), rows = Math.max(1, Math.round(resolution * aspect));
+        return gpu.createFieldSystem(`${TURING_SKIN_PLUGIN_ID}.field`, {
           width: resolution,
           height: rows,
           precision: 'half-float',
-          filter: 'linear'
+          filter: 'linear',
+          passes: { seed: TURING_SEED_SHADER, step: TURING_STEP_SHADER, splat: TURING_SPLAT_SHADER, display: TURING_DISPLAY_SHADER }
         });
-      }
-      function createGpuResources(): TuringSkinGpuResources {
-        const disposers: Array<() => void> = [];
-        try {
-          const field = createField(); disposers.push(() => { field.dispose(); });
-          const seedPass = new GpuFieldPass(gl, TURING_SEED_SHADER); disposers.push(() => { seedPass.dispose(); });
-          const stepPass = new GpuFieldPass(gl, TURING_STEP_SHADER); disposers.push(() => { stepPass.dispose(); });
-          const splatPass = new GpuFieldPass(gl, TURING_SPLAT_SHADER); disposers.push(() => { splatPass.dispose(); });
-          const displayPass = new GpuFieldPass(gl, TURING_DISPLAY_SHADER); disposers.push(() => { displayPass.dispose(); });
-          return { field, seedPass, stepPass, splatPass, displayPass };
-        } catch (error) {
-          for (const dispose of disposers.reverse()) dispose();
-          throw error;
-        }
-      }
-      function disposeGpuResources(resources: TuringSkinGpuResources): void {
-        resources.displayPass.dispose(); resources.splatPass.dispose(); resources.stepPass.dispose(); resources.seedPass.dispose(); resources.field.dispose();
       }
       function resetCpuState(): void {
         splats.length = 0; needsSeed = true; pendingDt = 0; elapsed = 0;
@@ -215,7 +182,7 @@ export function createTuringSkinPlugin(initial: TuringSkinConfig = TURING_SKIN_D
           background[2],
           1
         ]);
-        renderer.setPaletteBackdrop(undefined);
+        renderer.setBackdrop(undefined);
         renderer.setBloom({
           enabled: false
         });

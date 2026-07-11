@@ -1,6 +1,5 @@
 import { createExtensionToken, type EnginePlugin } from '@hooksjam/gl-game-lab-core';
-import { EngineInput, EngineSchedule, ExperienceRuntimeControllerService, type ExperienceLaunchOptions, type ExperienceRuntimeController, type ExperienceSettingValue } from '@hooksjam/gl-game-lab-engine';
-import { GpuFieldPass, GpuFieldState, GpuRenderPassQueueService, WEBGL2_RENDERER_PLUGIN_ID, WebGL2RendererService } from '@hooksjam/gl-game-lab-render-webgl2';
+import { EngineGpu2D, EngineInput, EngineRender2D, EngineSchedule, ExperienceRuntimeControllerService, type ExperienceLaunchOptions, type ExperienceRuntimeController, type ExperienceSettingValue, type GpuFieldSystem2D } from '@hooksjam/gl-game-lab-engine';
 import { createMyceliumConfig, MYCELIUM_DEFAULTS, myceliumNumber, myceliumString, type MyceliumConfig } from './config.js';
 import { MYCELIUM_DISPLAY_SHADER, MYCELIUM_SEED_SHADER, MYCELIUM_SPLAT_SHADER, MYCELIUM_STEP_SHADER } from './shaders.js';
 import { myceliumColor3, MYCELIUM_STYLE_MANIFEST } from './styles.js';
@@ -9,13 +8,6 @@ interface Splat {
   y: number;
   radius: number;
   strain: number;
-}
-interface MyceliumGpuResources {
-  field: GpuFieldState;
-  readonly seedPass: GpuFieldPass;
-  readonly stepPass: GpuFieldPass;
-  readonly splatPass: GpuFieldPass;
-  readonly displayPass: GpuFieldPass;
 }
 export interface MyceliumController extends ExperienceRuntimeController {
   readonly fieldResolution: number;
@@ -28,20 +20,11 @@ export function createMyceliumPlugin(initial: MyceliumConfig = MYCELIUM_DEFAULTS
   return {
     id: MYCELIUM_PLUGIN_ID,
     version: '1.0.0',
-    dependencies: [
-      {
-        id: WEBGL2_RENDERER_PLUGIN_ID
-      }
-    ],
+    dependencies: [{ id: 'gl-game-lab.runtime' }],
     install: context => {
-      const renderer = context.get(WebGL2RendererService), input = context.get(EngineInput), gpuPasses = context.get(GpuRenderPassQueueService), gl = renderer.device.gl;
-      const gpuResources = renderer.device.ownContextResource<MyceliumGpuResources>({
-        id: `${MYCELIUM_PLUGIN_ID}.gpu`, priority: 50,
-        create: createGpuResources, dispose: disposeGpuResources,
-        invalidate: () => { randomState = seedValue(launch.seed); },
-        restored: resetCpuState,
-      });
-      cleanup = () => { gpuResources.dispose(); };
+      const renderer = context.get(EngineRender2D), gpu = context.get(EngineGpu2D), input = context.get(EngineInput);
+      let field = createField(), observedGeneration = field.generation;
+      cleanup = () => { field.dispose(); };
       applyStyle();
       const controller: MyceliumController = {
         get modeId() {
@@ -56,10 +39,9 @@ export function createMyceliumPlugin(initial: MyceliumConfig = MYCELIUM_DEFAULTS
           });
         },
         get fieldResolution() {
-          return gpuResources.value.field.width;
+          return field.width;
         },
         get entityCount() {
-          const { field } = gpuResources.value;
           return field.width * field.height;
         },
         setMode: value => {
@@ -82,7 +64,7 @@ export function createMyceliumPlugin(initial: MyceliumConfig = MYCELIUM_DEFAULTS
           rebuild ||= oldResolution !== myceliumNumber(config, 'resolution') || oldTopology !== myceliumString(config, 'topology');
         },
         reset: () => {
-          gpuResources.value.field.clear();
+          field.clear();
           randomState = seedValue(launch.seed);
           resetCpuState();
         }
@@ -98,7 +80,7 @@ export function createMyceliumPlugin(initial: MyceliumConfig = MYCELIUM_DEFAULTS
           elapsed += dt;
           for (const event of input.snapshot.events)
             if (event.kind === 'pointer' && (event.phase === 'down' || event.phase === 'move')) {
-              const width = Math.max(1, renderer.sprites.activeCamera.viewportWidth), height = Math.max(1, renderer.sprites.activeCamera.viewportHeight);
+              const width = Math.max(1, renderer.viewport.width), height = Math.max(1, renderer.viewport.height);
               splats.push({
                 x: Math.max(0, Math.min(1, event.x / width)),
                 y: Math.max(0, Math.min(1, 1 - event.y / height)),
@@ -119,20 +101,22 @@ export function createMyceliumPlugin(initial: MyceliumConfig = MYCELIUM_DEFAULTS
         id: 'gl-game-lab.simulations.mycelium.render',
         stage: 'renderExtract',
         run: () => {
-          gpuPasses.submit({
-            id: 'mycelium.cellular-field',
-            execute: destination => {
-              const resources = gpuResources.value;
+          gpu.submit('mycelium.cellular-field', destination => {
+              if (field.generation !== observedGeneration) {
+                observedGeneration = field.generation;
+                randomState = seedValue(launch.seed);
+                resetCpuState();
+              }
               if (rebuild) {
-                resources.field.dispose();
-                resources.field = createField();
+                field.dispose();
+                field = createField();
+                observedGeneration = field.generation;
                 rebuild = false;
                 needsSeed = true;
               }
-              const { field, seedPass, stepPass, splatPass, displayPass } = resources;
               if (needsSeed) {
                 const configured = Math.round(myceliumNumber(config, 'demoSeedColonies')), colonies = configured > 0 ? configured : (launch.profile === 'preview' || launch.profile === 'demo' ? 4 : 0);
-                seedPass.step(field, (g, u) => {
+                field.step('seed', (g, u) => {
                   g.uniform1f(u('uSeed'), nextRandom() * 1000);
                   g.uniform1i(u('uColonies'), colonies);
                   g.uniform1f(u('uSeedRadius'), myceliumNumber(config, 'demoSeedRadius'));
@@ -144,7 +128,7 @@ export function createMyceliumPlugin(initial: MyceliumConfig = MYCELIUM_DEFAULTS
               if (dt > 0) {
                 const steps = Math.max(1, Math.min(launch.profile === 'preview' ? 3 : 7, Math.ceil(dt * 90)));
                 for (let index = 0; index < steps; index++)
-                  stepPass.step(field, (g, u) => {
+                  field.step('step', (g, u) => {
                     g.uniform2f(u('uTexel'), 1 / field.width, 1 / field.height);
                     g.uniform2f(u('uGrid'), field.width, field.height);
                     g.uniform1f(u('uGrowthRate'), myceliumNumber(config, 'growthRate'));
@@ -161,14 +145,14 @@ export function createMyceliumPlugin(initial: MyceliumConfig = MYCELIUM_DEFAULTS
                   });
               }
               for (const splat of splats.splice(0))
-                splatPass.step(field, (g, u) => {
+                field.step('splat', (g, u) => {
                   g.uniform2f(u('uPoint'), splat.x, splat.y);
                   g.uniform1f(u('uRadius'), splat.radius);
                   g.uniform1f(u('uStrain'), splat.strain);
                 });
               const style = requireStyle(), palette = new Float32Array(24);
               style.palette.slice(0, 8).forEach((color, index) => palette.set(myceliumColor3(color), index * 3));
-              displayPass.render(field, destination, (g, u) => {
+              field.render('display', destination, (g, u) => {
                 g.uniform2f(u('uGrid'), field.width, field.height);
                 g.uniform3fv(u('uPalette[0]'), palette);
                 g.uniform3fv(u('uBackground'), new Float32Array(myceliumColor3(style.background)));
@@ -177,35 +161,18 @@ export function createMyceliumPlugin(initial: MyceliumConfig = MYCELIUM_DEFAULTS
                 g.uniform1i(u('uVisualStyle'), visual === 'basic' ? 0 : visual === 'enhanced' ? 1 : 2);
                 g.uniform1f(u('uFieldSpread'), myceliumNumber(config, 'fieldSpread'));
               });
-            }
           });
         }
       });
-      function createField() {
-        const requested = myceliumNumber(config, 'resolution'), resolution = launch.profile === 'preview' ? Math.min(256, requested) : requested, aspect = renderer.sprites.activeCamera.viewportHeight / Math.max(1, renderer.sprites.activeCamera.viewportWidth);
-        return new GpuFieldState(gl, {
+      function createField(): GpuFieldSystem2D {
+        const requested = myceliumNumber(config, 'resolution'), resolution = launch.profile === 'preview' ? Math.min(256, requested) : requested, aspect = renderer.viewport.height / Math.max(1, renderer.viewport.width);
+        return gpu.createFieldSystem(`${MYCELIUM_PLUGIN_ID}.field`, {
           width: Math.round(resolution),
           height: Math.max(1, Math.round(resolution * aspect)),
           precision: 'half-float',
-          filter: 'nearest'
+          filter: 'nearest',
+          passes: { seed: MYCELIUM_SEED_SHADER, step: MYCELIUM_STEP_SHADER, splat: MYCELIUM_SPLAT_SHADER, display: MYCELIUM_DISPLAY_SHADER }
         });
-      }
-      function createGpuResources(): MyceliumGpuResources {
-        const disposers: Array<() => void> = [];
-        try {
-          const field = createField(); disposers.push(() => { field.dispose(); });
-          const seedPass = new GpuFieldPass(gl, MYCELIUM_SEED_SHADER); disposers.push(() => { seedPass.dispose(); });
-          const stepPass = new GpuFieldPass(gl, MYCELIUM_STEP_SHADER); disposers.push(() => { stepPass.dispose(); });
-          const splatPass = new GpuFieldPass(gl, MYCELIUM_SPLAT_SHADER); disposers.push(() => { splatPass.dispose(); });
-          const displayPass = new GpuFieldPass(gl, MYCELIUM_DISPLAY_SHADER); disposers.push(() => { displayPass.dispose(); });
-          return { field, seedPass, stepPass, splatPass, displayPass };
-        } catch (error) {
-          for (const dispose of disposers.reverse()) dispose();
-          throw error;
-        }
-      }
-      function disposeGpuResources(resources: MyceliumGpuResources): void {
-        resources.displayPass.dispose(); resources.splatPass.dispose(); resources.stepPass.dispose(); resources.seedPass.dispose(); resources.field.dispose();
       }
       function resetCpuState(): void {
         splats.length = 0; needsSeed = true; pendingDt = 0; elapsed = 0;
@@ -218,7 +185,7 @@ export function createMyceliumPlugin(initial: MyceliumConfig = MYCELIUM_DEFAULTS
           background[2],
           1
         ]);
-        renderer.setPaletteBackdrop(undefined);
+        renderer.setBackdrop(undefined);
         renderer.setBloom({
           enabled: false
         });
