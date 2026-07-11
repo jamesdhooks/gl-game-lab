@@ -3,11 +3,16 @@ import { harmonicSandDefinition } from './harmonic-sand/definition.js';
 import { fireworksDefinition } from './fireworks/definition.js';
 import { sparksDefinition } from './sparks/definition.js';
 import { orbitalShrapnelDefinition } from './orbital-shrapnel/definition.js';
+import { turingSkinDefinition } from './turing-skin/definition.js';
 
 export { harmonicSandDefinition } from './harmonic-sand/definition.js';
 export { fireworksDefinition } from './fireworks/definition.js';
 export { sparksDefinition } from './sparks/definition.js';
 export { orbitalShrapnelDefinition } from './orbital-shrapnel/definition.js';
+export { turingSkinDefinition } from './turing-skin/definition.js';
+export { TURING_SKIN_DEFAULTS, TURING_SKIN_SETTINGS, createTuringSkinConfig, type TuringSkinConfig } from './turing-skin/config.js';
+export { TURING_SKIN_PLUGIN_ID, TuringSkinControllerService, createTuringSkinPlugin, type TuringSkinController, type TuringSkinMode } from './turing-skin/TuringSkinPlugin.js';
+export { TURING_SKIN_STYLE_MANIFEST } from './turing-skin/styles.js';
 export { ORBITAL_SHRAPNEL_DEFAULTS, ORBITAL_SHRAPNEL_SETTINGS, createOrbitalShrapnelConfig, orbitalBoolean, orbitalNumber, orbitalString, type OrbitalShrapnelConfig } from './orbital-shrapnel/config.js';
 export { ORBITAL_SHRAPNEL_PLUGIN_ID, OrbitalShrapnelControllerService, createOrbitalShrapnelPlugin, type OrbitalShrapnelController, type OrbitalShrapnelMode } from './orbital-shrapnel/OrbitalShrapnelPlugin.js';
 export { ORBITAL_SHRAPNEL_STYLE_MANIFEST } from './orbital-shrapnel/styles.js';
@@ -32,4 +37,4 @@ export {
 } from './harmonic-sand/HarmonicSandPlugin.js';
 export { HARMONIC_SAND_STYLE_MANIFEST } from './harmonic-sand/styles.js';
 
-export const SIMULATION_REGISTRY = new ExperienceRegistry().register(harmonicSandDefinition).register(fireworksDefinition).register(sparksDefinition).register(orbitalShrapnelDefinition);
+export const SIMULATION_REGISTRY = new ExperienceRegistry().register(harmonicSandDefinition).register(fireworksDefinition).register(sparksDefinition).register(orbitalShrapnelDefinition).register(turingSkinDefinition);
