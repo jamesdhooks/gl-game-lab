@@ -38,14 +38,15 @@ describe('WebGLTextureResource', () => {
       normalizeTextureDescriptor({ width: 4, height: 4, renderTarget: true }),
     );
 
+    resource.invalidate();
     resource.restore(restoredTexture, restoredFramebuffer);
 
     expect(resource.texture).toBe(restoredTexture);
     expect(resource.framebuffer).toBe(restoredFramebuffer);
     resource.dispose();
     resource.dispose();
-    expect(deletedTextures).toEqual([restoredTexture]);
-    expect(deletedFramebuffers).toEqual([restoredFramebuffer]);
+    expect(deletedTextures).toEqual([originalTexture, restoredTexture]);
+    expect(deletedFramebuffers).toEqual([originalFramebuffer, restoredFramebuffer]);
   });
 
   it('rejects restoration after disposal', () => {

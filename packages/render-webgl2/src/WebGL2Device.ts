@@ -98,6 +98,12 @@ export class WebGLTextureResource {
     this.onDispose?.();
   }
 
+  invalidate(): void {
+    if (this.disposed) return;
+    if (this.currentFramebuffer) this.gl.deleteFramebuffer(this.currentFramebuffer);
+    this.gl.deleteTexture(this.currentTexture);
+  }
+
   restore(texture: WebGLTexture, framebuffer: WebGLFramebuffer | undefined): void {
     if (this.disposed) throw new Error('Disposed WebGL texture cannot be restored');
     this.currentTexture = texture;
@@ -170,6 +176,12 @@ export class WebGL2Device {
   registerContextResource(resource: ContextRestorableResource): () => void {
     this.assertNotDestroyed();
     return this.contextResources.register(resource);
+  }
+
+  rebuildContextResourcesForDiagnostics(): void {
+    this.assertUsable();
+    this.contextResources.invalidate();
+    this.contextResources.restore();
   }
 
   ownContextResource<T>(descriptor: RestorableResourceDescriptor<T>): RestorableResourceOwner<T> {
@@ -379,6 +391,7 @@ export class WebGL2Device {
       id: resourceId,
       priority: 0,
       estimatedBytes: textureBytes(descriptor),
+      invalidate: () => { resource?.invalidate(); },
       restore: () => {
         if (!resource || resource.isDisposed) return;
         const restored = restoreAllocation();

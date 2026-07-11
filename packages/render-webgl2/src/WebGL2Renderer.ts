@@ -80,6 +80,7 @@ interface ManagedTexture2D {
 }
 
 export interface ContextCycleDiagnostics {
+  readonly strategy: 'driver' | 'registry';
   readonly generationBefore: number;
   readonly generationAfter: number;
   readonly resourcesBefore: number;
@@ -302,6 +303,23 @@ export class WebGL2Renderer implements RenderBackend, Render2DService {
     if (this.device.contextRestorationError) throw new Error('WebGL2 context restoration failed', { cause: this.device.contextRestorationError });
     const after = this.device.diagnostics();
     return Object.freeze({
+      strategy: 'driver',
+      generationBefore: before.contextGeneration,
+      generationAfter: after.contextGeneration,
+      resourcesBefore: before.textureCount + before.ownedContextResourceCount,
+      resourcesAfter: after.textureCount + after.ownedContextResourceCount,
+      bytesBefore: before.estimatedGpuBytes,
+      bytesAfter: after.estimatedGpuBytes,
+    });
+  }
+
+  rebuildContextResourcesForDiagnostics(): ContextCycleDiagnostics {
+    this.assertUsable();
+    const before = this.device.diagnostics();
+    this.device.rebuildContextResourcesForDiagnostics();
+    const after = this.device.diagnostics();
+    return Object.freeze({
+      strategy: 'registry',
       generationBefore: before.contextGeneration,
       generationAfter: after.contextGeneration,
       resourcesBefore: before.textureCount + before.ownedContextResourceCount,
