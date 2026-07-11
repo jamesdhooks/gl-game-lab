@@ -72,7 +72,9 @@ Sprite staging is persistent, and dense GPU domains avoid recurring readback.
 
 The largest likely CPU costs are Water Tank particle/constraint work, Ball Pit at
 stress settings, and JavaScript simulation plugins that still assemble per-frame
-draw data. The largest upload is Splash PIC/FLIP at roughly 2.1 MiB/frame. Fluid
+draw data. Splash PIC/FLIP's apparent 2.1 MiB upload was corrected in Hardening
+Pass 2: diagnostics counted capacity rather than the active subarrays actually
+transferred; fresh captures report about 122–129 KiB/frame. Fluid
 Tank reaches 37 draws, and Particle Fluid uses roughly 20.5 MiB of tracked GPU
 memory. Those pass current budgets but are the first scalability pressure points.
 
@@ -148,8 +150,8 @@ WebGPU and full 3D/PBR correctly remain post-release scope.
 ### Medium
 
 1. Large simulation plugins duplicate controller/config/update patterns.
-2. Splash PIC/FLIP performs a large recurring upload and will hit bandwidth limits
-   before its advertised maximum on weaker devices.
+2. Capacity-based CPU particle renderers still scale linearly at stress settings;
+   active-count upload diagnostics now expose that cost accurately.
 3. The sparse-set ECS has no chunk iteration, change detection, or parallel system
    execution.
 4. The production demo bundle is roughly 617 kB minified in one chunk.
@@ -237,7 +239,8 @@ The five criticisms most likely from another senior engine programmer are:
    development hot-reload path.
 4. Expand the new stage-relative backend extension API to resource-declared custom
    render targets only when a concrete renderer plugin needs them.
-5. Reduce Splash upload bandwidth and extract shared simulation-plugin lifecycle.
+5. Extract shared simulation-plugin lifecycle; continue moving stress-scale CPU
+   particle domains to GPU-resident state when profiling justifies it.
 
 ### Low priority — nice to have
 
@@ -253,7 +256,7 @@ The five criticisms most likely from another senior engine programmer are:
   reports optional `gpuMs` through engine diagnostics, and displays unsupported
   state explicitly in the live overlay.
 - The production source-aliased bundle rebuilt successfully after the complete
-  local remediation slice (205 modules, 619.34 kB minified). Device-matrix timer
+  local remediation slice (206 modules, 619.35 kB minified). Device-matrix timer
   evidence remains open.
 - Added a shared labeled shader compiler/reflection layer for every content-provided
   fullscreen, field, simulation, and particle program. Driver failures now include
@@ -267,3 +270,6 @@ The five criticisms most likely from another senior engine programmer are:
   Each isolated job verifies production Reference Arena accessibility, real touch
   event observation, gamepad polling, exact lifecycle replacement, and forced
   context-loss resource equivalence, then uploads a machine-readable report.
+- Corrected segment, mesh, and metaball upload accounting to use active element
+  counts rather than backing-array capacity. Fresh Splash production captures fell
+  from false ~2.1 MiB readings to 124,568 bytes desktop and 132,248 bytes mobile.

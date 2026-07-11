@@ -58,6 +58,7 @@ import { DensityMetaballRenderer } from './DensityMetaballRenderer.js';
 import { WebGLGpu2DService } from './WebGLGpu2DService.js';
 import { SpriteRenderQueue } from './SpriteRenderQueue.js';
 import { WebGLFluidField2D } from './WebGLFluidField2D.js';
+import { metaballUploadBytes, segmentUploadBytes, triangleMeshUploadBytes } from './UploadAccounting.js';
 
 export interface WebGL2RendererOptions {
   readonly device?: WebGL2DeviceOptions;
@@ -416,7 +417,7 @@ export class WebGL2Renderer implements RenderBackend, Render2DService {
   }
 
   submitSegments(batch: SegmentBatch2D): void {
-    this.pendingBufferUploadBytes += batch.segments.byteLength + batch.styles.byteLength;
+    this.pendingBufferUploadBytes += segmentUploadBytes(batch);
     this.gpuPasses.submit({
       id: batch.id,
       execute: (destination) => {
@@ -427,7 +428,7 @@ export class WebGL2Renderer implements RenderBackend, Render2DService {
   }
 
   submitTriangleMesh(batch: TriangleMeshBatch2D): void {
-    this.pendingBufferUploadBytes += batch.positions.byteLength + batch.colorSeeds.byteLength;
+    this.pendingBufferUploadBytes += triangleMeshUploadBytes(batch);
     this.gpuPasses.submit({
       id: batch.id,
       execute: (destination) => {
@@ -438,7 +439,7 @@ export class WebGL2Renderer implements RenderBackend, Render2DService {
   }
 
   submitMetaballs(batch: MetaballBatch2D): void {
-    this.pendingBufferUploadBytes += batch.positions.byteLength + batch.radii.byteLength + batch.temperatures.byteLength;
+    this.pendingBufferUploadBytes += metaballUploadBytes(batch);
     this.gpuPasses.submit({
       id: batch.id,
       execute: (destination) => {

@@ -26,7 +26,7 @@ and passed the engine CPU/draw/upload/resource envelope.
 | Particle Fluid | 0.60 | 25 | 0 | 20,472,064 |
 | Lava Lamp | 0.90 | 7 | 16,384 | 5,543,808 |
 | Water Tank | 7.80 | 3 | 131,216 | 8,448 |
-| Splash PIC/FLIP | 3.43 | 9 | 2,159,448 | 5,543,808 |
+| Splash PIC/FLIP | 3.31 | 9 | 124,568 | 5,543,808 |
 
 ## Mobile viewport (30 FPS target)
 
@@ -46,7 +46,7 @@ and passed the engine CPU/draw/upload/resource envelope.
 | Particle Fluid | 0.81 | 25 | 0 | 18,115,328 |
 | Lava Lamp | 1.02 | 7 | 16,384 | 1,993,292 |
 | Water Tank | 11.70 | 3 | 131,216 | 8,448 |
-| Splash PIC/FLIP | 1.81 | 9 | 2,124,536 | 1,993,292 |
+| Splash PIC/FLIP | 2.90 | 9 | 132,248 | 1,993,292 |
 
 ## Defects found during the matrix
 
@@ -57,6 +57,10 @@ and passed the engine CPU/draw/upload/resource envelope.
   publishes a host-controlled adaptive quality tier; the mobile recommendation caps
   particle count/emission and reduces solver work without altering desktop defaults
   or the explicit stress-setting range. The repaired result is 2.10 ms p95.
+- Splash PIC/FLIP initially reported roughly 2.1 MiB/frame because diagnostics
+  charged entire capacity-sized typed arrays even though the renderers uploaded
+  active subarrays. Active-count accounting now matches the real transfer: 124,568
+  bytes desktop and 132,248 bytes mobile in fresh production captures.
 
 ## Functional browser evidence
 
