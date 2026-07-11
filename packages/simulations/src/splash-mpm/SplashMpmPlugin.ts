@@ -1,7 +1,7 @@
 import { createExtensionToken, type EnginePlugin } from '@hooksjam/gl-game-lab-core';
 import { EngineInput, EngineRender2D, EngineSchedule, ExperienceRuntimeControllerService, type ExperienceLaunchOptions, type ExperienceRuntimeController, type ExperienceSettingValue } from '@hooksjam/gl-game-lab-engine';
 import { createSplashMpmConfig, SPLASH_MPM_DEFAULTS, splashNumber, splashString, type SplashMpmConfig } from './config.js';
-import { SplashMpmModel, type SplashMpmTuning } from './SplashMpmModel.js';
+import { SplashPicFlipModel, type SplashMpmTuning } from './SplashMpmModel.js';
 import { splashRgb, splashRgba, SPLASH_MPM_STYLE_MANIFEST } from './styles.js';
 export type SplashMpmMode = 'splash' | 'pour' | 'build';
 export interface SplashMpmController extends ExperienceRuntimeController {
@@ -17,7 +17,7 @@ type Point = {
 };
 export function createSplashMpmPlugin(initial: SplashMpmConfig = SPLASH_MPM_DEFAULTS, launch: ExperienceLaunchOptions = {}): EnginePlugin {
   let config = initial, mode: SplashMpmMode = launch.modeId === 'pour' || launch.modeId === 'build' ? launch.modeId : 'splash', styleId = validStyle(launch.styleId) ?? SPLASH_MPM_STYLE_MANIFEST.defaultStyleId, width = 1, height = 1, pendingReset = true, time = 0, accumulator = 0, cleanup = (): void => undefined;
-  const model = new SplashMpmModel(), paths = new Map<number, Point[]>(), previous = new Map<number, Point>();
+  const model = new SplashPicFlipModel(), paths = new Map<number, Point[]>(), previous = new Map<number, Point>();
   return {
     id: SPLASH_MPM_PLUGIN_ID,
     version: '1.0.0',

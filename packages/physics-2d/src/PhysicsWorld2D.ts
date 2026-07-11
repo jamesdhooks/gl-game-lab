@@ -42,6 +42,16 @@ export interface PhysicsWorld2DOptions {
   readonly openTop?: boolean;
 }
 
+export interface PhysicsWorld2DStats {
+  readonly bodyCount: number;
+  readonly broadPhaseBuilds: number;
+  readonly candidatePairs: number;
+  readonly pairTests: number;
+  readonly contacts: number;
+  readonly solverPasses: number;
+  readonly substepsExecuted: number;
+}
+
 export class PhysicsWorld2D {
   private readonly bodies = new Map<number, CircleBody>();
   private nextId = 1;
@@ -55,6 +65,7 @@ export class PhysicsWorld2D {
   private maxPairPush: number;
   private impactBounceThreshold: number;
   private openTop: boolean;
+  private lastStats: PhysicsWorld2DStats = Object.freeze({ bodyCount: 0, broadPhaseBuilds: 0, candidatePairs: 0, pairTests: 0, contacts: 0, solverPasses: 0, substepsExecuted: 0 });
 
   constructor(options: PhysicsWorld2DOptions = {}) {
     this.gravityY = options.gravityY ?? 980;
@@ -121,14 +132,29 @@ export class PhysicsWorld2D {
     return [...this.bodies.values()].sort((left, right) => left.id - right.id);
   }
 
-  step(deltaSeconds: number): void {
+  step(deltaSeconds: number): PhysicsWorld2DStats {
     if (!Number.isFinite(deltaSeconds) || deltaSeconds < 0) throw new Error('Physics delta must be non-negative and finite');
-    if (deltaSeconds === 0) return;
+    const counters = { broadPhaseBuilds: 0, candidatePairs: 0, pairTests: 0, contacts: 0, solverPasses: 0, substepsExecuted: 0 };
+    if (deltaSeconds === 0) return this.finishStats(counters);
     const stepDelta = deltaSeconds / this.substeps;
-    for (let substep = 0; substep < this.substeps; substep += 1) this.runSubstep(stepDelta);
+    for (let substep = 0; substep < this.substeps; substep += 1) this.runSubstep(stepDelta, counters);
+    return this.finishStats(counters);
   }
 
-  private runSubstep(deltaSeconds: number): void {
+  getStats(): PhysicsWorld2DStats { return this.lastStats; }
+
+  stateHash(): string {
+    let hash = 0x811c9dc5;
+    const scratch = new Float64Array(6);
+    for (const body of this.values()) {
+      scratch.set([body.id, body.x, body.y, body.velocityX, body.velocityY, body.radius]);
+      const words = new Uint32Array(scratch.buffer);
+      for (const word of words) { hash ^= word; hash = Math.imul(hash, 0x01000193); }
+    }
+    return (hash >>> 0).toString(16).padStart(8, '0');
+  }
+
+  private runSubstep(deltaSeconds: number, counters: MutablePhysicsStats): void {
     const bodies = this.values();
     for (const body of bodies) {
       if (body.inverseMass === 0) continue;
@@ -136,12 +162,23 @@ export class PhysicsWorld2D {
       body.x += body.velocityX * deltaSeconds;
       body.y += body.velocityY * deltaSeconds;
     }
+    const pairs = this.pairs(bodies);
+    counters.broadPhaseBuilds += 1;
+    counters.candidatePairs += pairs.length;
+    counters.substepsExecuted += 1;
     for (let iteration = 0; iteration < this.solverIterations; iteration += 1) {
-      for (const [left, right] of this.pairs(bodies)) {
-        resolveCircleContact(left, right, this.collisionSoftness, this.maxPairPush, this.impactBounceThreshold);
+      counters.solverPasses += 1;
+      for (const [left, right] of pairs) {
+        counters.pairTests += 1;
+        if (resolveCircleContact(left, right, this.collisionSoftness, this.maxPairPush, this.impactBounceThreshold)) counters.contacts += 1;
       }
       if (this.bounds) for (const body of bodies) this.resolveBounds(body);
     }
+  }
+
+  private finishStats(counters: MutablePhysicsStats): PhysicsWorld2DStats {
+    this.lastStats = Object.freeze({ bodyCount: this.bodies.size, ...counters });
+    return this.lastStats;
   }
 
   private pairs(bodies: readonly CircleBody[]): readonly [CircleBody, CircleBody][] {
@@ -206,17 +243,17 @@ function resolveCircleContact(
   collisionSoftness: number,
   maxPairPush: number,
   impactBounceThreshold: number,
-): void {
+): boolean {
   const dx = right.x - left.x;
   const dy = right.y - left.y;
   const target = left.radius + right.radius;
   const distanceSquared = dx * dx + dy * dy;
-  if (distanceSquared >= target * target) return;
+  if (distanceSquared >= target * target) return false;
   const distance = Math.sqrt(distanceSquared);
   const normalX = distance > 1e-8 ? dx / distance : left.id < right.id ? 1 : -1;
   const normalY = distance > 1e-8 ? dy / distance : 0;
   const inverseMass = left.inverseMass + right.inverseMass;
-  if (inverseMass === 0) return;
+  if (inverseMass === 0) return false;
   const penetration = target - distance;
   const maximumCorrection = Math.min(left.radius, right.radius) * maxPairPush;
   const correction = Math.min(penetration * collisionSoftness, maximumCorrection) / inverseMass;
@@ -231,7 +268,7 @@ function resolveCircleContact(
   const relativeVelocityX = right.velocityX - left.velocityX;
   const relativeVelocityY = right.velocityY - left.velocityY;
   const normalVelocity = relativeVelocityX * normalX + relativeVelocityY * normalY;
-  if (normalVelocity >= 0) return;
+  if (normalVelocity >= 0) return true;
   const restitution = -normalVelocity >= impactBounceThreshold ? Math.min(left.restitution, right.restitution) : 0;
   const impulse = -(1 + restitution) * normalVelocity / inverseMass;
   if (left.inverseMass > 0) {
@@ -255,7 +292,17 @@ function resolveCircleContact(
     right.velocityX += tangentX * frictionImpulse * right.inverseMass;
     right.velocityY += tangentY * frictionImpulse * right.inverseMass;
   }
+  return true;
 }
+
+type MutablePhysicsStats = {
+  broadPhaseBuilds: number;
+  candidatePairs: number;
+  pairTests: number;
+  contacts: number;
+  solverPasses: number;
+  substepsExecuted: number;
+};
 
 function validateBodyOptions(options: CircleBodyOptions): void {
   for (const value of [options.x, options.y, options.radius, options.velocityX ?? 0, options.velocityY ?? 0]) {

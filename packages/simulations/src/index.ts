@@ -52,7 +52,7 @@ export { splashMpmDefinition } from './splash-mpm/definition.js';
 export { SPLASH_MPM_DEFAULTS, SPLASH_MPM_SETTINGS, createSplashMpmConfig, splashNumber, splashString, type SplashMpmConfig } from './splash-mpm/config.js';
 export { SPLASH_MPM_PLUGIN_ID, SplashMpmControllerService, createSplashMpmPlugin, type SplashMpmController, type SplashMpmMode } from './splash-mpm/SplashMpmPlugin.js';
 export { SPLASH_MPM_STYLE_MANIFEST } from './splash-mpm/styles.js';
-export { SplashMpmModel, type SplashMpmTuning } from './splash-mpm/SplashMpmModel.js';
+export { SPLASH_PIC_FLIP_CAPACITY, SplashPicFlipModel, SplashMpmModel, type SplashMpmTuning } from './splash-mpm/SplashMpmModel.js';
 export { VASCULAR_TREE_DEFAULTS, VASCULAR_TREE_SETTINGS, createVascularTreeConfig, type VascularTreeConfig } from './alien-vascular-tree/config.js';
 export { VASCULAR_TREE_PLUGIN_ID, VascularTreeControllerService, createVascularTreePlugin, type VascularTreeController, type VascularTreeMode } from './alien-vascular-tree/VascularTreePlugin.js';
 export { VASCULAR_TREE_STYLE_MANIFEST } from './alien-vascular-tree/styles.js';

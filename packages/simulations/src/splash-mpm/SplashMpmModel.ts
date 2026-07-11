@@ -11,12 +11,14 @@ export interface SplashMpmTuning {
   readonly gravity: number;
   readonly radius: number;
 }
-export class SplashMpmModel {
-  readonly world = new DenseCircleParticleWorld2D(32768, {
-    maxParticles: 32768,
+export const SPLASH_PIC_FLIP_CAPACITY = 131_072;
+
+export class SplashPicFlipModel {
+  readonly world = new DenseCircleParticleWorld2D(SPLASH_PIC_FLIP_CAPACITY, {
+    maxParticles: SPLASH_PIC_FLIP_CAPACITY,
     openTop: true
   }, 6296997);
-  readonly foam = new Float32Array(32768);
+  readonly foam = new Float32Array(SPLASH_PIC_FLIP_CAPACITY);
   readonly obstacles: WaterObstacle[] = [];
   private mass = new Float32Array(1);
   private vx = new Float32Array(1);
@@ -34,7 +36,7 @@ export class SplashMpmModel {
   }
   configure(t: SplashMpmTuning) {
     this.world.configure({
-      maxParticles: Math.min(32768, Math.floor(t.maxParticles)),
+      maxParticles: Math.floor(t.maxParticles),
       radius: t.radius,
       radiusVariation: 0.05,
       gravity: 0,
@@ -230,6 +232,9 @@ export class SplashMpmModel {
     }
   }
 }
+
+/** @deprecated Compatibility alias; the implementation is PIC/FLIP, not MPM. */
+export { SplashPicFlipModel as SplashMpmModel };
 function closest(x: number, y: number, l: WaterObstacle) {
   const dx = l.bx - l.ax, dy = l.by - l.ay, q = dx * dx + dy * dy, t = q < 0.001 ? 0 : Math.max(0, Math.min(1, ((x - l.ax) * dx + (y - l.ay) * dy) / q));
   return {

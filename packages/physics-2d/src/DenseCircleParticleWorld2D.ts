@@ -36,6 +36,10 @@ export interface DenseCircleParticleStats {
   readonly maxVelocity: number;
   readonly awake: boolean;
   readonly settledFrames: number;
+  readonly gridBuilds: number;
+  readonly pairTests: number;
+  readonly solverPasses: number;
+  readonly substepsExecuted: number;
 }
 
 const DEFAULT_SETTINGS: DenseCircleParticleSettings = Object.freeze({
@@ -88,6 +92,10 @@ export class DenseCircleParticleWorld2D {
   private maxVelocity = 0;
   private awake = false;
   private settledFrames = 0;
+  private gridBuilds = 0;
+  private pairTests = 0;
+  private solverPasses = 0;
+  private substepsExecuted = 0;
 
   constructor(readonly capacity: number, settings: Partial<DenseCircleParticleSettings> = {}, seed = 0x9e3779b9) {
     if (!Number.isSafeInteger(capacity) || capacity < 1) throw new Error('Dense particle capacity must be a positive integer');
@@ -269,18 +277,25 @@ export class DenseCircleParticleWorld2D {
 
   step(deltaSeconds: number): DenseCircleParticleStats {
     const frameDelta = Math.min(this.settings.maxFrameDelta, nonNegativeFinite(deltaSeconds, 'Dense particle delta'));
+    this.gridBuilds = 0;
+    this.pairTests = 0;
+    this.solverPasses = 0;
+    this.substepsExecuted = 0;
     if (frameDelta === 0 || this.activeCount === 0 || !this.awake) return this.stats();
     const stepDelta = frameDelta / this.settings.substeps;
     this.collisionHits = 0;
     this.maxVelocity = 0;
     for (let substep = 0; substep < this.settings.substeps; substep += 1) {
       this.integrate(stepDelta);
+      this.projectBounds();
+      this.buildGrid();
+      this.gridBuilds += 1;
+      this.substepsExecuted += 1;
       for (let pass = 0; pass < this.settings.solverIterations; pass += 1) {
         const passFraction = pass / Math.max(1, this.settings.solverIterations - 1);
         const relaxation = 0.76 - 0.16 * passFraction;
-        this.projectBounds();
-        this.buildGrid();
         this.solveGrid(relaxation);
+        this.solverPasses += 1;
         this.projectBounds();
       }
       this.syncVelocities(stepDelta);
@@ -296,6 +311,16 @@ export class DenseCircleParticleWorld2D {
 
   getStats(): DenseCircleParticleStats {
     return this.stats();
+  }
+
+  /** Stable diagnostic hash for replay/determinism verification. */
+  stateHash(): string {
+    let hash = 0x811c9dc5;
+    hash = hashWords(hash, new Uint32Array(this.positions.buffer, this.positions.byteOffset, this.activeCount * 2));
+    hash = hashWords(hash, new Uint32Array(this.velocities.buffer, this.velocities.byteOffset, this.activeCount * 2));
+    hash = hashWords(hash, new Uint32Array(this.radii.buffer, this.radii.byteOffset, this.activeCount));
+    hash ^= this.activeCount;
+    return (hash >>> 0).toString(16).padStart(8, '0');
   }
 
   private integrate(deltaSeconds: number): void {
@@ -385,6 +410,7 @@ export class DenseCircleParticleWorld2D {
   }
 
   private solvePair(left: number, right: number, relaxation: number): void {
+    this.pairTests += 1;
     const leftOffset = left * 2;
     const rightOffset = right * 2;
     let dx = floatAt(this.positions, rightOffset) - floatAt(this.positions, leftOffset);
@@ -531,6 +557,10 @@ export class DenseCircleParticleWorld2D {
       maxVelocity: this.maxVelocity,
       awake: this.awake,
       settledFrames: this.settledFrames,
+      gridBuilds: this.gridBuilds,
+      pairTests: this.pairTests,
+      solverPasses: this.solverPasses,
+      substepsExecuted: this.substepsExecuted,
     };
   }
 
@@ -609,4 +639,13 @@ function clamp(value: number, minimum: number, maximum: number): number {
 
 function floatAt(array: Float32Array, index: number): number {
   return array[index] ?? 0;
+}
+
+function hashWords(initial: number, values: Uint32Array): number {
+  let hash = initial >>> 0;
+  for (let index = 0; index < values.length; index += 1) {
+    hash ^= values[index] ?? 0;
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return hash >>> 0;
 }

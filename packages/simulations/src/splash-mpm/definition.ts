@@ -5,7 +5,7 @@ import { SPLASH_MPM_STYLE_MANIFEST } from './styles.js';
 export const splashMpmDefinition: ExperienceDefinition = {
   id: 'splash-mpm',
   kind: 'simulation',
-  name: 'Splash MPM',
+  name: 'Splash PIC/FLIP',
   short: 'Splash, pour, and shape a sheet of water.',
   long: 'Splash, pour, and build surfaces for a sheet of water.',
   icon: '~',
@@ -13,7 +13,8 @@ export const splashMpmDefinition: ExperienceDefinition = {
     'simulation',
     'water',
     'particles',
-    'mpm',
+    'pic',
+    'flip',
     'webgl2'
   ],
   paletteHint: 'cyan',
@@ -87,12 +88,12 @@ export const splashMpmDefinition: ExperienceDefinition = {
       'field'
     ],
     reusableFor: [
-      '2D MPM water scenes',
+      '2D PIC/FLIP water scenes',
       'particle-grid liquid toys',
       'screen-space fluid surfaces'
     ],
     caveats: [
-      'An original PIC/FLIP-style particle-grid implementation inspired by Splash, with GPU surface rendering.'
+      'This is a compact PIC/FLIP-style particle-grid solver, not a material point method solver; GPU rendering reconstructs the surface.'
     ]
   },
   createPlugins: (options = {}) => [

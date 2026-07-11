@@ -27,6 +27,7 @@ describe('DenseCircleParticleWorld2D', () => {
     expect(first.positions.slice(0, first.count * 2)).toEqual(second.positions.slice(0, second.count * 2));
     expect(first.velocities.slice(0, first.count * 2)).toEqual(second.velocities.slice(0, second.count * 2));
     expect(first.getStats()).toEqual(second.getStats());
+    expect(first.stateHash()).toBe(second.stateHash());
   });
 
   it('supports runtime configuration, picking, dragging, and explosion forces', () => {
@@ -85,6 +86,10 @@ describe('DenseCircleParticleWorld2D', () => {
     expect(Math.abs((world.positions[2] ?? 0) - (world.positions[0] ?? 0))).toBeGreaterThan(18);
     expect(stats.collisionHits).toBeGreaterThan(0);
     expect(stats.cellSize).toBe(24);
+    expect(stats.gridBuilds).toBe(1);
+    expect(stats.substepsExecuted).toBe(1);
+    expect(stats.solverPasses).toBe(4);
+    expect(stats.pairTests).toBeGreaterThanOrEqual(stats.collisionHits);
   });
 
   it('uses frozen depth-weighted collision masses under gravity', () => {

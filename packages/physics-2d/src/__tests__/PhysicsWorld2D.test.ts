@@ -56,10 +56,15 @@ describe('PhysicsWorld2D', () => {
     const first = world.createCircle({ x: 0, y: 0, radius: 10 });
     const second = world.createCircle({ x: 5, y: 0, radius: 10 });
 
-    world.step(1 / 60);
+    const stats = world.step(1 / 60);
 
     expect(Math.hypot(second.x - first.x, second.y - first.y)).toBeGreaterThan(19);
     expect(world.values().map(({ id }) => id)).toEqual([first.id, second.id]);
+    expect(stats.broadPhaseBuilds).toBe(1);
+    expect(stats.solverPasses).toBe(4);
+    expect(stats.pairTests).toBe(stats.candidatePairs * stats.solverPasses);
+    expect(stats.contacts).toBeGreaterThan(0);
+    expect(world.stateHash()).toMatch(/^[0-9a-f]{8}$/);
   });
 
   it('rejects malformed body and bounds input', () => {

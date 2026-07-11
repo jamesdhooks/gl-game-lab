@@ -4,6 +4,7 @@ export {
   type CircleBodyOptions,
   type PhysicsBounds,
   type PhysicsWorld2DOptions,
+  type PhysicsWorld2DStats,
 } from './PhysicsWorld2D.js';
 export {
   PHYSICS_2D_PLUGIN_ID,
