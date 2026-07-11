@@ -12,6 +12,7 @@ import { ParticlePointRenderer, ParticlePointRenderQueue } from './ParticlePoint
 import { BloomPostProcess, type BloomOptions } from './BloomPostProcess.js';
 import { PaletteBackdropRenderer, type PaletteBackdropOptions } from './PaletteBackdropRenderer.js';
 import { FullscreenEffectRenderer, FullscreenEffectRenderQueue } from './FullscreenEffectRenderer.js';
+import { GpuRenderPassQueue } from './GpuRenderPassQueue.js';
 
 export interface WebGL2RendererOptions {
   readonly device?: WebGL2DeviceOptions;
@@ -61,6 +62,7 @@ export class WebGL2Renderer {
   readonly sprites: SpriteRenderQueue;
   readonly particles: ParticlePointRenderQueue;
   readonly effects: FullscreenEffectRenderQueue;
+  readonly gpuPasses: GpuRenderPassQueue;
   private readonly spriteRenderer: SpriteRenderer;
   private readonly particleRenderer: ParticlePointRenderer;
   private readonly effectRenderer: FullscreenEffectRenderer;
@@ -79,6 +81,7 @@ export class WebGL2Renderer {
     this.sprites = new SpriteRenderQueue(width, height);
     this.particles = new ParticlePointRenderQueue();
     this.effects = new FullscreenEffectRenderQueue();
+    this.gpuPasses = new GpuRenderPassQueue();
     this.spriteRenderer = new SpriteRenderer(this.device);
     this.particleRenderer = new ParticlePointRenderer(this.device);
     this.effectRenderer = new FullscreenEffectRenderer(this.device);
@@ -154,6 +157,11 @@ export class WebGL2Renderer {
     else this.device.clear(...this.clearColor);
     const target = scene ? { resource: scene } : undefined;
     this.backdrop.render(target);
+    this.gpuPasses.execute({
+      ...(target?.resource.framebuffer ? { framebuffer: target.resource.framebuffer } : {}),
+      width: target?.resource.descriptor.width ?? this.width,
+      height: target?.resource.descriptor.height ?? this.height,
+    });
     this.effectRenderer.render(this.effects.snapshot(), target);
     this.particleRenderer.render(this.particles.buildPlan(), this.sprites.activeCamera, target);
     this.spriteRenderer.render(this.sprites.buildPlan(), this.sprites.activeCamera, target);
@@ -166,6 +174,7 @@ export class WebGL2Renderer {
     this.sprites.clear();
     this.particles.clear();
     this.effects.clear();
+    this.gpuPasses.clear();
     this.effectRenderer.destroy();
     this.particleRenderer.destroy();
     this.spriteRenderer.destroy();
@@ -196,6 +205,7 @@ export const WebGL2RendererService = createExtensionToken<WebGL2Renderer>('gl-ga
 export const SpriteRenderQueueService = createExtensionToken<SpriteRenderQueue>('gl-game-lab.render-webgl2.sprite-queue');
 export const ParticlePointRenderQueueService = createExtensionToken<ParticlePointRenderQueue>('gl-game-lab.render-webgl2.particle-point-queue');
 export const FullscreenEffectRenderQueueService = createExtensionToken<FullscreenEffectRenderQueue>('gl-game-lab.render-webgl2.fullscreen-effect-queue');
+export const GpuRenderPassQueueService = createExtensionToken<GpuRenderPassQueue>('gl-game-lab.render-webgl2.gpu-pass-queue');
 export const WEBGL2_RENDERER_PLUGIN_ID = 'gl-game-lab.render-webgl2';
 
 export function createWebGL2RendererPlugin(
@@ -212,6 +222,7 @@ export function createWebGL2RendererPlugin(
       context.provide(SpriteRenderQueueService, renderer.sprites);
       context.provide(ParticlePointRenderQueueService, renderer.particles);
       context.provide(FullscreenEffectRenderQueueService, renderer.effects);
+      context.provide(GpuRenderPassQueueService, renderer.gpuPasses);
       context.get(EngineSchedule).addSystem({
         id: 'gl-game-lab.render-webgl2.sprites',
         stage: 'render',
@@ -224,6 +235,7 @@ export function createWebGL2RendererPlugin(
           renderer.sprites.clear();
           renderer.particles.clear();
           renderer.effects.clear();
+          renderer.gpuPasses.clear();
         },
       });
     },

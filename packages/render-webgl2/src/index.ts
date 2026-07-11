@@ -1,4 +1,8 @@
 export {
+  GpuRenderPassQueue,
+  type GpuFrameRenderPass,
+} from './GpuRenderPassQueue.js';
+export {
   TrailFeedbackRenderer,
   normalizeTrailFeedbackOptions,
   type NormalizedTrailFeedbackOptions,
@@ -95,6 +99,7 @@ export {
   WEBGL2_RENDERER_PLUGIN_ID,
   ParticlePointRenderQueueService,
   FullscreenEffectRenderQueueService,
+  GpuRenderPassQueueService,
   SpriteRenderQueue,
   SpriteRenderQueueService,
   WebGL2Renderer,
