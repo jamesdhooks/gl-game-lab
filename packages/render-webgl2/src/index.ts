@@ -3,6 +3,10 @@ export {
   type ContextRestorableResource,
 } from './ContextResourceRegistry.js';
 export {
+  RestorableResourceOwner,
+  type RestorableResourceDescriptor,
+} from './RestorableResourceOwner.js';
+export {
   FrameRenderPipeline,
   WEBGL2_FRAME_PASS_IDS,
   type FrameRenderDestination,

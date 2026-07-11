@@ -3,6 +3,10 @@ import {
   ContextResourceRegistry,
   type ContextRestorableResource,
 } from './ContextResourceRegistry.js';
+import {
+  RestorableResourceOwner,
+  type RestorableResourceDescriptor,
+} from './RestorableResourceOwner.js';
 
 export type TextureFormat = 'rgba8' | 'rgba16f';
 export type TextureFilter = 'linear' | 'nearest';
@@ -139,6 +143,11 @@ export class WebGL2Device {
   registerContextResource(resource: ContextRestorableResource): () => void {
     this.assertNotDestroyed();
     return this.contextResources.register(resource);
+  }
+
+  ownContextResource<T>(descriptor: RestorableResourceDescriptor<T>): RestorableResourceOwner<T> {
+    this.assertUsable();
+    return new RestorableResourceOwner(this.contextResources, descriptor);
   }
 
   resize(cssWidth: number, cssHeight: number, pixelRatio = 1): void {
