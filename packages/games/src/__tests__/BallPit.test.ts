@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { PluginInstallContext } from '@hooksjam/gl-game-lab-core';
-import { DENSE_CIRCLE_PARTICLE_PLUGIN_ID } from '@hooksjam/gl-game-lab-physics-2d';
+import { DENSE_CIRCLE_PARTICLE_PLUGIN_ID, DenseCircleParticleWorld2DService } from '@hooksjam/gl-game-lab-physics-2d';
 import { GameEngine } from '@hooksjam/gl-game-lab-engine';
 import {
   ParticlePointRenderQueue,
@@ -143,6 +143,40 @@ describe('Ball Pit experience', () => {
     expect(controller.settings.spawnRate).toBe(50);
     controller.reset();
     expect(controller.bodyCount).toBe(0);
+
+    controller.setMode('stream');
+    engine.input.ingest({ kind: 'pointer', phase: 'down', id: 2, x: 400, y: 90, buttons: 1 });
+    for (let frame = 0; frame < 60; frame += 1) engine.frame(1 / 60);
+    expect(controller.bodyCount).toBe(50);
+    engine.input.ingest({ kind: 'pointer', phase: 'up', id: 2, x: 400, y: 90, buttons: 0 });
+    engine.frame(1 / 60);
+
+    controller.reset();
+    controller.setMode('single');
+    engine.input.ingest({ kind: 'pointer', phase: 'down', id: 3, x: 400, y: 300, buttons: 1 });
+    engine.frame(1 / 60);
+    engine.input.ingest({ kind: 'pointer', phase: 'up', id: 3, x: 400, y: 300, buttons: 0 });
+    engine.frame(1 / 60);
+    const world = engine.kernel.get(DenseCircleParticleWorld2DService);
+    const beforeDragX = world.positions[0] ?? 0;
+    const beforeDragY = world.positions[1] ?? 0;
+    const beforeDragVelocityX = world.velocities[0] ?? 0;
+    controller.setMode('interact');
+    engine.input.ingest({ kind: 'pointer', phase: 'down', id: 4, x: beforeDragX, y: beforeDragY, buttons: 1 });
+    engine.frame(1 / 60);
+    engine.input.ingest({ kind: 'pointer', phase: 'move', id: 4, x: beforeDragX + 100, y: beforeDragY, buttons: 1 });
+    engine.frame(1 / 60);
+    expect(world.velocities[0]).toBeGreaterThan(beforeDragVelocityX);
+    engine.input.ingest({ kind: 'pointer', phase: 'up', id: 4, x: beforeDragX + 100, y: beforeDragY, buttons: 0 });
+    engine.frame(1 / 60);
+
+    const beforeExplosionVelocityX = world.velocities[0] ?? 0;
+    const ballX = world.positions[0] ?? 0;
+    const ballY = world.positions[1] ?? 0;
+    controller.setMode('explosion');
+    engine.input.ingest({ kind: 'pointer', phase: 'down', id: 5, x: ballX - 20, y: ballY, buttons: 1 });
+    engine.frame(1 / 60);
+    expect(world.velocities[0]).toBeGreaterThan(beforeExplosionVelocityX);
 
     await engine.destroy();
   });
