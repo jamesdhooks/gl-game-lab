@@ -4,16 +4,15 @@
 
 This release candidate is suitable for an integration/RC branch. The architecture
 does not need a broad rewrite, clean CI passes, and the hosted Chromium, Firefox,
-and WebKit release matrix is green. Production cutover still requires human scene
-parity review, physical iOS/Android performance, and a real-GPU driver-loss cycle;
-the hosted reports explicitly use deterministic resource-registry reconstruction
-rather than claiming unsupported software-driver restoration.
+and WebKit release matrix is green. Headed physical-host Chrome, Edge, and Firefox
+driver-loss cycles now pass. Production cutover still requires human scene parity
+review and physical iOS/Android performance.
 
 ## Evidence reviewed
 
 - Ten workspace packages with enforced dependency boundaries and zero source
   hygiene exceptions.
-- 71 test files and 223 directly enumerated `it`/`test` cases, plus production
+- 71 test files and 229 passing tests in the fresh workspace run, plus production
   Chromium fixed-frame, lifecycle, and accessibility probes.
 - All 15 shipped experiences through engine-level render contracts; content has
   zero concrete WebGL renderer imports or WebGL context types.
@@ -26,6 +25,8 @@ rather than claiming unsupported software-driver restoration.
 - The public GitHub Pages build exposes the restored 15-card live gallery and
   immersive launcher. The three-engine gate checks filtering, intro, complete
   Ball Pit settings, tutorials, and dockable experience navigation.
+- Real headed Chrome 150, Edge 150, and Firefox 151 driver-loss cycles advance
+  resource generation and preserve resource counts/bytes without page errors.
 
 ## 1. Overall architecture
 
@@ -99,13 +100,15 @@ regression detection.
 
 All known GPU resources register deterministic invalidation/restoration paths.
 Hosted Chromium, Firefox, and WebKit rebuild every owned resource and preserve
-generation/count/byte invariants. Real `WEBGL_lose_context` attempts suspend hosted
-software-renderer execution, so physical GPU recovery remains unproven rather than
-waived. A desktop embedded-browser attempt exposed a separate host defect: inline
+generation/count/byte invariants. Headed installed Chrome and Edge plus headed
+Firefox on the physical Windows host now pass real `WEBGL_lose_context` recovery.
+Those runs exposed two defects: restore was requested before the lost event had
+fully completed, and the device remained internally guarded as lost while its
+resource restorers ran. Both are fixed and regression-covered. An earlier desktop
+embedded-browser attempt also exposed a separate host defect: inline
 callback identity changes rebuilt `GameCanvas` while its context was lost. Callbacks
 now use live refs, the engine remains single-mounted, and restoration work waits for
-a post-event driver turn. That embedded driver still never emits the restored event,
-so physical certification remains open. Async asset cancellation still depends on loader
+a post-event driver turn. Async asset cancellation still depends on loader
 cooperation. Floating-point determinism is same-runtime replay determinism, not
 bit-identical cross-architecture determinism. Storage quota, audio-autoplay, worker
 CSP, and browser eviction policies need broader device testing.
@@ -145,11 +148,6 @@ passes; physical-device performance remains a release requirement, not optional 
 WebGPU and full 3D/PBR correctly remain post-release scope.
 
 ## 7. Technical debt
-
-### Critical
-
-1. Real GPU driver loss/restoration lacks physical-browser evidence; hosted
-   resource-registry reconstruction passes in all three engines.
 
 ### High
 
@@ -209,23 +207,23 @@ bgfx, or Wicked Engine.
 | Maintainability | B | Clean boundaries, but several large orchestrators/plugins need extraction. |
 | Performance | B+ | All catalog budgets pass; actual GPU timing and physical devices are missing. |
 | Scalability | B | Packed domains scale well; conventional ECS and scheduler are not chunked/parallel. |
-| Rendering | B+ | Capable WebGL2 pipeline and cross-engine resource rebuild proof; physical driver loss and pooling remain. |
+| Rendering | A- | Capable WebGL2 pipeline, hosted cross-engine reconstruction, and real Chrome/Edge/Firefox driver recovery; pooling/tooling remain. |
 | API design | B+ | Good code-first host/content contracts with backend neutrality. |
 | Code quality | B+ | Strict, consistent, hygienic, and tested; concentration remains. |
-| Production readiness | B- | Automated RC gates are green; physical driver-loss/mobile and human parity remain. |
+| Production readiness | B | Automated RC and physical desktop driver gates are green; physical mobile and human parity remain. |
 
 ## Merge and rewrite recommendation
 
 Merge into an integration/release-candidate branch: yes. Replace the production
-branch only after physical driver-loss/mobile evidence and human parity review. A
+branch only after physical mobile evidence and human parity review. A
 major rewrite is not justified; remaining work is targeted certification and
 renderer/tooling evolution.
 
 The five criticisms most likely from another senior engine programmer are:
 
-1. Hosted registry reconstruction is not physical GPU driver-loss proof.
-2. Desktop viewport emulation is not physical mobile performance evidence.
-3. CPU timing and estimated bytes are not a GPU profiler.
+1. Desktop viewport emulation is not physical mobile performance evidence.
+2. Safari/iOS policy behavior still needs physical-device certification.
+3. CPU timing and estimated bytes are not a full GPU profiler.
 4. The renderer facade and several content plugins have accumulated too many jobs.
 5. Shader/material tooling and render-target pooling remain thin for third-party render plugins.
 
@@ -233,14 +231,10 @@ The five criticisms most likely from another senior engine programmer are:
 
 ### High priority — must fix before production cutover
 
-1. Run forced-loss equivalence on Chrome/Edge and Firefox outside the embedded
-   browser; verify generation increments, counts/bytes are stable, rendering
-   resumes, and repeated cycles do not leak.
-2. Execute the supported browser/device functional matrix, including touch,
-   pointer capture, gamepad, audio unlock, storage failure, workers, visibility,
-   and accessibility.
-3. Capture physical iOS/Android performance for all recommended profiles and tune
-   any experience that violates the 30 FPS/resource envelope.
+1. Execute the physical iOS/Android functional and performance matrix, including
+   touch, pointer capture, audio unlock, storage failure, workers, visibility,
+   accessibility, and all recommended profiles. Tune any experience that violates
+   the 30 FPS/resource envelope.
 
 ### Medium priority — should improve
 
@@ -266,9 +260,9 @@ The five criticisms most likely from another senior engine programmer are:
   polls delayed results, discards disjoint samples, resets across context loss,
   reports optional `gpuMs` through engine diagnostics, and displays unsupported
   state explicitly in the live overlay.
-- The production source-aliased bundle rebuilt successfully after the complete
-  local remediation slice. Its former 619 kB monolith is now four JavaScript chunks
-  (19.95, 22.28, 222.36, and 361.28 kB; 208 modules) with no size warning.
+- The production bundle rebuilt successfully after the complete local remediation
+  slice and restored shell. Its former monolith is now five main JavaScript chunks
+  (19.96, 22.29, 141.67, 222.44, and 359.07 kB) with no size warning.
   Device-matrix timer evidence remains open.
 - Added a shared labeled shader compiler/reflection layer for every content-provided
   fullscreen, field, simulation, and particle program. Driver failures now include
@@ -286,7 +280,12 @@ The five criticisms most likely from another senior engine programmer are:
   dependencies, and driver resource restoration is deferred one driver turn. The
   repaired host stays at `readyCount=1` with no shader/runtime error. This embedded
   driver still times out without emitting `webglcontextrestored`, so physical desktop
-  restoration remains an external acceptance item rather than a claimed pass.
+  restoration required a supported installed-browser run rather than a claimed pass.
+- Added installed-browser/headed/scope controls to the release harness and ran
+  real physical-host driver cycles. Chrome 150, Edge 150, and Firefox 151 all pass
+  with generation 0→1, 6/6 resources, 9,280/9,280 bytes, resumed rendering, and
+  no page errors. The runs found and fixed premature restore scheduling and an
+  incorrect device-lost guard during registered restoration.
 - Added `WebGL2FramePipelineService`: backend plugins can register deterministic,
   removable passes before or after every built-in stage. Duplicate/built-in IDs,
   invalid stages, and non-integer order values are rejected.
@@ -294,7 +293,7 @@ The five criticisms most likely from another senior engine programmer are:
   WebKit. Each isolated job verifies production Reference Arena accessibility,
   real touch event observation, gamepad polling, exact lifecycle replacement, and
   explicit registry-rebuild resource equivalence, then uploads a machine-readable
-  report. Physical driver-loss remains separately identified.
+  report. Real desktop driver-loss is recorded separately in the physical matrix.
 - Corrected segment, mesh, and metaball upload accounting to use active element
   counts rather than backing-array capacity. Fresh Splash production captures fell
   from false ~2.1 MiB readings to 124,568 bytes desktop and 132,248 bytes mobile.
@@ -313,3 +312,7 @@ The five criticisms most likely from another senior engine programmer are:
   and validated once; recurring palette/background allocations were removed.
   Representative production scenes exercising every shader family reached
   `running` without engine errors.
+- Reconciled the complete objective against current evidence in
+  `completion-audit-2026-07-11.md`. Repository implementation requirements are
+  proven; physical driver recovery, physical iOS/Android performance, and human
+  scene parity remain explicit production-cutover signoffs rather than waivers.
