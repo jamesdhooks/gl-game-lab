@@ -1,4 +1,10 @@
 export {
+  GpuParticleRenderer,
+  type GpuParticleRenderDestination,
+  type GpuParticleRendererOptions,
+  type GpuParticleUniformBinder,
+} from './GpuParticleRenderer.js';
+export {
   createGpuDoubleRenderTarget,
   createGpuRenderTarget,
   type GpuDoubleRenderTarget,
