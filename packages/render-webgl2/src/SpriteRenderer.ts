@@ -48,6 +48,12 @@ export interface SpriteRenderTarget {
   readonly resource: WebGLTextureResource;
 }
 
+interface MutableSpriteBatch {
+  readonly texture: SpriteTexture;
+  readonly blend: BlendMode;
+  readonly sprites: SpriteInstance[];
+}
+
 const INSTANCE_FLOATS = 15;
 
 export function createSpriteCamera2D(
@@ -87,12 +93,12 @@ export function buildSpriteDrawPlan(
   });
   visible.sort((left, right) => (left.sprite.zIndex ?? 0) - (right.sprite.zIndex ?? 0) || left.order - right.order);
 
-  const batches: SpriteBatch[] = [];
+  const batches: MutableSpriteBatch[] = [];
   for (const { sprite } of visible) {
     const blend = sprite.blend ?? 'alpha';
     const previous = batches[batches.length - 1];
     if (previous && previous.texture === sprite.texture && previous.blend === blend) {
-      batches[batches.length - 1] = { ...previous, sprites: [...previous.sprites, sprite] };
+      previous.sprites.push(sprite);
     } else {
       batches.push({ texture: sprite.texture, blend, sprites: [sprite] });
     }

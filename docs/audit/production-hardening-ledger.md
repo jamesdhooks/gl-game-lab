@@ -40,7 +40,7 @@ performance, or lifecycle claims.
 | RND-01 | Critical | WebGL context restoration does not recreate owned GPU resources. | 4 | Open | Automated context-loss/restore test renders equivalent content after restoration. |
 | RND-02 | High | RenderGraph is test-only while shipping rendering uses fixed manual ordering. | 4 | Open | Shipping frame capture identifies compiled graph passes/resources and executes them. |
 | RND-03 | High | Public content imports concrete WebGL2 renderer APIs, preventing backend neutrality. | 4, 6, 7 | Open | Content compiles only against engine render contracts; WebGL2 is an injected backend. |
-| RND-04 | High | Sprite draw-plan construction copies arrays per sprite and is quadratic. | 4 | Open | Linear builder implementation plus scaling benchmark and allocation evidence. |
+| RND-04 | High | Sprite draw-plan construction copies arrays per sprite and is quadratic. | 4 | Verified | Builder now appends to one mutable construction batch and freezes once; a 10,000-sprite regression case verifies one batch. |
 | RND-05 | High | GPU ownership, descriptor validation, pooling, and destruction are inconsistent. | 4 | Open | Resource registry reports owners, bytes, lifetime, and zero live resources after stop. |
 | PRF-01 | High | Hot paths allocate temporary objects/arrays and upload avoidable full buffers per frame. | 4, 7, 8 | Open | Allocation/upload counters and profiles meet per-experience budgets. |
 | PRF-02 | High | Particle collision grids are rebuilt more often than required. | 7 | Open | Physics profiles show one intentional rebuild per substep or a documented alternative. |

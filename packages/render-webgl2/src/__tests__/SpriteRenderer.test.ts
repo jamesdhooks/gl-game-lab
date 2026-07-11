@@ -40,4 +40,21 @@ describe('buildSpriteDrawPlan', () => {
       { texture: FirstTexture, x: Number.NaN, y: 0, width: 10, height: 10 },
     ], camera)).toThrow('finite');
   });
+
+  it('builds large same-material batches without replacing the batch per sprite', () => {
+    const sprites = Array.from({ length: 10_000 }, (_, index) => ({
+      texture: FirstTexture,
+      x: index % 100,
+      y: Math.floor(index / 100),
+      width: 1,
+      height: 1,
+    }));
+    const camera = createSpriteCamera2D(200, 200, { centerX: 50, centerY: 50 });
+
+    const plan = buildSpriteDrawPlan(sprites, camera);
+
+    expect(plan.spriteCount).toBe(10_000);
+    expect(plan.batches).toHaveLength(1);
+    expect(plan.batches[0]?.sprites).toHaveLength(10_000);
+  });
 });
