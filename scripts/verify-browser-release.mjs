@@ -37,17 +37,18 @@ process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
 if (!report.passed) process.exitCode = 2;
 
 async function verifyBrowser(browserName, browserType) {
-  const browser = await browserType.launch({ headless: process.env.GL_GAME_LAB_HEADED !== '1' });
   const failures = [];
   try {
-    const functional = await verifyFunctional(browser, failures);
-    const context = await verifyContextRecovery(browser, failures);
+    const functionalBrowser = await browserType.launch({ headless: true });
+    const functional = await verifyFunctional(functionalBrowser, failures)
+      .finally(async () => { await functionalBrowser.close(); });
+    const contextBrowser = await browserType.launch({ headless: process.env.GL_GAME_LAB_HEADED !== '1' });
+    const context = await verifyContextRecovery(contextBrowser, failures)
+      .finally(async () => { await contextBrowser.close(); });
     return Object.freeze({ browser: browserName, functional, context, failures, passed: failures.length === 0 });
   } catch (error) {
     failures.push(describe(error));
     return Object.freeze({ browser: browserName, failures, passed: false });
-  } finally {
-    await browser.close();
   }
 }
 
