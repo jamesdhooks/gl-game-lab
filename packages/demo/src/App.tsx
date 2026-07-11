@@ -1,6 +1,6 @@
 import { ExperienceRuntime } from '@hooksjam/gl-game-lab-react';
 import { ballPitDefinition } from '@hooksjam/gl-game-lab-games';
-import { fireworksDefinition, harmonicSandDefinition } from '@hooksjam/gl-game-lab-simulations';
+import { fireworksDefinition, harmonicSandDefinition, sparksDefinition } from '@hooksjam/gl-game-lab-simulations';
 import './index.css';
 import { parseDemoCaptureOptions } from './captureOptions.js';
 import { ballPitCaptureInputEvents } from './ballPitCaptureScenarios.js';
@@ -10,7 +10,8 @@ export function App(): JSX.Element {
   const experienceId = new URLSearchParams(window.location.search).get('experience');
   const experience = experienceId === 'harmonic-sand'
     ? harmonicSandDefinition
-    : experienceId === 'fireworks' ? fireworksDefinition : ballPitDefinition;
+    : experienceId === 'fireworks' ? fireworksDefinition
+      : experienceId === 'sparks' ? sparksDefinition : ballPitDefinition;
   return (
     <main className={capture.enabled ? 'shell capture-shell' : 'shell'}>
       {!capture.enabled && (
