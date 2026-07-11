@@ -293,7 +293,7 @@ export class WebGL2Renderer implements RenderBackend, Render2DService {
     const restored = waitForContextEvent(this.device.canvas, 'webglcontextrestored', 10_000);
     extension.restoreContext();
     await restored;
-    if (this.device.contextRestorationError) throw new Error('WebGL2 context restoration failed', { cause: this.device.contextRestorationError });
+    await this.device.waitForContextRestoration();
     const after = this.device.diagnostics();
     return Object.freeze({
       strategy: 'driver',

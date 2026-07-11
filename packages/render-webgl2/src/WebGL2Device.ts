@@ -123,6 +123,7 @@ export class WebGL2Device {
   private destroyed = false;
   private contextLost = false;
   private restorationError: unknown;
+  private restorationPromise: Promise<void> = Promise.resolve();
   private textureResourceId = 0;
 
   constructor(
@@ -154,6 +155,13 @@ export class WebGL2Device {
 
   get contextRestorationError(): unknown {
     return this.restorationError;
+  }
+
+  async waitForContextRestoration(): Promise<void> {
+    await this.restorationPromise;
+    if (this.restorationError) {
+      throw new Error('WebGL2 context restoration failed', { cause: this.restorationError });
+    }
   }
 
   diagnostics(): WebGL2DeviceDiagnostics {
@@ -299,14 +307,18 @@ export class WebGL2Device {
   };
 
   private readonly handleContextRestored = (): void => {
-    this.contextLost = false;
     this.restorationError = undefined;
-    try {
-      this.contextResources.restore();
-    } catch (error) {
-      this.restorationError = error;
-      this.contextLost = true;
-    }
+    this.contextLost = true;
+    this.restorationPromise = waitForRestoredDriver().then(() => {
+      if (this.destroyed) return;
+      try {
+        this.contextResources.restore();
+        this.contextLost = false;
+      } catch (error) {
+        this.restorationError = error;
+        this.contextLost = true;
+      }
+    });
   };
 
   private assertUsable(): void {
@@ -412,6 +424,16 @@ export class WebGL2Device {
     this.resources.add(resource);
     return resource;
   }
+}
+
+function waitForRestoredDriver(): Promise<void> {
+  return new Promise((resolve) => {
+    if (typeof globalThis.requestAnimationFrame === 'function') {
+      globalThis.requestAnimationFrame(() => { resolve(); });
+      return;
+    }
+    globalThis.setTimeout(resolve, 0);
+  });
 }
 
 export function normalizeTextureDescriptor(descriptor: WebGLTextureDescriptor): NormalizedTextureDescriptor {
