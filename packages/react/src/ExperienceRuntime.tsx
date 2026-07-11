@@ -32,6 +32,9 @@ export interface ExperienceRuntimeProps {
   readonly fixedFrameCapture?: FixedFrameCaptureOptions;
   readonly onFixedFrameCapture?: (result: FixedFrameCaptureResult) => void;
   readonly showDiagnostics?: boolean;
+  readonly presentation?: 'embedded' | 'immersive';
+  readonly onQuit?: () => void;
+  readonly showIntroCard?: boolean;
 }
 
 export function ExperienceRuntime({
@@ -48,6 +51,9 @@ export function ExperienceRuntime({
   fixedFrameCapture,
   onFixedFrameCapture,
   showDiagnostics = false,
+  presentation = 'embedded',
+  onQuit,
+  showIntroCard = presentation === 'immersive',
 }: ExperienceRuntimeProps): JSX.Element {
   const defaultModeId = initialModeId ?? definition.modes?.[0]?.id ?? 'default';
   const defaultStyleId = initialStyleId ?? definition.styleManifest?.defaultStyleId ?? 'default';
@@ -59,6 +65,7 @@ export function ExperienceRuntime({
   const [tutorialOpen, setTutorialOpen] = useState(false);
   const [tutorialIndex, setTutorialIndex] = useState(0);
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [introOpen, setIntroOpen] = useState(showIntroCard);
   const controllerRef = useRef<ExperienceRuntimeController>();
 
   useEffect(() => {
@@ -69,7 +76,8 @@ export function ExperienceRuntime({
     setSettingsOpen(false);
     setTutorialOpen(false);
     setTutorialIndex(0);
-  }, [defaultModeId, defaultStyleId, definition.id, initialSettings]);
+    setIntroOpen(showIntroCard);
+  }, [defaultModeId, defaultStyleId, definition.id, initialSettings, showIntroCard]);
 
   const createPlugins = useCallback(() => definition.createPlugins({
     profile,
@@ -102,7 +110,7 @@ export function ExperienceRuntime({
   };
 
   const visibleSettings = (definition.settings ?? []).filter((setting) => (
-    (showAdvanced || setting.advanced !== true)
+    (presentation === 'immersive' || showAdvanced || setting.advanced !== true)
     && (!setting.visibleModes || setting.visibleModes.includes(modeId))
     && (!setting.visibleRenderStyles || setting.visibleRenderStyles.includes(String(settings.renderStyle ?? '')))
   ));
@@ -111,12 +119,17 @@ export function ExperienceRuntime({
 
   return (
     <section
-      className={classNames('gl-experience-runtime', className)}
+      className={classNames('gl-experience-runtime', presentation === 'immersive' ? 'gl-experience-runtime-immersive' : undefined, className)}
       data-experience-id={definition.id}
       data-experience-profile={profile}
     >
       {showChrome && (
         <header className="gl-experience-toolbar" aria-label={`${definition.name} controls`}>
+          {presentation === 'immersive' && onQuit && (
+            <button type="button" className="gl-experience-quit" aria-label="Quit" onClick={onQuit}>
+              <span aria-hidden="true">×</span><span>Quit</span>
+            </button>
+          )}
           {(definition.modes?.length ?? 0) > 0 && (
             <div className="gl-experience-modes" role="group" aria-label="Interaction mode">
               {definition.modes?.map((mode) => (
@@ -150,16 +163,16 @@ export function ExperienceRuntime({
               </label>
             )}
             {definition.capabilities.settings && (
-              <button type="button" aria-pressed={settingsOpen} onClick={() => { setSettingsOpen((open) => !open); }}>
-                Settings
+              <button type="button" className="gl-experience-action-control" aria-label="Settings" aria-pressed={settingsOpen} onClick={() => { setSettingsOpen((open) => !open); }}>
+                <span aria-hidden="true">⚙</span><span className="gl-experience-action-label">Settings</span>
               </button>
             )}
             {definition.capabilities.tutorial && tutorialPages.length > 0 && (
-              <button type="button" onClick={() => { setTutorialIndex(0); setTutorialOpen(true); }}>
-                How to play
+              <button type="button" className="gl-experience-action-control" aria-label="How to play" onClick={() => { setTutorialIndex(0); setTutorialOpen(true); }}>
+                <span aria-hidden="true">?</span><span className="gl-experience-action-label">How to play</span>
               </button>
             )}
-            {definition.capabilities.reset && <button type="button" onClick={reset}>Reset</button>}
+            {definition.capabilities.reset && <button type="button" className="gl-experience-action-control" aria-label="Reset" onClick={reset}><span aria-hidden="true">↻</span><span className="gl-experience-action-label">Reset</span></button>}
           </div>
         </header>
       )}
@@ -176,6 +189,24 @@ export function ExperienceRuntime({
           {...(onError ? { onError } : {})}
         />
       </div>
+
+      {showChrome && introOpen && (
+        <button type="button" className="gl-experience-intro-card" onClick={() => { setIntroOpen(false); }}>
+          <span className="gl-experience-intro-icon" aria-hidden="true">{definition.icon}</span>
+          <span className="gl-experience-intro-copy">
+            <strong>{definition.name}</strong>
+            <span>{definition.long}</span>
+            {(definition.modes?.length ?? 0) > 0 && (
+              <span className="gl-experience-intro-hints">
+                {definition.modes?.map((mode) => (
+                  <span key={mode.id}><b>{mode.label}</b>{mode.description ?? definition.short}</span>
+                ))}
+              </span>
+            )}
+            <small>Tap anywhere to dismiss</small>
+          </span>
+        </button>
+      )}
 
       {showChrome && (definition.attributions?.length ?? 0) > 0 && (
         <footer className="gl-experience-attributions" aria-label={`${definition.name} attributions`}>
@@ -194,7 +225,7 @@ export function ExperienceRuntime({
             <h2>Settings</h2>
             <button type="button" aria-label="Close settings" onClick={() => { setSettingsOpen(false); }}>×</button>
           </div>
-          {(definition.settings?.some((setting) => setting.advanced) ?? false) && (
+          {presentation !== 'immersive' && (definition.settings?.some((setting) => setting.advanced) ?? false) && (
             <label className="gl-experience-advanced-toggle">
               <input
                 type="checkbox"
@@ -257,7 +288,7 @@ function SettingControl({ setting, value, onChange }: SettingControlProps): JSX.
   if (setting.type === 'boolean') {
     return (
       <label className="gl-experience-setting gl-experience-setting-boolean">
-        <span>{setting.label}</span>
+        <SettingLabel setting={setting} />
         <input
           type="checkbox"
           checked={value === true}
@@ -269,7 +300,7 @@ function SettingControl({ setting, value, onChange }: SettingControlProps): JSX.
   if (setting.type === 'select') {
     return (
       <label className="gl-experience-setting">
-        <span>{setting.label}</span>
+        <SettingLabel setting={setting} />
         <select value={String(value)} onChange={(event) => { onChange(event.currentTarget.value); }}>
           {setting.options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
         </select>
@@ -279,7 +310,7 @@ function SettingControl({ setting, value, onChange }: SettingControlProps): JSX.
   if (setting.type === 'string') {
     return (
       <label className="gl-experience-setting">
-        <span>{setting.label}</span>
+        <SettingLabel setting={setting} />
         <input type="url" value={String(value)} placeholder={setting.placeholder} onChange={(event) => { onChange(event.currentTarget.value); }} />
       </label>
     );
@@ -293,7 +324,7 @@ function SettingControl({ setting, value, onChange }: SettingControlProps): JSX.
   const sliderValue = powerOfTwo ? Math.round(Math.log2(Math.max(1, Number(value)))) : Number(value);
   return (
     <label className="gl-experience-setting">
-      <span>{setting.label}</span>
+      <SettingLabel setting={setting} />
       <span className="gl-experience-number-control">
         <input
           type="range"
@@ -308,6 +339,15 @@ function SettingControl({ setting, value, onChange }: SettingControlProps): JSX.
         <output>{formatSettingNumber(Number(value), setting.step)}</output>
       </span>
     </label>
+  );
+}
+
+function SettingLabel({ setting }: { readonly setting: ExperienceSetting }): JSX.Element {
+  return (
+    <span className="gl-experience-setting-label">
+      <strong>{setting.label}</strong>
+      {setting.description && <small>{setting.description}</small>}
+    </span>
   );
 }
 
