@@ -303,6 +303,7 @@ function diagnosticText(snapshot: EngineDiagnosticsSnapshot): string {
   const uploads = (renderer?.bufferUploadBytes ?? 0) + (renderer?.textureUploadBytes ?? 0);
   return [
     `${snapshot.fps.toFixed(1)} fps  ${snapshot.frameCpuMs.toFixed(2)} ms CPU`,
+    `${renderer?.gpuMs === undefined ? 'GPU timer unavailable' : `${renderer.gpuMs.toFixed(2)} ms GPU`}`,
     `${renderer?.drawCalls ?? 0} draws  ${renderer?.points ?? 0} points`,
     `${formatBytes(uploads)} uploads  ${formatBytes(renderer?.gpuResourceBytes ?? 0)} GPU`,
     `${formatBytes(renderer?.transientAllocationBytes ?? 0)} tracked alloc`,

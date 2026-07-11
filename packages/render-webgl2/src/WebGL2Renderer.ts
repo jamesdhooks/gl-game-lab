@@ -53,6 +53,7 @@ import {
 } from './PaletteBackdropRenderer.js';
 import { FullscreenEffectRenderer, FullscreenEffectRenderQueue } from './FullscreenEffectRenderer.js';
 import { GpuRenderPassQueue } from './GpuRenderPassQueue.js';
+import { GpuTimer } from './GpuTimer.js';
 import { FrameRenderPipeline, type FrameRenderGraphSnapshot } from './FrameRenderPipeline.js';
 import { createDefaultBitmapFontAtlas } from './DefaultBitmapFont.js';
 import { InstancedSegmentRenderer } from './InstancedSegmentRenderer.js';
@@ -210,6 +211,7 @@ export class WebGL2Renderer implements RenderBackend, Render2DService {
   private bloom: BloomPostProcess;
   private backdrop: PaletteBackdropRenderer;
   private readonly framePipeline: FrameRenderPipeline;
+  private readonly gpuTimer: GpuTimer;
   private clearColor: readonly [number, number, number, number];
   private bloomOptions: NormalizedBloomOptions;
   private backdropOptions: PaletteBackdropOptions | undefined = undefined;
@@ -217,6 +219,7 @@ export class WebGL2Renderer implements RenderBackend, Render2DService {
   private logicalHeight: number;
   private pixelRatio = 1;
   private readonly unregisterContextResource: () => void;
+  private readonly unregisterGpuTimer: () => void;
   private readonly textures2D = new Map<string, ManagedTexture2D>();
   private readonly fonts2D = new Map<string, ManagedBitmapFont2D>();
   private readonly fluidFields = new Set<WebGLFluidField2D>();
@@ -256,6 +259,7 @@ export class WebGL2Renderer implements RenderBackend, Render2DService {
     this.effects = new FullscreenEffectRenderQueue();
     this.gpuPasses = new GpuRenderPassQueue();
     this.gpu2D = new WebGLGpu2DService(this.device, this.gpuPasses);
+    this.gpuTimer = new GpuTimer(this.device.gl);
     this.spriteRenderer = new SpriteRenderer(this.device);
     this.particleRenderer = new ParticlePointRenderer(this.device);
     this.effectRenderer = new FullscreenEffectRenderer(this.device);
@@ -296,6 +300,12 @@ export class WebGL2Renderer implements RenderBackend, Render2DService {
       id: 'gl-game-lab.render-webgl2.pipeline',
       priority: 100,
       restore: () => { this.restoreContext(); },
+    });
+    this.unregisterGpuTimer = this.device.registerContextResource({
+      id: 'gl-game-lab.render-webgl2.gpu-timer',
+      priority: 90,
+      invalidate: () => { this.gpuTimer.invalidate(); },
+      restore: () => { this.gpuTimer.restore(); },
     });
     const font = createDefaultBitmapFontAtlas();
     this.createBitmapFont(DEFAULT_FONT_2D_ID, font.characters, font.columns, font.glyphWidth, font.glyphHeight, font.pixels);
@@ -586,7 +596,12 @@ export class WebGL2Renderer implements RenderBackend, Render2DService {
     this.gpu2D.beginFrameDiagnostics();
     const scene = this.bloom.sceneTarget;
     const target = scene ? { resource: scene } : undefined;
-    this.framePipeline.execute({ ...(target ? { target } : {}), composite: scene !== undefined });
+    this.gpuTimer.begin();
+    try {
+      this.framePipeline.execute({ ...(target ? { target } : {}), composite: scene !== undefined });
+    } finally {
+      this.gpuTimer.end();
+    }
     const sprites = this.renderedSpritePlan ?? buildSpriteDrawPlan([], this.sprites.activeCamera);
     const particles = this.renderedParticlePlan ?? this.particles.buildPlan();
     const gpu = this.gpu2D.diagnostics();
@@ -604,6 +619,7 @@ export class WebGL2Renderer implements RenderBackend, Render2DService {
       gpuResourceCount: device.textureCount + device.ownedContextResourceCount,
       gpuResourceBytes: device.estimatedGpuBytes,
       renderPasses: this.framePipeline.snapshot().passes,
+      ...(this.gpuTimer.latestMs === undefined ? {} : { gpuMs: this.gpuTimer.latestMs }),
     });
     this.pendingBufferUploadBytes = 0;
     this.pendingTextureUploadBytes = 0;
@@ -613,6 +629,7 @@ export class WebGL2Renderer implements RenderBackend, Render2DService {
   destroy(): void {
     if (this.destroyed) return;
     this.destroyed = true;
+    this.unregisterGpuTimer();
     this.unregisterContextResource();
     this.sprites.clear();
     this.particles.clear();
@@ -633,6 +650,7 @@ export class WebGL2Renderer implements RenderBackend, Render2DService {
     this.spriteRenderer.destroy();
     this.bloom.destroy();
     this.backdrop.destroy();
+    this.gpuTimer.destroy();
     this.device.destroy();
   }
 
