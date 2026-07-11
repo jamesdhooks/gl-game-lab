@@ -18,3 +18,7 @@ pnpm test
 
 The rebuild is intentionally incremental. Every engine subsystem and migrated
 experience is committed as a separately validated slice.
+
+## Attribution
+
+Third-party inspirations and adapted concepts are documented in [docs/attribution.md](docs/attribution.md).

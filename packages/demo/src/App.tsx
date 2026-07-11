@@ -1,11 +1,13 @@
+import { useState } from 'react';
 import { ExperienceRuntime } from '@hooksjam/gl-game-lab-react';
 import { ballPitDefinition } from '@hooksjam/gl-game-lab-games';
-import { alienVascularTreeDefinition, chainRainDefinition, fireworksDefinition, harmonicSandDefinition, myceliumDefinition, orbitalShrapnelDefinition, softBodyBlobDefinition, sparksDefinition, turingSkinDefinition } from '@hooksjam/gl-game-lab-simulations';
+import { alienVascularTreeDefinition, chainRainDefinition, fireworksDefinition, fluidTankDefinition, harmonicSandDefinition, myceliumDefinition, orbitalShrapnelDefinition, softBodyBlobDefinition, sparksDefinition, turingSkinDefinition } from '@hooksjam/gl-game-lab-simulations';
 import './index.css';
 import { parseDemoCaptureOptions } from './captureOptions.js';
 import { ballPitCaptureInputEvents } from './ballPitCaptureScenarios.js';
 
 export function App(): JSX.Element {
+  const [runtimeError, setRuntimeError] = useState<string>();
   const capture = parseDemoCaptureOptions(window.location.search);
   const experienceId = new URLSearchParams(window.location.search).get('experience');
   const experience = experienceId === 'harmonic-sand'
@@ -17,7 +19,8 @@ export function App(): JSX.Element {
             : experienceId === 'mycelium' ? myceliumDefinition
               : experienceId === 'alien-vascular-tree' ? alienVascularTreeDefinition
                 : experienceId === 'chain-rain' ? chainRainDefinition
-                  : experienceId === 'soft-body-blob' ? softBodyBlobDefinition : ballPitDefinition;
+                  : experienceId === 'soft-body-blob' ? softBodyBlobDefinition
+                    : experienceId === 'fluid-tank' ? fluidTankDefinition : ballPitDefinition;
   return (
     <main className={capture.enabled ? 'shell capture-shell' : 'shell'}>
       {!capture.enabled && (
@@ -34,6 +37,7 @@ export function App(): JSX.Element {
         {...(capture.enabled && capture.modeId ? { initialModeId: capture.modeId } : {})}
         {...(capture.enabled && capture.styleId ? { initialStyleId: capture.styleId } : {})}
         showChrome={!capture.enabled}
+        onError={(error) => { setRuntimeError(error instanceof Error ? error.message : String(error)); }}
         {...(capture.enabled ? { fixedFrameCapture: {
           frameNumber: capture.frameNumber,
           fixedDeltaSeconds: capture.fixedDeltaSeconds,
@@ -42,6 +46,7 @@ export function App(): JSX.Element {
         className="surface"
         canvasClassName="game-canvas"
       />
+      {runtimeError && <p className="runtime-error" role="alert">Engine error: {runtimeError}</p>}
     </main>
   );
 }
