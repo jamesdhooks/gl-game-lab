@@ -61,6 +61,24 @@ installs each browser independently and uploads its report even on failure. Brow
 errors, recovery timeouts, missing touch/gamepad observations, and resource drift
 are hard failures. See `docs/audit/browser-release-gate.md` for the contract.
 
+For physical desktop GPU certification, point one selected browser engine at its
+installed executable, run it headed, and retain the generated report:
+
+```powershell
+$env:GL_GAME_LAB_CONTEXT_STRATEGY = 'driver'
+$env:GL_GAME_LAB_BROWSER_HEADLESS = 'false'
+$env:GL_GAME_LAB_BROWSER_EXECUTABLE = 'C:\Program Files\Google\Chrome\Application\chrome.exe'
+pnpm browser:release -- --browser=chromium --scope=context
+```
+
+The report records the strategy, executable selection, headless override, browser
+version, requested scope, resource generations, counts, and bytes. Omit
+`--scope=context` to run the complete shell/platform/context release gate. A
+physical context signoff requires
+`context.strategy` to be `driver`, a generation increase, stable resource
+counts/bytes, resumed rendering, no page errors, and an overall passing result.
+Unset the three environment variables before returning to the hosted matrix.
+
 ## Demo experience loading
 
 The demo resolves `?experience=<id>` through `loadDemoExperience`. Games and

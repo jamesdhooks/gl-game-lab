@@ -40,3 +40,14 @@ Hosted Linux software renderers suspend page execution after
 explicit `registry` strategy rather than claiming a driver restoration it cannot
 perform. The real `driver` strategy remains available through
 `cycleContextForDiagnostics()` for physical-browser GPU signoff.
+
+An installed hardware-backed browser build can be selected with
+`GL_GAME_LAB_BROWSER_EXECUTABLE`; set `GL_GAME_LAB_BROWSER_HEADLESS=false` and
+`GL_GAME_LAB_CONTEXT_STRATEGY=driver`. The machine-readable report records those
+launch choices and the actual browser version so physical evidence cannot be
+confused with the hosted registry strategy. See
+`docs/architecture/development-workflows.md` for the exact PowerShell invocation.
+
+The 2026-07-11 physical-host matrix passes installed Chrome 150, installed Edge
+150, and headed Firefox 151. See `physical-driver-matrix-2026-07-11.md` for the
+captured generation/resource invariants and defects found during certification.

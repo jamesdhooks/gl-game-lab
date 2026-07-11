@@ -9,8 +9,13 @@ const demo = path.join(root, 'packages', 'demo');
 const output = path.resolve(process.env.GL_GAME_LAB_BROWSER_OUTPUT ?? path.join(root, '.artifacts', 'browser-release'));
 const port = Number(process.env.GL_GAME_LAB_BROWSER_PORT ?? 5177);
 const requested = argument('browser');
+const requestedScope = argument('scope') ?? 'all';
+const requestedExecutable = process.env.GL_GAME_LAB_BROWSER_EXECUTABLE;
+const requestedHeadless = optionalBooleanEnvironment('GL_GAME_LAB_BROWSER_HEADLESS');
 const browserTypes = { chromium, firefox, webkit };
 if (requested && !(requested in browserTypes)) throw new Error(`Unknown browser: ${requested}`);
+if (!['all', 'shell', 'functional', 'context'].includes(requestedScope)) throw new Error(`Unknown browser release scope: ${requestedScope}`);
+if (requestedExecutable && !requested) throw new Error('GL_GAME_LAB_BROWSER_EXECUTABLE requires one explicit --browser');
 const selected = requested ? [requested] : Object.keys(browserTypes);
 
 await mkdir(output, { recursive: true });
@@ -29,6 +34,12 @@ try {
 const report = Object.freeze({
   schemaVersion: 1,
   generatedAt: new Date().toISOString(),
+  execution: Object.freeze({
+    contextStrategy: process.env.GL_GAME_LAB_CONTEXT_STRATEGY ?? 'driver',
+    scope: requestedScope,
+    executable: requestedExecutable ?? 'playwright-managed',
+    headlessOverride: requestedHeadless ?? null,
+  }),
   results,
   passed: results.every((result) => result.passed),
 });
@@ -39,14 +50,27 @@ if (!report.passed) process.exitCode = 2;
 async function verifyBrowser(browserName, browserType) {
   const failures = [];
   try {
-    const functionalBrowser = await browserType.launch(browserLaunchOptions(browserName));
-    const shell = await verifyDemoShell(functionalBrowser, failures);
-    const functional = await verifyFunctional(functionalBrowser, failures)
-      .finally(async () => { await functionalBrowser.close(); });
-    const contextBrowser = await browserType.launch(browserLaunchOptions(browserName));
-    const context = await verifyContextRecovery(contextBrowser, failures)
-      .finally(async () => { await contextBrowser.close(); });
-    return Object.freeze({ browser: browserName, shell, functional, context, failures, passed: failures.length === 0 });
+    let version;
+    let shell;
+    let functional;
+    let context;
+    if (requestedScope === 'all' || requestedScope === 'shell' || requestedScope === 'functional') {
+      const functionalBrowser = await browserType.launch(browserLaunchOptions(browserName));
+      version = functionalBrowser.version();
+      try {
+        if (requestedScope === 'all' || requestedScope === 'shell') shell = await verifyDemoShell(functionalBrowser, failures);
+        if (requestedScope === 'all' || requestedScope === 'functional') functional = await verifyFunctional(functionalBrowser, failures);
+      } finally {
+        await functionalBrowser.close();
+      }
+    }
+    if (requestedScope === 'all' || requestedScope === 'context') {
+      const contextBrowser = await browserType.launch(browserLaunchOptions(browserName));
+      version ??= contextBrowser.version();
+      context = await verifyContextRecovery(contextBrowser, failures)
+        .finally(async () => { await contextBrowser.close(); });
+    }
+    return Object.freeze({ browser: browserName, version, shell, functional, context, failures, passed: failures.length === 0 });
   } catch (error) {
     failures.push(describe(error));
     return Object.freeze({ browser: browserName, failures, passed: false });
@@ -103,9 +127,13 @@ async function verifyDemoShell(browser, failures) {
 }
 
 function browserLaunchOptions(browserName) {
-  if (browserName !== 'firefox') return { headless: true };
+  const options = {
+    headless: requestedHeadless ?? browserName !== 'firefox',
+  };
+  if (requestedExecutable) options.executablePath = requestedExecutable;
+  if (browserName !== 'firefox') return options;
   return {
-    headless: false,
+    ...options,
     firefoxUserPrefs: {
       'webgl.disabled': false,
       'webgl.enable-webgl2': true,
@@ -170,8 +198,8 @@ async function verifyContextRecovery(browser, failures) {
     }, undefined, { timeout: 20_000 });
     const status = await controls.getAttribute('data-diagnostic-status');
     if (status !== 'context-passed') {
-      const runtimeError = await page.getByRole('alert').textContent().catch(() => undefined);
-      throw new Error(`Context cycle ended with ${status ?? 'missing status'}${runtimeError ? `: ${runtimeError}` : ''}`);
+      const runtimeError = await controls.getAttribute('data-diagnostic-error');
+      throw new Error(`Context cycle ended with ${status ?? 'missing status'}${runtimeError ? `: ${runtimeError.trim()}` : ''}`);
     }
     const values = await controls.evaluate((element) => ({
       strategy: element.dataset.contextStrategy,
@@ -206,4 +234,12 @@ function argument(name) {
 
 function describe(error) {
   return error instanceof Error ? error.message : String(error);
+}
+
+function optionalBooleanEnvironment(name) {
+  const value = process.env[name];
+  if (value === undefined) return undefined;
+  if (value === 'true' || value === '1') return true;
+  if (value === 'false' || value === '0') return false;
+  throw new Error(`${name} must be true, false, 1, or 0`);
 }
