@@ -13,7 +13,7 @@ rather than claiming unsupported software-driver restoration.
 
 - Ten workspace packages with enforced dependency boundaries and zero source
   hygiene exceptions.
-- 70 test files and 222 directly enumerated `it`/`test` cases, plus production
+- 71 test files and 223 directly enumerated `it`/`test` cases, plus production
   Chromium fixed-frame, lifecycle, and accessibility probes.
 - All 15 shipped experiences through engine-level render contracts; content has
   zero concrete WebGL renderer imports or WebGL context types.
@@ -53,9 +53,9 @@ tracked formatting debt, `any`, `@ts-ignore`, `console.log`, TODO, or FIXME usag
 
 Maintainability is reduced by concentration. `WebGL2Renderer.ts` was 728 lines and
 owned facade APIs, managed textures/fonts/fluids, pass orchestration, diagnostics,
-restoration, and plugin installation. Hardening Pass 2 extracted its sprite queue
-and restorable fluid adapter, reducing it to 645 lines, but managed textures/fonts
-and orchestration still share the facade. `DenseCircleParticleWorld2D.ts` is 651 lines;
+restoration, and plugin installation. Hardening remediation extracted its sprite
+queue, restorable fluid adapter, and managed texture/font/glyph owner, reducing it
+to 610 lines. Frame orchestration still shares the facade. `DenseCircleParticleWorld2D.ts` is 651 lines;
 `AssetManager.ts` is 583. Sparks and orbital-shrapnel plugins exceed 450 lines.
 These are not unreadable, but they are clear extraction candidates. Hardening
 Pass 2 removed the demo's nested selector in favor of an async registry-backed
@@ -153,8 +153,9 @@ WebGPU and full 3D/PBR correctly remain post-release scope.
    hosted Chromium, Firefox, and WebKit behavior is verified.
 2. Optional GPU timing exists but is not yet device-matrix evidence; detailed
    stalls and per-pass costs can still pass CPU budgets unnoticed.
-3. `WebGL2Renderer` still combines managed textures/fonts with frame orchestration,
-   despite the first adapter extractions.
+3. `WebGL2Renderer` still configures frame orchestration and renderer-family
+   adapters, though managed textures/fonts, fluids, queues, and glyph expansion
+   now have dedicated owners.
 
 ### Medium
 
@@ -269,7 +270,12 @@ The five criticisms most likely from another senior engine programmer are:
   fullscreen, field, simulation, and particle program. Driver failures now include
   stage and numbered source instead of renderer-specific opaque messages.
 - Extracted `SpriteRenderQueue` and the restorable `WebGLFluidField2D` adapter from
-  `WebGL2Renderer`; the facade fell from 728 to 645 lines without changing exports.
+  `WebGL2Renderer`, then extracted managed textures, bitmap fonts, and glyph
+  expansion into `ManagedRender2DResources`; the facade fell from 728 to 610 lines
+  without changing exports or ownership semantics.
+- Added a repository-owned Node Vitest configuration. Package-local test wrappers
+  now execute their actual suites in nested worktrees instead of inheriting the
+  legacy parent checkout and reporting false zero-test success.
 - Added `WebGL2FramePipelineService`: backend plugins can register deterministic,
   removable passes before or after every built-in stage. Duplicate/built-in IDs,
   invalid stages, and non-integer order values are rejected.
