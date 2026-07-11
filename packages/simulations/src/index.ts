@@ -9,6 +9,7 @@ import { alienVascularTreeDefinition } from './alien-vascular-tree/definition.js
 import { chainRainDefinition } from './chain-rain/definition.js';
 import { softBodyBlobDefinition } from './soft-body-blob/definition.js';
 import { fluidTankDefinition } from './fluid-tank/definition.js';
+import { particleFluidDefinition } from './particle-fluid/definition.js';
 
 export { harmonicSandDefinition } from './harmonic-sand/definition.js';
 export { fireworksDefinition } from './fireworks/definition.js';
@@ -30,6 +31,10 @@ export { fluidTankDefinition } from './fluid-tank/definition.js';
 export { FLUID_TANK_DEFAULTS, FLUID_TANK_SETTINGS, createFluidTankConfig, fluidBoolean, fluidNumber, fluidString, type FluidTankConfig } from './fluid-tank/config.js';
 export { FLUID_TANK_PLUGIN_ID, FluidTankControllerService, createFluidTankPlugin, type FluidTankController, type FluidTankMode } from './fluid-tank/FluidTankPlugin.js';
 export { FLUID_TANK_STYLE_MANIFEST } from './fluid-tank/styles.js';
+export { particleFluidDefinition } from './particle-fluid/definition.js';
+export { PARTICLE_FLUID_DEFAULTS, PARTICLE_FLUID_SETTINGS, createParticleFluidConfig, particleFluidNumber, particleFluidString, type ParticleFluidConfig } from './particle-fluid/config.js';
+export { PARTICLE_FLUID_PLUGIN_ID, ParticleFluidControllerService, createParticleFluidPlugin, type ParticleFluidController } from './particle-fluid/ParticleFluidPlugin.js';
+export { PARTICLE_FLUID_STYLE_MANIFEST } from './particle-fluid/styles.js';
 export { VASCULAR_TREE_DEFAULTS, VASCULAR_TREE_SETTINGS, createVascularTreeConfig, type VascularTreeConfig } from './alien-vascular-tree/config.js';
 export { VASCULAR_TREE_PLUGIN_ID, VascularTreeControllerService, createVascularTreePlugin, type VascularTreeController, type VascularTreeMode } from './alien-vascular-tree/VascularTreePlugin.js';
 export { VASCULAR_TREE_STYLE_MANIFEST } from './alien-vascular-tree/styles.js';
@@ -64,4 +69,4 @@ export {
 } from './harmonic-sand/HarmonicSandPlugin.js';
 export { HARMONIC_SAND_STYLE_MANIFEST } from './harmonic-sand/styles.js';
 
-export const SIMULATION_REGISTRY = new ExperienceRegistry().register(harmonicSandDefinition).register(fireworksDefinition).register(sparksDefinition).register(orbitalShrapnelDefinition).register(turingSkinDefinition).register(myceliumDefinition).register(alienVascularTreeDefinition).register(chainRainDefinition).register(softBodyBlobDefinition).register(fluidTankDefinition);
+export const SIMULATION_REGISTRY = new ExperienceRegistry().register(harmonicSandDefinition).register(fireworksDefinition).register(sparksDefinition).register(orbitalShrapnelDefinition).register(turingSkinDefinition).register(myceliumDefinition).register(alienVascularTreeDefinition).register(chainRainDefinition).register(softBodyBlobDefinition).register(fluidTankDefinition).register(particleFluidDefinition);

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { ExperienceRuntime } from '@hooksjam/gl-game-lab-react';
 import { ballPitDefinition } from '@hooksjam/gl-game-lab-games';
-import { alienVascularTreeDefinition, chainRainDefinition, fireworksDefinition, fluidTankDefinition, harmonicSandDefinition, myceliumDefinition, orbitalShrapnelDefinition, softBodyBlobDefinition, sparksDefinition, turingSkinDefinition } from '@hooksjam/gl-game-lab-simulations';
+import { alienVascularTreeDefinition, chainRainDefinition, fireworksDefinition, fluidTankDefinition, harmonicSandDefinition, myceliumDefinition, orbitalShrapnelDefinition, particleFluidDefinition, softBodyBlobDefinition, sparksDefinition, turingSkinDefinition } from '@hooksjam/gl-game-lab-simulations';
 import './index.css';
 import { parseDemoCaptureOptions } from './captureOptions.js';
 import { ballPitCaptureInputEvents } from './ballPitCaptureScenarios.js';
@@ -20,7 +20,8 @@ export function App(): JSX.Element {
               : experienceId === 'alien-vascular-tree' ? alienVascularTreeDefinition
                 : experienceId === 'chain-rain' ? chainRainDefinition
                   : experienceId === 'soft-body-blob' ? softBodyBlobDefinition
-                    : experienceId === 'fluid-tank' ? fluidTankDefinition : ballPitDefinition;
+                    : experienceId === 'fluid-tank' ? fluidTankDefinition
+                      : experienceId === 'particle-fluid' ? particleFluidDefinition : ballPitDefinition;
   return (
     <main className={capture.enabled ? 'shell capture-shell' : 'shell'}>
       {!capture.enabled && (
