@@ -68,6 +68,8 @@ export function ExperienceRuntime({
   const [introOpen, setIntroOpen] = useState(showIntroCard);
   const [styleMenuOpen, setStyleMenuOpen] = useState(false);
   const controllerRef = useRef<ExperienceRuntimeController>();
+  const onReadyRef = useRef(onReady);
+  onReadyRef.current = onReady;
 
   useEffect(() => {
     controllerRef.current = undefined;
@@ -98,8 +100,8 @@ export function ExperienceRuntime({
   const handleReady = useCallback((engine: GameEngine): void => {
     const controller = engine.kernel.tryGet(ExperienceRuntimeControllerService);
     controllerRef.current = controller;
-    onReady?.(engine, controller);
-  }, [onReady]);
+    onReadyRef.current?.(engine, controller);
+  }, []);
 
   const changeMode = (nextModeId: string): void => {
     controllerRef.current?.setMode(nextModeId);

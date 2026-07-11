@@ -106,6 +106,12 @@ export function GameCanvas({
 }: GameCanvasProps): JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const diagnosticsRef = useRef<HTMLOutputElement | null>(null);
+  const onReadyRef = useRef(onReady);
+  const onErrorRef = useRef(onError);
+  const onFixedFrameCaptureRef = useRef(onFixedFrameCapture);
+  onReadyRef.current = onReady;
+  onErrorRef.current = onError;
+  onFixedFrameCaptureRef.current = onFixedFrameCapture;
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -122,7 +128,7 @@ export function GameCanvas({
     const reportError = (error: unknown): void => {
       canvas.dataset.engineState = 'error';
       canvas.dataset.engineError = describeError(error);
-      if (onError) onError(error);
+      if (onErrorRef.current) onErrorRef.current(error);
       else queueMicrotask(() => { throw error; });
     };
     const resize = (): void => {
@@ -210,7 +216,7 @@ export function GameCanvas({
           canvas.dataset.captureDiagnostics = engine.diagnostics.capture();
           if (result.entityCount !== undefined) canvas.dataset.captureEntityCount = String(result.entityCount);
           canvas.dataset.engineState = 'capture-ready';
-          onFixedFrameCapture?.(result);
+          onFixedFrameCaptureRef.current?.(result);
         } else {
           loop = new BrowserFrameLoop(engine, undefined, (error) => {
             reportError(error);
@@ -227,7 +233,7 @@ export function GameCanvas({
           };
           diagnosticsFrame = requestAnimationFrame(updateDiagnostics);
         }
-        onReady?.(engine);
+        onReadyRef.current?.(engine);
       } catch (error) {
         let failure = error;
         if (destroyHandle.started) {
@@ -260,7 +266,7 @@ export function GameCanvas({
         }
       });
     };
-  }, [createEngine, createPlugins, fixedFrameCapture, onError, onFixedFrameCapture, onReady, plugins, preventDefaultInput, showDiagnostics]);
+  }, [createEngine, createPlugins, fixedFrameCapture, plugins, preventDefaultInput, showDiagnostics]);
 
   return <Fragment>
     <canvas ref={canvasRef} className={className} style={style} aria-label={ariaLabel} data-engine-state="created" />
