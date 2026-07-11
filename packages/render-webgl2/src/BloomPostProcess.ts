@@ -1,4 +1,5 @@
 import type { WebGL2Device, WebGLTextureResource } from './WebGL2Device.js';
+import { createShaderProgram, requireShaderUniform } from './ShaderProgram.js';
 
 export interface BloomOptions {
   readonly enabled?: boolean;
@@ -77,15 +78,15 @@ export class BloomPostProcess {
     this.gl = device.gl;
     this.options = normalizeBloomOptions(options);
     this.vao = requireValue(this.gl.createVertexArray(), 'Unable to create post-process vertex array');
-    this.filterProgram = createProgram(this.gl, FILTER_FRAGMENT_SHADER);
-    this.compositeProgram = createProgram(this.gl, COMPOSITE_FRAGMENT_SHADER);
-    this.filterTextureLocation = uniform(this.gl, this.filterProgram, 'u_texture');
-    this.filterTexelLocation = uniform(this.gl, this.filterProgram, 'u_texel');
-    this.filterDirectionLocation = uniform(this.gl, this.filterProgram, 'u_direction');
-    this.filterThresholdLocation = uniform(this.gl, this.filterProgram, 'u_threshold');
-    this.compositeSceneLocation = uniform(this.gl, this.compositeProgram, 'u_scene');
-    this.compositeBloomLocation = uniform(this.gl, this.compositeProgram, 'u_bloom');
-    this.compositeIntensityLocation = uniform(this.gl, this.compositeProgram, 'u_intensity');
+    this.filterProgram = createShaderProgram(this.gl, { label: 'bloom filter', vertexSource: FULLSCREEN_VERTEX_SHADER, fragmentSource: FILTER_FRAGMENT_SHADER });
+    this.compositeProgram = createShaderProgram(this.gl, { label: 'bloom composite', vertexSource: FULLSCREEN_VERTEX_SHADER, fragmentSource: COMPOSITE_FRAGMENT_SHADER });
+    this.filterTextureLocation = requireShaderUniform(this.gl, this.filterProgram, 'u_texture', 'bloom filter');
+    this.filterTexelLocation = requireShaderUniform(this.gl, this.filterProgram, 'u_texel', 'bloom filter');
+    this.filterDirectionLocation = requireShaderUniform(this.gl, this.filterProgram, 'u_direction', 'bloom filter');
+    this.filterThresholdLocation = requireShaderUniform(this.gl, this.filterProgram, 'u_threshold', 'bloom filter');
+    this.compositeSceneLocation = requireShaderUniform(this.gl, this.compositeProgram, 'u_scene', 'bloom composite');
+    this.compositeBloomLocation = requireShaderUniform(this.gl, this.compositeProgram, 'u_bloom', 'bloom composite');
+    this.compositeIntensityLocation = requireShaderUniform(this.gl, this.compositeProgram, 'u_intensity', 'bloom composite');
   }
 
   configure(options: BloomOptions): void {
@@ -220,40 +221,6 @@ function finiteRange(value: number, minimum: number, maximum: number, label: str
 function requireResource(resource: WebGLTextureResource | undefined): WebGLTextureResource {
   if (!resource) throw new Error('Bloom render target is unavailable');
   return resource;
-}
-
-function uniform(gl: WebGL2RenderingContext, program: WebGLProgram, name: string): WebGLUniformLocation {
-  return requireValue(gl.getUniformLocation(program, name), `Post-process uniform ${name} is missing`);
-}
-
-function createProgram(gl: WebGL2RenderingContext, fragmentSource: string): WebGLProgram {
-  const vertex = compileShader(gl, gl.VERTEX_SHADER, FULLSCREEN_VERTEX_SHADER);
-  const fragment = compileShader(gl, gl.FRAGMENT_SHADER, fragmentSource);
-  const program = requireValue(gl.createProgram(), 'Unable to create post-process program');
-  try {
-    gl.attachShader(program, vertex);
-    gl.attachShader(program, fragment);
-    gl.linkProgram(program);
-    if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
-      throw new Error(`Post-process shader link failed: ${gl.getProgramInfoLog(program) ?? 'unknown error'}`);
-    }
-    return program;
-  } finally {
-    gl.deleteShader(vertex);
-    gl.deleteShader(fragment);
-  }
-}
-
-function compileShader(gl: WebGL2RenderingContext, type: number, source: string): WebGLShader {
-  const shader = requireValue(gl.createShader(type), 'Unable to create post-process shader');
-  gl.shaderSource(shader, source);
-  gl.compileShader(shader);
-  if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
-    const error = gl.getShaderInfoLog(shader) ?? 'unknown error';
-    gl.deleteShader(shader);
-    throw new Error(`Post-process shader compilation failed: ${error}`);
-  }
-  return shader;
 }
 
 function requireValue<T>(value: T | null, message: string): T {

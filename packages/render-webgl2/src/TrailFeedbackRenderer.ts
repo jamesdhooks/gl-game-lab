@@ -1,5 +1,6 @@
 import { createGpuDoubleRenderTarget, type GpuDoubleRenderTarget } from './GpuRenderTarget.js';
 import type { GpuParticleRenderDestination } from './GpuParticleRenderer.js';
+import { createShaderProgram, requireShaderUniform } from './ShaderProgram.js';
 
 export interface TrailFeedbackOptions {
   readonly fade?: number;
@@ -22,18 +23,30 @@ export class TrailFeedbackRenderer {
   private readonly fadeProgram: WebGLProgram;
   private readonly compositeProgram: WebGLProgram;
   private readonly vao: WebGLVertexArrayObject;
+  private readonly fadeTrailLocation: WebGLUniformLocation;
+  private readonly fadeAmountLocation: WebGLUniformLocation;
+  private readonly compositeTrailLocation: WebGLUniformLocation;
+  private readonly compositeBackgroundLocation: WebGLUniformLocation;
+  private readonly compositeBloomLocation: WebGLUniformLocation;
   private targets: GpuDoubleRenderTarget | undefined;
   private width = 0;
   private height = 0;
   private disposed = false;
 
   constructor(private readonly gl: WebGL2RenderingContext) {
-    this.fadeProgram = createProgram(gl, VERTEX_SHADER, FADE_SHADER);
+    this.fadeProgram = createShaderProgram(gl, { label: 'trail feedback fade', vertexSource: VERTEX_SHADER, fragmentSource: FADE_SHADER });
+    const composite = createShaderProgram(gl, { label: 'trail feedback composite', vertexSource: VERTEX_SHADER, fragmentSource: COMPOSITE_SHADER });
     try {
-      this.compositeProgram = createProgram(gl, VERTEX_SHADER, COMPOSITE_SHADER);
+      this.compositeProgram = composite;
       this.vao = requireValue(gl.createVertexArray(), 'Unable to allocate trail feedback vertex array');
+      this.fadeTrailLocation = requireShaderUniform(gl, this.fadeProgram, 'uTrail', 'trail feedback fade');
+      this.fadeAmountLocation = requireShaderUniform(gl, this.fadeProgram, 'uFade', 'trail feedback fade');
+      this.compositeTrailLocation = requireShaderUniform(gl, composite, 'uTrail', 'trail feedback composite');
+      this.compositeBackgroundLocation = requireShaderUniform(gl, composite, 'uBackground', 'trail feedback composite');
+      this.compositeBloomLocation = requireShaderUniform(gl, composite, 'uBloom', 'trail feedback composite');
     } catch (error) {
       gl.deleteProgram(this.fadeProgram);
+      gl.deleteProgram(composite);
       throw error;
     }
   }
@@ -49,8 +62,8 @@ export class TrailFeedbackRenderer {
     gl.useProgram(this.fadeProgram);
     gl.bindVertexArray(this.vao);
     targets.read.attach(0);
-    gl.uniform1i(gl.getUniformLocation(this.fadeProgram, 'uTrail'), 0);
-    gl.uniform1f(gl.getUniformLocation(this.fadeProgram, 'uFade'), range(fade, 0, 1, 'Trail fade'));
+    gl.uniform1i(this.fadeTrailLocation, 0);
+    gl.uniform1f(this.fadeAmountLocation, range(fade, 0, 1, 'Trail fade'));
     gl.drawArrays(gl.TRIANGLES, 0, 3);
     gl.bindVertexArray(null);
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
@@ -68,9 +81,9 @@ export class TrailFeedbackRenderer {
     gl.useProgram(this.compositeProgram);
     gl.bindVertexArray(this.vao);
     targets.read.attach(0);
-    gl.uniform1i(gl.getUniformLocation(this.compositeProgram, 'uTrail'), 0);
-    gl.uniform3f(gl.getUniformLocation(this.compositeProgram, 'uBackground'), ...background);
-    gl.uniform1f(gl.getUniformLocation(this.compositeProgram, 'uBloom'), range(bloom, 0, 16, 'Trail bloom'));
+    gl.uniform1i(this.compositeTrailLocation, 0);
+    gl.uniform3f(this.compositeBackgroundLocation, ...background);
+    gl.uniform1f(this.compositeBloomLocation, range(bloom, 0, 16, 'Trail bloom'));
     gl.drawArrays(gl.TRIANGLES, 0, 3);
     gl.bindVertexArray(null);
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
@@ -110,37 +123,6 @@ function range(value: number, min: number, max: number, label: string): number {
 function dimension(value: number, label: string): number {
   if (!Number.isSafeInteger(value) || value < 1) throw new Error(`${label} must be a positive integer`);
   return value;
-}
-
-function createProgram(gl: WebGL2RenderingContext, vertexSource: string, fragmentSource: string): WebGLProgram {
-  const vertex = compile(gl, gl.VERTEX_SHADER, vertexSource);
-  const fragment = compile(gl, gl.FRAGMENT_SHADER, fragmentSource);
-  const program = requireValue(gl.createProgram(), 'Unable to create trail feedback program');
-  try {
-    gl.attachShader(program, vertex);
-    gl.attachShader(program, fragment);
-    gl.linkProgram(program);
-    if (!gl.getProgramParameter(program, gl.LINK_STATUS)) throw new Error(`Trail feedback shader link failed: ${gl.getProgramInfoLog(program) ?? 'unknown error'}`);
-    return program;
-  } catch (error) {
-    gl.deleteProgram(program);
-    throw error;
-  } finally {
-    gl.deleteShader(vertex);
-    gl.deleteShader(fragment);
-  }
-}
-
-function compile(gl: WebGL2RenderingContext, type: number, source: string): WebGLShader {
-  const shader = requireValue(gl.createShader(type), 'Unable to create trail feedback shader');
-  gl.shaderSource(shader, source);
-  gl.compileShader(shader);
-  if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
-    const detail = gl.getShaderInfoLog(shader) ?? 'unknown error';
-    gl.deleteShader(shader);
-    throw new Error(`Trail feedback shader compilation failed: ${detail}`);
-  }
-  return shader;
 }
 
 function requireValue<T>(value: T | null | undefined, message: string): T { if (value == null) throw new Error(message); return value; }

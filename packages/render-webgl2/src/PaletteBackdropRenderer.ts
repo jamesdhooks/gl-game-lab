@@ -1,5 +1,6 @@
 import type { SpriteRenderTarget } from './SpriteRenderer.js';
 import type { WebGL2Device } from './WebGL2Device.js';
+import { createShaderProgram, requireShaderUniform } from './ShaderProgram.js';
 
 export interface PaletteBackdropOptions {
   readonly base: readonly [number, number, number, number];
@@ -49,14 +50,14 @@ export class PaletteBackdropRenderer {
 
   constructor(private readonly device: WebGL2Device) {
     this.gl = device.gl;
-    this.program = createProgram(this.gl);
+    this.program = createShaderProgram(this.gl, { label: 'palette backdrop', vertexSource: VERTEX_SHADER, fragmentSource: FRAGMENT_SHADER });
     this.vao = requireValue(this.gl.createVertexArray(), 'Unable to create backdrop vertex array');
-    this.viewportLocation = uniform(this.gl, this.program, 'u_viewport');
-    this.baseLocation = uniform(this.gl, this.program, 'u_base');
-    this.primaryLocation = uniform(this.gl, this.program, 'u_primary');
-    this.secondaryLocation = uniform(this.gl, this.program, 'u_secondary');
-    this.accentLocation = uniform(this.gl, this.program, 'u_accent');
-    this.tierLocation = uniform(this.gl, this.program, 'u_tier');
+    this.viewportLocation = requireShaderUniform(this.gl, this.program, 'u_viewport', 'palette backdrop');
+    this.baseLocation = requireShaderUniform(this.gl, this.program, 'u_base', 'palette backdrop');
+    this.primaryLocation = requireShaderUniform(this.gl, this.program, 'u_primary', 'palette backdrop');
+    this.secondaryLocation = requireShaderUniform(this.gl, this.program, 'u_secondary', 'palette backdrop');
+    this.accentLocation = requireShaderUniform(this.gl, this.program, 'u_accent', 'palette backdrop');
+    this.tierLocation = requireShaderUniform(this.gl, this.program, 'u_tier', 'palette backdrop');
   }
 
   configure(options: PaletteBackdropOptions | undefined): void {
@@ -123,38 +124,6 @@ function mix(from: readonly [number, number, number], to: readonly [number, numb
 function range(value: number, minimum: number, maximum: number, label: string): number {
   if (!Number.isFinite(value) || value < minimum || value > maximum) throw new Error(`${label} must be between ${minimum} and ${maximum}`);
   return value;
-}
-
-function uniform(gl: WebGL2RenderingContext, program: WebGLProgram, name: string): WebGLUniformLocation {
-  return requireValue(gl.getUniformLocation(program, name), `Backdrop uniform ${name} is missing`);
-}
-
-function createProgram(gl: WebGL2RenderingContext): WebGLProgram {
-  const vertex = compileShader(gl, gl.VERTEX_SHADER, VERTEX_SHADER);
-  const fragment = compileShader(gl, gl.FRAGMENT_SHADER, FRAGMENT_SHADER);
-  const program = requireValue(gl.createProgram(), 'Unable to create backdrop program');
-  try {
-    gl.attachShader(program, vertex);
-    gl.attachShader(program, fragment);
-    gl.linkProgram(program);
-    if (!gl.getProgramParameter(program, gl.LINK_STATUS)) throw new Error(`Backdrop shader link failed: ${gl.getProgramInfoLog(program) ?? 'unknown error'}`);
-    return program;
-  } finally {
-    gl.deleteShader(vertex);
-    gl.deleteShader(fragment);
-  }
-}
-
-function compileShader(gl: WebGL2RenderingContext, type: number, source: string): WebGLShader {
-  const shader = requireValue(gl.createShader(type), 'Unable to create backdrop shader');
-  gl.shaderSource(shader, source);
-  gl.compileShader(shader);
-  if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
-    const error = gl.getShaderInfoLog(shader) ?? 'unknown error';
-    gl.deleteShader(shader);
-    throw new Error(`Backdrop shader compilation failed: ${error}`);
-  }
-  return shader;
 }
 
 function requireValue<T>(value: T | null, message: string): T {

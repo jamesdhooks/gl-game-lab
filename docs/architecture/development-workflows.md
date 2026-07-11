@@ -36,7 +36,7 @@ experience registry. These controls are demo-only and are not public runtime API
 
 ## Shader diagnostics
 
-Content-provided fullscreen, field, simulation, and particle shaders compile via
+Every built-in and content-provided renderer shader compiles via
 `createShaderProgram`. Callers provide a stable label. Compilation failures include
 the label, shader stage, driver log, and numbered source; successful links retain
 active uniform and attribute reflection for tooling through

@@ -1,5 +1,6 @@
 import type { BlendMode } from './SpriteRenderer.js';
 import type { GpuParticleRenderDestination } from './GpuParticleRenderer.js';
+import { createShaderProgram, requireShaderUniform } from './ShaderProgram.js';
 export interface DynamicTriangleMeshBatch {
   readonly vertexCount: number;
   readonly positions: Float32Array;
@@ -29,13 +30,22 @@ export class DynamicTriangleMeshRenderer {
   private readonly vao: WebGLVertexArrayObject;
   private readonly positionBuffer: WebGLBuffer;
   private readonly seedBuffer: WebGLBuffer;
+  private readonly worldSizeLocation: WebGLUniformLocation;
+  private readonly paletteLocation: WebGLUniformLocation;
+  private readonly paletteCountLocation: WebGLUniformLocation;
+  private readonly opacityLocation: WebGLUniformLocation;
+  private readonly paletteData = new Float32Array(12);
   private vertexCount = 0;
   private disposed = false;
   constructor(private readonly gl: WebGL2RenderingContext) {
-    this.program = program(gl);
+    this.program = createShaderProgram(gl, { label: 'dynamic triangle mesh', vertexSource: VERTEX_SHADER, fragmentSource: FRAGMENT_SHADER });
     this.vao = req(gl.createVertexArray(), 'Unable to allocate dynamic mesh vertex array');
     this.positionBuffer = req(gl.createBuffer(), 'Unable to allocate dynamic mesh position buffer');
     this.seedBuffer = req(gl.createBuffer(), 'Unable to allocate dynamic mesh seed buffer');
+    this.worldSizeLocation = requireShaderUniform(gl, this.program, 'uWorldSize', 'dynamic triangle mesh');
+    this.paletteLocation = requireShaderUniform(gl, this.program, 'uPalette[0]', 'dynamic triangle mesh');
+    this.paletteCountLocation = requireShaderUniform(gl, this.program, 'uPaletteCount', 'dynamic triangle mesh');
+    this.opacityLocation = requireShaderUniform(gl, this.program, 'uOpacity', 'dynamic triangle mesh');
     gl.bindVertexArray(this.vao);
     gl.bindBuffer(gl.ARRAY_BUFFER, this.positionBuffer);
     gl.enableVertexAttribArray(0);
@@ -61,17 +71,18 @@ export class DynamicTriangleMeshRenderer {
       return;
     if (options.palette.length < 1 || options.palette.length > 4)
       throw new Error('Dynamic mesh palette must contain between one and four colors');
-    const gl = this.gl, palette = new Float32Array(12);
-    options.palette.forEach((color, index) => palette.set(color, index * 3));
+    const gl = this.gl;
+    this.paletteData.fill(0);
+    options.palette.forEach((color, index) => this.paletteData.set(color, index * 3));
     gl.bindFramebuffer(gl.FRAMEBUFFER, destination.framebuffer ?? null);
     gl.viewport(0, 0, destination.width, destination.height);
     gl.useProgram(this.program);
     gl.bindVertexArray(this.vao);
     blend(gl, options.blend ?? 'alpha');
-    gl.uniform2f(gl.getUniformLocation(this.program, 'uWorldSize'), options.worldWidth, options.worldHeight);
-    gl.uniform3fv(gl.getUniformLocation(this.program, 'uPalette[0]'), palette);
-    gl.uniform1i(gl.getUniformLocation(this.program, 'uPaletteCount'), options.palette.length);
-    gl.uniform1f(gl.getUniformLocation(this.program, 'uOpacity'), options.opacity ?? 1);
+    gl.uniform2f(this.worldSizeLocation, options.worldWidth, options.worldHeight);
+    gl.uniform3fv(this.paletteLocation, this.paletteData);
+    gl.uniform1i(this.paletteCountLocation, options.palette.length);
+    gl.uniform1f(this.opacityLocation, options.opacity ?? 1);
     gl.drawArrays(gl.TRIANGLES, 0, this.vertexCount);
     gl.bindVertexArray(null);
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
@@ -103,29 +114,10 @@ function blend(gl: WebGL2RenderingContext, mode: BlendMode) {
   else
     gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
 }
-function program(gl: WebGL2RenderingContext) {
-  const vertexSource = `#version 300 es\nprecision highp float;layout(location=0)in vec2 aPosition;layout(location=1)in float aSeed;uniform vec2 uWorldSize;flat out float vSeed;out vec2 vPosition;void main(){gl_Position=vec4(aPosition.x/uWorldSize.x*2.0-1.0,1.0-aPosition.y/uWorldSize.y*2.0,0,1);vSeed=aSeed;vPosition=aPosition/uWorldSize;}`;
-  const fragmentSource = `#version 300 es\nprecision highp float;flat in float vSeed;in vec2 vPosition;uniform vec3 uPalette[4];uniform int uPaletteCount;uniform float uOpacity;out vec4 outColor;void main(){int index=int(abs(vSeed))%max(1,uPaletteCount);vec3 base=uPalette[index];float sheen=.82+.18*sin((vPosition.x-vPosition.y)*18.0+vSeed);outColor=vec4(base*sheen,uOpacity);}`;
-  const vs = shader(gl, gl.VERTEX_SHADER, vertexSource);
-  const fs = shader(gl, gl.FRAGMENT_SHADER, fragmentSource);
-  const p = req(gl.createProgram(), 'Unable to create dynamic mesh program');
-  gl.attachShader(p, vs);
-  gl.attachShader(p, fs);
-  gl.linkProgram(p);
-  gl.deleteShader(vs);
-  gl.deleteShader(fs);
-  if (!gl.getProgramParameter(p, gl.LINK_STATUS))
-    throw new Error(`Dynamic mesh shader link failed: ${gl.getProgramInfoLog(p) ?? 'unknown error'}`);
-  return p;
-}
-function shader(gl: WebGL2RenderingContext, type: number, source: string) {
-  const value = req(gl.createShader(type), 'Unable to create dynamic mesh shader');
-  gl.shaderSource(value, source);
-  gl.compileShader(value);
-  if (!gl.getShaderParameter(value, gl.COMPILE_STATUS))
-    throw new Error(`Dynamic mesh shader compilation failed: ${gl.getShaderInfoLog(value) ?? 'unknown error'}`);
-  return value;
-}
+const VERTEX_SHADER = `#version 300 es
+precision highp float;layout(location=0)in vec2 aPosition;layout(location=1)in float aSeed;uniform vec2 uWorldSize;flat out float vSeed;out vec2 vPosition;void main(){gl_Position=vec4(aPosition.x/uWorldSize.x*2.0-1.0,1.0-aPosition.y/uWorldSize.y*2.0,0,1);vSeed=aSeed;vPosition=aPosition/uWorldSize;}`;
+const FRAGMENT_SHADER = `#version 300 es
+precision highp float;flat in float vSeed;in vec2 vPosition;uniform vec3 uPalette[4];uniform int uPaletteCount;uniform float uOpacity;out vec4 outColor;void main(){int index=int(abs(vSeed))%max(1,uPaletteCount);vec3 base=uPalette[index];float sheen=.82+.18*sin((vPosition.x-vPosition.y)*18.0+vSeed);outColor=vec4(base*sheen,uOpacity);}`;
 function req<T>(value: T | null, message: string): T {
   if (value === null)
     throw new Error(message);

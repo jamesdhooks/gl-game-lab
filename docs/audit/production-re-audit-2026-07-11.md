@@ -118,8 +118,9 @@ games, while packed simulation domains are deliberately separate. A visual edito
 authoring serialization UI, and prefab diff workflow remain temporary/planned.
 
 The renderer is production-capable for this catalog but not yet production-complete
-as a general engine. Dynamic shader paths now have reflection, numbered source
-diagnostics, and GPU frame timing, but it lacks material schemas, pipeline caches,
+as a general engine. All built-in and dynamic shader paths now have reflection,
+numbered source diagnostics, required-uniform validation, and GPU frame timing,
+but it lacks material schemas, pipeline caches,
 render-target pooling and masks/scissor hierarchy. Backend plugins can now insert
 deterministically ordered passes around every built-in graph stage.
 
@@ -254,7 +255,7 @@ The five criticisms most likely from another senior engine programmer are:
   state explicitly in the live overlay.
 - The production source-aliased bundle rebuilt successfully after the complete
   local remediation slice. Its former 619 kB monolith is now four JavaScript chunks
-  (19.95, 22.28, 222.36, and 361.84 kB; 208 modules) with no size warning.
+  (19.95, 22.28, 222.36, and 361.28 kB; 208 modules) with no size warning.
   Device-matrix timer evidence remains open.
 - Added a shared labeled shader compiler/reflection layer for every content-provided
   fullscreen, field, simulation, and particle program. Driver failures now include
@@ -275,3 +276,8 @@ The five criticisms most likely from another senior engine programmer are:
   `SIMULATION_REGISTRY` resolution and dynamic game/simulation package boundaries.
   Ball Pit, Turing Skin, Particle Fluid, Splash capture, Reference Arena lifecycle,
   and unknown-ID fallback routes passed against the production output.
+- Routed the remaining bloom, backdrop, trail, segment, triangle-mesh, and
+  metaball programs through `createShaderProgram`. Required locations are cached
+  and validated once; recurring palette/background allocations were removed.
+  Representative production scenes exercising every shader family reached
+  `running` without engine errors.

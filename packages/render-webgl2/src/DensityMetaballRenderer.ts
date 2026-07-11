@@ -1,5 +1,6 @@
 import { createGpuRenderTarget, type GpuRenderTarget } from './GpuRenderTarget.js';
 import type { GpuParticleRenderDestination } from './GpuParticleRenderer.js';
+import { createShaderProgram, requireShaderUniform } from './ShaderProgram.js';
 export interface DensityMetaballBatch {
   readonly count: number;
   readonly positions: Float32Array;
@@ -49,17 +50,55 @@ export class DensityMetaballRenderer {
   private readonly positionBuffer: WebGLBuffer;
   private readonly radiusBuffer: WebGLBuffer;
   private readonly temperatureBuffer: WebGLBuffer;
+  private readonly splatWorldSize: WebGLUniformLocation;
+  private readonly splatPixelScale: WebGLUniformLocation;
+  private readonly splatRadiusScale: WebGLUniformLocation;
+  private readonly compositeDensity: WebGLUniformLocation;
+  private readonly compositeTexel: WebGLUniformLocation;
+  private readonly compositePalette: WebGLUniformLocation;
+  private readonly compositePaletteCount: WebGLUniformLocation;
+  private readonly compositeBackground: WebGLUniformLocation;
+  private readonly compositeThreshold: WebGLUniformLocation;
+  private readonly compositeSoftness: WebGLUniformLocation;
+  private readonly compositeThermalContrast: WebGLUniformLocation;
+  private readonly compositeRefraction: WebGLUniformLocation;
+  private readonly compositeGloss: WebGLUniformLocation;
+  private readonly compositeRim: WebGLUniformLocation;
+  private readonly compositeOpacity: WebGLUniformLocation;
+  private readonly compositeTime: WebGLUniformLocation;
+  private readonly compositeBackgroundDepth: WebGLUniformLocation;
+  private readonly compositeAspect: WebGLUniformLocation;
+  private readonly paletteData = new Float32Array(12);
+  private readonly backgroundData = new Float32Array(3);
   private density: GpuRenderTarget | undefined;
   private count = 0;
   private disposed = false;
   constructor(private readonly gl: WebGL2RenderingContext) {
-    this.splatProgram = makeProgram(gl, SPLAT_VERTEX, SPLAT_FRAGMENT);
-    this.compositeProgram = makeProgram(gl, SCREEN_VERTEX, COMPOSITE_FRAGMENT);
+    this.splatProgram = createShaderProgram(gl, { label: 'density metaball splat', vertexSource: SPLAT_VERTEX, fragmentSource: SPLAT_FRAGMENT });
+    this.compositeProgram = createShaderProgram(gl, { label: 'density metaball composite', vertexSource: SCREEN_VERTEX, fragmentSource: COMPOSITE_FRAGMENT });
     this.splatVao = req(gl.createVertexArray(), 'Unable to allocate metaball vertex array');
     this.screenVao = req(gl.createVertexArray(), 'Unable to allocate metaball screen array');
     this.positionBuffer = req(gl.createBuffer(), 'Unable to allocate metaball positions');
     this.radiusBuffer = req(gl.createBuffer(), 'Unable to allocate metaball radii');
     this.temperatureBuffer = req(gl.createBuffer(), 'Unable to allocate metaball temperatures');
+    this.splatWorldSize = requireShaderUniform(gl, this.splatProgram, 'uWorldSize', 'density metaball splat');
+    this.splatPixelScale = requireShaderUniform(gl, this.splatProgram, 'uPixelScale', 'density metaball splat');
+    this.splatRadiusScale = requireShaderUniform(gl, this.splatProgram, 'uRadiusScale', 'density metaball splat');
+    this.compositeDensity = requireShaderUniform(gl, this.compositeProgram, 'uDensity', 'density metaball composite');
+    this.compositeTexel = requireShaderUniform(gl, this.compositeProgram, 'uTexel', 'density metaball composite');
+    this.compositePalette = requireShaderUniform(gl, this.compositeProgram, 'uPalette[0]', 'density metaball composite');
+    this.compositePaletteCount = requireShaderUniform(gl, this.compositeProgram, 'uPaletteCount', 'density metaball composite');
+    this.compositeBackground = requireShaderUniform(gl, this.compositeProgram, 'uBackground', 'density metaball composite');
+    this.compositeThreshold = requireShaderUniform(gl, this.compositeProgram, 'uThreshold', 'density metaball composite');
+    this.compositeSoftness = requireShaderUniform(gl, this.compositeProgram, 'uSoftness', 'density metaball composite');
+    this.compositeThermalContrast = requireShaderUniform(gl, this.compositeProgram, 'uThermalContrast', 'density metaball composite');
+    this.compositeRefraction = requireShaderUniform(gl, this.compositeProgram, 'uRefraction', 'density metaball composite');
+    this.compositeGloss = requireShaderUniform(gl, this.compositeProgram, 'uGloss', 'density metaball composite');
+    this.compositeRim = requireShaderUniform(gl, this.compositeProgram, 'uRim', 'density metaball composite');
+    this.compositeOpacity = requireShaderUniform(gl, this.compositeProgram, 'uOpacity', 'density metaball composite');
+    this.compositeTime = requireShaderUniform(gl, this.compositeProgram, 'uTime', 'density metaball composite');
+    this.compositeBackgroundDepth = requireShaderUniform(gl, this.compositeProgram, 'uBackgroundDepth', 'density metaball composite');
+    this.compositeAspect = requireShaderUniform(gl, this.compositeProgram, 'uAspect', 'density metaball composite');
     gl.bindVertexArray(this.splatVao);
     attribute(gl, this.positionBuffer, 0, 2);
     attribute(gl, this.radiusBuffer, 1, 1);
@@ -91,9 +130,9 @@ export class DensityMetaballRenderer {
     gl.bindVertexArray(this.splatVao);
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.ONE, gl.ONE);
-    gl.uniform2f(gl.getUniformLocation(this.splatProgram, 'uWorldSize'), options.worldWidth, options.worldHeight);
-    gl.uniform1f(gl.getUniformLocation(this.splatProgram, 'uPixelScale'), width / options.worldWidth);
-    gl.uniform1f(gl.getUniformLocation(this.splatProgram, 'uRadiusScale'), options.particleRadiusScale);
+    gl.uniform2f(this.splatWorldSize, options.worldWidth, options.worldHeight);
+    gl.uniform1f(this.splatPixelScale, width / options.worldWidth);
+    gl.uniform1f(this.splatRadiusScale, options.particleRadiusScale);
     gl.drawArrays(gl.POINTS, 0, this.count);
     gl.bindVertexArray(null);
     gl.disable(gl.BLEND);
@@ -102,23 +141,24 @@ export class DensityMetaballRenderer {
     gl.useProgram(this.compositeProgram);
     gl.bindVertexArray(this.screenVao);
     density.attach(0);
-    gl.uniform1i(gl.getUniformLocation(this.compositeProgram, 'uDensity'), 0);
-    gl.uniform2f(gl.getUniformLocation(this.compositeProgram, 'uTexel'), 1 / width, 1 / height);
-    const palette = new Float32Array(12);
-    options.palette.forEach((color, index) => palette.set(color, index * 3));
-    gl.uniform3fv(gl.getUniformLocation(this.compositeProgram, 'uPalette[0]'), palette);
-    gl.uniform1i(gl.getUniformLocation(this.compositeProgram, 'uPaletteCount'), options.palette.length);
-    gl.uniform3fv(gl.getUniformLocation(this.compositeProgram, 'uBackground'), new Float32Array(options.background));
-    gl.uniform1f(gl.getUniformLocation(this.compositeProgram, 'uThreshold'), options.threshold);
-    gl.uniform1f(gl.getUniformLocation(this.compositeProgram, 'uSoftness'), Math.max(0.001, options.edgeSoftness * 0.08));
-    gl.uniform1f(gl.getUniformLocation(this.compositeProgram, 'uThermalContrast'), options.thermalContrast);
-    gl.uniform1f(gl.getUniformLocation(this.compositeProgram, 'uRefraction'), options.refraction);
-    gl.uniform1f(gl.getUniformLocation(this.compositeProgram, 'uGloss'), options.gloss);
-    gl.uniform1f(gl.getUniformLocation(this.compositeProgram, 'uRim'), options.rimLighting);
-    gl.uniform1f(gl.getUniformLocation(this.compositeProgram, 'uOpacity'), options.opacity);
-    gl.uniform1f(gl.getUniformLocation(this.compositeProgram, 'uTime'), options.time ?? 0);
-    gl.uniform1f(gl.getUniformLocation(this.compositeProgram, 'uBackgroundDepth'), options.backgroundDepth ?? 0);
-    gl.uniform1f(gl.getUniformLocation(this.compositeProgram, 'uAspect'), destination.width / Math.max(1, destination.height));
+    gl.uniform1i(this.compositeDensity, 0);
+    gl.uniform2f(this.compositeTexel, 1 / width, 1 / height);
+    this.paletteData.fill(0);
+    options.palette.forEach((color, index) => this.paletteData.set(color, index * 3));
+    this.backgroundData.set(options.background);
+    gl.uniform3fv(this.compositePalette, this.paletteData);
+    gl.uniform1i(this.compositePaletteCount, options.palette.length);
+    gl.uniform3fv(this.compositeBackground, this.backgroundData);
+    gl.uniform1f(this.compositeThreshold, options.threshold);
+    gl.uniform1f(this.compositeSoftness, Math.max(0.001, options.edgeSoftness * 0.08));
+    gl.uniform1f(this.compositeThermalContrast, options.thermalContrast);
+    gl.uniform1f(this.compositeRefraction, options.refraction);
+    gl.uniform1f(this.compositeGloss, options.gloss);
+    gl.uniform1f(this.compositeRim, options.rimLighting);
+    gl.uniform1f(this.compositeOpacity, options.opacity);
+    gl.uniform1f(this.compositeTime, options.time ?? 0);
+    gl.uniform1f(this.compositeBackgroundDepth, options.backgroundDepth ?? 0);
+    gl.uniform1f(this.compositeAspect, destination.width / Math.max(1, destination.height));
     gl.drawArrays(gl.TRIANGLES, 0, 3);
     gl.bindVertexArray(null);
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
@@ -166,25 +206,6 @@ function bound(value: number, min: number, max: number) {
   if (!Number.isFinite(value))
     throw new Error('Metaball option must be finite');
   return Math.max(min, Math.min(max, value));
-}
-function makeProgram(gl: WebGL2RenderingContext, vs: string, fs: string) {
-  const v = shader(gl, gl.VERTEX_SHADER, vs), f = shader(gl, gl.FRAGMENT_SHADER, fs), p = req(gl.createProgram(), 'Unable to create metaball program');
-  gl.attachShader(p, v);
-  gl.attachShader(p, f);
-  gl.linkProgram(p);
-  gl.deleteShader(v);
-  gl.deleteShader(f);
-  if (!gl.getProgramParameter(p, gl.LINK_STATUS))
-    throw new Error(`Metaball shader link failed: ${gl.getProgramInfoLog(p) ?? 'unknown error'}`);
-  return p;
-}
-function shader(gl: WebGL2RenderingContext, type: number, source: string) {
-  const value = req(gl.createShader(type), 'Unable to create metaball shader');
-  gl.shaderSource(value, source);
-  gl.compileShader(value);
-  if (!gl.getShaderParameter(value, gl.COMPILE_STATUS))
-    throw new Error(`Metaball shader compilation failed: ${gl.getShaderInfoLog(value) ?? 'unknown error'}`);
-  return value;
 }
 function req<T>(value: T | null, message: string): T {
   if (value === null)

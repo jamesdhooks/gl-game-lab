@@ -1,5 +1,6 @@
 import type { BlendMode } from './SpriteRenderer.js';
 import type { GpuParticleRenderDestination } from './GpuParticleRenderer.js';
+import { createShaderProgram, requireShaderUniform } from './ShaderProgram.js';
 export interface InstancedSegmentBatch {
   readonly count: number;
   readonly segments: Float32Array;
@@ -30,13 +31,24 @@ export class InstancedSegmentRenderer {
   private readonly vao: WebGLVertexArrayObject;
   private readonly segmentBuffer: WebGLBuffer;
   private readonly styleBuffer: WebGLBuffer;
+  private readonly worldSizeLocation: WebGLUniformLocation;
+  private readonly radiusScaleLocation: WebGLUniformLocation;
+  private readonly opacityLocation: WebGLUniformLocation;
+  private readonly paletteLocation: WebGLUniformLocation;
+  private readonly paletteCountLocation: WebGLUniformLocation;
+  private readonly paletteData = new Float32Array(12);
   private count = 0;
   private disposed = false;
   constructor(private readonly gl: WebGL2RenderingContext) {
-    this.program = createProgram(gl, VERTEX_SHADER, FRAGMENT_SHADER);
+    this.program = createShaderProgram(gl, { label: 'instanced segment renderer', vertexSource: VERTEX_SHADER, fragmentSource: FRAGMENT_SHADER });
     this.vao = requireValue(gl.createVertexArray(), 'Unable to allocate segment vertex array');
     this.segmentBuffer = requireValue(gl.createBuffer(), 'Unable to allocate segment geometry buffer');
     this.styleBuffer = requireValue(gl.createBuffer(), 'Unable to allocate segment style buffer');
+    this.worldSizeLocation = requireShaderUniform(gl, this.program, 'uWorldSize', 'instanced segment renderer');
+    this.radiusScaleLocation = requireShaderUniform(gl, this.program, 'uRadiusScale', 'instanced segment renderer');
+    this.opacityLocation = requireShaderUniform(gl, this.program, 'uOpacity', 'instanced segment renderer');
+    this.paletteLocation = requireShaderUniform(gl, this.program, 'uPalette[0]', 'instanced segment renderer');
+    this.paletteCountLocation = requireShaderUniform(gl, this.program, 'uPaletteCount', 'instanced segment renderer');
     gl.bindVertexArray(this.vao);
     gl.bindBuffer(gl.ARRAY_BUFFER, this.segmentBuffer);
     gl.enableVertexAttribArray(0);
@@ -62,20 +74,21 @@ export class InstancedSegmentRenderer {
     this.assertUsable();
     if (this.count === 0)
       return;
-    const gl = this.gl, palette = new Float32Array(12);
+    const gl = this.gl;
     if (options.palette.length < 1 || options.palette.length > 4)
       throw new Error('Instanced segment palette must contain between one and four colors');
-    options.palette.forEach((color, index) => palette.set(color, index * 3));
+    this.paletteData.fill(0);
+    options.palette.forEach((color, index) => this.paletteData.set(color, index * 3));
     gl.bindFramebuffer(gl.FRAMEBUFFER, destination.framebuffer ?? null);
     gl.viewport(0, 0, destination.width, destination.height);
     gl.useProgram(this.program);
     gl.bindVertexArray(this.vao);
     configureBlend(gl, options.blend ?? 'alpha');
-    gl.uniform2f(gl.getUniformLocation(this.program, 'uWorldSize'), options.worldWidth, options.worldHeight);
-    gl.uniform1f(gl.getUniformLocation(this.program, 'uRadiusScale'), options.radiusScale ?? 1);
-    gl.uniform1f(gl.getUniformLocation(this.program, 'uOpacity'), options.opacity ?? 1);
-    gl.uniform3fv(gl.getUniformLocation(this.program, 'uPalette[0]'), palette);
-    gl.uniform1i(gl.getUniformLocation(this.program, 'uPaletteCount'), options.palette.length);
+    gl.uniform2f(this.worldSizeLocation, options.worldWidth, options.worldHeight);
+    gl.uniform1f(this.radiusScaleLocation, options.radiusScale ?? 1);
+    gl.uniform1f(this.opacityLocation, options.opacity ?? 1);
+    gl.uniform3fv(this.paletteLocation, this.paletteData);
+    gl.uniform1i(this.paletteCountLocation, options.palette.length);
     gl.drawArraysInstanced(gl.TRIANGLES, 0, 6, this.count);
     gl.bindVertexArray(null);
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
@@ -106,36 +119,6 @@ function configureBlend(gl: WebGL2RenderingContext, mode: BlendMode) {
     gl.blendFunc(gl.DST_COLOR, gl.ONE_MINUS_SRC_ALPHA);
   else
     gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
-}
-function createProgram(gl: WebGL2RenderingContext, vs: string, fs: string) {
-  const vertex = compile(gl, gl.VERTEX_SHADER, vs), fragment = compile(gl, gl.FRAGMENT_SHADER, fs), program = requireValue(gl.createProgram(), 'Unable to create segment program');
-  try {
-    gl.attachShader(program, vertex);
-    gl.attachShader(program, fragment);
-    gl.linkProgram(program);
-    if (!gl.getProgramParameter(program, gl.LINK_STATUS))
-      throw new Error(`Segment shader link failed: ${gl.getProgramInfoLog(program) ?? 'unknown error'}`);
-    return program;
-  }
-  catch (error) {
-    gl.deleteProgram(program);
-    throw error;
-  }
-  finally {
-    gl.deleteShader(vertex);
-    gl.deleteShader(fragment);
-  }
-}
-function compile(gl: WebGL2RenderingContext, type: number, source: string) {
-  const shader = requireValue(gl.createShader(type), 'Unable to create segment shader');
-  gl.shaderSource(shader, source);
-  gl.compileShader(shader);
-  if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
-    const detail = gl.getShaderInfoLog(shader) ?? 'unknown error';
-    gl.deleteShader(shader);
-    throw new Error(`Segment shader compilation failed: ${detail}`);
-  }
-  return shader;
 }
 function requireValue<T>(value: T | null, message: string): T {
   if (value === null)
