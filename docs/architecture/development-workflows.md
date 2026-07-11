@@ -52,3 +52,11 @@ stage names, and integer ordering; ties sort by ID for deterministic builds. The
 returned disposer is idempotent and rebuilds the compiled graph without the pass.
 Gameplay and portable experience plugins must continue to submit through
 backend-neutral sprite, effect, and GPU services instead of this backend hook.
+
+## Hosted browser release matrix
+
+`pnpm browser:release -- --browser=<chromium|firefox|webkit>` consumes an already
+built demo and writes machine-readable release evidence. The pull-request workflow
+installs each browser independently and uploads its report even on failure. Browser
+errors, recovery timeouts, missing touch/gamepad observations, and resource drift
+are hard failures. See `docs/audit/browser-release-gate.md` for the contract.

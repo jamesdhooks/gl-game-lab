@@ -1,9 +1,9 @@
-import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright-core';
+import { startDemoServer, waitForServer } from './browser-harness.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const demo = path.join(root, 'packages', 'demo');
@@ -27,7 +27,7 @@ if (requestedTier && !(requestedTier in tiers)) throw new Error(`Unknown perform
 if (requestedExperience && !experiences.includes(requestedExperience)) throw new Error(`Unknown experience: ${requestedExperience}`);
 
 await mkdir(output, { recursive: true });
-const server = startVite();
+const server = startDemoServer({ demo, port });
 let browser;
 try {
   await waitForServer(`http://127.0.0.1:${port}/`);
@@ -87,33 +87,6 @@ async function capture(activeBrowser, tier, experience) {
   } finally {
     await context.close();
   }
-}
-
-function startVite() {
-  const vite = path.join(demo, 'node_modules', 'vite', 'bin', 'vite.js');
-  const child = spawn(process.execPath, [vite, '--host', '127.0.0.1', '--port', String(port), '--strictPort'], {
-    cwd: demo, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true,
-  });
-  let outputText = '';
-  child.stdout.on('data', (chunk) => { outputText += chunk.toString(); });
-  child.stderr.on('data', (chunk) => { outputText += chunk.toString(); });
-  child.once('exit', (code) => { if (code && code !== 0) process.stderr.write(`Vite exited ${code}:\n${outputText}\n`); });
-  return {
-    stop() {
-      if (child.killed) return;
-      if (process.platform === 'win32' && child.pid) spawn('taskkill', ['/PID', String(child.pid), '/T', '/F'], { stdio: 'ignore', windowsHide: true }).unref();
-      else child.kill('SIGTERM');
-    },
-  };
-}
-
-async function waitForServer(url) {
-  const deadline = Date.now() + 60_000;
-  while (Date.now() < deadline) {
-    try { if ((await fetch(url)).ok) return; } catch { /* starting */ }
-    await new Promise((resolve) => setTimeout(resolve, 100));
-  }
-  throw new Error(`Timed out waiting for ${url}`);
 }
 
 function argument(name) {

@@ -253,7 +253,7 @@ The five criticisms most likely from another senior engine programmer are:
   reports optional `gpuMs` through engine diagnostics, and displays unsupported
   state explicitly in the live overlay.
 - The production source-aliased bundle rebuilt successfully after the complete
-  local remediation slice (205 modules, 618.26 kB minified). Device-matrix timer
+  local remediation slice (205 modules, 619.34 kB minified). Device-matrix timer
   evidence remains open.
 - Added a shared labeled shader compiler/reflection layer for every content-provided
   fullscreen, field, simulation, and particle program. Driver failures now include
@@ -263,3 +263,7 @@ The five criticisms most likely from another senior engine programmer are:
 - Added `WebGL2FramePipelineService`: backend plugins can register deterministic,
   removable passes before or after every built-in stage. Duplicate/built-in IDs,
   invalid stages, and non-integer order values are rejected.
+- Added a pull-request browser release matrix for Chromium, Firefox, and WebKit.
+  Each isolated job verifies production Reference Arena accessibility, real touch
+  event observation, gamepad polling, exact lifecycle replacement, and forced
+  context-loss resource equivalence, then uploads a machine-readable report.
