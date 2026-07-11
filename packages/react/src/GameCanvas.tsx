@@ -1,6 +1,6 @@
 import { useEffect, useRef, type CSSProperties } from 'react';
-import type { EnginePlugin } from '@hooksjam/gl-game-lab-core';
-import { GameEngine } from '@hooksjam/gl-game-lab-engine';
+import type { EnginePlugin, InputEvent } from '@hooksjam/gl-game-lab-core';
+import { ExperienceRuntimeControllerService, GameEngine } from '@hooksjam/gl-game-lab-engine';
 import { BrowserFrameLoop, WebInputAdapter } from '@hooksjam/gl-game-lab-platform-web';
 import {
   WebGL2RendererService,
@@ -11,6 +11,12 @@ import { FrameProfiler, checksumRgba, type FrameProfileSummary } from '@hooksjam
 export interface FixedFrameCaptureOptions {
   readonly frameNumber: number;
   readonly fixedDeltaSeconds?: number;
+  readonly inputEvents?: readonly FixedFrameInputEvent[];
+}
+
+export interface FixedFrameInputEvent {
+  readonly frameNumber: number;
+  readonly event: InputEvent;
 }
 
 export interface FixedFrameCaptureResult {
@@ -18,6 +24,7 @@ export interface FixedFrameCaptureResult {
   readonly fixedDeltaSeconds: number;
   readonly profile: FrameProfileSummary;
   readonly checksum: string;
+  readonly entityCount?: number;
 }
 
 export interface GameCanvasProps {
@@ -111,21 +118,31 @@ export function GameCanvas({
         if (fixedFrameCapture) {
           const capture = normalizeFixedFrameCapture(fixedFrameCapture);
           const profiler = new FrameProfiler(Math.max(2, capture.frameNumber));
+          let inputEventIndex = 0;
           for (let frame = 0; frame < capture.frameNumber; frame += 1) {
+            while (true) {
+              const inputEvent = capture.inputEvents[inputEventIndex];
+              if (!inputEvent || inputEvent.frameNumber !== frame) break;
+              engine.input.ingest(inputEvent.event);
+              inputEventIndex += 1;
+            }
             const startedAt = performance.now();
             engine.frame(capture.fixedDeltaSeconds);
             profiler.record(performance.now() - startedAt);
           }
           const renderer = engine.kernel.get(WebGL2RendererService);
+          const entityCount = engine.kernel.tryGet(ExperienceRuntimeControllerService)?.entityCount;
           const result = Object.freeze({
             ...capture,
             profile: profiler.summary,
             checksum: checksumRgba(renderer.readRgba()),
+            ...(entityCount !== undefined ? { entityCount } : {}),
           });
           canvas.dataset.captureFrame = String(capture.frameNumber);
           canvas.dataset.captureDelta = String(capture.fixedDeltaSeconds);
           canvas.dataset.captureCpuP95 = String(result.profile.cpu.p95);
           canvas.dataset.captureChecksum = result.checksum;
+          if (result.entityCount !== undefined) canvas.dataset.captureEntityCount = String(result.entityCount);
           canvas.dataset.engineState = 'capture-ready';
           onFixedFrameCapture?.(result);
         } else {
@@ -167,7 +184,16 @@ export function normalizeFixedFrameCapture(options: FixedFrameCaptureOptions): R
   if (!Number.isFinite(fixedDeltaSeconds) || fixedDeltaSeconds <= 0 || fixedDeltaSeconds > 0.25) {
     throw new Error('Fixed capture delta must be greater than zero and at most 0.25 seconds');
   }
-  return Object.freeze({ frameNumber: options.frameNumber, fixedDeltaSeconds });
+  const inputEvents = [...(options.inputEvents ?? [])];
+  let previousFrame = -1;
+  for (const entry of inputEvents) {
+    if (!Number.isSafeInteger(entry.frameNumber) || entry.frameNumber < 0 || entry.frameNumber >= options.frameNumber) {
+      throw new Error('Fixed capture input frame must be within the capture frame range');
+    }
+    if (entry.frameNumber < previousFrame) throw new Error('Fixed capture input events must be ordered by frame');
+    previousFrame = entry.frameNumber;
+  }
+  return Object.freeze({ frameNumber: options.frameNumber, fixedDeltaSeconds, inputEvents: Object.freeze(inputEvents) });
 }
 
 function describeError(error: unknown): string {
