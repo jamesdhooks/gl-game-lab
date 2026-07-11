@@ -77,14 +77,14 @@ export class Engine {
       this.orderedPlugins = resolvePluginOrder(this.plugins);
       for (const plugin of this.orderedPlugins) {
         const context = this.contextFor(plugin);
-        await plugin.install(context);
         this.installedPlugins.push(plugin);
+        await plugin.install(context);
       }
       this.currentState = 'ready';
     } catch (cause) {
-      await this.rollbackInstalledPlugins();
+      const cleanupFailures = await this.rollbackInstalledPlugins();
       this.currentState = 'failed';
-      throw new EngineLifecycleError('Engine initialization failed', 'failed', { cause });
+      throw lifecycleError('Engine initialization failed', cause, cleanupFailures);
     }
   }
 
@@ -95,14 +95,14 @@ export class Engine {
     this.currentState = 'starting';
     try {
       for (const plugin of this.orderedPlugins) {
-        await plugin.start?.(this.contextFor(plugin));
         this.startedPlugins.push(plugin);
+        await plugin.start?.(this.contextFor(plugin));
       }
       this.currentState = 'running';
     } catch (cause) {
-      await this.stopStartedPlugins();
+      const cleanupFailures = await this.stopStartedPlugins();
       this.currentState = 'failed';
-      throw new EngineLifecycleError('Engine start failed', 'failed', { cause });
+      throw lifecycleError('Engine start failed', cause, cleanupFailures);
     }
   }
 
@@ -110,24 +110,28 @@ export class Engine {
     if (this.currentState === 'stopped' || this.currentState === 'ready') return;
     this.requireState('running', 'Engine must be running before stop');
     this.currentState = 'stopping';
-    await this.stopStartedPlugins();
-    this.currentState = 'stopped';
+    const failures = await this.stopStartedPlugins();
+    this.currentState = failures.length === 0 ? 'stopped' : 'failed';
+    if (failures.length > 0) throw lifecycleError('Engine stop failed', failures[0], failures.slice(1));
   }
 
   async destroy(): Promise<void> {
     if (this.currentState === 'destroyed') return;
-    if (this.currentState === 'running') await this.stop();
     if (this.currentState === 'initializing' || this.currentState === 'starting' || this.currentState === 'stopping') {
       throw new EngineLifecycleError('Engine cannot be destroyed during a lifecycle transition', this.currentState);
     }
 
+    const failures: unknown[] = [];
+    if (this.currentState === 'running') {
+      this.currentState = 'stopping';
+      failures.push(...await this.stopStartedPlugins());
+    }
     this.currentState = 'destroying';
-    let firstFailure: unknown;
     for (const plugin of [...this.installedPlugins].reverse()) {
       try {
         await plugin.dispose?.(this.contextFor(plugin));
       } catch (error) {
-        firstFailure ??= error;
+        failures.push(error);
       } finally {
         this.extensions.removeOwner(plugin.id);
       }
@@ -135,44 +139,53 @@ export class Engine {
     this.installedPlugins = [];
     this.startedPlugins = [];
     this.extensions.clear();
-    this.currentState = firstFailure === undefined ? 'destroyed' : 'failed';
-    if (firstFailure !== undefined) {
-      throw new EngineLifecycleError('Engine destruction failed', 'failed', { cause: firstFailure });
-    }
+    this.currentState = failures.length === 0 ? 'destroyed' : 'failed';
+    if (failures.length > 0) throw lifecycleError('Engine destruction failed', failures[0], failures.slice(1));
   }
 
   private contextFor(plugin: EnginePlugin): PluginInstallContext {
     return this.extensions.contextFor(plugin.id);
   }
 
-  private async stopStartedPlugins(): Promise<void> {
-    let firstFailure: unknown;
+  private async stopStartedPlugins(): Promise<unknown[]> {
+    const failures: unknown[] = [];
     for (const plugin of [...this.startedPlugins].reverse()) {
       try {
         await plugin.stop?.(this.contextFor(plugin));
       } catch (error) {
-        firstFailure ??= error;
+        failures.push(error);
       }
     }
     this.startedPlugins = [];
-    if (firstFailure !== undefined) throw firstFailure;
+    return failures;
   }
 
-  private async rollbackInstalledPlugins(): Promise<void> {
+  private async rollbackInstalledPlugins(): Promise<unknown[]> {
+    const failures: unknown[] = [];
     for (const plugin of [...this.installedPlugins].reverse()) {
       try {
         await plugin.dispose?.(this.contextFor(plugin));
+      } catch (error) {
+        failures.push(error);
       } finally {
         this.extensions.removeOwner(plugin.id);
       }
     }
     this.installedPlugins = [];
     this.extensions.clear();
+    return failures;
   }
 
   private requireState(expected: EngineState, message: string): void {
     if (this.currentState !== expected) throw new EngineLifecycleError(message, this.currentState);
   }
+}
+
+function lifecycleError(message: string, primaryCause: unknown, cleanupFailures: readonly unknown[]): EngineLifecycleError {
+  const cause = cleanupFailures.length === 0
+    ? primaryCause
+    : new AggregateError([primaryCause, ...cleanupFailures], `${message}; cleanup also failed`);
+  return new EngineLifecycleError(message, 'failed', { cause });
 }
 
 function resolvePluginOrder(plugins: ReadonlyMap<string, EnginePlugin>): EnginePlugin[] {

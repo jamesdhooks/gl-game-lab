@@ -16,6 +16,8 @@ describe('Engine', () => {
     await engine.initialize();
     await engine.start();
     await engine.stop();
+    await engine.stop();
+    await engine.destroy();
     await engine.destroy();
 
     expect(calls).toEqual([
@@ -101,6 +103,91 @@ describe('Engine', () => {
     await expect(engine.initialize()).rejects.toBeInstanceOf(EngineLifecycleError);
     expect(dispose).toHaveBeenCalledOnce();
     expect(engine.state).toBe('failed');
+  });
+
+  it('disposes a partially installed plugin and preserves cleanup failures', async () => {
+    const token = createExtensionToken<number>('partial.value');
+    const disposeInstalled = vi.fn(() => { throw new Error('installed dispose failed'); });
+    const disposePartial = vi.fn();
+    const engine = new Engine({
+      plugins: [
+        { id: 'installed', version: '1', install: () => undefined, dispose: disposeInstalled },
+        {
+          id: 'partial',
+          version: '1',
+          install(context) {
+            context.provide(token, 42);
+            throw new Error('partial install failed');
+          },
+          dispose: disposePartial,
+        },
+      ],
+    });
+
+    const error = await engine.initialize().catch((cause: unknown) => cause);
+
+    expect(error).toBeInstanceOf(EngineLifecycleError);
+    expect((error as EngineLifecycleError).cause).toBeInstanceOf(AggregateError);
+    expect(disposePartial).toHaveBeenCalledOnce();
+    expect(disposeInstalled).toHaveBeenCalledOnce();
+    expect(engine.has(token)).toBe(false);
+    expect(engine.state).toBe('failed');
+  });
+
+  it('stops a partially started plugin and never remains in a transition state', async () => {
+    const calls: string[] = [];
+    const dispose = vi.fn();
+    const engine = new Engine({
+      plugins: [
+        {
+          id: 'first', version: '1', install: () => undefined,
+          start: () => { calls.push('first:start'); },
+          stop: () => { calls.push('first:stop'); throw new Error('first stop failed'); },
+          dispose,
+        },
+        {
+          id: 'partial', version: '1', install: () => undefined,
+          start: () => { calls.push('partial:start'); throw new Error('partial start failed'); },
+          stop: () => { calls.push('partial:stop'); },
+          dispose,
+        },
+      ],
+    });
+    await engine.initialize();
+
+    const error = await engine.start().catch((cause: unknown) => cause);
+
+    expect(error).toBeInstanceOf(EngineLifecycleError);
+    expect((error as EngineLifecycleError).cause).toBeInstanceOf(AggregateError);
+    expect(calls).toEqual(['first:start', 'partial:start', 'partial:stop', 'first:stop']);
+    expect(engine.state).toBe('failed');
+    await engine.destroy();
+    expect(engine.state).toBe('destroyed');
+  });
+
+  it('finishes teardown attempts when stop and dispose hooks fail', async () => {
+    const calls: string[] = [];
+    const engine = new Engine({
+      plugins: [
+        {
+          id: 'unstable', version: '1', install: () => undefined,
+          start: () => undefined,
+          stop: () => { calls.push('stop'); throw new Error('stop failed'); },
+          dispose: () => { calls.push('dispose'); throw new Error('dispose failed'); },
+        },
+      ],
+    });
+    await engine.initialize();
+    await engine.start();
+
+    const error = await engine.destroy().catch((cause: unknown) => cause);
+
+    expect(error).toBeInstanceOf(EngineLifecycleError);
+    expect((error as EngineLifecycleError).cause).toBeInstanceOf(AggregateError);
+    expect(calls).toEqual(['stop', 'dispose']);
+    expect(engine.state).toBe('failed');
+    await engine.destroy();
+    expect(engine.state).toBe('destroyed');
   });
 });
 

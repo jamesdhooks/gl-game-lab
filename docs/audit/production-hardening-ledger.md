@@ -30,7 +30,7 @@ performance, or lifecycle claims.
 
 | ID | Severity | Finding | Planned phase | Status | Required evidence |
 |---|---:|---|---:|---|---|
-| KRN-01 | Critical | Engine initialization and shutdown can strand lifecycle state when cleanup rejects. | 3 | Open | Failure-injection tests prove rollback, idempotent stop, and terminal state recovery. |
+| KRN-01 | Critical | Engine initialization and shutdown can strand lifecycle state when cleanup rejects. | 3 | Verified | Failure-injection tests cover partial install/start, cleanup aggregation, idempotent stop/destroy, and terminal state recovery. |
 | KRN-02 | High | Plugin/resource ownership and teardown order are insufficiently explicit. | 3 | Open | Ownership graph plus reverse-order teardown and leak tests. |
 | ECS-01 | High | ECS, hierarchy, scenes, and serialization are not the content runtime's authoritative model. | 3, 6, 7 | Open | Reference Arena and all migrated experiences exercise the public scene/ECS path. |
 | ECS-02 | High | Structural mutation and query invalidation semantics are incomplete for scheduled systems. | 3 | Open | Command-buffer/query tests cover mutation during execution and stale entity generations. |
