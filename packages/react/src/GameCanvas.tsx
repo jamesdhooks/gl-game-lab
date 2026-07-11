@@ -72,6 +72,14 @@ export function createEngineDestroyHandle(engine: Pick<GameEngine, 'destroy'>): 
   };
 }
 
+export async function destroyEngineAfterBoot(
+  boot: Promise<void>,
+  destroyHandle: EngineDestroyHandle,
+): Promise<void> {
+  await boot;
+  await destroyHandle.destroy();
+}
+
 export function createBrowserGameEngine(
   canvas: HTMLCanvasElement,
   plugins: readonly EnginePlugin[] = [],
@@ -235,7 +243,7 @@ export function GameCanvas({
         reportError(failure);
       }
     };
-    void boot();
+    const bootPromise = boot();
 
     return () => {
       disposed = true;
@@ -245,7 +253,7 @@ export function GameCanvas({
       fallbackInput?.destroy();
       loop?.stop();
       if (diagnosticsFrame !== undefined) cancelAnimationFrame(diagnosticsFrame);
-      void destroyHandle.destroy().catch((error) => {
+      void destroyEngineAfterBoot(bootPromise, destroyHandle).catch((error) => {
         if (!destroyFailureReported) {
           destroyFailureReported = true;
           reportError(error);

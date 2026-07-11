@@ -1,6 +1,7 @@
 export {
   GameCanvas,
   createBrowserGameEngine,
+  destroyEngineAfterBoot,
   normalizeFixedFrameCapture,
   type FixedFrameCaptureOptions,
   type FixedFrameCaptureResult,

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { createEngineDestroyHandle, normalizeFixedFrameCapture } from '../GameCanvas.js';
+import { createEngineDestroyHandle, destroyEngineAfterBoot, normalizeFixedFrameCapture } from '../GameCanvas.js';
 
 describe('normalizeFixedFrameCapture', () => {
   it('provides a deterministic sixty-hertz default', () => {
@@ -34,6 +34,21 @@ describe('normalizeFixedFrameCapture', () => {
     expect(first).toBe(second);
     await expect(first).rejects.toBe(failure);
     await expect(second).rejects.toBe(failure);
+    expect(destroy).toHaveBeenCalledOnce();
+  });
+
+  it('defers unmount destruction until an in-flight boot transition settles', async () => {
+    let finishBoot: (() => void) | undefined;
+    const boot = new Promise<void>((resolve) => { finishBoot = resolve; });
+    const destroy = vi.fn().mockResolvedValue(undefined);
+    const handle = createEngineDestroyHandle({ destroy });
+
+    const cleanup = destroyEngineAfterBoot(boot, handle);
+    await Promise.resolve();
+    expect(destroy).not.toHaveBeenCalled();
+
+    finishBoot?.();
+    await cleanup;
     expect(destroy).toHaveBeenCalledOnce();
   });
 });
