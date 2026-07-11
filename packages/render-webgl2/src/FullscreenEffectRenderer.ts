@@ -1,5 +1,6 @@
 import type { BlendMode, SpriteRenderTarget } from './SpriteRenderer.js';
 import type { WebGL2Device } from './WebGL2Device.js';
+import { createShaderProgram } from './ShaderProgram.js';
 
 export type FullscreenUniform =
   | { readonly type: '1f'; readonly value: number }
@@ -102,7 +103,7 @@ export class FullscreenEffectRenderer {
     if (current) this.gl.deleteProgram(current.program);
     const compiled: CompiledEffect = {
       source: effect.fragmentSource,
-      program: createProgram(this.gl, VERTEX_SHADER, effect.fragmentSource),
+      program: createShaderProgram(this.gl, { label: `fullscreen effect ${effect.id}`, vertexSource: VERTEX_SHADER, fragmentSource: effect.fragmentSource }),
       locations: new Map(),
     };
     this.compiled.set(effect.id, compiled);
@@ -141,39 +142,6 @@ function configureBlend(gl: WebGL2RenderingContext, mode: BlendMode): void {
   if (mode === 'additive') gl.blendFunc(gl.SRC_ALPHA, gl.ONE);
   else if (mode === 'multiply') gl.blendFunc(gl.DST_COLOR, gl.ONE_MINUS_SRC_ALPHA);
   else gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
-}
-
-function createProgram(gl: WebGL2RenderingContext, vertexSource: string, fragmentSource: string): WebGLProgram {
-  const vertex = compileShader(gl, gl.VERTEX_SHADER, vertexSource);
-  const fragment = compileShader(gl, gl.FRAGMENT_SHADER, fragmentSource);
-  const program = requireValue(gl.createProgram(), 'Unable to create fullscreen effect program');
-  try {
-    gl.attachShader(program, vertex);
-    gl.attachShader(program, fragment);
-    gl.linkProgram(program);
-    if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
-      throw new Error(`Fullscreen effect shader link failed: ${gl.getProgramInfoLog(program) ?? 'unknown error'}`);
-    }
-    return program;
-  } catch (error) {
-    gl.deleteProgram(program);
-    throw error;
-  } finally {
-    gl.deleteShader(vertex);
-    gl.deleteShader(fragment);
-  }
-}
-
-function compileShader(gl: WebGL2RenderingContext, type: number, source: string): WebGLShader {
-  const shader = requireValue(gl.createShader(type), 'Unable to create fullscreen effect shader');
-  gl.shaderSource(shader, source);
-  gl.compileShader(shader);
-  if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
-    const error = gl.getShaderInfoLog(shader) ?? 'unknown error';
-    gl.deleteShader(shader);
-    throw new Error(`Fullscreen effect shader compilation failed: ${error}`);
-  }
-  return shader;
 }
 
 function requireValue<T>(value: T | null, message: string): T {

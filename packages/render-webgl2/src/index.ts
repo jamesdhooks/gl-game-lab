@@ -67,6 +67,14 @@ export {
   type GpuUniformLookup,
 } from './GpuSimulationPass.js';
 export {
+  createShaderProgram,
+  requireShaderUniform,
+  shaderProgramReflection,
+  type ShaderProgramReflection,
+  type ShaderProgramSources,
+  type ShaderVariableReflection,
+} from './ShaderProgram.js';
+export {
   FullscreenEffectRenderer,
   FullscreenEffectRenderQueue,
   type FullscreenEffect,
@@ -119,6 +127,7 @@ export {
   type SpriteRenderTarget,
   type SpriteTexture,
 } from './SpriteRenderer.js';
+export { SpriteRenderQueue } from './SpriteRenderQueue.js';
 export {
   MAX_PARTICLE_PALETTE_COLORS,
   ParticlePointRenderer,
@@ -132,7 +141,6 @@ export {
   ParticlePointRenderQueueService,
   FullscreenEffectRenderQueueService,
   GpuRenderPassQueueService,
-  SpriteRenderQueue,
   SpriteRenderQueueService,
   WebGL2Renderer,
   WebGL2RendererService,

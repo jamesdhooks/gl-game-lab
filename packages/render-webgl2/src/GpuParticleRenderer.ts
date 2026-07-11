@@ -1,6 +1,7 @@
 import type { BlendMode } from './SpriteRenderer.js';
 import type { GpuParticleState } from './GpuParticleState.js';
 import type { GpuUniformLookup } from './GpuSimulationPass.js';
+import { createShaderProgram } from './ShaderProgram.js';
 
 export interface GpuParticleRenderDestination {
   readonly framebuffer?: WebGLFramebuffer | null;
@@ -11,6 +12,7 @@ export interface GpuParticleRenderDestination {
 export type GpuParticleUniformBinder = (gl: WebGL2RenderingContext, uniform: GpuUniformLookup) => void;
 
 export interface GpuParticleRendererOptions {
+  readonly label?: string;
   readonly vertexSource: string;
   readonly fragmentSource: string;
   readonly blend?: BlendMode;
@@ -24,7 +26,7 @@ export class GpuParticleRenderer {
   private disposed = false;
 
   constructor(private readonly gl: WebGL2RenderingContext, options: GpuParticleRendererOptions) {
-    this.program = createProgram(gl, options.vertexSource, options.fragmentSource);
+    this.program = createShaderProgram(gl, { label: options.label ?? 'GPU particle renderer', vertexSource: options.vertexSource, fragmentSource: options.fragmentSource });
     this.vao = requireValue(gl.createVertexArray(), 'Unable to allocate GPU particle vertex array');
     this.blend = options.blend ?? 'additive';
   }
@@ -73,37 +75,6 @@ function configureBlend(gl: WebGL2RenderingContext, mode: BlendMode): void {
   if (mode === 'additive') gl.blendFunc(gl.SRC_ALPHA, gl.ONE);
   else if (mode === 'multiply') gl.blendFunc(gl.DST_COLOR, gl.ONE_MINUS_SRC_ALPHA);
   else gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
-}
-
-function createProgram(gl: WebGL2RenderingContext, vertexSource: string, fragmentSource: string): WebGLProgram {
-  const vertex = compile(gl, gl.VERTEX_SHADER, vertexSource);
-  const fragment = compile(gl, gl.FRAGMENT_SHADER, fragmentSource);
-  const program = requireValue(gl.createProgram(), 'Unable to create GPU particle program');
-  try {
-    gl.attachShader(program, vertex);
-    gl.attachShader(program, fragment);
-    gl.linkProgram(program);
-    if (!gl.getProgramParameter(program, gl.LINK_STATUS)) throw new Error(`GPU particle shader link failed: ${gl.getProgramInfoLog(program) ?? 'unknown error'}`);
-    return program;
-  } catch (error) {
-    gl.deleteProgram(program);
-    throw error;
-  } finally {
-    gl.deleteShader(vertex);
-    gl.deleteShader(fragment);
-  }
-}
-
-function compile(gl: WebGL2RenderingContext, type: number, source: string): WebGLShader {
-  const shader = requireValue(gl.createShader(type), 'Unable to create GPU particle shader');
-  gl.shaderSource(shader, source);
-  gl.compileShader(shader);
-  if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
-    const detail = gl.getShaderInfoLog(shader) ?? 'unknown error';
-    gl.deleteShader(shader);
-    throw new Error(`GPU particle shader compilation failed: ${detail}`);
-  }
-  return shader;
 }
 
 function requireValue<T>(value: T | null, message: string): T { if (value === null) throw new Error(message); return value; }

@@ -65,7 +65,7 @@ class WebGLGpuFieldSystem implements GpuFieldSystem2D {
       id,
       priority: 50,
       estimatedBytes: fieldBytes(options),
-      create: () => createBundle(device.gl, options),
+      create: () => createBundle(device.gl, options, id),
       dispose: disposeBundle,
       restored: () => { this.currentGeneration += 1; },
     });
@@ -112,7 +112,7 @@ class WebGLGpuParticleSystem implements GpuParticleSystem2D {
       id,
       priority: 50,
       estimatedBytes: particleBytes(options),
-      create: () => createParticleBundle(device.gl, options),
+      create: () => createParticleBundle(device.gl, options, id),
       dispose: disposeParticleBundle,
       restored: (bundle) => {
         if (this.retainedSeed) bundle.state.uploadSeed(this.retainedSeed);
@@ -238,12 +238,13 @@ export class WebGLGpu2DService implements Gpu2DService {
   }
 }
 
-function createParticleBundle(gl: WebGL2RenderingContext, options: GpuParticleSystem2DOptions): ParticleBundle {
+function createParticleBundle(gl: WebGL2RenderingContext, options: GpuParticleSystem2DOptions, label: string): ParticleBundle {
   const disposers: Array<() => void> = [];
   try {
     const state = new GpuParticleState(gl, options); disposers.push(() => { state.dispose(); });
-    const stepper = new GpuSimulationPass(gl, options.simulationFragmentSource); disposers.push(() => { stepper.dispose(); });
+    const stepper = new GpuSimulationPass(gl, options.simulationFragmentSource, `${label}.simulation`); disposers.push(() => { stepper.dispose(); });
     const points = new GpuParticleRenderer(gl, {
+      label: `${label}.particles`,
       vertexSource: options.particleVertexSource,
       fragmentSource: options.particleFragmentSource,
       ...(options.blend ? { blend: options.blend } : {}),
@@ -274,13 +275,13 @@ function requireTrails(bundle: ParticleBundle): TrailFeedbackRenderer {
   return bundle.trails;
 }
 
-function createBundle(gl: WebGL2RenderingContext, options: GpuFieldSystem2DOptions): FieldBundle {
+function createBundle(gl: WebGL2RenderingContext, options: GpuFieldSystem2DOptions, label: string): FieldBundle {
   const state = new GpuFieldState(gl, options);
   const passes = new Map<string, GpuFieldPass>();
   try {
     for (const [id, source] of Object.entries(options.passes)) {
       if (id.trim().length === 0) throw new Error('GPU field pass id cannot be empty');
-      passes.set(id, new GpuFieldPass(gl, source));
+      passes.set(id, new GpuFieldPass(gl, source, `${label}.${id}`));
     }
     if (passes.size === 0) throw new Error('GPU field system requires at least one pass');
     return { state, passes };

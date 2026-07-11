@@ -1,4 +1,5 @@
 import type { GpuParticleState } from './GpuParticleState.js';
+import { createShaderProgram } from './ShaderProgram.js';
 
 export type GpuUniformLookup = (name: string) => WebGLUniformLocation | null;
 export type GpuSimulationUniformBinder = (gl: WebGL2RenderingContext, uniform: GpuUniformLookup) => void;
@@ -9,8 +10,8 @@ export class GpuSimulationPass {
   private readonly uniforms = new Map<string, WebGLUniformLocation | null>();
   private disposed = false;
 
-  constructor(private readonly gl: WebGL2RenderingContext, fragmentSource: string) {
-    this.program = createProgram(gl, VERTEX_SHADER, fragmentSource);
+  constructor(private readonly gl: WebGL2RenderingContext, fragmentSource: string, label = 'GPU simulation pass') {
+    this.program = createShaderProgram(gl, { label, vertexSource: VERTEX_SHADER, fragmentSource });
     this.vao = requireValue(gl.createVertexArray(), 'Unable to allocate GPU simulation vertex array');
   }
 
@@ -50,37 +51,6 @@ export class GpuSimulationPass {
   }
 
   private assertUsable(): void { if (this.disposed) throw new Error('GPU simulation pass has been disposed'); }
-}
-
-function createProgram(gl: WebGL2RenderingContext, vertexSource: string, fragmentSource: string): WebGLProgram {
-  const vertex = compile(gl, gl.VERTEX_SHADER, vertexSource);
-  const fragment = compile(gl, gl.FRAGMENT_SHADER, fragmentSource);
-  const program = requireValue(gl.createProgram(), 'Unable to create GPU simulation program');
-  try {
-    gl.attachShader(program, vertex);
-    gl.attachShader(program, fragment);
-    gl.linkProgram(program);
-    if (!gl.getProgramParameter(program, gl.LINK_STATUS)) throw new Error(`GPU simulation shader link failed: ${gl.getProgramInfoLog(program) ?? 'unknown error'}`);
-    return program;
-  } catch (error) {
-    gl.deleteProgram(program);
-    throw error;
-  } finally {
-    gl.deleteShader(vertex);
-    gl.deleteShader(fragment);
-  }
-}
-
-function compile(gl: WebGL2RenderingContext, type: number, source: string): WebGLShader {
-  const shader = requireValue(gl.createShader(type), 'Unable to create GPU simulation shader');
-  gl.shaderSource(shader, source);
-  gl.compileShader(shader);
-  if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
-    const detail = gl.getShaderInfoLog(shader) ?? 'unknown error';
-    gl.deleteShader(shader);
-    throw new Error(`GPU simulation shader compilation failed: ${detail}`);
-  }
-  return shader;
 }
 
 function requireValue<T>(value: T | null, message: string): T { if (value === null) throw new Error(message); return value; }

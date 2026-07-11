@@ -47,9 +47,11 @@ Readability and consistency are good. Strict TypeScript, stable IDs, explicit
 ownership, and public-root package imports are enforced. Source hygiene reports no
 tracked formatting debt, `any`, `@ts-ignore`, `console.log`, TODO, or FIXME usage.
 
-Maintainability is reduced by concentration. `WebGL2Renderer.ts` is 728 lines and
-owns facade APIs, managed textures/fonts/fluids, pass orchestration, diagnostics,
-restoration, and plugin installation. `DenseCircleParticleWorld2D.ts` is 651 lines;
+Maintainability is reduced by concentration. `WebGL2Renderer.ts` was 728 lines and
+owned facade APIs, managed textures/fonts/fluids, pass orchestration, diagnostics,
+restoration, and plugin installation. Hardening Pass 2 extracted its sprite queue
+and restorable fluid adapter, reducing it to 645 lines, but managed textures/fonts
+and orchestration still share the facade. `DenseCircleParticleWorld2D.ts` is 651 lines;
 `AssetManager.ts` is 583. Sparks and orbital-shrapnel plugins exceed 450 lines.
 These are not unreadable, but they are clear extraction candidates. The demo's
 nested experience selection expression is intentionally temporary and poor as a
@@ -114,14 +116,15 @@ games, while packed simulation domains are deliberately separate. A visual edito
 authoring serialization UI, and prefab diff workflow remain temporary/planned.
 
 The renderer is production-capable for this catalog but not yet production-complete
-as a general engine. It lacks shader reflection, material schemas, GPU timing,
-pipeline caches, render-target pooling, masks/scissor hierarchy, and a plugin API
+as a general engine. Dynamic shader paths now have reflection, numbered source
+diagnostics, and GPU frame timing, but it lacks material schemas, pipeline caches,
+render-target pooling, masks/scissor hierarchy, and a plugin API
 for arbitrary graph-stage insertion.
 
 ## 6. Missing features
 
-Important remaining systems are GPU pipeline/stall counters, shader compile/link
-diagnostics with reflected uniforms, a frame debugger beyond checksums, render-target
+Important remaining systems are GPU pipeline/stall counters, material validation
+above the new shader reflection layer, a frame debugger beyond checksums, render-target
 pool telemetry, derived asset processing, hot shader reload, input rebinding UI,
 network/replay transport, localization, and editor UI. Cross-browser automation and
 physical-device performance jobs are release requirements, not optional polish.
@@ -248,5 +251,11 @@ The five criticisms most likely from another senior engine programmer are:
   polls delayed results, discards disjoint samples, resets across context loss,
   reports optional `gpuMs` through engine diagnostics, and displays unsupported
   state explicitly in the live overlay.
-- The production source-aliased bundle rebuilt successfully after this change
-  (202 modules, 619.52 kB minified). Device-matrix timer evidence remains open.
+- The production source-aliased bundle rebuilt successfully after the complete
+  local remediation slice (205 modules, 616.89 kB minified). Device-matrix timer
+  evidence remains open.
+- Added a shared labeled shader compiler/reflection layer for every content-provided
+  fullscreen, field, simulation, and particle program. Driver failures now include
+  stage and numbered source instead of renderer-specific opaque messages.
+- Extracted `SpriteRenderQueue` and the restorable `WebGLFluidField2D` adapter from
+  `WebGL2Renderer`; the facade fell from 728 to 645 lines without changing exports.

@@ -33,3 +33,13 @@ exposes forced WebGL context loss/restoration and resource-equivalence output;
 the previous engine reached its terminal destroyed state. `experience=reference-arena`
 opens the internal conventional-2D vertical slice without adding it to the public
 experience registry. These controls are demo-only and are not public runtime API.
+
+## Shader diagnostics
+
+Content-provided fullscreen, field, simulation, and particle shaders compile via
+`createShaderProgram`. Callers provide a stable label. Compilation failures include
+the label, shader stage, driver log, and numbered source; successful links retain
+active uniform and attribute reflection for tooling through
+`shaderProgramReflection`. Required built-in uniforms use `requireShaderUniform`
+instead of silently accepting inactive locations. Context restoration recompiles
+the same retained sources through this path.

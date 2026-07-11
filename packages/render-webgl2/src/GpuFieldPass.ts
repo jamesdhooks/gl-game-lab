@@ -1,14 +1,15 @@
 import type { GpuParticleRenderDestination } from './GpuParticleRenderer.js';
 import type { GpuUniformLookup } from './GpuSimulationPass.js';
 import type { GpuFieldState } from './GpuFieldState.js';
+import { createShaderProgram } from './ShaderProgram.js';
 export type GpuFieldUniformBinder = (gl: WebGL2RenderingContext, uniform: GpuUniformLookup) => void;
 export class GpuFieldPass {
   private readonly program: WebGLProgram;
   private readonly vao: WebGLVertexArrayObject;
   private readonly uniforms = new Map<string, WebGLUniformLocation | null>();
   private disposed = false;
-  constructor(private readonly gl: WebGL2RenderingContext, fragmentSource: string) {
-    this.program = createProgram(gl, VERTEX_SHADER, fragmentSource);
+  constructor(private readonly gl: WebGL2RenderingContext, fragmentSource: string, label = 'GPU field pass') {
+    this.program = createShaderProgram(gl, { label, vertexSource: VERTEX_SHADER, fragmentSource });
     this.vao = requireValue(gl.createVertexArray(), 'Unable to allocate GPU field vertex array');
   }
   step(state: GpuFieldState, bind: GpuFieldUniformBinder = () => undefined): void {
@@ -52,36 +53,6 @@ export class GpuFieldPass {
       this.uniforms.set(name, this.gl.getUniformLocation(this.program, name));
     return this.uniforms.get(name) ?? null;
   }
-}
-function createProgram(gl: WebGL2RenderingContext, vs: string, fs: string) {
-  const vertex = compile(gl, gl.VERTEX_SHADER, vs), fragment = compile(gl, gl.FRAGMENT_SHADER, fs), program = requireValue(gl.createProgram(), 'Unable to create GPU field program');
-  try {
-    gl.attachShader(program, vertex);
-    gl.attachShader(program, fragment);
-    gl.linkProgram(program);
-    if (!gl.getProgramParameter(program, gl.LINK_STATUS))
-      throw new Error(`GPU field shader link failed: ${gl.getProgramInfoLog(program) ?? 'unknown error'}`);
-    return program;
-  }
-  catch (error) {
-    gl.deleteProgram(program);
-    throw error;
-  }
-  finally {
-    gl.deleteShader(vertex);
-    gl.deleteShader(fragment);
-  }
-}
-function compile(gl: WebGL2RenderingContext, type: number, source: string) {
-  const shader = requireValue(gl.createShader(type), 'Unable to create GPU field shader');
-  gl.shaderSource(shader, source);
-  gl.compileShader(shader);
-  if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
-    const detail = gl.getShaderInfoLog(shader) ?? 'unknown error';
-    gl.deleteShader(shader);
-    throw new Error(`GPU field shader compilation failed: ${detail}`);
-  }
-  return shader;
 }
 function requireValue<T>(value: T | null, message: string): T {
   if (value === null)

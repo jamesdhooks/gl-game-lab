@@ -1,5 +1,6 @@
 import type { WebGLTextureResource } from './WebGL2Device.js';
 import type { WebGL2Device } from './WebGL2Device.js';
+import { createShaderProgram, requireShaderUniform } from './ShaderProgram.js';
 
 export type BlendMode = 'alpha' | 'additive' | 'multiply' | 'opaque';
 
@@ -125,13 +126,13 @@ export class SpriteRenderer {
 
   constructor(private readonly device: WebGL2Device) {
     this.gl = device.gl;
-    this.program = createProgram(this.gl, VERTEX_SHADER, FRAGMENT_SHADER);
+    this.program = createShaderProgram(this.gl, { label: 'sprite renderer', vertexSource: VERTEX_SHADER, fragmentSource: FRAGMENT_SHADER });
     this.vao = requireValue(this.gl.createVertexArray(), 'Unable to create sprite vertex array');
     this.quadBuffer = requireValue(this.gl.createBuffer(), 'Unable to create sprite quad buffer');
     this.instanceBuffer = requireValue(this.gl.createBuffer(), 'Unable to create sprite instance buffer');
-    this.cameraLocation = requireValue(this.gl.getUniformLocation(this.program, 'u_camera'), 'Sprite camera uniform is missing');
-    this.viewportLocation = requireValue(this.gl.getUniformLocation(this.program, 'u_viewport'), 'Sprite viewport uniform is missing');
-    this.textureLocation = requireValue(this.gl.getUniformLocation(this.program, 'u_texture'), 'Sprite texture uniform is missing');
+    this.cameraLocation = requireShaderUniform(this.gl, this.program, 'u_camera', 'sprite renderer');
+    this.viewportLocation = requireShaderUniform(this.gl, this.program, 'u_viewport', 'sprite renderer');
+    this.textureLocation = requireShaderUniform(this.gl, this.program, 'u_texture', 'sprite renderer');
     this.configureGeometry();
   }
 
@@ -281,40 +282,6 @@ function configureBlend(gl: WebGL2RenderingContext, mode: BlendMode): void {
   if (mode === 'additive') gl.blendFunc(gl.SRC_ALPHA, gl.ONE);
   else if (mode === 'multiply') gl.blendFunc(gl.DST_COLOR, gl.ONE_MINUS_SRC_ALPHA);
   else gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
-}
-
-function createProgram(gl: WebGL2RenderingContext, vertexSource: string, fragmentSource: string): WebGLProgram {
-  const vertex = compileShader(gl, gl.VERTEX_SHADER, vertexSource);
-  const fragment = compileShader(gl, gl.FRAGMENT_SHADER, fragmentSource);
-  const program = gl.createProgram();
-  if (!program) throw new Error('Unable to create sprite shader program');
-  try {
-    gl.attachShader(program, vertex);
-    gl.attachShader(program, fragment);
-    gl.linkProgram(program);
-    if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
-      throw new Error(`Sprite shader link failed: ${gl.getProgramInfoLog(program) ?? 'unknown error'}`);
-    }
-    return program;
-  } catch (error) {
-    gl.deleteProgram(program);
-    throw error;
-  } finally {
-    gl.deleteShader(vertex);
-    gl.deleteShader(fragment);
-  }
-}
-
-function compileShader(gl: WebGL2RenderingContext, type: number, source: string): WebGLShader {
-  const shader = requireValue(gl.createShader(type), 'Unable to create sprite shader');
-  gl.shaderSource(shader, source);
-  gl.compileShader(shader);
-  if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
-    const error = gl.getShaderInfoLog(shader) ?? 'unknown error';
-    gl.deleteShader(shader);
-    throw new Error(`Sprite shader compilation failed: ${error}`);
-  }
-  return shader;
 }
 
 function requireValue<T>(value: T | null, message: string): T {

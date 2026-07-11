@@ -1,5 +1,6 @@
 import type { BlendMode, SpriteCamera2D, SpriteRenderTarget } from './SpriteRenderer.js';
 import type { WebGL2Device } from './WebGL2Device.js';
+import { createShaderProgram, requireShaderUniform } from './ShaderProgram.js';
 
 export const MAX_PARTICLE_PALETTE_COLORS = 16;
 
@@ -73,17 +74,17 @@ export class ParticlePointRenderer {
 
   constructor(private readonly device: WebGL2Device) {
     this.gl = device.gl;
-    this.program = createProgram(this.gl, VERTEX_SHADER, FRAGMENT_SHADER);
+    this.program = createShaderProgram(this.gl, { label: 'particle point renderer', vertexSource: VERTEX_SHADER, fragmentSource: FRAGMENT_SHADER });
     this.vao = requireValue(this.gl.createVertexArray(), 'Unable to create particle vertex array');
     this.positionBuffer = requireValue(this.gl.createBuffer(), 'Unable to create particle position buffer');
     this.radiusBuffer = requireValue(this.gl.createBuffer(), 'Unable to create particle radius buffer');
     this.seedBuffer = requireValue(this.gl.createBuffer(), 'Unable to create particle seed buffer');
-    this.cameraLocation = requireValue(this.gl.getUniformLocation(this.program, 'u_camera'), 'Particle camera uniform is missing');
-    this.viewportLocation = requireValue(this.gl.getUniformLocation(this.program, 'u_viewport'), 'Particle viewport uniform is missing');
-    this.pixelRatioLocation = requireValue(this.gl.getUniformLocation(this.program, 'u_pixelRatio'), 'Particle pixel ratio uniform is missing');
-    this.opacityLocation = requireValue(this.gl.getUniformLocation(this.program, 'u_opacity'), 'Particle opacity uniform is missing');
-    this.paletteLocation = requireValue(this.gl.getUniformLocation(this.program, 'u_palette[0]'), 'Particle palette uniform is missing');
-    this.paletteCountLocation = requireValue(this.gl.getUniformLocation(this.program, 'u_paletteCount'), 'Particle palette count uniform is missing');
+    this.cameraLocation = requireShaderUniform(this.gl, this.program, 'u_camera', 'particle point renderer');
+    this.viewportLocation = requireShaderUniform(this.gl, this.program, 'u_viewport', 'particle point renderer');
+    this.pixelRatioLocation = requireShaderUniform(this.gl, this.program, 'u_pixelRatio', 'particle point renderer');
+    this.opacityLocation = requireShaderUniform(this.gl, this.program, 'u_opacity', 'particle point renderer');
+    this.paletteLocation = requireShaderUniform(this.gl, this.program, 'u_palette[0]', 'particle point renderer');
+    this.paletteCountLocation = requireShaderUniform(this.gl, this.program, 'u_paletteCount', 'particle point renderer');
     this.configureGeometry();
   }
 
@@ -180,39 +181,6 @@ function configureBlend(gl: WebGL2RenderingContext, mode: BlendMode): void {
   if (mode === 'additive') gl.blendFunc(gl.SRC_ALPHA, gl.ONE);
   else if (mode === 'multiply') gl.blendFunc(gl.DST_COLOR, gl.ONE_MINUS_SRC_ALPHA);
   else gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
-}
-
-function createProgram(gl: WebGL2RenderingContext, vertexSource: string, fragmentSource: string): WebGLProgram {
-  const vertex = compileShader(gl, gl.VERTEX_SHADER, vertexSource);
-  const fragment = compileShader(gl, gl.FRAGMENT_SHADER, fragmentSource);
-  const program = requireValue(gl.createProgram(), 'Unable to create particle program');
-  try {
-    gl.attachShader(program, vertex);
-    gl.attachShader(program, fragment);
-    gl.linkProgram(program);
-    if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
-      throw new Error(`Particle shader link failed: ${gl.getProgramInfoLog(program) ?? 'unknown error'}`);
-    }
-    return program;
-  } catch (error) {
-    gl.deleteProgram(program);
-    throw error;
-  } finally {
-    gl.deleteShader(vertex);
-    gl.deleteShader(fragment);
-  }
-}
-
-function compileShader(gl: WebGL2RenderingContext, type: number, source: string): WebGLShader {
-  const shader = requireValue(gl.createShader(type), 'Unable to create particle shader');
-  gl.shaderSource(shader, source);
-  gl.compileShader(shader);
-  if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
-    const error = gl.getShaderInfoLog(shader) ?? 'unknown error';
-    gl.deleteShader(shader);
-    throw new Error(`Particle shader compilation failed: ${error}`);
-  }
-  return shader;
 }
 
 function requireValue<T>(value: T | null, message: string): T {
