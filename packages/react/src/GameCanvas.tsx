@@ -2,10 +2,16 @@ import { useEffect, useRef, type CSSProperties } from 'react';
 import type { EnginePlugin, InputEvent } from '@hooksjam/gl-game-lab-core';
 import {
   EngineRenderer,
+  EngineAccessibility,
   ExperienceRuntimeControllerService,
   GameEngine,
 } from '@hooksjam/gl-game-lab-engine';
-import { BrowserFrameLoop, WebInputAdapter } from '@hooksjam/gl-game-lab-platform-web';
+import {
+  BrowserFrameLoop,
+  WebInputAdapter,
+  createWebPlatformPlugin,
+  type WebPlatformPluginOptions,
+} from '@hooksjam/gl-game-lab-platform-web';
 import { createWebGL2RendererPlugin } from '@hooksjam/gl-game-lab-render-webgl2';
 import { FrameProfiler, checksumRgba, type FrameProfileSummary } from '@hooksjam/gl-game-lab-tools';
 
@@ -60,8 +66,14 @@ export function createEngineDestroyHandle(engine: Pick<GameEngine, 'destroy'>): 
   };
 }
 
-export function createBrowserGameEngine(canvas: HTMLCanvasElement, plugins: readonly EnginePlugin[] = []): GameEngine {
-  return new GameEngine({ plugins: [createWebGL2RendererPlugin(canvas), ...plugins] });
+export function createBrowserGameEngine(
+  canvas: HTMLCanvasElement,
+  plugins: readonly EnginePlugin[] = [],
+  platform: WebPlatformPluginOptions = {},
+): GameEngine {
+  return new GameEngine({
+    plugins: [createWebGL2RendererPlugin(canvas), createWebPlatformPlugin(canvas, platform), ...plugins],
+  });
 }
 
 export function GameCanvas({
@@ -84,11 +96,11 @@ export function GameCanvas({
     if (!canvas) return undefined;
     const engine = createEngine
       ? createEngine(canvas)
-      : createBrowserGameEngine(canvas, createPlugins?.() ?? plugins);
+      : createBrowserGameEngine(canvas, createPlugins?.() ?? plugins, { preventDefaultInput });
     let disposed = false;
     let destroyFailureReported = false;
     let loop: BrowserFrameLoop | undefined;
-    let inputAdapter: WebInputAdapter | undefined;
+    let fallbackInput: WebInputAdapter | undefined;
     const destroyHandle = createEngineDestroyHandle(engine);
     const reportError = (error: unknown): void => {
       canvas.dataset.engineState = 'error';
@@ -120,18 +132,18 @@ export function GameCanvas({
           return;
         }
         resize();
-        inputAdapter = new WebInputAdapter(canvas, {
-          input: engine.input,
-          preventDefault: preventDefaultInput,
-          getViewport: () => {
-            const renderer = engine.kernel.tryGet(EngineRenderer);
-            if (renderer) {
-              return { width: renderer.viewport.width, height: renderer.viewport.height };
-            }
-            const bounds = canvas.getBoundingClientRect();
-            return { width: Math.max(1, bounds.width), height: Math.max(1, bounds.height) };
-          },
-        });
+        if (!engine.kernel.has(EngineAccessibility)) {
+          fallbackInput = new WebInputAdapter(canvas, {
+            input: engine.input,
+            preventDefault: preventDefaultInput,
+            getViewport: () => {
+              const renderer = engine.kernel.tryGet(EngineRenderer);
+              if (renderer) return { width: renderer.viewport.width, height: renderer.viewport.height };
+              const bounds = canvas.getBoundingClientRect();
+              return { width: Math.max(1, bounds.width), height: Math.max(1, bounds.height) };
+            },
+          });
+        }
         await engine.start();
         if (disposed) {
           await destroyHandle.destroy();
@@ -197,7 +209,7 @@ export function GameCanvas({
       canvas.dataset.engineState = 'destroyed';
       observer?.disconnect();
       window.removeEventListener('resize', resize);
-      inputAdapter?.destroy();
+      fallbackInput?.destroy();
       loop?.stop();
       void destroyHandle.destroy().catch((error) => {
         if (!destroyFailureReported) {

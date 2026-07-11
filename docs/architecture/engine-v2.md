@@ -85,6 +85,19 @@ The standard schedule is:
 Time services provide fixed and variable deltas, pause, time scaling, multiple
 clocks, deterministic seeds, preview budgets, capture, and replay.
 
+## Platform services
+
+The engine package owns browser-neutral contracts for audio, JSON save storage,
+worker tasks, accessibility announcements, and polled input sources. The web
+platform plugin supplies Web Audio, namespaced local storage, short-lived module
+workers, DOM live regions, focused canvas input, and normalized gamepad polling.
+Hosts may replace any service at composition time without changing content.
+
+Polled input sources run before `InputState.advanceFrame()`, so keyboard,
+pointer, gamepad, replay, and future network input contribute to one immutable
+frame snapshot. `ActionMap` resolves keyboard and gamepad bindings into the same
+pressed/down/released action states used by gameplay systems.
+
 ## Scenes, prefabs, and serialization
 
 Scenes support additive loading, transitions, nested prefabs, variants,
