@@ -4,13 +4,16 @@ import {
   EngineRenderer,
   EngineSchedule,
   EngineWorld,
+  DEFAULT_FONT_2D_ID,
   extractSprite2D,
   type Render2DService,
+  type BitmapFont2DHandle,
   type RenderBackend,
   type RenderBackendCapabilities,
   type RenderBackendState,
   type RenderViewport,
   type Sprite2DDraw,
+  type Text2DDraw,
   type Texture2DHandle,
 } from '@hooksjam/gl-game-lab-engine';
 import {
@@ -37,6 +40,7 @@ import {
 import { FullscreenEffectRenderer, FullscreenEffectRenderQueue } from './FullscreenEffectRenderer.js';
 import { GpuRenderPassQueue } from './GpuRenderPassQueue.js';
 import { FrameRenderPipeline, type FrameRenderGraphSnapshot } from './FrameRenderPipeline.js';
+import { createDefaultBitmapFontAtlas } from './DefaultBitmapFont.js';
 
 export interface WebGL2RendererOptions {
   readonly device?: WebGL2DeviceOptions;
@@ -94,6 +98,11 @@ interface ManagedTexture2D {
   readonly spriteTexture: SpriteTexture;
 }
 
+interface ManagedBitmapFont2D {
+  readonly handle: BitmapFont2DHandle;
+  readonly texture: Texture2DHandle;
+}
+
 export class WebGL2Renderer implements RenderBackend, Render2DService {
   readonly id = 'gl-game-lab.render-webgl2';
   readonly capabilities = WEBGL2_CAPABILITIES;
@@ -116,6 +125,7 @@ export class WebGL2Renderer implements RenderBackend, Render2DService {
   private pixelRatio = 1;
   private readonly unregisterContextResource: () => void;
   private readonly textures2D = new Map<string, ManagedTexture2D>();
+  private readonly fonts2D = new Map<string, ManagedBitmapFont2D>();
   private destroyed = false;
 
   get state(): RenderBackendState {
@@ -178,6 +188,8 @@ export class WebGL2Renderer implements RenderBackend, Render2DService {
       priority: 100,
       restore: () => { this.restoreContext(); },
     });
+    const font = createDefaultBitmapFontAtlas();
+    this.createBitmapFont(DEFAULT_FONT_2D_ID, font.characters, font.columns, font.glyphWidth, font.glyphHeight, font.pixels);
   }
 
   resize(cssWidth: number, cssHeight: number, pixelRatio = 1): void {
@@ -285,12 +297,70 @@ export class WebGL2Renderer implements RenderBackend, Render2DService {
     return texture;
   }
 
+  createBitmapFont(id: string, characters: string, columns: number, glyphWidth: number, glyphHeight: number, pixels: Uint8Array): BitmapFont2DHandle {
+    const normalizedId = id.trim();
+    if (normalizedId.length === 0) throw new Error('Bitmap font id cannot be empty');
+    if (this.fonts2D.has(normalizedId)) throw new Error(`Bitmap font id is already registered: ${normalizedId}`);
+    if (new Set(characters).size !== characters.length || characters.length === 0) throw new Error('Bitmap font characters must be unique and non-empty');
+    if (!Number.isSafeInteger(columns) || columns < 1 || !Number.isSafeInteger(glyphWidth) || glyphWidth < 1 || !Number.isSafeInteger(glyphHeight) || glyphHeight < 1) {
+      throw new Error('Bitmap font grid dimensions must be positive integers');
+    }
+    const rows = Math.ceil(characters.length / columns);
+    const texture = this.createRgbaTexture(`${normalizedId}.atlas`, columns * glyphWidth, rows * glyphHeight, pixels);
+    const handle = Object.freeze({ id: normalizedId, characters, columns, glyphWidth, glyphHeight, lineHeight: glyphHeight });
+    this.fonts2D.set(normalizedId, { handle, texture });
+    return handle;
+  }
+
+  destroyBitmapFont(font: BitmapFont2DHandle): void {
+    const managed = this.fonts2D.get(font.id);
+    if (!managed || managed.handle !== font) return;
+    this.destroyTexture(managed.texture);
+    this.fonts2D.delete(font.id);
+  }
+
+  hasBitmapFont(id: string): boolean { return this.fonts2D.has(id); }
+
+  bitmapFont(id: string): BitmapFont2DHandle {
+    const font = this.fonts2D.get(id)?.handle;
+    if (!font) throw new Error(`Bitmap font is not registered: ${id}`);
+    return font;
+  }
+
   submit(sprite: Sprite2DDraw): void {
     const texture = this.textures2D.get(sprite.texture.id);
     if (!texture || texture.handle !== sprite.texture) {
       throw new Error(`2D texture handle is not owned by this renderer: ${sprite.texture.id}`);
     }
     this.sprites.submit({ ...sprite, texture: texture.spriteTexture });
+  }
+
+  submitText(draw: Text2DDraw): void {
+    const managed = this.fonts2D.get(draw.font.id);
+    if (!managed || managed.handle !== draw.font) throw new Error(`Bitmap font handle is not owned by this renderer: ${draw.font.id}`);
+    const rows = Math.ceil(draw.font.characters.length / draw.font.columns);
+    const scale = draw.size / draw.font.glyphHeight;
+    const advance = draw.font.glyphWidth * scale;
+    draw.text.split('\n').forEach((line, lineIndex) => {
+      const offset = draw.align === 'center' ? -line.length * advance * 0.5 : draw.align === 'right' ? -line.length * advance : 0;
+      [...line.toUpperCase()].forEach((character, glyphIndex) => {
+        const index = Math.max(0, draw.font.characters.indexOf(character) >= 0 ? draw.font.characters.indexOf(character) : draw.font.characters.indexOf('?'));
+        const column = index % draw.font.columns;
+        const row = Math.floor(index / draw.font.columns);
+        this.submit({
+          texture: managed.texture,
+          x: draw.x + offset + glyphIndex * advance,
+          y: draw.y + lineIndex * draw.font.lineHeight * scale,
+          width: advance,
+          height: draw.font.glyphHeight * scale,
+          anchorX: 0,
+          anchorY: 0,
+          ...(draw.color ? { tint: draw.color } : {}),
+          uv: [column / draw.font.columns, row / rows, (column + 1) / draw.font.columns, (row + 1) / rows],
+          ...(draw.zIndex === undefined ? {} : { zIndex: draw.zIndex }),
+        });
+      });
+    });
   }
 
   setCamera(camera: { readonly centerX: number; readonly centerY: number; readonly zoom: number }): void {
@@ -313,6 +383,8 @@ export class WebGL2Renderer implements RenderBackend, Render2DService {
     this.particles.clear();
     this.effects.clear();
     this.gpuPasses.clear();
+    for (const font of [...this.fonts2D.values()]) this.destroyBitmapFont(font.handle);
+    this.fonts2D.clear();
     for (const texture of this.textures2D.values()) texture.resource.dispose();
     this.textures2D.clear();
     this.effectRenderer.destroy();

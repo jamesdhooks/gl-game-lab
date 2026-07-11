@@ -17,5 +17,12 @@ export {
   type BallPitMode,
 } from './ball-pit/config.js';
 export { BALL_PIT_STYLE_MANIFEST, rgbHexToRgba } from './ball-pit/styles.js';
+export { referenceArenaDefinition } from './reference-arena/definition.js';
+export {
+  REFERENCE_ARENA_PLUGIN_ID,
+  ReferenceArenaControllerService,
+  createReferenceArenaPlugin,
+  type ReferenceArenaController,
+} from './reference-arena/ReferenceArenaPlugin.js';
 
 export const GAME_REGISTRY = new ExperienceRegistry().register(ballPitDefinition);

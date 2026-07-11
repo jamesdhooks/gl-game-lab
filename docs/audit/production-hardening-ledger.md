@@ -32,7 +32,7 @@ performance, or lifecycle claims.
 |---|---:|---|---:|---|---|
 | KRN-01 | Critical | Engine initialization and shutdown can strand lifecycle state when cleanup rejects. | 3 | Verified | Failure-injection tests cover partial install/start, cleanup aggregation, idempotent stop/destroy, and terminal state recovery. |
 | KRN-02 | High | Plugin/resource ownership and teardown order are insufficiently explicit. | 3 | Open | Ownership graph plus reverse-order teardown and leak tests. |
-| ECS-01 | High | ECS, hierarchy, scenes, and serialization are not the content runtime's authoritative model. | 3, 6, 7 | Open | Reference Arena and all migrated experiences exercise the public scene/ECS path. |
+| ECS-01 | High | ECS, hierarchy, scenes, and serialization are not the content runtime's authoritative model. | 3, 6, 7 | Active | Reference Arena now drives scene-owned ECS entities, prefabs, transforms, sprites, animation, camera, UI text, and physics synchronization; all existing experiences still require migration. |
 | ECS-02 | High | Structural mutation and query invalidation semantics are incomplete for scheduled systems. | 3 | Verified | Tests cover query locks, command-buffered scheduled mutation, stale generations, prevalidated spawn, reentrant despawn, and runner failure recovery. |
 | SCN-01 | High | Scene transitions, async loading, persistence, and failure recovery are incomplete. | 3 | Verified | Additive and serialized exclusive transitions, in-flight cancellation, activation rollback, and failure-cleanup tests pass. |
 | AST-01 | Critical | Concurrent asset-group failure can leak leases; request identity omits behavior-affecting options. | 3 | Verified | Concurrent group/release and failed-parent dependency tests prove zero leases remain; deterministic option keys reject incompatible reuse. |
@@ -55,7 +55,7 @@ performance, or lifecycle claims.
 | QLT-03 | High | CI, source hygiene, and package-boundary enforcement were absent. | 2 | Active | Required CI executes frozen install, boundaries, hygiene, typecheck, tests, and build. |
 | TOL-01 | Medium | Diagnostics, frame/resource inspection, GPU debugging, and capture tooling are incomplete. | 8 | Open | Runtime overlay and machine-readable capture expose CPU/GPU/resource/pass data. |
 | TOL-02 | Medium | Serialization/editor inspection/hot reload lack production workflows. | 3, 8 | Open | Versioned save fixtures, inspector editing boundary, and reload documentation. |
-| DES-01 | Medium | Animation, cameras, UI layout/text, and a conventional 2D authoring layer are incomplete. | 5, 6 | Active | ECS sprites, logical RGBA textures, primary cameras, atlas animation, culling, sorting, and extraction now use a backend-neutral service; text/UI and full Reference Arena integration remain. |
+| DES-01 | Medium | Animation, cameras, UI layout/text, and a conventional 2D authoring layer are incomplete. | 5, 6 | Active | Backend-neutral ECS sprites, logical textures, cameras, atlas animation, bitmap text, culling, sorting, and extraction now drive a tested Reference Arena with input, physics, audio, saves, and accessibility; browser acceptance remains. |
 | DES-02 | Low | Full WebGPU backend, PBR 3D renderer, and production editor are not required for this release. | Post-release | Deferred | Backend contracts and ADRs must avoid precluding later implementations. |
 
 ## Phase exit gates

@@ -38,14 +38,18 @@ export {
 } from './Services.js';
 export {
   Camera2DComponent,
+  DEFAULT_FONT_2D_ID,
   Sprite2DComponent,
   SpriteAnimation2DComponent,
+  Text2DComponent,
   advanceSpriteAnimations,
   createCamera2D,
   createSprite2D,
   createSpriteAnimation2D,
+  createText2D,
   extractSprite2D,
   type BlendMode2D,
+  type BitmapFont2DHandle,
   type Camera2D,
   type Camera2DState,
   type ColorRgba,
@@ -53,6 +57,8 @@ export {
   type Sprite2D,
   type Sprite2DDraw,
   type SpriteAnimation2D,
+  type Text2D,
+  type Text2DDraw,
   type Texture2DHandle,
   type UvRect,
 } from './Render2D.js';

@@ -4,15 +4,19 @@ import {
   Camera2DComponent,
   Sprite2DComponent,
   SpriteAnimation2DComponent,
+  Text2DComponent,
   advanceSpriteAnimations,
   createCamera2D,
   createSprite2D,
   createSpriteAnimation2D,
+  createText2D,
   extractSprite2D,
   type Camera2DState,
+  type BitmapFont2DHandle,
   type Render2DService,
   type Sprite2DDraw,
   type Texture2DHandle,
+  type Text2DDraw,
 } from '../index.js';
 
 describe('2D authoring', () => {
@@ -27,15 +31,19 @@ describe('2D authoring', () => {
     const camera = world.spawn();
     world.insert(camera, TransformComponent, createTransform2D(100, 50));
     world.insert(camera, Camera2DComponent, createCamera2D(1.5));
+    const label = world.spawn();
+    world.insert(label, TransformComponent, createTransform2D(8, 9));
+    world.insert(label, Text2DComponent, createText2D('SCORE 42', 16));
     const renderer = new FakeRender2D();
 
     advanceSpriteAnimations(world, 0.1);
-    expect(extractSprite2D(world, renderer)).toBe(1);
+    expect(extractSprite2D(world, renderer)).toBe(2);
     expect(renderer.draws[0]).toMatchObject({
       x: 12, y: 24, width: 32, height: 24, rotation: Math.PI / 2,
       uv: [0.5, 0, 1, 1], zIndex: 4,
     });
     expect(renderer.camera).toEqual({ centerX: 100, centerY: 50, zoom: 1.5 });
+    expect(renderer.text[0]).toMatchObject({ text: 'SCORE 42', x: 8, y: 9, size: 16 });
   });
 
   it('stops non-looping animation on its final frame', () => {
@@ -55,11 +63,18 @@ describe('2D authoring', () => {
 class FakeRender2D implements Render2DService {
   readonly draws: Sprite2DDraw[] = [];
   readonly handle = Object.freeze({ id: 'hero', width: 32, height: 8 });
+  readonly font = Object.freeze({ id: 'gl-game-lab.font.default-5x7', characters: 'ABC?', columns: 4, glyphWidth: 6, glyphHeight: 8, lineHeight: 8 });
+  readonly text: Text2DDraw[] = [];
   camera: Camera2DState | undefined;
   createRgbaTexture(): Texture2DHandle { return this.handle; }
   destroyTexture(): void {}
   hasTexture(id: string): boolean { return id === 'hero'; }
   texture(): Texture2DHandle { return this.handle; }
+  createBitmapFont(): BitmapFont2DHandle { throw new Error('not used'); }
+  destroyBitmapFont(): void {}
+  hasBitmapFont(): boolean { return true; }
+  bitmapFont(): BitmapFont2DHandle { return this.font; }
   submit(sprite: Sprite2DDraw): void { this.draws.push(sprite); }
+  submitText(text: Text2DDraw): void { this.text.push(text); }
   setCamera(camera: Camera2DState): void { this.camera = camera; }
 }

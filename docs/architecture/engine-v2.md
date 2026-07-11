@@ -121,6 +121,17 @@ The first native renderer provides sprites, texture atlases, frame animation,
 cameras, viewports, instanced shapes, sorting, culling, blend modes, masks,
 in-world text, render-to-texture, materials, and shader parameters.
 
+The conventional 2D authoring path stores logical texture IDs, sprites, atlas
+animations, bitmap text, and primary cameras as ECS components. A renderer-
+neutral extraction contract turns those components into ordered draws. The
+WebGL2 backend owns physical textures and recreates them after context loss;
+gameplay never stores a `WebGLTexture` or calls WebGL directly.
+
+`Reference Arena` is the integration slice for this path. It intentionally
+combines a scene, prefab collectibles, ECS transforms, animated sprites, a
+following camera, bitmap HUD text, unified keyboard/gamepad actions, 2D
+physics, Web Audio, persistent high score storage, and accessibility status.
+
 GPU features participate in the same graph: particles, trails, fields, fluids,
 metaballs, constraints, sparse geometry, lighting, shadows, bloom, distortion,
 color grading, and compositing. Dense GPU-authoritative state stays resident on
