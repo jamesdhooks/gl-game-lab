@@ -195,7 +195,7 @@ export function createBallPitPlugin(
     const spawnRate = launch.profile === 'preview' ? 14 : currentConfig.spawnRate;
     spawnAccumulator += deltaSeconds * spawnRate;
     const spawnX = width * 0.5 + Math.sin(elapsedSeconds * 1.1) * width * 0.25;
-    const spawnY = -Math.max(currentConfig.radius * 5, 18);
+    const spawnY = -Math.max(currentConfig.radius * 5, 18) + Math.sin(elapsedSeconds * 1.7) * currentConfig.radius;
     while (spawnAccumulator >= 1) {
       spawnOne(world, spawnX, spawnY);
       spawnAccumulator -= 1;
@@ -205,14 +205,19 @@ export function createBallPitPlugin(
   function spawnOne(world: DenseCircleParticleWorld2D, x: number, y: number): void {
     const noise = nextRandom() * 2 - 1;
     const spread = currentConfig.radius * 2.8;
+    const offsetX = (nextRandom() * 2 - 1) * spread;
+    const offsetY = (nextRandom() * 2 - 1) * spread;
+    const colorSeed = nextRandom() * 10_000;
+    const velocityX = nextRandom() * 180 - 90;
+    const velocityY = nextRandom() * 140 - 60;
     world.addCircle(
-      x + (nextRandom() * 2 - 1) * spread,
-      y + (nextRandom() * 2 - 1) * spread,
+      x + offsetX,
+      y + offsetY,
       {
         radiusNoise: noise,
-        velocityX: nextRandom() * 180 - 90,
-        velocityY: nextRandom() * 140 - 60,
-        colorSeed: Math.floor(nextRandom() * 10_000),
+        velocityX,
+        velocityY,
+        colorSeed,
       },
     );
   }

@@ -256,14 +256,13 @@ export class DenseCircleParticleWorld2D {
     this.maxVelocity = 0;
     for (let substep = 0; substep < this.settings.substeps; substep += 1) {
       this.integrate(stepDelta);
-      this.projectBounds(stepDelta);
       for (let pass = 0; pass < this.settings.solverIterations; pass += 1) {
-        this.buildGrid();
         const passFraction = pass / Math.max(1, this.settings.solverIterations - 1);
         const relaxation = 0.76 - 0.16 * passFraction;
-        const hits = this.solveGrid(stepDelta, relaxation);
-        this.projectBounds(stepDelta);
-        if (hits === 0) break;
+        this.projectBounds();
+        this.buildGrid();
+        this.solveGrid(relaxation);
+        this.projectBounds();
       }
       this.syncVelocities(stepDelta);
     }
@@ -281,36 +280,33 @@ export class DenseCircleParticleWorld2D {
   }
 
   private integrate(deltaSeconds: number): void {
+    const drag = Math.pow(this.settings.airDrag, deltaSeconds * 60);
     for (let index = 0; index < this.activeCount; index += 1) {
       if (floatAt(this.inverseMasses, index) <= 0) continue;
       const offset = index * 2;
       this.previousPositions[offset] = floatAt(this.positions, offset);
       this.previousPositions[offset + 1] = floatAt(this.positions, offset + 1);
-      this.velocities[offset + 1] = floatAt(this.velocities, offset + 1) + this.settings.gravity * deltaSeconds;
+      this.velocities[offset] = floatAt(this.velocities, offset) * drag;
+      this.velocities[offset + 1] = floatAt(this.velocities, offset + 1) * drag + this.settings.gravity * deltaSeconds;
       this.positions[offset] = floatAt(this.positions, offset) + floatAt(this.velocities, offset) * deltaSeconds;
       this.positions[offset + 1] = floatAt(this.positions, offset + 1) + floatAt(this.velocities, offset + 1) * deltaSeconds;
     }
   }
 
-  private projectBounds(deltaSeconds: number): void {
-    const restitution = this.settings.wallBounce ? this.settings.boundaryRestitution : 0;
+  private projectBounds(): void {
     for (let index = 0; index < this.activeCount; index += 1) {
       if (floatAt(this.inverseMasses, index) <= 0) continue;
       const offset = index * 2;
       const radius = this.radii[index] ?? this.settings.radius;
       if (floatAt(this.positions, offset) < radius) {
         this.positions[offset] = radius;
-        if (floatAt(this.velocities, offset) < 0) this.previousPositions[offset] = radius - Math.abs(floatAt(this.velocities, offset)) * deltaSeconds * restitution;
       } else if (floatAt(this.positions, offset) > this.width - radius) {
         this.positions[offset] = this.width - radius;
-        if (floatAt(this.velocities, offset) > 0) this.previousPositions[offset] = floatAt(this.positions, offset) + Math.abs(floatAt(this.velocities, offset)) * deltaSeconds * restitution;
       }
       if (!this.settings.openTop && floatAt(this.positions, offset + 1) < radius) {
         this.positions[offset + 1] = radius;
-        if (floatAt(this.velocities, offset + 1) < 0) this.previousPositions[offset + 1] = radius - Math.abs(floatAt(this.velocities, offset + 1)) * deltaSeconds * restitution;
       } else if (floatAt(this.positions, offset + 1) > this.height - radius) {
         this.positions[offset + 1] = this.height - radius;
-        if (floatAt(this.velocities, offset + 1) > 0) this.previousPositions[offset + 1] = floatAt(this.positions, offset + 1) + Math.abs(floatAt(this.velocities, offset + 1)) * deltaSeconds * restitution;
       }
     }
   }
@@ -335,42 +331,41 @@ export class DenseCircleParticleWorld2D {
     }
   }
 
-  private solveGrid(deltaSeconds: number, relaxation: number): number {
+  private solveGrid(relaxation: number): number {
     const initialHits = this.collisionHits;
-    for (let index = 0; index < this.activeCellCount; index += 1) {
-      const cell = this.activeCells[index] ?? -1;
-      if (cell < 0) continue;
+    for (let cell = 0; cell < this.gridColumns * this.gridRows; cell += 1) {
+      if ((this.heads[cell] ?? -1) === -1) continue;
       const x = cell % this.gridColumns;
       const y = Math.floor(cell / this.gridColumns);
-      this.solveSelfCell(cell, deltaSeconds, relaxation);
-      if (x + 1 < this.gridColumns) this.solveCellPair(cell, cell + 1, deltaSeconds, relaxation);
+      this.solveSelfCell(cell, relaxation);
+      if (x + 1 < this.gridColumns) this.solveCellPair(cell, cell + 1, relaxation);
       if (y + 1 < this.gridRows) {
         const nextRow = cell + this.gridColumns;
-        this.solveCellPair(cell, nextRow, deltaSeconds, relaxation);
-        if (x > 0) this.solveCellPair(cell, nextRow - 1, deltaSeconds, relaxation);
-        if (x + 1 < this.gridColumns) this.solveCellPair(cell, nextRow + 1, deltaSeconds, relaxation);
+        this.solveCellPair(cell, nextRow, relaxation);
+        if (x > 0) this.solveCellPair(cell, nextRow - 1, relaxation);
+        if (x + 1 < this.gridColumns) this.solveCellPair(cell, nextRow + 1, relaxation);
       }
     }
     return this.collisionHits - initialHits;
   }
 
-  private solveSelfCell(cell: number, deltaSeconds: number, relaxation: number): void {
+  private solveSelfCell(cell: number, relaxation: number): void {
     for (let left = this.heads[cell] ?? -1; left !== -1; left = this.next[left] ?? -1) {
       for (let right = this.next[left] ?? -1; right !== -1; right = this.next[right] ?? -1) {
-        this.solvePair(left, right, deltaSeconds, relaxation);
+        this.solvePair(left, right, relaxation);
       }
     }
   }
 
-  private solveCellPair(leftCell: number, rightCell: number, deltaSeconds: number, relaxation: number): void {
+  private solveCellPair(leftCell: number, rightCell: number, relaxation: number): void {
     for (let left = this.heads[leftCell] ?? -1; left !== -1; left = this.next[left] ?? -1) {
       for (let right = this.heads[rightCell] ?? -1; right !== -1; right = this.next[right] ?? -1) {
-        this.solvePair(left, right, deltaSeconds, relaxation);
+        this.solvePair(left, right, relaxation);
       }
     }
   }
 
-  private solvePair(left: number, right: number, deltaSeconds: number, relaxation: number): void {
+  private solvePair(left: number, right: number, relaxation: number): void {
     const leftOffset = left * 2;
     const rightOffset = right * 2;
     let dx = floatAt(this.positions, rightOffset) - floatAt(this.positions, leftOffset);
@@ -380,7 +375,7 @@ export class DenseCircleParticleWorld2D {
     if (distanceSquared >= target * target) return;
     let distance = Math.sqrt(Math.max(distanceSquared, 1e-12));
     if (distance < 1e-6) {
-      const angle = ((left + 1) * 12.9898 + (right + 1) * 78.233) % (Math.PI * 2);
+      const angle = (left * 12.9898 + right * 78.233) % (Math.PI * 2);
       dx = Math.cos(angle);
       dy = Math.sin(angle);
       distance = 1;
@@ -388,8 +383,8 @@ export class DenseCircleParticleWorld2D {
       dx /= distance;
       dy /= distance;
     }
-    const leftWeight = this.inverseMasses[left] ?? 0;
-    const rightWeight = this.inverseMasses[right] ?? 0;
+    const leftWeight = this.particleWeight(left);
+    const rightWeight = this.particleWeight(right);
     const totalWeight = leftWeight + rightWeight;
     if (totalWeight <= 0) return;
     const penetration = target - distance;
@@ -399,7 +394,7 @@ export class DenseCircleParticleWorld2D {
     this.positions[leftOffset + 1] = floatAt(this.positions, leftOffset + 1) - dy * correction * leftWeight;
     this.positions[rightOffset] = floatAt(this.positions, rightOffset) + dx * correction * rightWeight;
     this.positions[rightOffset + 1] = floatAt(this.positions, rightOffset + 1) + dy * correction * rightWeight;
-    this.applyContactResponse(leftOffset, rightOffset, dx, dy, leftWeight, rightWeight, totalWeight, deltaSeconds);
+    this.applyContactResponse(leftOffset, rightOffset, dx, dy, leftWeight, rightWeight, totalWeight);
     this.collisionHits += 1;
   }
 
@@ -411,22 +406,11 @@ export class DenseCircleParticleWorld2D {
     leftWeight: number,
     rightWeight: number,
     totalWeight: number,
-    deltaSeconds: number,
   ): void {
     const leftDx = floatAt(this.positions, leftOffset) - floatAt(this.previousPositions, leftOffset);
     const leftDy = floatAt(this.positions, leftOffset + 1) - floatAt(this.previousPositions, leftOffset + 1);
     const rightDx = floatAt(this.positions, rightOffset) - floatAt(this.previousPositions, rightOffset);
     const rightDy = floatAt(this.positions, rightOffset + 1) - floatAt(this.previousPositions, rightOffset + 1);
-    const relativeNormal = (rightDx - leftDx) * normalX + (rightDy - leftDy) * normalY;
-    const impactSpeed = Math.max(0, -relativeNormal / Math.max(1e-6, deltaSeconds));
-    if (this.settings.wallBounce && impactSpeed >= this.settings.impactBounceThreshold) {
-      const bounce = -relativeNormal * this.settings.boundaryRestitution;
-      const inverseWeight = 1 / totalWeight;
-      this.previousPositions[leftOffset] = floatAt(this.previousPositions, leftOffset) + normalX * bounce * leftWeight * inverseWeight;
-      this.previousPositions[leftOffset + 1] = floatAt(this.previousPositions, leftOffset + 1) + normalY * bounce * leftWeight * inverseWeight;
-      this.previousPositions[rightOffset] = floatAt(this.previousPositions, rightOffset) - normalX * bounce * rightWeight * inverseWeight;
-      this.previousPositions[rightOffset + 1] = floatAt(this.previousPositions, rightOffset + 1) - normalY * bounce * rightWeight * inverseWeight;
-    }
     if (this.settings.contactFriction <= 0) return;
     const tangentX = -normalY;
     const tangentY = normalX;
@@ -439,20 +423,53 @@ export class DenseCircleParticleWorld2D {
   }
 
   private syncVelocities(deltaSeconds: number): void {
-    const damping = Math.pow(this.settings.airDrag * this.settings.solverDamping, deltaSeconds * 60);
+    const damping = Math.pow(this.settings.solverDamping, deltaSeconds * 60);
+    const bounce = this.settings.wallBounce ? this.settings.boundaryRestitution : 0;
+    const wallFriction = Math.max(0, 1 - this.settings.contactFriction * 0.12);
+    const maxSpeed = 5_200;
     for (let index = 0; index < this.activeCount; index += 1) {
       if (floatAt(this.inverseMasses, index) <= 0) continue;
       const offset = index * 2;
-      this.velocities[offset] = (floatAt(this.positions, offset) - floatAt(this.previousPositions, offset)) / deltaSeconds * damping;
-      this.velocities[offset + 1] = (floatAt(this.positions, offset + 1) - floatAt(this.previousPositions, offset + 1)) / deltaSeconds * damping;
-      this.maxVelocity = Math.max(this.maxVelocity, Math.hypot(floatAt(this.velocities, offset), floatAt(this.velocities, offset + 1)));
+      const radius = this.radii[index] ?? this.settings.radius;
+      let velocityX = (floatAt(this.positions, offset) - floatAt(this.previousPositions, offset)) / deltaSeconds * damping;
+      let velocityY = (floatAt(this.positions, offset + 1) - floatAt(this.previousPositions, offset + 1)) / deltaSeconds * damping;
+      if (floatAt(this.positions, offset) <= radius + 0.25 && velocityX < 0) {
+        velocityX = -velocityX > this.settings.impactBounceThreshold ? -velocityX * bounce : 0;
+        velocityY *= wallFriction;
+      } else if (floatAt(this.positions, offset) >= this.width - radius - 0.25 && velocityX > 0) {
+        velocityX = velocityX > this.settings.impactBounceThreshold ? -velocityX * bounce : 0;
+        velocityY *= wallFriction;
+      }
+      if (!this.settings.openTop && floatAt(this.positions, offset + 1) <= radius + 0.25 && velocityY < 0) {
+        velocityY = -velocityY > this.settings.impactBounceThreshold ? -velocityY * bounce : 0;
+        velocityX *= wallFriction;
+      } else if (floatAt(this.positions, offset + 1) >= this.height - radius - 0.25 && velocityY > 0) {
+        velocityY = velocityY > this.settings.impactBounceThreshold ? -velocityY * bounce : 0;
+        velocityX *= wallFriction;
+      }
+      const speedSquared = velocityX * velocityX + velocityY * velocityY;
+      if (speedSquared > maxSpeed * maxSpeed) {
+        const scale = maxSpeed / Math.sqrt(speedSquared);
+        velocityX *= scale;
+        velocityY *= scale;
+      }
+      this.velocities[offset] = velocityX;
+      this.velocities[offset + 1] = velocityY;
+      this.maxVelocity = Math.max(this.maxVelocity, Math.hypot(velocityX, velocityY));
     }
+  }
+
+  private particleWeight(index: number): number {
+    const inverseMass = this.inverseMasses[index] ?? 0;
+    if (inverseMass <= 0 || this.settings.gravity <= 0) return Math.max(0, inverseMass);
+    const y = floatAt(this.positions, index * 2 + 1);
+    return inverseMass * (1 - 0.62 * clamp(y / Math.max(1, this.height), 0, 1));
   }
 
   private rebuildGridShape(): void {
     let maximumRadius = this.settings.radius * (1 + this.settings.radiusVariation);
     for (let index = 0; index < this.activeCount; index += 1) maximumRadius = Math.max(maximumRadius, this.radii[index] ?? 0);
-    this.cellSize = Math.max(1, maximumRadius * 2.1);
+    this.cellSize = Math.max(5, maximumRadius * 2.4);
     this.inverseCellSize = 1 / this.cellSize;
     this.gridColumns = Math.max(1, Math.ceil(this.width / this.cellSize));
     this.gridRows = Math.max(1, Math.ceil(this.height / this.cellSize));

@@ -74,5 +74,28 @@ describe('DenseCircleParticleWorld2D', () => {
 
     expect(Math.abs((world.positions[2] ?? 0) - (world.positions[0] ?? 0))).toBeGreaterThan(18);
     expect(stats.collisionHits).toBeGreaterThan(0);
+    expect(stats.cellSize).toBe(24);
+  });
+
+  it('uses frozen depth-weighted collision masses under gravity', () => {
+    const world = new DenseCircleParticleWorld2D(2, {
+      maxParticles: 2,
+      gravity: 1,
+      radius: 10,
+      radiusVariation: 0,
+      solverIterations: 1,
+      substeps: 1,
+      airDrag: 1,
+      solverDamping: 1,
+      contactFriction: 0,
+    });
+    world.setBounds(100, 100);
+    world.addCircle(50, 40, { radiusNoise: 0 });
+    world.addCircle(50, 50, { radiusNoise: 0 });
+    world.step(1 / 60);
+
+    const upperDisplacement = 40 - (world.positions[1] ?? 40);
+    const lowerDisplacement = (world.positions[3] ?? 50) - 50;
+    expect(upperDisplacement).toBeGreaterThan(lowerDisplacement);
   });
 });

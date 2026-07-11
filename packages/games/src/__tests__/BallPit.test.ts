@@ -179,6 +179,7 @@ describe('Ball Pit experience', () => {
     await demoEngine.start();
     for (let frame = 0; frame < 60; frame += 1) demoEngine.frame(1 / 60);
     expect(demoEngine.kernel.get(BallPitControllerService).bodyCount).toBe(BALL_PIT_DEFAULTS.spawnRate);
+    expect(particles.buildPlan().batches[0]?.colorSeeds[0]).toBeCloseTo(7147.87598, 4);
     await demoEngine.destroy();
   });
 });
