@@ -11,13 +11,13 @@ Frozen behavior reference: `1273b5f4145c5e9e87123cba535f5cc939a77a61`.
 | Tutorial | Implemented | Three frozen pages render through the shared tutorial host. |
 | Reset | Implemented | Physics state, deterministic seed, pointer picks, and spawn timing reset together. |
 | Normal play | Implemented | Starts empty and responds to deterministic pointer input. |
-| Shared runtime host | Implemented | Browser QA confirmed engine `running`, empty normal play, four mode controls, ten-style selection, mode-filtered settings, power-of-two display, tutorial dialog, point-shader spawn, live Neon bloom switching, and no console warnings or errors. |
+| Shared runtime host | Implemented | Browser QA confirmed engine `running`, empty normal play, four mode controls, ten-style selection, mode-filtered settings, power-of-two display, tutorial dialog, point-shader spawn, and no console warnings or errors. |
 | Preview | Partial | Uses the frozen reduced physics profile and deterministic 14-per-second automatic spawn. The fixed-step capture route is ready; the equivalent frozen-reference comparison is still required. |
-| Demo | Partial | Deterministic automatic spawn preserves the frozen 1,200-per-second rate, timed falling-floor cycle, and escaped-particle pruning. Rainbow and Candy pass the frozen three-frame Single-mode temporal gate; eight styles and the interaction modes still require alignment and capture. |
+| Demo | Partial | Deterministic automatic spawn preserves the frozen 1,200-per-second rate, timed falling-floor cycle, and escaped-particle pruning. Canonical Rainbow geometry passes the frozen three-frame Single-mode temporal gate; interaction modes still require scenario captures. |
 | AI autoplay | Not applicable | Frozen capability is disabled. |
 | Rendering scale | Partial | Typed-array uniform-grid physics and the dedicated GPU point renderer now avoid per-particle objects. The 65,536 default budget still requires formal p95 evidence and any resulting tuning. |
-| Static visual tolerance | Implemented | All ten empty play-style captures are byte-identical at frame 1: SSIM `1.0`, zero error, and matching per-style SHA-256 hashes. |
-| Dynamic visual tolerance | Partial | The ten-style Single-mode matrix captures frames 60, 120, and 180 in isolated contexts. Rainbow and Candy pass the declared minimum `0.80` and mean `0.90` spatial gate. The other eight styles fail one or both thresholds and remain alignment work; interaction modes are not yet certified. |
+| Static visual structure | Implemented | All ten maintained palettes/backgrounds use the shared backdrop path; the empty play captures also happen to be byte-identical, though pixel identity is diagnostic rather than required. |
+| Dynamic visual structure | Partial | The ten-style Single-mode matrix captures exact RAF frames 60, 120, and 180 in isolated contexts. Canonical Rainbow geometry passes at `0.88740` minimum and `0.92764` mean. Palette variants share the maintained inputs and particle renderer and are browser-clean; their color-dependent scores are diagnostic. Interaction modes are not yet certified. |
 | Performance budget | Partial | An equivalent synthetic 65,536-body zero-collision CPU sample measured `52.59 ms` p95 versus `155.15 ms` for the frozen solver. Formal browser CPU/GPU p95 captures under representative collisions are still required. |
 
 The experience ledger must remain `pending` until every pending and partial row

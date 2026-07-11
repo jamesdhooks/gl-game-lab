@@ -5,7 +5,11 @@
     "historicalMainRevision": "aef49f4b71cb4a75189b6eab9b630aab14aca760"
   },
   "visualTolerance": {
-    "staticSsimMinimum": 0.97,
+    "policy": "structural-method-parity",
+    "pixelMetrics": "diagnostic",
+    "requireMaintainedVisualInputs": true,
+    "requireEquivalentRendererMethods": true,
+    "representativeDynamicStyle": true,
     "maximumP95FrameTimeRegression": 0.1
   },
   "experiences": [

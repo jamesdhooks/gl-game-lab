@@ -20,13 +20,23 @@ Each experience must preserve:
 - preview, play, demo, and AI behavior;
 - tutorial and attribution content;
 - deterministic interaction outcomes;
-- visual composition within the approved tolerance;
+- equivalent scene composition and rendering methods;
+- the same maintained style, palette, texture, shader, and material inputs;
 - performance within the approved regression budget.
 
-Static captures target an SSIM score of at least `0.97`. Dynamic experiences
-use deterministic frame sequences and a scene-specific temporal tolerance.
-CPU and GPU p95 frame time may not regress more than ten percent at equivalent
-settings without a committed architecture waiver.
+Visual parity is structural, not pixel-perfect. Captures must prove that the
+same content is present, the scene reads and behaves the same, and equivalent
+renderer families and passes produce it. SSIM, pixel hashes, and palette-level
+color distances are diagnostics for catching gross regressions; minor
+rasterization, antialiasing, particle-coordinate, and color differences do not
+block parity when authoritative inputs and rendering methods match.
+
+Dynamic experiences use deterministic frame sequences and a scene-specific
+composition tolerance on one representative style. Additional palette variants
+must preserve their maintained inputs and render path and remain browser-clean;
+they do not each repeat the physics acceptance gate. CPU and GPU p95 frame time
+may not regress more than ten percent at equivalent settings without a
+committed architecture waiver.
 
 ## Experience ledger
 

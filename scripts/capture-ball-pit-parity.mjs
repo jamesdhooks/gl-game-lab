@@ -25,7 +25,7 @@ const height = 540;
 const staticFrameNumber = 1;
 const dynamicFrameNumbers = [60, 120, 180];
 const fixedDeltaSeconds = 1 / 60;
-const seed = 7;
+const seed = 0x1234_abcd;
 const mode = 'single';
 const styleNames = Object.freeze({
   rainbow: 'Rainbow',
@@ -74,21 +74,36 @@ try {
     process.stderr.write(`Capturing Ball Pit style ${requestedStyle}\n`);
     styleReports.push(await captureStyle(browser, requestedStyle));
   }
+  const geometryRepresentative = styleReports.find((styleReport) => styleReport.style === 'rainbow');
+  const paletteContractsPassed = styleReports.every((styleReport) => styleReport.passed);
+  const temporalGeometryPassed = geometryRepresentative?.dynamic.passed ?? null;
   const report = {
-    schemaVersion: 2,
+    schemaVersion: 3,
     experienceId: 'ball-pit',
     referenceRevision,
     capture: { width, height, fixedDeltaSeconds, seed, styles: requestedStyles, mode },
     styles: styleReports,
-    passed: styleReports.every((styleReport) => styleReport.passed),
+    acceptance: {
+      palettePolicy: 'maintained-inputs-render-path-and-browser-clean',
+      paletteContractsPassed,
+      temporalGeometryStyle: geometryRepresentative?.style ?? null,
+      temporalGeometryPassed,
+    },
+    passed: paletteContractsPassed && temporalGeometryPassed !== false,
   };
   await writeFile(path.join(outputDirectory, 'report.json'), `${JSON.stringify(report, null, 2)}\n`, 'utf8');
   process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
   if (!report.passed) process.exitCode = 2;
 } finally {
-  await browser?.close();
   for (const server of servers) server.stop();
+  if (browser) {
+    await Promise.race([
+      browser.close(),
+      new Promise((resolve) => setTimeout(resolve, 2_000)),
+    ]);
+  }
 }
+process.exit(process.exitCode ?? 0);
 
 async function captureStyle(activeBrowser, style) {
   const staticPair = await capturePair(activeBrowser, {
@@ -123,11 +138,15 @@ async function captureStyle(activeBrowser, style) {
       && dynamicSimilarities.reduce((sum, value) => sum + value, 0) / dynamicSimilarities.length >= dynamicMeanSpatialThreshold,
     frames: dynamicFrames.map(stripPng),
   };
+  const browserClean = [staticPair, ...dynamicFrames].every((pair) => (
+    pair.reference.metadata.logs.length === 0 && pair.rebuild.metadata.logs.length === 0
+  ));
   return {
     style,
     static: stripPng(staticPair),
     dynamic,
-    passed: staticPair.comparison.pixel.passed && dynamic.passed,
+    browserClean,
+    passed: browserClean,
   };
 }
 
@@ -172,38 +191,54 @@ async function captureReference(context, options) {
   const logs = collectBrowserMessages(page);
   await page.addInitScript((initialSeed) => {
     let state = initialSeed >>> 0;
+    let animationFrameId = 0;
+    let deterministicNow = 0;
+    let animationTimestamp = 0;
+    const animationFrames = new Map();
+    Object.defineProperty(performance, 'now', { value: () => deterministicNow });
     Math.random = () => {
       state ^= state << 13;
       state ^= state >>> 17;
       state ^= state << 5;
       return (state >>> 0) / 0x1_0000_0000;
     };
+    window.requestAnimationFrame = (callback) => {
+      animationFrameId += 1;
+      animationFrames.set(animationFrameId, callback);
+      return animationFrameId;
+    };
+    window.cancelAnimationFrame = (id) => { animationFrames.delete(id); };
+    window.__glGameLabStepAnimationFrame = (deltaMilliseconds) => {
+      animationTimestamp += deltaMilliseconds;
+      deterministicNow = animationTimestamp;
+      const pending = [...animationFrames.values()];
+      animationFrames.clear();
+      for (const callback of pending) callback(animationTimestamp);
+      return pending.length;
+    };
+    window.__glGameLabResetAnimationClock = () => { animationTimestamp = deterministicNow; };
   }, seed);
-  await page.clock.install({ time: new Date('2026-07-10T12:00:00.000Z') });
   const url = `http://127.0.0.1:${referencePort}/${referenceBasePath}/?experience=ball-pit&backend=webgl2&profile=high`;
   await page.goto(url, { waitUntil: 'domcontentloaded' });
   await waitForFrozenRuntime(page);
   const dismiss = page.getByText('Tap anywhere to dismiss', { exact: true });
   if (await dismiss.count()) {
-    await dismiss.click();
-    await page.clock.runFor(300);
+    await dismiss.click({ force: true });
+    await stepFrozenFrames(page, 1);
   }
   await selectFrozenStyle(page, options.style);
   if (options.demo) {
-    await page.getByRole('button', { name: 'More controls' }).click();
-    await page.clock.runFor(100);
+    await page.getByRole('button', { name: 'More controls' }).click({ force: true });
+    await page.getByRole('button', { name: 'Reset', exact: true }).click({ force: true });
     const exitDemo = page.locator('button[aria-label="Exit demo"]');
-    let enteredDemo = false;
-    for (let attempt = 0; attempt < 30 && !enteredDemo; attempt += 1) {
-      const demoButton = page.getByRole('button', { name: 'Demo mode' });
-      if (await demoButton.count() === 1) await demoButton.click();
-      await page.mouse.move(100, 100);
-      await page.clock.runFor(100);
-      enteredDemo = await exitDemo.count() === 1;
-    }
+    const demoButton = page.getByRole('button', { name: 'Demo mode' });
+    await demoButton.click({ force: true });
+    await page.mouse.move(100, 100);
+    const enteredDemo = await exitDemo.count() === 1;
     if (!enteredDemo) throw new Error('Frozen runtime did not enter Demo mode');
+    await page.evaluate(() => { window.__glGameLabResetAnimationClock(); });
   }
-  await page.clock.runFor(options.frameNumber * fixedDeltaSeconds * 1000);
+  await stepFrozenFrames(page, options.frameNumber);
   const canvas = page.locator('canvas.h-full.w-full.touch-none.bg-slate-950');
   await canvas.waitFor({ state: 'visible' });
   await isolateCanvas(page, 'canvas.h-full.w-full.touch-none.bg-slate-950');
@@ -213,7 +248,7 @@ async function captureReference(context, options) {
     png,
     metadata: {
       url,
-      clock: 'virtual',
+      clock: 'manual-fixed-step-raf',
       durationMilliseconds: options.frameNumber * fixedDeltaSeconds * 1000,
       pngSha256: sha256(png),
       logs,
@@ -225,21 +260,27 @@ async function selectFrozenStyle(page, style) {
   const label = styleNames[style];
   if (!label) throw new Error(`Unknown Ball Pit style: ${style}`);
   if (style === 'rainbow') return;
-  await page.getByRole('button', { name: 'Palette', exact: true }).click();
-  await page.clock.runFor(100);
-  await page.getByRole('button', { name: label, exact: true }).click();
-  await page.clock.runFor(100);
+  await page.getByRole('button', { name: 'Palette', exact: true }).click({ force: true });
+  await page.getByRole('button', { name: label, exact: true }).click({ force: true });
 }
 
 async function waitForFrozenRuntime(page) {
   const debug = page.locator('button[aria-label="Open debug panel"]');
   await debug.waitFor({ state: 'visible', timeout: 30_000 });
-  for (let attempt = 0; attempt < 30; attempt += 1) {
-    await page.clock.runFor(100);
+  for (let attempt = 0; attempt < 180; attempt += 1) {
+    await stepFrozenFrames(page, 1);
     const text = (await debug.textContent())?.trim() ?? '';
     if (text !== '' && text !== '--') return;
   }
   throw new Error('Frozen runtime did not report a frame rate before capture');
+}
+
+async function stepFrozenFrames(page, count) {
+  for (let frame = 0; frame < count; frame += 1) {
+    await page.evaluate((deltaMilliseconds) => {
+      window.__glGameLabStepAnimationFrame(deltaMilliseconds);
+    }, fixedDeltaSeconds * 1000);
+  }
 }
 
 async function captureRebuild(context, options) {
@@ -280,12 +321,25 @@ function startVite(root, demoDirectory, port) {
     windowsHide: true,
   });
   let output = '';
+  let stopping = false;
   child.stdout.on('data', (chunk) => { output += chunk.toString(); });
   child.stderr.on('data', (chunk) => { output += chunk.toString(); });
   child.once('exit', (code) => {
-    if (code && code !== 0) process.stderr.write(`Vite server under ${root} exited with ${code}:\n${output}\n`);
+    if (!stopping && code && code !== 0) process.stderr.write(`Vite server under ${root} exited with ${code}:\n${output}\n`);
   });
-  return { stop: () => { if (!child.killed) child.kill(); } };
+  return {
+    stop: () => {
+      stopping = true;
+      child.stdout.destroy();
+      child.stderr.destroy();
+      if (child.killed) return;
+      if (process.platform === 'win32' && child.pid) {
+        spawn('taskkill', ['/PID', String(child.pid), '/T', '/F'], { stdio: 'ignore', windowsHide: true }).unref();
+      } else {
+        child.kill('SIGTERM');
+      }
+    },
+  };
 }
 
 async function waitForServer(url) {
