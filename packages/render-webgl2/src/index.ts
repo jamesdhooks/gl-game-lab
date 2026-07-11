@@ -1,4 +1,24 @@
 export {
+  createGpuDoubleRenderTarget,
+  createGpuRenderTarget,
+  type GpuDoubleRenderTarget,
+  type GpuRenderTarget,
+  type GpuRenderTargetOptions,
+  type GpuTexturePrecision,
+} from './GpuRenderTarget.js';
+export {
+  GpuParticleState,
+  resolveGpuParticleStateSize,
+  type GpuParticleStateOptions,
+  type GpuParticleStateSeed,
+  type GpuParticleStateSize,
+} from './GpuParticleState.js';
+export {
+  GpuSimulationPass,
+  type GpuSimulationUniformBinder,
+  type GpuUniformLookup,
+} from './GpuSimulationPass.js';
+export {
   FullscreenEffectRenderer,
   FullscreenEffectRenderQueue,
   type FullscreenEffect,
