@@ -248,6 +248,25 @@ export class DenseCircleParticleWorld2D {
     return removed;
   }
 
+  removeWithin(x: number, y: number, radius: number): number {
+    const centerX = finite(x, 'Dense particle removal x');
+    const centerY = finite(y, 'Dense particle removal y');
+    const radiusSquared = positiveFinite(radius, 'Dense particle removal radius') ** 2;
+    let write = 0;
+    for (let read = 0; read < this.activeCount; read += 1) {
+      const offset = read * 2;
+      const dx = floatAt(this.positions, offset) - centerX;
+      const dy = floatAt(this.positions, offset + 1) - centerY;
+      if (dx * dx + dy * dy <= radiusSquared) continue;
+      if (write !== read) this.copyParticle(read, write);
+      write += 1;
+    }
+    const removed = this.activeCount - write;
+    this.activeCount = write;
+    if (removed > 0) this.wake();
+    return removed;
+  }
+
   step(deltaSeconds: number): DenseCircleParticleStats {
     const frameDelta = Math.min(this.settings.maxFrameDelta, nonNegativeFinite(deltaSeconds, 'Dense particle delta'));
     if (frameDelta === 0 || this.activeCount === 0 || !this.awake) return this.stats();

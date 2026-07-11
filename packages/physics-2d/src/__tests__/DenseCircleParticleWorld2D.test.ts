@@ -58,6 +58,16 @@ describe('DenseCircleParticleWorld2D', () => {
     expect(Array.from(world.colorSeeds.subarray(0, 2))).toEqual([1, 3]);
   });
 
+  it('removes particles inside a brush while compacting survivors', () => {
+    const world = new DenseCircleParticleWorld2D(4, { gravity: 0 });
+    world.addCircle(10, 10, { colorSeed: 1 });
+    world.addCircle(50, 50, { colorSeed: 2 });
+    world.addCircle(90, 90, { colorSeed: 3 });
+    expect(world.removeWithin(50, 50, 12)).toBe(1);
+    expect(world.count).toBe(2);
+    expect(Array.from(world.colorSeeds.subarray(0, 2))).toEqual([1, 3]);
+  });
+
   it('resolves dense overlaps through a deterministic uniform grid', () => {
     const world = new DenseCircleParticleWorld2D(8, {
       maxParticles: 8,
