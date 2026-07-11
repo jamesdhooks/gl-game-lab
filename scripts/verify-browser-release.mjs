@@ -37,7 +37,7 @@ process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
 if (!report.passed) process.exitCode = 2;
 
 async function verifyBrowser(browserName, browserType) {
-  const browser = await browserType.launch({ headless: true });
+  const browser = await browserType.launch({ headless: process.env.GL_GAME_LAB_HEADED !== '1' });
   const failures = [];
   try {
     const functional = await verifyFunctional(browser, failures);

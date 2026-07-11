@@ -28,7 +28,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec playwright-core install --with-deps ${{ matrix.browser }}
       - run: pnpm build
-      - run: pnpm browser:release -- --browser=${{ matrix.browser }}
+      - run: xvfb-run -a env GL_GAME_LAB_HEADED=1 pnpm browser:release -- --browser=${{ matrix.browser }}
       - if: always()
         uses: actions/upload-artifact@v4
         with:
