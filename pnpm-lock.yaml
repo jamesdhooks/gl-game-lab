@@ -89,6 +89,7 @@ importers:
       '@hooksjam/gl-game-lab-physics-2d':
         specifier: workspace:*
         version: link:../physics-2d
+
   packages/physics-2d:
     dependencies:
       '@hooksjam/gl-game-lab-core':
@@ -106,6 +107,10 @@ importers:
       '@hooksjam/gl-game-lab-engine':
         specifier: workspace:*
         version: link:../engine
+      '@hooksjam/gl-game-lab-render-webgl2':
+        specifier: workspace:*
+        version: link:../render-webgl2
+
   packages/react:
     dependencies:
       '@hooksjam/gl-game-lab-core':
@@ -151,9 +156,6 @@ importers:
       '@hooksjam/gl-game-lab-physics-2d':
         specifier: workspace:*
         version: link:../physics-2d
-      '@hooksjam/gl-game-lab-render-webgl2':
-        specifier: workspace:*
-        version: link:../render-webgl2
 
   packages/tools:
     dependencies:
