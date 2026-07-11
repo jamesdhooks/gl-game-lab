@@ -36,9 +36,10 @@ export class SparseSet<T> {
     const lastPosition = this.denseIndices.length - 1;
     const lastIndex = this.denseIndices[lastPosition];
     const lastValue = this.denseValues[lastPosition];
-    if (densePosition !== lastPosition && lastIndex !== undefined && lastValue !== undefined) {
+    if (densePosition !== lastPosition) {
+      if (lastIndex === undefined) throw new Error('Sparse set dense index invariant failed');
       this.denseIndices[densePosition] = lastIndex;
-      this.denseValues[densePosition] = lastValue;
+      this.denseValues[densePosition] = lastValue as T;
       this.sparse[lastIndex] = densePosition;
     }
     this.denseIndices.pop();

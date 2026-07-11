@@ -173,4 +173,48 @@ describe('WorldSerializer', () => {
     expect(() => serializer.serialize(world)).toThrow('has no stable id');
     hierarchy.destroy();
   });
+
+  it('rejects hierarchy cycles before mutating the destination world', () => {
+    const serializer = new WorldSerializer(createCoreSchemaRegistry());
+    const world = new World();
+    const hierarchy = new Hierarchy(world);
+    const cyclic = {
+      format: 'gl-game-lab.world',
+      version: 1,
+      roots: [],
+      entities: [
+        { id: 'left', parent: 'right', components: [] },
+        { id: 'right', parent: 'left', components: [] },
+      ],
+    };
+
+    expect(() => serializer.deserialize(world, hierarchy, cyclic)).toThrow(
+      'Serialized hierarchy cycle: left -> right -> left',
+    );
+    expect(world.entityCount).toBe(0);
+    hierarchy.destroy();
+  });
+
+  it('attempts complete rollback when despawn observers fail', () => {
+    const serializer = new WorldSerializer(createCoreSchemaRegistry());
+    const world = new World();
+    const hierarchy = new Hierarchy(world);
+    world.onBeforeDespawn(() => { throw new Error('observer failed'); });
+    const invalid = {
+      format: 'gl-game-lab.world',
+      version: 1,
+      roots: ['root'],
+      entities: [
+        { id: 'root', components: [] },
+        {
+          id: 'child', parent: 'root',
+          components: [{ type: 'unknown.component', version: 1, data: {} }],
+        },
+      ],
+    };
+
+    expect(() => serializer.deserialize(world, hierarchy, invalid)).toThrow(AggregateError);
+    expect(world.entityCount).toBe(0);
+    hierarchy.destroy();
+  });
 });

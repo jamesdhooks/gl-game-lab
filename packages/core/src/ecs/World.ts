@@ -106,6 +106,7 @@ export class World {
   insert<T>(entity: Entity, type: ComponentType<T>, value: T): void {
     this.assertStructurallyMutable();
     this.assertAlive(entity);
+    if (value === undefined) throw new Error(`Component ${type.id} cannot store undefined`);
     this.storage(type).set(entity.index, value);
   }
 
@@ -198,6 +199,7 @@ export class World {
   private validateSpawnEntries(entries: readonly ComponentEntry<unknown>[]): void {
     const entryTypes = new Map<string, ComponentType<unknown>>();
     for (const entry of entries) {
+      if (entry.value === undefined) throw new Error(`Component ${entry.type.id} cannot store undefined`);
       const duplicate = entryTypes.get(entry.type.id);
       if (duplicate) {
         const reason = duplicate === entry.type ? 'more than once' : 'with conflicting type tokens';

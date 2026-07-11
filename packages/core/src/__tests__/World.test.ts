@@ -110,6 +110,9 @@ describe('World', () => {
 
     const entity = world.spawn();
     expect(entity.index).toBe(0);
+    expect(() => world.insert(entity, Label, undefined as unknown as string)).toThrow(
+      'cannot store undefined',
+    );
   });
 
   it('finishes despawning when listeners fail and rejects reentrant despawn', () => {

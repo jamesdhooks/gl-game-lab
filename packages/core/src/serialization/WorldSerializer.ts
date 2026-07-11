@@ -128,10 +128,18 @@ export class WorldSerializer {
       }
       return { entities, roots: Object.freeze(roots) };
     } catch (error) {
+      const failures: unknown[] = [error];
       for (const entity of spawned.reverse()) {
-        if (world.isAlive(entity)) world.despawn(entity);
+        if (!world.isAlive(entity)) continue;
+        try {
+          world.despawn(entity);
+        } catch (cleanupError) {
+          failures.push(cleanupError);
+        }
       }
-      throw error;
+      throw failures.length === 1
+        ? error
+        : new AggregateError(failures, 'World deserialization and rollback failed');
     }
   }
 
@@ -189,14 +197,16 @@ function parseWorld(input: unknown): SerializedWorld {
     if (value === null || Array.isArray(value) || typeof value !== 'object') {
       throw new Error(`Serialized entity ${index} must be an object`);
     }
-    if (typeof value.id !== 'string' || value.id.trim().length === 0) {
+    if (typeof value.id !== 'string') {
       throw new Error(`Serialized entity ${index} has invalid id`);
     }
+    validateStableId(value.id, `Serialized entity ${index} id`);
     if (ids.has(value.id)) throw new Error(`Duplicate serialized entity id: ${value.id}`);
     ids.add(value.id);
     if (value.parent !== undefined && typeof value.parent !== 'string') {
       throw new Error(`Serialized entity ${value.id} has invalid parent`);
     }
+    if (typeof value.parent === 'string') validateStableId(value.parent, `Serialized entity ${value.id} parent`);
     if (!Array.isArray(value.components)) {
       throw new Error(`Serialized entity ${value.id} components must be an array`);
     }
@@ -214,6 +224,7 @@ function parseWorld(input: unknown): SerializedWorld {
     };
   });
   const roots = object.roots as string[];
+  for (const root of roots) validateStableId(root, 'Serialized root');
   const rootSet = new Set(roots);
   if (rootSet.size !== roots.length) throw new Error('Serialized world contains duplicate roots');
   for (const root of roots) {
@@ -224,13 +235,14 @@ function parseWorld(input: unknown): SerializedWorld {
     if (entity.parent && rootSet.has(entity.id)) throw new Error(`Serialized root cannot have a parent: ${entity.id}`);
     if (!entity.parent && !rootSet.has(entity.id)) throw new Error(`Parentless serialized entity is not a root: ${entity.id}`);
   }
+  validateSerializedHierarchy(entities);
   return { format: 'gl-game-lab.world', version: 1, roots, entities };
 }
 
 function parseComponent(input: unknown, entityId: string, index: number): SerializedComponent {
   assertJsonValue(input, `entities.${entityId}.components[${index}]`);
   const object = requireJsonObject(input, `entities.${entityId}.components[${index}]`);
-  if (typeof object.type !== 'string' || object.type.length === 0) {
+  if (typeof object.type !== 'string' || object.type.length === 0 || object.type !== object.type.trim()) {
     throw new Error(`Serialized component ${entityId}[${index}] has invalid type`);
   }
   if (typeof object.version !== 'number' || !Number.isSafeInteger(object.version) || object.version < 1) {
@@ -244,4 +256,28 @@ function requireEntity(entities: ReadonlyMap<string, Entity>, id: string): Entit
   const entity = entities.get(id);
   if (!entity) throw new Error(`Serialized entity cannot be resolved: ${id}`);
   return entity;
+}
+
+function validateSerializedHierarchy(entities: readonly SerializedEntity[]): void {
+  const byId = new Map(entities.map((entity) => [entity.id, entity]));
+  const visiting = new Set<string>();
+  const visited = new Set<string>();
+  const visit = (id: string, path: readonly string[]): void => {
+    if (visited.has(id)) return;
+    if (visiting.has(id)) {
+      throw new Error(`Serialized hierarchy cycle: ${[...path, id].join(' -> ')}`);
+    }
+    visiting.add(id);
+    const parent = byId.get(id)?.parent;
+    if (parent) visit(parent, [...path, id]);
+    visiting.delete(id);
+    visited.add(id);
+  };
+  for (const entity of entities) visit(entity.id, []);
+}
+
+function validateStableId(id: string, label: string): void {
+  if (id.trim().length === 0 || id !== id.trim()) {
+    throw new Error(`${label} must be non-empty and cannot contain surrounding whitespace`);
+  }
 }
