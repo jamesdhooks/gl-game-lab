@@ -39,10 +39,10 @@ if (!report.passed) process.exitCode = 2;
 async function verifyBrowser(browserName, browserType) {
   const failures = [];
   try {
-    const functionalBrowser = await browserType.launch({ headless: true });
+    const functionalBrowser = await browserType.launch(browserLaunchOptions(browserName));
     const functional = await verifyFunctional(functionalBrowser, failures)
       .finally(async () => { await functionalBrowser.close(); });
-    const contextBrowser = await browserType.launch({ headless: true });
+    const contextBrowser = await browserType.launch(browserLaunchOptions(browserName));
     const context = await verifyContextRecovery(contextBrowser, failures)
       .finally(async () => { await contextBrowser.close(); });
     return Object.freeze({ browser: browserName, functional, context, failures, passed: failures.length === 0 });
@@ -50,6 +50,19 @@ async function verifyBrowser(browserName, browserType) {
     failures.push(describe(error));
     return Object.freeze({ browser: browserName, failures, passed: false });
   }
+}
+
+function browserLaunchOptions(browserName) {
+  if (browserName !== 'firefox') return { headless: true };
+  return {
+    headless: true,
+    firefoxUserPrefs: {
+      'webgl.disabled': false,
+      'webgl.enable-webgl2': true,
+      'webgl.forbid-software': false,
+      'webgl.force-enabled': true,
+    },
+  };
 }
 
 async function verifyFunctional(browser, failures) {
