@@ -11,11 +11,12 @@ describe('parseDemoCaptureOptions', () => {
       seed: 0x51f15e,
       modeId: undefined,
       styleId: undefined,
+      scenarioId: undefined,
     });
   });
 
   it('accepts an explicit capture identity', () => {
-    expect(parseDemoCaptureOptions('?capture=1&frame=360&delta=0.008333333333333333&profile=preview&seed=7&mode=stream&style=neon')).toMatchObject({
+    expect(parseDemoCaptureOptions('?capture=1&frame=360&delta=0.008333333333333333&profile=preview&seed=7&mode=stream&style=neon&scenario=stream')).toMatchObject({
       enabled: true,
       frameNumber: 360,
       fixedDeltaSeconds: 1 / 120,
@@ -23,6 +24,7 @@ describe('parseDemoCaptureOptions', () => {
       seed: 7,
       modeId: 'stream',
       styleId: 'neon',
+      scenarioId: 'stream',
     });
   });
 

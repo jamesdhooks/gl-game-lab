@@ -27,6 +27,27 @@ const dynamicFrameNumbers = [60, 120, 180];
 const fixedDeltaSeconds = 1 / 60;
 const seed = 0x1234_abcd;
 const mode = 'single';
+const runModeScenarios = process.argv.includes('--mode-scenarios');
+const modeScenarios = Object.freeze([
+  scenario('single', 'play', 90, 1, [
+    pointerEvent(0, 'down', 480, 120, 1),
+    pointerEvent(1, 'up', 480, 120, 0),
+  ]),
+  scenario('stream', 'play', 120, 1_200, [
+    pointerEvent(0, 'down', 480, 90, 1),
+    pointerEvent(60, 'up', 480, 90, 0),
+  ]),
+  scenario('interact', 'demo', 100, 1_400, [
+    pointerEvent(60, 'down', 480, 300, 1),
+    pointerEvent(70, 'move', 560, 300, 1),
+    pointerEvent(80, 'move', 640, 260, 1),
+    pointerEvent(90, 'up', 640, 260, 0),
+  ]),
+  scenario('explosion', 'demo', 75, 1_480, [
+    pointerEvent(60, 'down', 480, 300, 1),
+    pointerEvent(61, 'up', 480, 300, 0),
+  ]),
+]);
 const styleNames = Object.freeze({
   rainbow: 'Rainbow',
   pastel: 'Pastel',
@@ -69,15 +90,34 @@ try {
     headless: true,
     args: ['--disable-background-timer-throttling', '--disable-renderer-backgrounding'],
   });
+  const report = runModeScenarios
+    ? await captureModeScenarioReport(browser)
+    : await captureStyleReport(browser);
+  const reportName = runModeScenarios ? 'mode-report.json' : 'report.json';
+  await writeFile(path.join(outputDirectory, reportName), `${JSON.stringify(report, null, 2)}\n`, 'utf8');
+  process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
+  if (!report.passed) process.exitCode = 2;
+} finally {
+  for (const server of servers) server.stop();
+  if (browser) {
+    await Promise.race([
+      browser.close(),
+      new Promise((resolve) => setTimeout(resolve, 2_000)),
+    ]);
+  }
+}
+process.exit(process.exitCode ?? 0);
+
+async function captureStyleReport(activeBrowser) {
   const styleReports = [];
   for (const requestedStyle of requestedStyles) {
     process.stderr.write(`Capturing Ball Pit style ${requestedStyle}\n`);
-    styleReports.push(await captureStyle(browser, requestedStyle));
+    styleReports.push(await captureStyle(activeBrowser, requestedStyle));
   }
   const geometryRepresentative = styleReports.find((styleReport) => styleReport.style === 'rainbow');
   const paletteContractsPassed = styleReports.every((styleReport) => styleReport.passed);
   const temporalGeometryPassed = geometryRepresentative?.dynamic.passed ?? null;
-  const report = {
+  return {
     schemaVersion: 3,
     experienceId: 'ball-pit',
     referenceRevision,
@@ -91,19 +131,42 @@ try {
     },
     passed: paletteContractsPassed && temporalGeometryPassed !== false,
   };
-  await writeFile(path.join(outputDirectory, 'report.json'), `${JSON.stringify(report, null, 2)}\n`, 'utf8');
-  process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
-  if (!report.passed) process.exitCode = 2;
-} finally {
-  for (const server of servers) server.stop();
-  if (browser) {
-    await Promise.race([
-      browser.close(),
-      new Promise((resolve) => setTimeout(resolve, 2_000)),
-    ]);
-  }
 }
-process.exit(process.exitCode ?? 0);
+
+async function captureModeScenarioReport(activeBrowser) {
+  const scenarios = [];
+  for (const definition of modeScenarios) {
+    process.stderr.write(`Capturing Ball Pit mode ${definition.id}\n`);
+    const pair = await capturePair(activeBrowser, {
+      frameNumber: definition.frameNumber,
+      profile: definition.profile,
+      demo: definition.profile === 'demo',
+      style: 'rainbow',
+      mode: definition.id,
+      scenario: definition.id,
+      inputEvents: definition.inputEvents,
+      artifactPrefix: `mode-${definition.id}`,
+    });
+    const browserClean = pair.reference.metadata.logs.length === 0 && pair.rebuild.metadata.logs.length === 0;
+    const entityCountPassed = pair.rebuild.metadata.entityCount === definition.expectedEntityCount;
+    scenarios.push({
+      id: definition.id,
+      expectedEntityCount: definition.expectedEntityCount,
+      browserClean,
+      entityCountPassed,
+      capture: stripPng(pair),
+      passed: browserClean && entityCountPassed,
+    });
+  }
+  return {
+    schemaVersion: 1,
+    experienceId: 'ball-pit',
+    referenceRevision,
+    capture: { width, height, fixedDeltaSeconds, seed, style: 'rainbow' },
+    scenarios,
+    passed: scenarios.every((entry) => entry.passed),
+  };
+}
 
 async function captureStyle(activeBrowser, style) {
   const staticPair = await capturePair(activeBrowser, {
@@ -227,6 +290,7 @@ async function captureReference(context, options) {
     await stepFrozenFrames(page, 1);
   }
   await selectFrozenStyle(page, options.style);
+  await selectFrozenMode(page, options.mode ?? mode);
   if (options.demo) {
     await page.getByRole('button', { name: 'More controls' }).click({ force: true });
     await page.getByRole('button', { name: 'Reset', exact: true }).click({ force: true });
@@ -237,8 +301,12 @@ async function captureReference(context, options) {
     const enteredDemo = await exitDemo.count() === 1;
     if (!enteredDemo) throw new Error('Frozen runtime did not enter Demo mode');
     await page.evaluate(() => { window.__glGameLabResetAnimationClock(); });
+  } else if (options.inputEvents?.length) {
+    await page.getByRole('button', { name: 'More controls' }).click({ force: true });
+    await page.getByRole('button', { name: 'Reset', exact: true }).click({ force: true });
+    await page.evaluate(() => { window.__glGameLabResetAnimationClock(); });
   }
-  await stepFrozenFrames(page, options.frameNumber);
+  await stepFrozenFrames(page, options.frameNumber, options.inputEvents ?? []);
   const canvas = page.locator('canvas.h-full.w-full.touch-none.bg-slate-950');
   await canvas.waitFor({ state: 'visible' });
   await isolateCanvas(page, 'canvas.h-full.w-full.touch-none.bg-slate-950');
@@ -264,6 +332,15 @@ async function selectFrozenStyle(page, style) {
   await page.getByRole('button', { name: label, exact: true }).click({ force: true });
 }
 
+async function selectFrozenMode(page, modeId) {
+  const labels = { single: 'Single', stream: 'Stream', interact: 'Interact', explosion: 'Explosion' };
+  const label = labels[modeId];
+  if (!label) throw new Error(`Unknown Ball Pit mode: ${modeId}`);
+  if (modeId === 'single') return;
+  await page.getByRole('button', { name: 'Input', exact: true }).click({ force: true });
+  await page.getByRole('button', { name: label, exact: true }).click({ force: true });
+}
+
 async function waitForFrozenRuntime(page) {
   const debug = page.locator('button[aria-label="Open debug panel"]');
   await debug.waitFor({ state: 'visible', timeout: 30_000 });
@@ -275,12 +352,35 @@ async function waitForFrozenRuntime(page) {
   throw new Error('Frozen runtime did not report a frame rate before capture');
 }
 
-async function stepFrozenFrames(page, count) {
+async function stepFrozenFrames(page, count, inputEvents = []) {
+  let inputEventIndex = 0;
   for (let frame = 0; frame < count; frame += 1) {
+    while (inputEvents[inputEventIndex]?.frameNumber === frame) {
+      await dispatchFrozenPointerEvent(page, inputEvents[inputEventIndex].event);
+      inputEventIndex += 1;
+    }
     await page.evaluate((deltaMilliseconds) => {
       window.__glGameLabStepAnimationFrame(deltaMilliseconds);
     }, fixedDeltaSeconds * 1000);
   }
+}
+
+async function dispatchFrozenPointerEvent(page, event) {
+  await page.evaluate((input) => {
+    const canvas = document.querySelector('canvas.h-full.w-full.touch-none.bg-slate-950');
+    if (!(canvas instanceof HTMLCanvasElement)) throw new Error('Missing frozen Ball Pit canvas');
+    const bounds = canvas.getBoundingClientRect();
+    canvas.dispatchEvent(new PointerEvent(`pointer${input.phase}`, {
+      bubbles: true,
+      cancelable: true,
+      pointerId: input.id,
+      pointerType: 'mouse',
+      isPrimary: true,
+      clientX: bounds.left + input.x,
+      clientY: bounds.top + input.y,
+      buttons: input.buttons,
+    }));
+  }, event);
 }
 
 async function captureRebuild(context, options) {
@@ -292,19 +392,24 @@ async function captureRebuild(context, options) {
     delta: String(fixedDeltaSeconds),
     profile: options.profile,
     seed: String(seed),
-    mode,
+    mode: options.mode ?? mode,
     style: options.style,
+    ...(options.scenario ? { scenario: options.scenario } : {}),
   });
   const url = `http://127.0.0.1:${rebuildPort}/?${query}`;
   await page.goto(url, { waitUntil: 'domcontentloaded' });
   const canvas = page.locator('canvas[data-engine-state="capture-ready"]');
   await canvas.waitFor({ state: 'visible', timeout: 30_000 });
-  const metadata = await canvas.evaluate((element) => ({
-    frame: Number(element.dataset.captureFrame),
-    fixedDeltaSeconds: Number(element.dataset.captureDelta),
-    cpuP95Milliseconds: Number(element.dataset.captureCpuP95),
-    framebufferChecksum: element.dataset.captureChecksum,
-  }));
+  const metadata = await canvas.evaluate((element) => {
+    const entityCount = element.dataset.captureEntityCount;
+    return {
+      frame: Number(element.dataset.captureFrame),
+      fixedDeltaSeconds: Number(element.dataset.captureDelta),
+      cpuP95Milliseconds: Number(element.dataset.captureCpuP95),
+      framebufferChecksum: element.dataset.captureChecksum,
+      ...(entityCount === undefined ? {} : { entityCount: Number(entityCount) }),
+    };
+  });
   const png = await canvas.screenshot({ type: 'png' });
   await page.close();
   return {
@@ -404,6 +509,17 @@ function requireNonBlank(png, label) {
 
 function sha256(bytes) {
   return createHash('sha256').update(bytes).digest('hex');
+}
+
+function scenario(id, profile, frameNumber, expectedEntityCount, inputEvents) {
+  return Object.freeze({ id, profile, frameNumber, expectedEntityCount, inputEvents: Object.freeze(inputEvents) });
+}
+
+function pointerEvent(frameNumber, phase, x, y, buttons) {
+  return Object.freeze({
+    frameNumber,
+    event: Object.freeze({ kind: 'pointer', phase, id: 1, x, y, buttons, primary: true }),
+  });
 }
 
 function findBrowserExecutable() {

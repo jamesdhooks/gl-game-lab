@@ -6,7 +6,7 @@ Frozen behavior reference: `1273b5f4145c5e9e87123cba535f5cc939a77a61`.
 |---|---|---|
 | Identity and registry | Implemented | Registry test covers id, kind, copy, tags, icon, and capabilities. |
 | Settings schema | Implemented | All 17 fields, defaults, ranges, steps, advanced flags, mode visibility, and power-of-two scaling are covered by package tests. |
-| Modes | Implemented | Single, Stream, Interact, and Explosion route through the shared runtime controller. |
+| Modes | Implemented | Single, Stream, Interact, and Explosion route through the shared runtime controller. Fixed-step browser scenarios prove exact final counts and clean execution; package tests prove drag and blast impulses. |
 | Styles | Implemented | Ten frozen manifests, palettes, and backgrounds are implemented. Ball Pit preserves the frozen raw-scene output without applying post-processing; the shared bloom pipeline remains available to experiences whose reference rendering uses it. |
 | Tutorial | Implemented | Three frozen pages render through the shared tutorial host. |
 | Reset | Implemented | Physics state, deterministic seed, pointer picks, and spawn timing reset together. |
@@ -17,7 +17,7 @@ Frozen behavior reference: `1273b5f4145c5e9e87123cba535f5cc939a77a61`.
 | AI autoplay | Not applicable | Frozen capability is disabled. |
 | Rendering scale | Partial | Typed-array uniform-grid physics and the dedicated GPU point renderer now avoid per-particle objects. The 65,536 default budget still requires formal p95 evidence and any resulting tuning. |
 | Static visual structure | Implemented | All ten maintained palettes/backgrounds use the shared backdrop path; the empty play captures also happen to be byte-identical, though pixel identity is diagnostic rather than required. |
-| Dynamic visual structure | Partial | The ten-style Single-mode matrix captures exact RAF frames 60, 120, and 180 in isolated contexts. Canonical Rainbow geometry passes at `0.88740` minimum and `0.92764` mean. Palette variants share the maintained inputs and particle renderer and are browser-clean; their color-dependent scores are diagnostic. Interaction modes are not yet certified. |
+| Dynamic visual structure | Implemented | The ten-style matrix captures exact RAF frames 60, 120, and 180; canonical Rainbow geometry passes at `0.88740` minimum and `0.92764` mean. All palette variants share maintained inputs/render methods and are browser-clean. Single, Stream, Interact, and Explosion scenarios score at least `0.86331` structural similarity. |
 | Performance budget | Partial | An equivalent synthetic 65,536-body zero-collision CPU sample measured `52.59 ms` p95 versus `155.15 ms` for the frozen solver. Formal browser CPU/GPU p95 captures under representative collisions are still required. |
 
 The experience ledger must remain `pending` until every pending and partial row

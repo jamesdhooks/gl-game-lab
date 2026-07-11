@@ -2,6 +2,7 @@ import { ExperienceRuntime } from '@hooksjam/gl-game-lab-react';
 import { ballPitDefinition } from '@hooksjam/gl-game-lab-games';
 import './index.css';
 import { parseDemoCaptureOptions } from './captureOptions.js';
+import { ballPitCaptureInputEvents } from './ballPitCaptureScenarios.js';
 
 export function App(): JSX.Element {
   const capture = parseDemoCaptureOptions(window.location.search);
@@ -24,6 +25,7 @@ export function App(): JSX.Element {
         {...(capture.enabled ? { fixedFrameCapture: {
           frameNumber: capture.frameNumber,
           fixedDeltaSeconds: capture.fixedDeltaSeconds,
+          inputEvents: ballPitCaptureInputEvents(capture.scenarioId),
         } } : {})}
         className="surface"
         canvasClassName="game-canvas"

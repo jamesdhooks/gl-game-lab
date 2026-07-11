@@ -15,6 +15,7 @@ Supported parameters are:
 - `seed`: unsigned non-zero 32-bit deterministic seed;
 - `mode`: initial experience mode identifier;
 - `style`: initial visual style identifier.
+- `scenario`: optional deterministic frame-indexed input script identifier.
 
 Capture mode disables the wall-clock animation loop, pins the canvas backing
 store to pixel ratio 1, runs the requested frames synchronously, and then
@@ -27,6 +28,7 @@ stops. The canvas reports authoritative evidence through these attributes:
 | `data-capture-delta` | Fixed delta used for every frame. |
 | `data-capture-checksum` | FNV-1a checksum of the top-down RGBA framebuffer. |
 | `data-capture-cpu-p95` | CPU-side engine-frame p95 in milliseconds. |
+| `data-capture-entity-count` | Final experience entity count when exposed by its runtime controller. |
 
 The browser viewport defines the logical and physical capture dimensions. A
 `960x540` viewport therefore produces a `960x540` framebuffer regardless of
@@ -60,6 +62,12 @@ Run the complete ten-style Single-mode matrix with:
 
 ```text
 pnpm parity:capture:ball-pit:styles
+```
+
+Run the four functional interaction scenarios with:
+
+```text
+pnpm parity:capture:ball-pit:modes
 ```
 
 The command starts both Vite hosts, launches an installed Chromium browser at
@@ -110,3 +118,20 @@ rebuild's Neon style. Disabling that scene-level pass resolves the visible
 white clipping. Under the corrected fixed-frame protocol Neon now measures
 `0.84449` minimum and `0.87559` mean. Those values are diagnostic under the
 palette-insensitive acceptance policy.
+
+## Functional mode evidence
+
+The mode verifier replays the same pointer schedule against the frozen canvas
+and rebuild input service. All four scenarios are browser-clean and meet their
+exact rebuild state contracts:
+
+| Mode | Script | Final bodies | Structural similarity | CPU p95 |
+|---|---|---:|---:|---:|
+| Single | Tap once, release | 1 | `0.99906` | `0.46 ms` |
+| Stream | Hold for 60 frames | 1,200 | `0.87666` | `4.00 ms` |
+| Interact | Pick and drag across three positions | 1,400 | `0.86331` | `4.10 ms` |
+| Explosion | Blast after 60 demo frames | 1,480 | `0.86364` | `4.35 ms` |
+
+Package tests additionally assert that Interact increases velocity toward the
+pointer and Explosion adds an outward impulse. Pixel scores are retained only
+as diagnostics.

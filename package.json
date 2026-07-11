@@ -11,7 +11,8 @@
     "clean": "pnpm --recursive --if-present clean",
     "reference:capture": "tsx scripts/capture-reference.mjs",
     "parity:capture:ball-pit": "pnpm --filter @hooksjam/gl-game-lab-tools build && node scripts/capture-ball-pit-parity.mjs",
-    "parity:capture:ball-pit:styles": "pnpm --filter @hooksjam/gl-game-lab-tools build && node scripts/capture-ball-pit-parity.mjs --all-styles"
+    "parity:capture:ball-pit:styles": "pnpm --filter @hooksjam/gl-game-lab-tools build && node scripts/capture-ball-pit-parity.mjs --all-styles",
+    "parity:capture:ball-pit:modes": "pnpm --filter @hooksjam/gl-game-lab-react build && pnpm --filter @hooksjam/gl-game-lab-demo build && node scripts/capture-ball-pit-parity.mjs --mode-scenarios"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",

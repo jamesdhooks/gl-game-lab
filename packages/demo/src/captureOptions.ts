@@ -8,6 +8,7 @@ export interface DemoCaptureOptions {
   readonly seed: number;
   readonly modeId: string | undefined;
   readonly styleId: string | undefined;
+  readonly scenarioId: string | undefined;
 }
 
 export function parseDemoCaptureOptions(search: string): DemoCaptureOptions {
@@ -20,6 +21,7 @@ export function parseDemoCaptureOptions(search: string): DemoCaptureOptions {
     seed: integerParameter(parameters, 'seed', 0x51f15e, 1, 0xffff_ffff),
     modeId: optionalIdentifier(parameters.get('mode')),
     styleId: optionalIdentifier(parameters.get('style')),
+    scenarioId: optionalIdentifier(parameters.get('scenario')),
   });
 }
 
