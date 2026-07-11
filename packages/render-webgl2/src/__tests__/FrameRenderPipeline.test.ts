@@ -22,4 +22,29 @@ describe('FrameRenderPipeline', () => {
       resources: ['frame.destination'],
     });
   });
+
+  it('registers deterministic backend extension passes around built-in stages', () => {
+    const calls: string[] = [];
+    const pipeline = new FrameRenderPipeline({
+      clear: () => { calls.push('frame.clear'); }, backdrop: () => { calls.push('frame.backdrop'); },
+      gpuSimulation: () => { calls.push('frame.gpu-simulation'); }, effects: () => { calls.push('frame.effects'); },
+      particles: () => { calls.push('frame.particles'); }, sprites: () => { calls.push('frame.sprites'); },
+      composite: () => { calls.push('frame.composite'); },
+    });
+    const unregisterLate = pipeline.register({ id: 'plugin.late', stage: 'frame.effects', order: 10, execute: () => { calls.push('plugin.late'); } });
+    pipeline.register({ id: 'plugin.before', stage: 'frame.effects', position: 'before', execute: () => { calls.push('plugin.before'); } });
+    pipeline.register({ id: 'plugin.early', stage: 'frame.effects', order: -10, execute: () => { calls.push('plugin.early'); } });
+
+    pipeline.execute({ composite: false });
+    expect(calls).toEqual([
+      'frame.clear', 'frame.backdrop', 'frame.gpu-simulation',
+      'plugin.before', 'frame.effects', 'plugin.early', 'plugin.late',
+      'frame.particles', 'frame.sprites', 'frame.composite',
+    ]);
+    expect(pipeline.snapshot().passes).toContain('plugin.before');
+    unregisterLate();
+    unregisterLate();
+    expect(pipeline.snapshot().passes).not.toContain('plugin.late');
+    expect(() => pipeline.register({ id: 'frame.effects', stage: 'frame.effects', execute: () => undefined })).toThrow('built-in id');
+  });
 });

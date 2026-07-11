@@ -109,7 +109,7 @@ export class WebGL2Renderer implements RenderBackend, Render2DService {
   private metaballRenderer: DensityMetaballRenderer;
   private bloom: BloomPostProcess;
   private backdrop: PaletteBackdropRenderer;
-  private readonly framePipeline: FrameRenderPipeline;
+  readonly framePipeline: FrameRenderPipeline;
   private readonly gpuTimer: GpuTimer;
   private clearColor: readonly [number, number, number, number];
   private bloomOptions: NormalizedBloomOptions;
@@ -597,6 +597,7 @@ export const SpriteRenderQueueService = createExtensionToken<SpriteRenderQueue>(
 export const ParticlePointRenderQueueService = createExtensionToken<ParticlePointRenderQueue>('gl-game-lab.render-webgl2.particle-point-queue');
 export const FullscreenEffectRenderQueueService = createExtensionToken<FullscreenEffectRenderQueue>('gl-game-lab.render-webgl2.fullscreen-effect-queue');
 export const GpuRenderPassQueueService = createExtensionToken<GpuRenderPassQueue>('gl-game-lab.render-webgl2.gpu-pass-queue');
+export const WebGL2FramePipelineService = createExtensionToken<FrameRenderPipeline>('gl-game-lab.render-webgl2.frame-pipeline');
 export const WEBGL2_RENDERER_PLUGIN_ID = 'gl-game-lab.render-webgl2';
 
 export function createWebGL2RendererPlugin(
@@ -618,6 +619,7 @@ export function createWebGL2RendererPlugin(
       context.provide(ParticlePointRenderQueueService, renderer.particles);
       context.provide(FullscreenEffectRenderQueueService, renderer.effects);
       context.provide(GpuRenderPassQueueService, renderer.gpuPasses);
+      context.provide(WebGL2FramePipelineService, renderer.framePipeline);
       context.get(EngineSchedule).addSystem({
         id: 'gl-game-lab.render-webgl2.extract-sprites-2d',
         stage: 'renderExtract',

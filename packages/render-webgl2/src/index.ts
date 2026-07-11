@@ -10,8 +10,11 @@ export {
   FrameRenderPipeline,
   WEBGL2_FRAME_PASS_IDS,
   type FrameRenderDestination,
+  type FrameRenderExtensionPass,
+  type FrameRenderExtensionPosition,
   type FrameRenderGraphSnapshot,
   type FrameRenderStages,
+  type WebGL2FramePassId,
 } from './FrameRenderPipeline.js';
 export {
   InstancedSegmentRenderer,
@@ -144,6 +147,7 @@ export {
   SpriteRenderQueueService,
   WebGL2Renderer,
   WebGL2RendererService,
+  WebGL2FramePipelineService,
   createWebGL2RendererPlugin,
   type ContextCycleDiagnostics,
   type WebGL2RendererOptions,

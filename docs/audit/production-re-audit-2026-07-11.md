@@ -37,9 +37,9 @@ failure-aware scene/assets lifecycle, backend-neutral 2D/GPU contracts, and the
 Reference Arena vertical slice. The rushed parts are concentrated in large
 orchestrators: `WebGL2Renderer`, `AssetManager`, and several simulation plugins.
 They are cohesive enough to operate but expose too many reasons to change in one
-file. The fixed seven-stage frame pipeline is extensible inside its GPU/effect
-queues, but it is not yet a general plugin-authored render graph comparable to a
-professional engine.
+file. Hardening Pass 2 added deterministic backend-plugin passes before or after
+each of the seven built-in stages. This is a practical extension boundary, though
+it remains smaller than a fully resource-declared professional render graph.
 
 ## 2. Code quality
 
@@ -118,8 +118,8 @@ authoring serialization UI, and prefab diff workflow remain temporary/planned.
 The renderer is production-capable for this catalog but not yet production-complete
 as a general engine. Dynamic shader paths now have reflection, numbered source
 diagnostics, and GPU frame timing, but it lacks material schemas, pipeline caches,
-render-target pooling, masks/scissor hierarchy, and a plugin API
-for arbitrary graph-stage insertion.
+render-target pooling and masks/scissor hierarchy. Backend plugins can now insert
+deterministically ordered passes around every built-in graph stage.
 
 ## 6. Missing features
 
@@ -142,8 +142,8 @@ WebGPU and full 3D/PBR correctly remain post-release scope.
    are not verified.
 2. Optional GPU timing exists but is not yet device-matrix evidence; detailed
    stalls and per-pass costs can still pass CPU budgets unnoticed.
-3. `WebGL2Renderer` combines too many responsibilities and its graph topology is
-   mostly fixed.
+3. `WebGL2Renderer` still combines managed textures/fonts with frame orchestration,
+   despite the first adapter extractions.
 
 ### Medium
 
@@ -213,7 +213,7 @@ The five criticisms most likely from another senior engine programmer are:
 2. Desktop Chromium viewport emulation is not a mobile/browser support matrix.
 3. CPU timing and estimated bytes are not a GPU profiler.
 4. The renderer facade and several content plugins have accumulated too many jobs.
-5. The render graph is shipping, but third-party pass topology is not truly open.
+5. Shader/material tooling and render-target pooling remain thin for third-party render plugins.
 
 ## Hardening Pass 2
 
@@ -235,7 +235,8 @@ The five criticisms most likely from another senior engine programmer are:
    per-pass timings where supported.
 3. Add shader compile/link source mapping, reflected uniform validation, and a
    development hot-reload path.
-4. Add plugin-declared render-stage extension points with dependency validation.
+4. Expand the new stage-relative backend extension API to resource-declared custom
+   render targets only when a concrete renderer plugin needs them.
 5. Reduce Splash upload bandwidth and extract shared simulation-plugin lifecycle.
 
 ### Low priority — nice to have
@@ -252,10 +253,13 @@ The five criticisms most likely from another senior engine programmer are:
   reports optional `gpuMs` through engine diagnostics, and displays unsupported
   state explicitly in the live overlay.
 - The production source-aliased bundle rebuilt successfully after the complete
-  local remediation slice (205 modules, 616.89 kB minified). Device-matrix timer
+  local remediation slice (205 modules, 618.26 kB minified). Device-matrix timer
   evidence remains open.
 - Added a shared labeled shader compiler/reflection layer for every content-provided
   fullscreen, field, simulation, and particle program. Driver failures now include
   stage and numbered source instead of renderer-specific opaque messages.
 - Extracted `SpriteRenderQueue` and the restorable `WebGLFluidField2D` adapter from
   `WebGL2Renderer`; the facade fell from 728 to 645 lines without changing exports.
+- Added `WebGL2FramePipelineService`: backend plugins can register deterministic,
+  removable passes before or after every built-in stage. Duplicate/built-in IDs,
+  invalid stages, and non-integer order values are rejected.

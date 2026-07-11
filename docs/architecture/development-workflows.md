@@ -43,3 +43,12 @@ active uniform and attribute reflection for tooling through
 `shaderProgramReflection`. Required built-in uniforms use `requireShaderUniform`
 instead of silently accepting inactive locations. Context restoration recompiles
 the same retained sources through this path.
+
+## Backend render extensions
+
+WebGL2 renderer plugins may resolve `WebGL2FramePipelineService` and register a
+stable pass before or after any built-in frame stage. Registration validates IDs,
+stage names, and integer ordering; ties sort by ID for deterministic builds. The
+returned disposer is idempotent and rebuilds the compiled graph without the pass.
+Gameplay and portable experience plugins must continue to submit through
+backend-neutral sprite, effect, and GPU services instead of this backend hook.

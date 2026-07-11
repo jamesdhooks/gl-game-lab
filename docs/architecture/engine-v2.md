@@ -136,6 +136,11 @@ The render graph owns pass order, dependencies, render targets, transient
 resources, resize propagation, and deterministic cleanup. Gameplay systems do
 not mutate WebGL state directly.
 
+Backend renderer plugins may extend the compiled WebGL2 frame pipeline before or
+after a named built-in stage through `WebGL2FramePipelineService`. These hooks are
+deterministically ordered and removable. Portable gameplay content does not use
+them; it remains on engine-level extraction and GPU submission contracts.
+
 The first native renderer provides sprites, texture atlases, frame animation,
 cameras, viewports, instanced shapes, sorting, culling, blend modes, masks,
 in-world text, render-to-texture, materials, and shader parameters.
