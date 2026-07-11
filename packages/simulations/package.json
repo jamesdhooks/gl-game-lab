@@ -18,6 +18,7 @@
   "dependencies": {
     "@hooksjam/gl-game-lab-core": "workspace:*",
     "@hooksjam/gl-game-lab-engine": "workspace:*",
+    "@hooksjam/gl-game-lab-physics-2d": "workspace:*",
     "@hooksjam/gl-game-lab-render-webgl2": "workspace:*"
   },
   "license": "UNLICENSED"
