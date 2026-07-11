@@ -55,7 +55,7 @@ async function verifyBrowser(browserName, browserType) {
 function browserLaunchOptions(browserName) {
   if (browserName !== 'firefox') return { headless: true };
   return {
-    headless: true,
+    headless: false,
     firefoxUserPrefs: {
       'webgl.disabled': false,
       'webgl.enable-webgl2': true,

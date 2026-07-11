@@ -28,7 +28,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec playwright-core install --with-deps ${{ matrix.browser }}
       - run: pnpm build
-      - run: pnpm browser:release -- --browser=${{ matrix.browser }}
+      - run: xvfb-run -a pnpm browser:release -- --browser=${{ matrix.browser }}
         env:
           GL_GAME_LAB_CONTEXT_STRATEGY: registry
       - if: always()
