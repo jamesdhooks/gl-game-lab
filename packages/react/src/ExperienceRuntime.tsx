@@ -66,6 +66,7 @@ export function ExperienceRuntime({
   const [tutorialIndex, setTutorialIndex] = useState(0);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [introOpen, setIntroOpen] = useState(showIntroCard);
+  const [styleMenuOpen, setStyleMenuOpen] = useState(false);
   const controllerRef = useRef<ExperienceRuntimeController>();
 
   useEffect(() => {
@@ -77,7 +78,14 @@ export function ExperienceRuntime({
     setTutorialOpen(false);
     setTutorialIndex(0);
     setIntroOpen(showIntroCard);
+    setStyleMenuOpen(false);
   }, [defaultModeId, defaultStyleId, definition.id, initialSettings, showIntroCard]);
+
+  useEffect(() => {
+    if (!introOpen || !showIntroCard) return;
+    const timeout = globalThis.setTimeout(() => { setIntroOpen(false); }, 6_000);
+    return () => { globalThis.clearTimeout(timeout); };
+  }, [introOpen, showIntroCard]);
 
   const createPlugins = useCallback(() => definition.createPlugins({
     profile,
@@ -149,18 +157,13 @@ export function ExperienceRuntime({
           )}
           <div className="gl-experience-actions">
             {(definition.styleManifest?.styles.length ?? 0) > 0 && (
-              <label className="gl-experience-style-label">
-                <span>Style</span>
-                <select
-                  aria-label="Visual style"
-                  value={styleId}
-                  onChange={(event) => { changeStyle(event.currentTarget.value); }}
-                >
-                  {definition.styleManifest?.styles.map((style) => (
-                    <option key={style.id} value={style.id}>{style.name}</option>
-                  ))}
-                </select>
-              </label>
+              <StylePicker
+                styles={definition.styleManifest?.styles ?? []}
+                value={styleId}
+                open={styleMenuOpen}
+                onToggle={() => { setStyleMenuOpen((open) => !open); }}
+                onChange={(nextStyleId) => { changeStyle(nextStyleId); setStyleMenuOpen(false); }}
+              />
             )}
             {definition.capabilities.settings && (
               <button type="button" className="gl-experience-action-control" aria-label="Settings" aria-pressed={settingsOpen} onClick={() => { setSettingsOpen((open) => !open); }}>
@@ -287,14 +290,12 @@ interface SettingControlProps {
 function SettingControl({ setting, value, onChange }: SettingControlProps): JSX.Element {
   if (setting.type === 'boolean') {
     return (
-      <label className="gl-experience-setting gl-experience-setting-boolean">
+      <div className="gl-experience-setting gl-experience-setting-boolean">
         <SettingLabel setting={setting} />
-        <input
-          type="checkbox"
-          checked={value === true}
-          onChange={(event) => { onChange(event.currentTarget.checked); }}
-        />
-      </label>
+        <button type="button" className="gl-experience-switch" role="switch" aria-checked={value === true} onClick={() => { onChange(value !== true); }}>
+          <span />
+        </button>
+      </div>
     );
   }
   if (setting.type === 'select') {
@@ -339,6 +340,49 @@ function SettingControl({ setting, value, onChange }: SettingControlProps): JSX.
         <output>{formatSettingNumber(Number(value), setting.step)}</output>
       </span>
     </label>
+  );
+}
+
+interface StylePickerProps {
+  readonly styles: NonNullable<ExperienceDefinition['styleManifest']>['styles'];
+  readonly value: string;
+  readonly open: boolean;
+  readonly onToggle: () => void;
+  readonly onChange: (styleId: string) => void;
+}
+
+function StylePicker({ styles, value, open, onToggle, onChange }: StylePickerProps): JSX.Element {
+  const current = styles.find((style) => style.id === value) ?? styles[0];
+  const cycle = (): void => {
+    const currentIndex = Math.max(0, styles.findIndex((style) => style.id === current?.id));
+    const next = styles[(currentIndex + 1) % styles.length];
+    if (next) onChange(next.id);
+  };
+  return (
+    <div className="gl-experience-style-picker">
+      <button type="button" className="gl-experience-style-trigger" aria-label="Visual style" aria-expanded={open} onClick={onToggle}>
+        {current && <PaletteSwatch palette={current.palette} />}
+        <span>{current?.name ?? 'Style'}</span><span aria-hidden="true">⌄</span>
+      </button>
+      <button type="button" className="gl-experience-style-cycle" aria-label="Next style" onClick={cycle}>›</button>
+      {open && (
+        <div className="gl-experience-style-menu" role="menu" aria-label="Visual styles">
+          {styles.map((style) => (
+            <button key={style.id} type="button" role="menuitemradio" aria-checked={style.id === value} onClick={() => { onChange(style.id); }}>
+              <PaletteSwatch palette={style.palette} /><span>{style.name}</span><span aria-hidden="true">{style.id === value ? '✓' : ''}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function PaletteSwatch({ palette }: { readonly palette: readonly number[] }): JSX.Element {
+  return (
+    <span className="gl-experience-palette-swatch" aria-hidden="true">
+      {palette.slice(0, 4).map((color) => <i key={color} style={{ backgroundColor: `#${color.toString(16).padStart(6, '0')}` }} />)}
+    </span>
   );
 }
 
