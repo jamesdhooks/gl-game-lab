@@ -28,6 +28,7 @@ export interface ImageTextureUploader {
     readonly filter?: TextureFilter;
     readonly wrap?: TextureWrap;
     readonly flipY?: boolean;
+    readonly releaseSource?: () => void;
   }): WebGLTextureResource;
 }
 
@@ -50,12 +51,15 @@ export function createWebTextureLoader(
       const response = await decoder.fetch(request.source, { signal: context.signal });
       if (!response.ok) throw new Error(`Texture request failed (${response.status}): ${request.source}`);
       const bitmap = await decoder.createImageBitmap(await response.blob());
+      let sourceTransferred = false;
       try {
         const resource = uploader.createTextureFromImage(bitmap, {
           width: bitmap.width,
           height: bitmap.height,
+          releaseSource: () => { bitmap.close(); },
           ...request.options,
         });
+        sourceTransferred = true;
         return {
           id: request.id,
           texture: resource.texture,
@@ -64,7 +68,7 @@ export function createWebTextureLoader(
           resource,
         };
       } finally {
-        bitmap.close();
+        if (!sourceTransferred) bitmap.close();
       }
     },
     dispose: (texture) => { texture.resource.dispose(); },

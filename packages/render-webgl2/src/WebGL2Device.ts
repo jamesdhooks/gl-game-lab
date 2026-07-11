@@ -40,6 +40,7 @@ export interface WebGLImageTextureDescriptor extends Omit<WebGLTextureDescriptor
   readonly width: number;
   readonly height: number;
   readonly flipY?: boolean;
+  readonly releaseSource?: () => void;
 }
 
 export interface WebGLRgbaTextureDescriptor extends Omit<WebGLTextureDescriptor, 'width' | 'height' | 'format'> {
@@ -49,14 +50,27 @@ export interface WebGLRgbaTextureDescriptor extends Omit<WebGLTextureDescriptor,
 
 export class WebGLTextureResource {
   private disposed = false;
+  private currentTexture: WebGLTexture;
+  private currentFramebuffer: WebGLFramebuffer | undefined;
 
   constructor(
     private readonly gl: WebGL2RenderingContext,
-    readonly texture: WebGLTexture,
-    readonly framebuffer: WebGLFramebuffer | undefined,
+    texture: WebGLTexture,
+    framebuffer: WebGLFramebuffer | undefined,
     readonly descriptor: NormalizedTextureDescriptor,
     private readonly onDispose?: () => void,
-  ) {}
+  ) {
+    this.currentTexture = texture;
+    this.currentFramebuffer = framebuffer;
+  }
+
+  get texture(): WebGLTexture {
+    return this.currentTexture;
+  }
+
+  get framebuffer(): WebGLFramebuffer | undefined {
+    return this.currentFramebuffer;
+  }
 
   get isDisposed(): boolean {
     return this.disposed;
@@ -65,10 +79,21 @@ export class WebGLTextureResource {
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
-    if (this.framebuffer) this.gl.deleteFramebuffer(this.framebuffer);
-    this.gl.deleteTexture(this.texture);
+    if (this.currentFramebuffer) this.gl.deleteFramebuffer(this.currentFramebuffer);
+    this.gl.deleteTexture(this.currentTexture);
     this.onDispose?.();
   }
+
+  restore(texture: WebGLTexture, framebuffer: WebGLFramebuffer | undefined): void {
+    if (this.disposed) throw new Error('Disposed WebGL texture cannot be restored');
+    this.currentTexture = texture;
+    this.currentFramebuffer = framebuffer;
+  }
+}
+
+interface TextureAllocation {
+  readonly texture: WebGLTexture;
+  readonly framebuffer: WebGLFramebuffer | undefined;
 }
 
 export class WebGL2Device {
@@ -78,6 +103,7 @@ export class WebGL2Device {
   private destroyed = false;
   private contextLost = false;
   private restorationError: unknown;
+  private textureResourceId = 0;
 
   constructor(
     readonly canvas: HTMLCanvasElement,
@@ -134,18 +160,7 @@ export class WebGL2Device {
   createTexture(descriptor: WebGLTextureDescriptor): WebGLTextureResource {
     this.assertUsable();
     const normalized = normalizeTextureDescriptor(descriptor);
-    if (normalized.format === 'rgba16f' && normalized.renderTarget && !this.gl.getExtension('EXT_color_buffer_float')) {
-      throw new Error('EXT_color_buffer_float is required for rgba16f render targets');
-    }
-    const texture = this.gl.createTexture();
-    if (!texture) throw new Error('Unable to allocate WebGL texture');
-    let framebuffer: WebGLFramebuffer | undefined;
-    try {
-      this.gl.bindTexture(this.gl.TEXTURE_2D, texture);
-      this.gl.texParameteri(this.gl.TEXTURE_2D, this.gl.TEXTURE_MIN_FILTER, textureFilter(this.gl, normalized.filter));
-      this.gl.texParameteri(this.gl.TEXTURE_2D, this.gl.TEXTURE_MAG_FILTER, textureFilter(this.gl, normalized.filter));
-      this.gl.texParameteri(this.gl.TEXTURE_2D, this.gl.TEXTURE_WRAP_S, textureWrap(this.gl, normalized.wrap));
-      this.gl.texParameteri(this.gl.TEXTURE_2D, this.gl.TEXTURE_WRAP_T, textureWrap(this.gl, normalized.wrap));
+    const allocate = (): TextureAllocation => this.allocateTexture(normalized, () => {
       this.gl.texImage2D(
         this.gl.TEXTURE_2D,
         0,
@@ -157,64 +172,29 @@ export class WebGL2Device {
         normalized.format === 'rgba16f' ? this.gl.HALF_FLOAT : this.gl.UNSIGNED_BYTE,
         null,
       );
-      if (normalized.renderTarget) {
-        framebuffer = this.gl.createFramebuffer() ?? undefined;
-        if (!framebuffer) throw new Error('Unable to allocate WebGL framebuffer');
-        this.gl.bindFramebuffer(this.gl.FRAMEBUFFER, framebuffer);
-        this.gl.framebufferTexture2D(
-          this.gl.FRAMEBUFFER,
-          this.gl.COLOR_ATTACHMENT0,
-          this.gl.TEXTURE_2D,
-          texture,
-          0,
-        );
-        if (this.gl.checkFramebufferStatus(this.gl.FRAMEBUFFER) !== this.gl.FRAMEBUFFER_COMPLETE) {
-          throw new Error('WebGL framebuffer is incomplete');
-        }
-      }
-      const resource = this.trackTexture(texture, framebuffer, normalized);
-      this.resources.add(resource);
-      return resource;
-    } catch (error) {
-      if (framebuffer) this.gl.deleteFramebuffer(framebuffer);
-      this.gl.deleteTexture(texture);
-      throw error;
-    } finally {
-      this.gl.bindTexture(this.gl.TEXTURE_2D, null);
-      this.gl.bindFramebuffer(this.gl.FRAMEBUFFER, null);
-    }
+    });
+    return this.trackTexture(allocate(), normalized, allocate);
   }
 
   createTextureFromImage(source: TexImageSource, descriptor: WebGLImageTextureDescriptor): WebGLTextureResource {
     this.assertUsable();
     const normalized = normalizeTextureDescriptor(descriptor);
-    const texture = this.gl.createTexture();
-    if (!texture) throw new Error('Unable to allocate WebGL texture');
-    try {
-      this.gl.bindTexture(this.gl.TEXTURE_2D, texture);
+    const allocate = (): TextureAllocation => this.allocateTexture(normalized, () => {
       this.gl.pixelStorei(this.gl.UNPACK_FLIP_Y_WEBGL, descriptor.flipY === true ? 1 : 0);
-      this.gl.texParameteri(this.gl.TEXTURE_2D, this.gl.TEXTURE_MIN_FILTER, textureFilter(this.gl, normalized.filter));
-      this.gl.texParameteri(this.gl.TEXTURE_2D, this.gl.TEXTURE_MAG_FILTER, textureFilter(this.gl, normalized.filter));
-      this.gl.texParameteri(this.gl.TEXTURE_2D, this.gl.TEXTURE_WRAP_S, textureWrap(this.gl, normalized.wrap));
-      this.gl.texParameteri(this.gl.TEXTURE_2D, this.gl.TEXTURE_WRAP_T, textureWrap(this.gl, normalized.wrap));
-      this.gl.texImage2D(
-        this.gl.TEXTURE_2D,
-        0,
-        normalized.format === 'rgba16f' ? this.gl.RGBA16F : this.gl.RGBA8,
-        this.gl.RGBA,
-        normalized.format === 'rgba16f' ? this.gl.HALF_FLOAT : this.gl.UNSIGNED_BYTE,
-        source,
-      );
-      const resource = this.trackTexture(texture, undefined, normalized);
-      this.resources.add(resource);
-      return resource;
-    } catch (error) {
-      this.gl.deleteTexture(texture);
-      throw error;
-    } finally {
-      this.gl.pixelStorei(this.gl.UNPACK_FLIP_Y_WEBGL, 0);
-      this.gl.bindTexture(this.gl.TEXTURE_2D, null);
-    }
+      try {
+        this.gl.texImage2D(
+          this.gl.TEXTURE_2D,
+          0,
+          normalized.format === 'rgba16f' ? this.gl.RGBA16F : this.gl.RGBA8,
+          this.gl.RGBA,
+          normalized.format === 'rgba16f' ? this.gl.HALF_FLOAT : this.gl.UNSIGNED_BYTE,
+          source,
+        );
+      } finally {
+        this.gl.pixelStorei(this.gl.UNPACK_FLIP_Y_WEBGL, 0);
+      }
+    });
+    return this.trackTexture(allocate(), normalized, allocate, descriptor.releaseSource);
   }
 
   createTextureFromRgbaPixels(pixels: Uint8Array, descriptor: WebGLRgbaTextureDescriptor): WebGLTextureResource {
@@ -223,14 +203,8 @@ export class WebGL2Device {
     if (pixels.length !== normalized.width * normalized.height * 4) {
       throw new Error('RGBA pixel data length does not match texture dimensions');
     }
-    const texture = this.gl.createTexture();
-    if (!texture) throw new Error('Unable to allocate WebGL texture');
-    try {
-      this.gl.bindTexture(this.gl.TEXTURE_2D, texture);
-      this.gl.texParameteri(this.gl.TEXTURE_2D, this.gl.TEXTURE_MIN_FILTER, textureFilter(this.gl, normalized.filter));
-      this.gl.texParameteri(this.gl.TEXTURE_2D, this.gl.TEXTURE_MAG_FILTER, textureFilter(this.gl, normalized.filter));
-      this.gl.texParameteri(this.gl.TEXTURE_2D, this.gl.TEXTURE_WRAP_S, textureWrap(this.gl, normalized.wrap));
-      this.gl.texParameteri(this.gl.TEXTURE_2D, this.gl.TEXTURE_WRAP_T, textureWrap(this.gl, normalized.wrap));
+    const restorationPixels = pixels.slice();
+    const allocate = (): TextureAllocation => this.allocateTexture(normalized, () => {
       this.gl.texImage2D(
         this.gl.TEXTURE_2D,
         0,
@@ -240,17 +214,10 @@ export class WebGL2Device {
         0,
         this.gl.RGBA,
         this.gl.UNSIGNED_BYTE,
-        pixels,
+        restorationPixels,
       );
-      const resource = this.trackTexture(texture, undefined, normalized);
-      this.resources.add(resource);
-      return resource;
-    } catch (error) {
-      this.gl.deleteTexture(texture);
-      throw error;
-    } finally {
-      this.gl.bindTexture(this.gl.TEXTURE_2D, null);
-    }
+    });
+    return this.trackTexture(allocate(), normalized, allocate);
   }
 
   textureAllocator(): RenderResourceAllocator<WebGLTextureResource, WebGLTextureDescriptor> {
@@ -303,15 +270,96 @@ export class WebGL2Device {
     if (this.destroyed) throw new Error('WebGL2 device has been destroyed');
   }
 
-  private trackTexture(
-    texture: WebGLTexture,
-    framebuffer: WebGLFramebuffer | undefined,
+  private allocateTexture(
     descriptor: NormalizedTextureDescriptor,
+    upload: () => void,
+  ): TextureAllocation {
+    if (descriptor.format === 'rgba16f' && descriptor.renderTarget
+      && !this.gl.getExtension('EXT_color_buffer_float')) {
+      throw new Error('EXT_color_buffer_float is required for rgba16f render targets');
+    }
+    const texture = this.gl.createTexture();
+    if (!texture) throw new Error('Unable to allocate WebGL texture');
+    let framebuffer: WebGLFramebuffer | undefined;
+    try {
+      this.gl.bindTexture(this.gl.TEXTURE_2D, texture);
+      this.gl.texParameteri(
+        this.gl.TEXTURE_2D,
+        this.gl.TEXTURE_MIN_FILTER,
+        textureFilter(this.gl, descriptor.filter),
+      );
+      this.gl.texParameteri(
+        this.gl.TEXTURE_2D,
+        this.gl.TEXTURE_MAG_FILTER,
+        textureFilter(this.gl, descriptor.filter),
+      );
+      this.gl.texParameteri(
+        this.gl.TEXTURE_2D,
+        this.gl.TEXTURE_WRAP_S,
+        textureWrap(this.gl, descriptor.wrap),
+      );
+      this.gl.texParameteri(
+        this.gl.TEXTURE_2D,
+        this.gl.TEXTURE_WRAP_T,
+        textureWrap(this.gl, descriptor.wrap),
+      );
+      upload();
+      if (descriptor.renderTarget) {
+        framebuffer = this.gl.createFramebuffer() ?? undefined;
+        if (!framebuffer) throw new Error('Unable to allocate WebGL framebuffer');
+        this.gl.bindFramebuffer(this.gl.FRAMEBUFFER, framebuffer);
+        this.gl.framebufferTexture2D(
+          this.gl.FRAMEBUFFER,
+          this.gl.COLOR_ATTACHMENT0,
+          this.gl.TEXTURE_2D,
+          texture,
+          0,
+        );
+        if (this.gl.checkFramebufferStatus(this.gl.FRAMEBUFFER) !== this.gl.FRAMEBUFFER_COMPLETE) {
+          throw new Error('WebGL framebuffer is incomplete');
+        }
+      }
+      return { texture, framebuffer };
+    } catch (error) {
+      if (framebuffer) this.gl.deleteFramebuffer(framebuffer);
+      this.gl.deleteTexture(texture);
+      throw error;
+    } finally {
+      this.gl.bindTexture(this.gl.TEXTURE_2D, null);
+      this.gl.bindFramebuffer(this.gl.FRAMEBUFFER, null);
+    }
+  }
+
+  private trackTexture(
+    allocation: TextureAllocation,
+    descriptor: NormalizedTextureDescriptor,
+    restoreAllocation: () => TextureAllocation,
+    releaseBacking?: () => void,
   ): WebGLTextureResource {
     let resource: WebGLTextureResource | undefined;
-    resource = new WebGLTextureResource(this.gl, texture, framebuffer, descriptor, () => {
-      if (resource) this.resources.delete(resource);
+    const resourceId = `gl-game-lab.render-webgl2.texture.${this.textureResourceId}`;
+    this.textureResourceId += 1;
+    const unregister = this.contextResources.register({
+      id: resourceId,
+      priority: 0,
+      restore: () => {
+        if (!resource || resource.isDisposed) return;
+        const restored = restoreAllocation();
+        resource.restore(restored.texture, restored.framebuffer);
+      },
     });
+    resource = new WebGLTextureResource(
+      this.gl,
+      allocation.texture,
+      allocation.framebuffer,
+      descriptor,
+      () => {
+        unregister();
+        releaseBacking?.();
+        if (resource) this.resources.delete(resource);
+      },
+    );
+    this.resources.add(resource);
     return resource;
   }
 }
