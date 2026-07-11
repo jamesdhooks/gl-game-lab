@@ -10,6 +10,13 @@ interface Splat {
   radius: number;
   strain: number;
 }
+interface MyceliumGpuResources {
+  field: GpuFieldState;
+  readonly seedPass: GpuFieldPass;
+  readonly stepPass: GpuFieldPass;
+  readonly splatPass: GpuFieldPass;
+  readonly displayPass: GpuFieldPass;
+}
 export interface MyceliumController extends ExperienceRuntimeController {
   readonly fieldResolution: number;
 }
@@ -28,15 +35,13 @@ export function createMyceliumPlugin(initial: MyceliumConfig = MYCELIUM_DEFAULTS
     ],
     install: context => {
       const renderer = context.get(WebGL2RendererService), input = context.get(EngineInput), gpuPasses = context.get(GpuRenderPassQueueService), gl = renderer.device.gl;
-      let field = createField();
-      const seedPass = new GpuFieldPass(gl, MYCELIUM_SEED_SHADER), stepPass = new GpuFieldPass(gl, MYCELIUM_STEP_SHADER), splatPass = new GpuFieldPass(gl, MYCELIUM_SPLAT_SHADER), displayPass = new GpuFieldPass(gl, MYCELIUM_DISPLAY_SHADER);
-      cleanup = () => {
-        field.dispose();
-        seedPass.dispose();
-        stepPass.dispose();
-        splatPass.dispose();
-        displayPass.dispose();
-      };
+      const gpuResources = renderer.device.ownContextResource<MyceliumGpuResources>({
+        id: `${MYCELIUM_PLUGIN_ID}.gpu`, priority: 50,
+        create: createGpuResources, dispose: disposeGpuResources,
+        invalidate: () => { randomState = seedValue(launch.seed); },
+        restored: resetCpuState,
+      });
+      cleanup = () => { gpuResources.dispose(); };
       applyStyle();
       const controller: MyceliumController = {
         get modeId() {
@@ -51,9 +56,10 @@ export function createMyceliumPlugin(initial: MyceliumConfig = MYCELIUM_DEFAULTS
           });
         },
         get fieldResolution() {
-          return field.width;
+          return gpuResources.value.field.width;
         },
         get entityCount() {
+          const { field } = gpuResources.value;
           return field.width * field.height;
         },
         setMode: value => {
@@ -76,12 +82,9 @@ export function createMyceliumPlugin(initial: MyceliumConfig = MYCELIUM_DEFAULTS
           rebuild ||= oldResolution !== myceliumNumber(config, 'resolution') || oldTopology !== myceliumString(config, 'topology');
         },
         reset: () => {
-          field.clear();
-          splats.length = 0;
-          needsSeed = true;
-          pendingDt = 0;
-          elapsed = 0;
+          gpuResources.value.field.clear();
           randomState = seedValue(launch.seed);
+          resetCpuState();
         }
       };
       context.provide(MyceliumControllerService, controller);
@@ -119,12 +122,14 @@ export function createMyceliumPlugin(initial: MyceliumConfig = MYCELIUM_DEFAULTS
           gpuPasses.submit({
             id: 'mycelium.cellular-field',
             execute: destination => {
+              const resources = gpuResources.value;
               if (rebuild) {
-                field.dispose();
-                field = createField();
+                resources.field.dispose();
+                resources.field = createField();
                 rebuild = false;
                 needsSeed = true;
               }
+              const { field, seedPass, stepPass, splatPass, displayPass } = resources;
               if (needsSeed) {
                 const configured = Math.round(myceliumNumber(config, 'demoSeedColonies')), colonies = configured > 0 ? configured : (launch.profile === 'preview' || launch.profile === 'demo' ? 4 : 0);
                 seedPass.step(field, (g, u) => {
@@ -184,6 +189,26 @@ export function createMyceliumPlugin(initial: MyceliumConfig = MYCELIUM_DEFAULTS
           precision: 'half-float',
           filter: 'nearest'
         });
+      }
+      function createGpuResources(): MyceliumGpuResources {
+        const disposers: Array<() => void> = [];
+        try {
+          const field = createField(); disposers.push(() => { field.dispose(); });
+          const seedPass = new GpuFieldPass(gl, MYCELIUM_SEED_SHADER); disposers.push(() => { seedPass.dispose(); });
+          const stepPass = new GpuFieldPass(gl, MYCELIUM_STEP_SHADER); disposers.push(() => { stepPass.dispose(); });
+          const splatPass = new GpuFieldPass(gl, MYCELIUM_SPLAT_SHADER); disposers.push(() => { splatPass.dispose(); });
+          const displayPass = new GpuFieldPass(gl, MYCELIUM_DISPLAY_SHADER); disposers.push(() => { displayPass.dispose(); });
+          return { field, seedPass, stepPass, splatPass, displayPass };
+        } catch (error) {
+          for (const dispose of disposers.reverse()) dispose();
+          throw error;
+        }
+      }
+      function disposeGpuResources(resources: MyceliumGpuResources): void {
+        resources.displayPass.dispose(); resources.splatPass.dispose(); resources.stepPass.dispose(); resources.seedPass.dispose(); resources.field.dispose();
+      }
+      function resetCpuState(): void {
+        splats.length = 0; needsSeed = true; pendingDt = 0; elapsed = 0;
       }
       function applyStyle() {
         const background = myceliumColor3(requireStyle().background);

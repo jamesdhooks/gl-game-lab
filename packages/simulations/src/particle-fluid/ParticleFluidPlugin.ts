@@ -8,6 +8,12 @@ export interface ParticleFluidController extends ExperienceRuntimeController {
   readonly particleCapacity: number;
   readonly fieldResolution: number;
 }
+interface ParticleFluidGpuResources {
+  state: GpuParticleState;
+  flow: StableFluidField2D;
+  readonly stepper: GpuSimulationPass;
+  readonly points: GpuParticleRenderer;
+}
 export const ParticleFluidControllerService = createExtensionToken<ParticleFluidController>('gl-game-lab.simulations.particle-fluid.controller');
 export const PARTICLE_FLUID_PLUGIN_ID = 'gl-game-lab.simulations.particle-fluid';
 export function createParticleFluidPlugin(initial: ParticleFluidConfig = PARTICLE_FLUID_DEFAULTS, launch: ExperienceLaunchOptions = {}): EnginePlugin {
@@ -26,18 +32,16 @@ export function createParticleFluidPlugin(initial: ParticleFluidConfig = PARTICL
     ],
     install: context => {
       const renderer = context.get(WebGL2RendererService), input = context.get(EngineInput), queue = context.get(GpuRenderPassQueueService), gl = renderer.device.gl;
-      let state = createState(), flow = createFlow(), aspect = viewportAspect();
-      const stepper = new GpuSimulationPass(gl, PARTICLE_FLUID_STEP_SHADER), points = new GpuParticleRenderer(gl, {
-        vertexSource: PARTICLE_FLUID_VERTEX_SHADER,
-        fragmentSource: PARTICLE_FLUID_FRAGMENT_SHADER,
-        blend: 'additive'
+      let aspect = viewportAspect();
+      const gpuResources = renderer.device.ownContextResource<ParticleFluidGpuResources>({
+        id: `${PARTICLE_FLUID_PLUGIN_ID}.gpu`,
+        priority: 50,
+        create: createGpuResources,
+        dispose: disposeGpuResources,
+        invalidate: () => { randomState = (launch.seed ?? 260706) >>> 0; },
+        restored: resetCpuState,
       });
-      cleanup = () => {
-        state.dispose();
-        flow.dispose();
-        stepper.dispose();
-        points.dispose();
-      };
+      cleanup = () => { gpuResources.dispose(); };
       applyStyle();
       const controller: ParticleFluidController = {
         get modeId() {
@@ -52,13 +56,13 @@ export function createParticleFluidPlugin(initial: ParticleFluidConfig = PARTICL
           });
         },
         get particleCapacity() {
-          return state.capacity;
+          return gpuResources.value.state.capacity;
         },
         get fieldResolution() {
-          return flow.width;
+          return gpuResources.value.flow.width;
         },
         get entityCount() {
-          return state.capacity;
+          return gpuResources.value.state.capacity;
         },
         setMode: value => {
           if (value !== 'stir')
@@ -125,21 +129,22 @@ export function createParticleFluidPlugin(initial: ParticleFluidConfig = PARTICL
         run: () => queue.submit({
           id: 'particle-fluid.gpu-advection',
           execute: destination => {
+            const resources = gpuResources.value;
             if (rebuildParticles) {
-              state.dispose();
-              state = createState();
+              resources.state.dispose();
+              resources.state = createState();
               rebuildParticles = false;
             }
             if (rebuildField) {
-              flow.dispose();
-              flow = createFlow();
+              resources.flow.dispose();
+              resources.flow = createFlow();
               aspect = viewportAspect();
               rebuildField = false;
             }
             const dt = pendingDt;
             pendingDt = 0;
             if (dt > 0) {
-              flow.step({
+              resources.flow.step({
                 deltaSeconds: dt,
                 viscosity: 0.08,
                 curl: 22,
@@ -148,10 +153,10 @@ export function createParticleFluidPlugin(initial: ParticleFluidConfig = PARTICL
                 pressureIterations: launch.profile === 'preview' ? Math.min(10, particleFluidNumber(config, 'solverIterations')) : particleFluidNumber(config, 'solverIterations'),
                 ambient: false
               }, splats.splice(0));
-              stepper.run(state, (g, u) => {
-                flow.velocity.targets.read.attach(2);
+              resources.stepper.run(resources.state, (g, u) => {
+                resources.flow.velocity.targets.read.attach(2);
                 g.uniform1i(u('uFlowField'), 2);
-                g.uniform1i(u('uCapacity'), state.capacity);
+                g.uniform1i(u('uCapacity'), resources.state.capacity);
                 g.uniform1f(u('uDt'), dt);
                 g.uniform1f(u('uParticleDrag'), particleFluidNumber(config, 'particleDrag'));
                 g.uniform1f(u('uSimulationScale'), particleFluidNumber(config, 'simulationScale'));
@@ -171,7 +176,8 @@ export function createParticleFluidPlugin(initial: ParticleFluidConfig = PARTICL
         readonly width: number;
         readonly height: number;
       }, palette: Float32Array, size: number, opacity: number, brightness: number) {
-        points.render(state, destination, (g, u) => {
+        const resources = gpuResources.value;
+        resources.points.render(resources.state, destination, (g, u) => {
           g.uniform1f(u('uPointSize'), size);
           g.uniform1f(u('uSpeedColorScale'), particleFluidNumber(config, 'colorSpeedScale'));
           g.uniform1f(u('uPointerActive'), pointerActive ? 1 : 0);
@@ -243,11 +249,36 @@ export function createParticleFluidPlugin(initial: ParticleFluidConfig = PARTICL
           height
         });
       }
+      function createGpuResources(): ParticleFluidGpuResources {
+        const disposers: Array<() => void> = [];
+        try {
+          const state = createState(); disposers.push(() => { state.dispose(); });
+          const flow = createFlow(); disposers.push(() => { flow.dispose(); });
+          const stepper = new GpuSimulationPass(gl, PARTICLE_FLUID_STEP_SHADER); disposers.push(() => { stepper.dispose(); });
+          const points = new GpuParticleRenderer(gl, {
+            vertexSource: PARTICLE_FLUID_VERTEX_SHADER,
+            fragmentSource: PARTICLE_FLUID_FRAGMENT_SHADER,
+            blend: 'additive'
+          }); disposers.push(() => { points.dispose(); });
+          return { state, flow, stepper, points };
+        } catch (error) {
+          for (const dispose of disposers.reverse()) dispose();
+          throw error;
+        }
+      }
+      function disposeGpuResources(resources: ParticleFluidGpuResources): void {
+        resources.points.dispose(); resources.stepper.dispose(); resources.flow.dispose(); resources.state.dispose();
+      }
       function resetSimulation() {
-        state.dispose();
-        flow.dispose();
-        state = createState();
-        flow = createFlow();
+        const resources = gpuResources.value;
+        resources.state.dispose();
+        resources.flow.dispose();
+        randomState = (launch.seed ?? 260706) >>> 0;
+        resources.state = createState();
+        resources.flow = createFlow();
+        resetCpuState();
+      }
+      function resetCpuState() {
         splats.length = 0;
         previous.clear();
         pendingDt = 0;

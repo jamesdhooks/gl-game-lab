@@ -23,6 +23,12 @@ interface PointerField {
   vx: number;
   vy: number;
 }
+interface OrbitalGpuResources {
+  state: GpuParticleState;
+  readonly stepper: GpuSimulationPass;
+  readonly points: GpuParticleRenderer;
+  readonly trails: TrailFeedbackRenderer;
+}
 export interface OrbitalShrapnelController extends ExperienceRuntimeController {
   readonly mode: OrbitalShrapnelMode;
   readonly particleCapacity: number;
@@ -57,18 +63,14 @@ export function createOrbitalShrapnelPlugin(initial: OrbitalShrapnelConfig = ORB
     ],
     install: context => {
       const renderer = context.get(WebGL2RendererService), input = context.get(EngineInput), gpuPasses = context.get(GpuRenderPassQueueService), effects = context.get(FullscreenEffectRenderQueueService), gl = renderer.device.gl;
-      let state = createState();
-      const stepper = new GpuSimulationPass(gl, ORBITAL_STEP_SHADER), points = new GpuParticleRenderer(gl, {
-        vertexSource: ORBITAL_POINT_VERTEX_SHADER,
-        fragmentSource: ORBITAL_POINT_FRAGMENT_SHADER,
-        blend: 'additive'
-      }), trails = new TrailFeedbackRenderer(gl);
-      cleanup = () => {
-        state.dispose();
-        stepper.dispose();
-        points.dispose();
-        trails.dispose();
-      };
+      const gpuResources = renderer.device.ownContextResource<OrbitalGpuResources>({
+        id: `${ORBITAL_SHRAPNEL_PLUGIN_ID}.gpu`,
+        priority: 50,
+        create: createGpuResources,
+        dispose: disposeGpuResources,
+        restored: resetAfterContextRestore,
+      });
+      cleanup = () => { gpuResources.dispose(); };
       applyStyle();
       const controller: OrbitalShrapnelController = {
         get mode() {
@@ -86,10 +88,10 @@ export function createOrbitalShrapnelPlugin(initial: OrbitalShrapnelConfig = ORB
           });
         },
         get particleCapacity() {
-          return state.capacity;
+          return gpuResources.value.state.capacity;
         },
         get entityCount() {
-          return state.capacity;
+          return gpuResources.value.state.capacity;
         },
         setMode: value => {
           const next = validMode(value);
@@ -157,12 +159,13 @@ export function createOrbitalShrapnelPlugin(initial: OrbitalShrapnelConfig = ORB
           gpuPasses.submit({
             id: 'orbital-shrapnel.gpu-orbits',
             execute: destination => {
+              const resources = gpuResources.value;
               if (rebuild) {
-                state.dispose();
-                state = createState();
+                resources.state.dispose();
+                resources.state = createState();
                 cursor = 0;
                 rebuild = false;
-                trails.clear();
+                resources.trails.clear();
               }
               const dt = pendingDt;
               pendingDt = 0;
@@ -170,8 +173,8 @@ export function createOrbitalShrapnelPlugin(initial: OrbitalShrapnelConfig = ORB
                 runStep(dt);
               else
                 commands.splice(0, 12).forEach((spawn, index) => runStep(index === 0 ? dt : 0, spawn));
-              const trailTarget = trails.beginFrame(destination.width, destination.height, orbitalNumber(config, 'trailFade')), palette = paletteData();
-              points.render(state, trailTarget, (g, u) => {
+              const trailTarget = resources.trails.beginFrame(destination.width, destination.height, orbitalNumber(config, 'trailFade')), palette = paletteData();
+              resources.points.render(resources.state, trailTarget, (g, u) => {
                 g.uniform1f(u('uAspect'), destination.width / Math.max(1, destination.height));
                 g.uniform1f(u('uPointSize'), orbitalNumber(config, 'debrisSize') * Math.max(1, destination.height / 720) * 2);
                 g.uniform1f(u('uStreakStrength'), orbitalNumber(config, 'streakStrength'));
@@ -180,7 +183,7 @@ export function createOrbitalShrapnelPlugin(initial: OrbitalShrapnelConfig = ORB
                 g.uniform3fv(u('uPalette[0]'), palette.data);
                 g.uniform1i(u('uPaletteCount'), palette.count);
               });
-              trails.composite(destination, orbitalColor3(requireStyle().background), orbitalNumber(config, 'bloomStrength'));
+              resources.trails.composite(destination, orbitalColor3(requireStyle().background), orbitalNumber(config, 'bloomStrength'));
             }
           });
           const style = requireStyle(), palette = style.palette, planetRadius = planetRadiusWorld(), pointerRadius = (mode === 'well' ? orbitalNumber(config, 'wellRadius') : orbitalNumber(config, 'interactionRadius')) / viewportHeight() * 2;
@@ -296,6 +299,7 @@ export function createOrbitalShrapnelPlugin(initial: OrbitalShrapnelConfig = ORB
         void dt;
       }
       function runStep(dt: number, spawn?: Spawn): void {
+        const { state, stepper } = gpuResources.value;
         const count = spawn ? Math.min(state.capacity, spawn.count) : 0, start = cursor;
         if (spawn)
           cursor = (cursor + count) % state.capacity;
@@ -340,6 +344,26 @@ export function createOrbitalShrapnelPlugin(initial: OrbitalShrapnelConfig = ORB
         seedRing(next);
         return next;
       }
+      function createGpuResources(): OrbitalGpuResources {
+        const disposers: Array<() => void> = [];
+        try {
+          const state = createState(); disposers.push(() => { state.dispose(); });
+          const stepper = new GpuSimulationPass(gl, ORBITAL_STEP_SHADER); disposers.push(() => { stepper.dispose(); });
+          const points = new GpuParticleRenderer(gl, {
+            vertexSource: ORBITAL_POINT_VERTEX_SHADER,
+            fragmentSource: ORBITAL_POINT_FRAGMENT_SHADER,
+            blend: 'additive'
+          }); disposers.push(() => { points.dispose(); });
+          const trails = new TrailFeedbackRenderer(gl); disposers.push(() => { trails.dispose(); });
+          return { state, stepper, points, trails };
+        } catch (error) {
+          for (const dispose of disposers.reverse()) dispose();
+          throw error;
+        }
+      }
+      function disposeGpuResources(resources: OrbitalGpuResources): void {
+        resources.trails.dispose(); resources.points.dispose(); resources.stepper.dispose(); resources.state.dispose();
+      }
       function seedRing(target: GpuParticleState): void {
         const positions = new Float32Array(target.width * target.height * 4), velocities = new Float32Array(positions.length), aspect = aspectRatio();
         for (let i = 0; i < target.capacity; i++) {
@@ -374,18 +398,26 @@ export function createOrbitalShrapnelPlugin(initial: OrbitalShrapnelConfig = ORB
         renderer.setBloom({
           enabled: false
         });
-        trails.clear();
+        gpuResources.value.trails.clear();
       }
       function resetSimulation(): void {
-        state.dispose();
-        state = createState();
-        trails.clear();
+        const resources = gpuResources.value;
+        resources.state.dispose();
+        randomState = seedValue(launch.seed);
+        resources.state = createState();
+        resources.trails.clear();
+        resetCpuState();
+      }
+      function resetAfterContextRestore(): void {
+        randomState = seedValue(launch.seed);
+        resetCpuState();
+      }
+      function resetCpuState(): void {
         commands.length = 0;
         previousPointers.clear();
         cursor = 0;
         elapsed = 0;
         pendingDt = 0;
-        randomState = seedValue(launch.seed);
       }
       function viewportHeight(): number {
         return Math.max(1, renderer.sprites.activeCamera.viewportHeight);
