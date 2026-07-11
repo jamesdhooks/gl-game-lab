@@ -1,6 +1,5 @@
 import { createExtensionToken, type EnginePlugin, type PointerInputEvent } from '@hooksjam/gl-game-lab-core';
-import { EngineInput, EngineSchedule, ExperienceRuntimeControllerService, type ExperienceLaunchOptions, type ExperienceRuntimeController, type ExperienceSettingValue } from '@hooksjam/gl-game-lab-engine';
-import { GpuRenderPassQueueService, StableFluidField2D, WEBGL2_RENDERER_PLUGIN_ID, WebGL2RendererService, type FluidSplat2D } from '@hooksjam/gl-game-lab-render-webgl2';
+import { EngineInput, EngineRender2D, EngineSchedule, ExperienceRuntimeControllerService, type ExperienceLaunchOptions, type ExperienceRuntimeController, type ExperienceSettingValue, type FluidSplat2D } from '@hooksjam/gl-game-lab-engine';
 import { createFluidTankConfig, FLUID_TANK_DEFAULTS, fluidBoolean, fluidNumber, fluidString, type FluidTankConfig } from './config.js';
 import { fluidColor3, FLUID_TANK_STYLE_MANIFEST } from './styles.js';
 export type FluidTankMode = 'inject' | 'stir';
@@ -19,13 +18,9 @@ export function createFluidTankPlugin(initial: FluidTankConfig = FLUID_TANK_DEFA
   return {
     id: FLUID_TANK_PLUGIN_ID,
     version: '1.0.0',
-    dependencies: [
-      {
-        id: WEBGL2_RENDERER_PLUGIN_ID
-      }
-    ],
+    dependencies: [{ id: 'gl-game-lab.runtime' }],
     install: context => {
-      const renderer = context.get(WebGL2RendererService), input = context.get(EngineInput), queue = context.get(GpuRenderPassQueueService), gl = renderer.device.gl;
+      const renderer = context.get(EngineRender2D), input = context.get(EngineInput);
       let aspect = 1, field = createField();
       cleanup = () => field.dispose();
       applyStyle();
@@ -93,7 +88,7 @@ export function createFluidTankPlugin(initial: FluidTankConfig = FLUID_TANK_DEFA
           const dt = Math.min(1 / 30, time.deltaSeconds) * fluidNumber(config, 'timescale');
           pendingDt += dt;
           elapsed += dt;
-          const currentAspect = renderer.sprites.activeCamera.viewportHeight / Math.max(1, renderer.sprites.activeCamera.viewportWidth);
+          const currentAspect = renderer.viewport.height / Math.max(1, renderer.viewport.width);
           if (Math.abs(currentAspect - aspect) > 0.04)
             rebuild = true;
           for (const event of input.snapshot.events)
@@ -116,9 +111,7 @@ export function createFluidTankPlugin(initial: FluidTankConfig = FLUID_TANK_DEFA
       context.get(EngineSchedule).addSystem({
         id: 'gl-game-lab.simulations.fluid-tank.render',
         stage: 'renderExtract',
-        run: () => queue.submit({
-          id: 'fluid-tank.stable-field',
-          execute: destination => {
+        run: () => {
             if (rebuild) {
               field.dispose();
               field = createField();
@@ -142,18 +135,17 @@ export function createFluidTankPlugin(initial: FluidTankConfig = FLUID_TANK_DEFA
                 ambient: fluidBoolean(config, 'ambient')
               }, splats.splice(0));
             const style = requireStyle(), reference = styleId === 'webgl-fluid-glow';
-            field.render(destination, {
+            renderer.submitFluidField('fluid-tank.stable-field', field, {
               palette: style.palette.slice(0, 4).map(fluidColor3),
               background: fluidColor3(style.background),
               shadingStrength: fluidNumber(config, 'shadingStrength') * (reference ? 1 : 0.72),
               sunraysStrength: fluidNumber(config, 'sunraysStrength') * (reference ? 1 : 0.42),
               exposure: exposureForStyle(styleId)
             });
-          }
-        })
+        }
       });
       function routePointer(event: PointerInputEvent) {
-        const width = Math.max(1, renderer.sprites.activeCamera.viewportWidth), height = Math.max(1, renderer.sprites.activeCamera.viewportHeight), point = {
+        const width = Math.max(1, renderer.viewport.width), height = Math.max(1, renderer.viewport.height), point = {
           x: event.x / width,
           y: 1 - event.y / height
         };
@@ -181,11 +173,8 @@ export function createFluidTankPlugin(initial: FluidTankConfig = FLUID_TANK_DEFA
       }
       function createField() {
         const base = Math.max(64, Math.min(512, Math.round(256 / fluidNumber(config, 'cellSize')))), resolution = launch.profile === 'preview' ? Math.min(128, base) : base;
-        aspect = renderer.sprites.activeCamera.viewportHeight / Math.max(1, renderer.sprites.activeCamera.viewportWidth);
-        return new StableFluidField2D(gl, {
-          width: resolution,
-          height: Math.max(48, Math.round(resolution * aspect))
-        });
+        aspect = renderer.viewport.height / Math.max(1, renderer.viewport.width);
+        return renderer.createFluidField('fluid-tank.field', resolution, Math.max(48, Math.round(resolution * aspect)));
       }
       function seedField() {
         const kind = fluidString(config, 'renderStyle');
@@ -217,14 +206,7 @@ export function createFluidTankPlugin(initial: FluidTankConfig = FLUID_TANK_DEFA
           const bytes = ctx.getImageData(0, 0, canvas.width, canvas.height).data, values = new Float32Array(bytes.length);
           for (let i = 0; i < bytes.length; i++)
             values[i] = (bytes[i] ?? 0) / 255;
-          for (const target of [
-            current.dye.targets.read,
-            current.dye.targets.write
-          ]) {
-            gl.bindTexture(gl.TEXTURE_2D, target.texture);
-            gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, current.width, current.height, gl.RGBA, gl.FLOAT, values);
-          }
-          gl.bindTexture(gl.TEXTURE_2D, null);
+          current.uploadDyeRgba(values);
         };
         image.onerror = () => {
           if (!disposed && request === imageRequest && field === current)
@@ -293,7 +275,7 @@ export function createFluidTankPlugin(initial: FluidTankConfig = FLUID_TANK_DEFA
           background[2],
           1
         ]);
-        renderer.setPaletteBackdrop(undefined);
+        renderer.setBackdrop(undefined);
         renderer.setBloom({
           enabled: fluidNumber(config, 'bloomStrength') > 0,
           intensity: fluidNumber(config, 'bloomStrength') * (reference ? 1 : 0.7),

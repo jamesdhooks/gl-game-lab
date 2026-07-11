@@ -150,6 +150,44 @@ export interface FullscreenShaderEffect2D {
   readonly blend?: BlendMode2D;
 }
 
+export interface FluidSplat2D {
+  readonly x: number;
+  readonly y: number;
+  readonly radius: number;
+  readonly velocityX: number;
+  readonly velocityY: number;
+  readonly dye: readonly [number, number, number];
+  readonly amount: number;
+}
+
+export interface FluidStep2DOptions {
+  readonly deltaSeconds: number;
+  readonly viscosity: number;
+  readonly curl: number;
+  readonly velocityDissipation: number;
+  readonly dyeDissipation: number;
+  readonly pressureIterations: number;
+  readonly ambient?: boolean;
+}
+
+export interface FluidDisplay2DOptions {
+  readonly palette: readonly (readonly [number, number, number])[];
+  readonly background: readonly [number, number, number];
+  readonly shadingStrength: number;
+  readonly sunraysStrength: number;
+  readonly exposure?: number;
+}
+
+export interface FluidField2D {
+  readonly width: number;
+  readonly height: number;
+  step(options: FluidStep2DOptions, splats?: readonly FluidSplat2D[]): void;
+  seed(kind: 'blank' | 'random' | 'voronoi' | 'cloud', seed: number): void;
+  uploadDyeRgba(values: Float32Array): void;
+  clear(): void;
+  dispose(): void;
+}
+
 export interface Render2DService {
   readonly viewport: { readonly width: number; readonly height: number };
   createRgbaTexture(id: string, width: number, height: number, pixels: Uint8Array): Texture2DHandle;
@@ -167,6 +205,8 @@ export interface Render2DService {
   submitTriangleMesh(batch: TriangleMeshBatch2D): void;
   submitMetaballs(batch: MetaballBatch2D): void;
   submitFullscreenEffect(effect: FullscreenShaderEffect2D): void;
+  createFluidField(id: string, width: number, height: number): FluidField2D;
+  submitFluidField(id: string, field: FluidField2D, display: FluidDisplay2DOptions): void;
   setCamera(camera: Camera2DState): void;
   setClearColor(color: ColorRgba): void;
   setBloom(options: Bloom2DOptions): void;

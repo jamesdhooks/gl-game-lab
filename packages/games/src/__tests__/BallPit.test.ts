@@ -220,6 +220,8 @@ class FakeRender2D implements Render2DService {
   submitTriangleMesh(): void {}
   submitMetaballs(): void {}
   submitFullscreenEffect(): void {}
+  createFluidField(): never { throw new Error('not used'); }
+  submitFluidField(): void {}
   setCamera(_camera: Camera2DState): void {}
   setClearColor(color: readonly [number, number, number, number]): void { this.onClear(color); }
   setBloom(options: { readonly enabled: boolean }): void { this.onBloom(options.enabled); }

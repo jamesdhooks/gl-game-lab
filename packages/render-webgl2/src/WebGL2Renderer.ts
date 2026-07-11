@@ -19,6 +19,10 @@ import {
   type TriangleMeshBatch2D,
   type MetaballBatch2D,
   type FullscreenShaderEffect2D,
+  type FluidDisplay2DOptions,
+  type FluidField2D,
+  type FluidSplat2D,
+  type FluidStep2DOptions,
   type Text2DDraw,
   type Texture2DHandle,
 } from '@hooksjam/gl-game-lab-engine';
@@ -50,6 +54,9 @@ import { createDefaultBitmapFontAtlas } from './DefaultBitmapFont.js';
 import { InstancedSegmentRenderer } from './InstancedSegmentRenderer.js';
 import { DynamicTriangleMeshRenderer } from './DynamicTriangleMeshRenderer.js';
 import { DensityMetaballRenderer } from './DensityMetaballRenderer.js';
+import { StableFluidField2D } from './StableFluidField2D.js';
+import type { GpuParticleRenderDestination } from './GpuParticleRenderer.js';
+import type { RestorableResourceOwner } from './RestorableResourceOwner.js';
 
 export interface WebGL2RendererOptions {
   readonly device?: WebGL2DeviceOptions;
@@ -112,6 +119,47 @@ interface ManagedBitmapFont2D {
   readonly texture: Texture2DHandle;
 }
 
+class WebGLFluidField2D implements FluidField2D {
+  private readonly owner: RestorableResourceOwner<StableFluidField2D>;
+  private disposed = false;
+  private lastSeed: { readonly kind: 'blank' | 'random' | 'voronoi' | 'cloud'; readonly seed: number } | undefined;
+  private dyeRgba: Float32Array | undefined;
+
+  constructor(device: WebGL2Device, id: string, width: number, height: number, private readonly onDispose: () => void) {
+    this.owner = device.ownContextResource({
+      id,
+      priority: 50,
+      create: () => new StableFluidField2D(device.gl, { width, height }),
+      dispose: (field) => { field.dispose(); },
+      restored: (field) => {
+        if (this.dyeRgba) field.uploadDyeRgba(this.dyeRgba);
+        else if (this.lastSeed) field.seed(this.lastSeed.kind, this.lastSeed.seed);
+      },
+    });
+  }
+
+  get width(): number { return this.owner.value.width; }
+  get height(): number { return this.owner.value.height; }
+  step(options: FluidStep2DOptions, splats: readonly FluidSplat2D[] = []): void { this.owner.value.step(options, splats); }
+  seed(kind: 'blank' | 'random' | 'voronoi' | 'cloud', seed: number): void {
+    this.lastSeed = { kind, seed };
+    this.dyeRgba = undefined;
+    this.owner.value.seed(kind, seed);
+  }
+  uploadDyeRgba(values: Float32Array): void {
+    this.dyeRgba = values.slice();
+    this.owner.value.uploadDyeRgba(this.dyeRgba);
+  }
+  clear(): void { this.owner.value.clear(); }
+  render(destination: GpuParticleRenderDestination, display: FluidDisplay2DOptions): void { this.owner.value.render(destination, display); }
+  dispose(): void {
+    if (this.disposed) return;
+    this.disposed = true;
+    this.owner.dispose();
+    this.onDispose();
+  }
+}
+
 export class WebGL2Renderer implements RenderBackend, Render2DService {
   readonly id = 'gl-game-lab.render-webgl2';
   readonly capabilities = WEBGL2_CAPABILITIES;
@@ -138,6 +186,8 @@ export class WebGL2Renderer implements RenderBackend, Render2DService {
   private readonly unregisterContextResource: () => void;
   private readonly textures2D = new Map<string, ManagedTexture2D>();
   private readonly fonts2D = new Map<string, ManagedBitmapFont2D>();
+  private readonly fluidFields = new Set<WebGLFluidField2D>();
+  private fluidFieldId = 0;
   private destroyed = false;
 
   get state(): RenderBackendState {
@@ -421,6 +471,27 @@ export class WebGL2Renderer implements RenderBackend, Render2DService {
     });
   }
 
+  createFluidField(id: string, width: number, height: number): FluidField2D {
+    const normalized = id.trim();
+    if (normalized.length === 0) throw new Error('Fluid field id cannot be empty');
+    let field: WebGLFluidField2D | undefined;
+    field = new WebGLFluidField2D(
+      this.device,
+      `gl-game-lab.render-webgl2.fluid.${this.fluidFieldId}.${normalized}`,
+      width,
+      height,
+      () => { if (field) this.fluidFields.delete(field); },
+    );
+    this.fluidFieldId += 1;
+    this.fluidFields.add(field);
+    return field;
+  }
+
+  submitFluidField(id: string, field: FluidField2D, display: FluidDisplay2DOptions): void {
+    if (!(field instanceof WebGLFluidField2D) || !this.fluidFields.has(field)) throw new Error('Fluid field is not owned by this renderer');
+    this.gpuPasses.submit({ id, execute: (destination) => { field.render(destination, display); } });
+  }
+
   setBackdrop(options: Backdrop2DOptions | undefined): void {
     this.setPaletteBackdrop(options);
   }
@@ -445,6 +516,8 @@ export class WebGL2Renderer implements RenderBackend, Render2DService {
     this.particles.clear();
     this.effects.clear();
     this.gpuPasses.clear();
+    for (const field of [...this.fluidFields]) field.dispose();
+    this.fluidFields.clear();
     for (const font of [...this.fonts2D.values()]) this.destroyBitmapFont(font.handle);
     this.fonts2D.clear();
     for (const texture of this.textures2D.values()) texture.resource.dispose();

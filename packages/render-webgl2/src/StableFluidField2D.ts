@@ -99,6 +99,16 @@ export class StableFluidField2D {
     this.pressure.clear();
     this.divergence.clear();
   }
+  uploadDyeRgba(values: Float32Array): void {
+    const length = this.width * this.height * 4;
+    if (values.length !== length) throw new Error('Fluid dye upload length does not match field dimensions');
+    const gl = this.gl;
+    for (const target of [this.dye.targets.read, this.dye.targets.write]) {
+      gl.bindTexture(gl.TEXTURE_2D, target.texture);
+      gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, this.width, this.height, gl.RGBA, gl.FLOAT, values);
+    }
+    gl.bindTexture(gl.TEXTURE_2D, null);
+  }
   seed(kind: 'cloud' | 'voronoi' | 'random' | 'blank', seed: number) {
     this.assert();
     this.clear();
