@@ -12,6 +12,7 @@ export {
   EngineInput,
   EngineInputSources,
   EngineRenderer,
+  EngineRender2D,
   EngineSchedule,
   EngineScenes,
   EngineSchemas,
@@ -35,6 +36,26 @@ export {
   type WorkerService,
   type WorkerTaskOptions,
 } from './Services.js';
+export {
+  Camera2DComponent,
+  Sprite2DComponent,
+  SpriteAnimation2DComponent,
+  advanceSpriteAnimations,
+  createCamera2D,
+  createSprite2D,
+  createSpriteAnimation2D,
+  extractSprite2D,
+  type BlendMode2D,
+  type Camera2D,
+  type Camera2DState,
+  type ColorRgba,
+  type Render2DService,
+  type Sprite2D,
+  type Sprite2DDraw,
+  type SpriteAnimation2D,
+  type Texture2DHandle,
+  type UvRect,
+} from './Render2D.js';
 export { InputSourceRegistry, type InputSource } from './InputSourceRegistry.js';
 export {
   ExperienceRegistry,

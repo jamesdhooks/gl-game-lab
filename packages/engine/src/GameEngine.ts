@@ -27,6 +27,7 @@ import {
   EngineWorld,
 } from './Services.js';
 import { InputSourceRegistry } from './InputSourceRegistry.js';
+import { advanceSpriteAnimations } from './Render2D.js';
 
 export const GAME_ENGINE_RUNTIME_PLUGIN_ID = 'gl-game-lab.runtime';
 
@@ -118,6 +119,12 @@ export class GameEngine {
         context.provide(EngineScenes, this.scenes);
         context.provide(EngineSchemas, this.schemas);
         context.provide(EngineSerializer, this.serializer);
+        this.schedule.addSystem({
+          id: 'gl-game-lab.runtime.sprite-animation-2d',
+          stage: 'update',
+          access: { writes: ['engine.render-2d.sprite', 'engine.render-2d.animation'] },
+          run: ({ time }) => { advanceSpriteAnimations(this.world, time.deltaSeconds); },
+        });
       },
       start: () => { this.runner.start(); },
       stop: () => { this.runner.stop(); },

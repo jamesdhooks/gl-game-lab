@@ -1,11 +1,17 @@
 import { createExtensionToken, type EnginePlugin } from '@hooksjam/gl-game-lab-core';
 import {
+  EngineRender2D,
   EngineRenderer,
   EngineSchedule,
+  EngineWorld,
+  extractSprite2D,
+  type Render2DService,
   type RenderBackend,
   type RenderBackendCapabilities,
   type RenderBackendState,
   type RenderViewport,
+  type Sprite2DDraw,
+  type Texture2DHandle,
 } from '@hooksjam/gl-game-lab-engine';
 import {
   SpriteRenderer,
@@ -13,8 +19,9 @@ import {
   createSpriteCamera2D,
   type SpriteCamera2D,
   type SpriteInstance,
+  type SpriteTexture,
 } from './SpriteRenderer.js';
-import { WebGL2Device, type WebGL2DeviceOptions } from './WebGL2Device.js';
+import { WebGL2Device, type WebGL2DeviceOptions, type WebGLTextureResource } from './WebGL2Device.js';
 import { ParticlePointRenderer, ParticlePointRenderQueue } from './ParticlePointRenderer.js';
 import {
   BloomPostProcess,
@@ -81,7 +88,13 @@ const WEBGL2_CAPABILITIES: RenderBackendCapabilities = Object.freeze({
   instancing: true,
 });
 
-export class WebGL2Renderer implements RenderBackend {
+interface ManagedTexture2D {
+  readonly handle: Texture2DHandle;
+  readonly resource: WebGLTextureResource;
+  readonly spriteTexture: SpriteTexture;
+}
+
+export class WebGL2Renderer implements RenderBackend, Render2DService {
   readonly id = 'gl-game-lab.render-webgl2';
   readonly capabilities = WEBGL2_CAPABILITIES;
   readonly device: WebGL2Device;
@@ -102,6 +115,7 @@ export class WebGL2Renderer implements RenderBackend {
   private logicalHeight: number;
   private pixelRatio = 1;
   private readonly unregisterContextResource: () => void;
+  private readonly textures2D = new Map<string, ManagedTexture2D>();
   private destroyed = false;
 
   get state(): RenderBackendState {
@@ -241,6 +255,48 @@ export class WebGL2Renderer implements RenderBackend {
     return pixels;
   }
 
+  createRgbaTexture(id: string, width: number, height: number, pixels: Uint8Array): Texture2DHandle {
+    this.assertUsable();
+    const normalizedId = id.trim();
+    if (normalizedId.length === 0) throw new Error('2D texture id cannot be empty');
+    if (this.textures2D.has(normalizedId)) throw new Error(`2D texture id is already registered: ${normalizedId}`);
+    const resource = this.device.createTextureFromRgbaPixels(pixels, { width, height });
+    const handle = Object.freeze({ id: normalizedId, width, height });
+    const spriteTexture: SpriteTexture = {
+      id: normalizedId,
+      get texture() { return resource.texture; },
+    };
+    this.textures2D.set(normalizedId, { handle, resource, spriteTexture });
+    return handle;
+  }
+
+  destroyTexture(texture: Texture2DHandle): void {
+    const managed = this.textures2D.get(texture.id);
+    if (!managed || managed.handle !== texture) return;
+    managed.resource.dispose();
+    this.textures2D.delete(texture.id);
+  }
+
+  hasTexture(id: string): boolean { return this.textures2D.has(id); }
+
+  texture(id: string): Texture2DHandle {
+    const texture = this.textures2D.get(id)?.handle;
+    if (!texture) throw new Error(`2D texture is not registered: ${id}`);
+    return texture;
+  }
+
+  submit(sprite: Sprite2DDraw): void {
+    const texture = this.textures2D.get(sprite.texture.id);
+    if (!texture || texture.handle !== sprite.texture) {
+      throw new Error(`2D texture handle is not owned by this renderer: ${sprite.texture.id}`);
+    }
+    this.sprites.submit({ ...sprite, texture: texture.spriteTexture });
+  }
+
+  setCamera(camera: { readonly centerX: number; readonly centerY: number; readonly zoom: number }): void {
+    this.sprites.setCamera(createSpriteCamera2D(this.logicalWidth, this.logicalHeight, camera));
+  }
+
   render(): void {
     this.assertUsable();
     if (this.state === 'context-lost') return;
@@ -257,6 +313,8 @@ export class WebGL2Renderer implements RenderBackend {
     this.particles.clear();
     this.effects.clear();
     this.gpuPasses.clear();
+    for (const texture of this.textures2D.values()) texture.resource.dispose();
+    this.textures2D.clear();
     this.effectRenderer.destroy();
     this.particleRenderer.destroy();
     this.spriteRenderer.destroy();
@@ -315,12 +373,18 @@ export function createWebGL2RendererPlugin(
     version: '1.0.0',
     dependencies: [{ id: 'gl-game-lab.runtime' }],
     install: (context) => {
+      context.provide(EngineRender2D, renderer);
       context.provide(EngineRenderer, renderer);
       context.provide(WebGL2RendererService, renderer);
       context.provide(SpriteRenderQueueService, renderer.sprites);
       context.provide(ParticlePointRenderQueueService, renderer.particles);
       context.provide(FullscreenEffectRenderQueueService, renderer.effects);
       context.provide(GpuRenderPassQueueService, renderer.gpuPasses);
+      context.get(EngineSchedule).addSystem({
+        id: 'gl-game-lab.render-webgl2.extract-sprites-2d',
+        stage: 'renderExtract',
+        run: () => { extractSprite2D(context.get(EngineWorld), renderer); },
+      });
       context.get(EngineSchedule).addSystem({
         id: 'gl-game-lab.render-webgl2.sprites',
         stage: 'render',

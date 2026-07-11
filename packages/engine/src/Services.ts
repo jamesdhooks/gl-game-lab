@@ -12,6 +12,7 @@ import {
   type JsonValue,
 } from '@hooksjam/gl-game-lab-core';
 import { InputSourceRegistry } from './InputSourceRegistry.js';
+import type { Render2DService } from './Render2D.js';
 
 export const EngineWorld = createExtensionToken<World>('gl-game-lab.engine.world');
 export const EngineHierarchy = createExtensionToken<Hierarchy>('gl-game-lab.engine.hierarchy');
@@ -51,6 +52,7 @@ export interface RenderBackend {
 }
 
 export const EngineRenderer = createExtensionToken<RenderBackend>('gl-game-lab.engine.renderer');
+export const EngineRender2D = createExtensionToken<Render2DService>('gl-game-lab.engine.render-2d');
 
 export type PlatformServiceState = 'ready' | 'suspended' | 'destroyed';
 

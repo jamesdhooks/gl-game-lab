@@ -62,7 +62,7 @@ export function createWebTextureLoader(
         sourceTransferred = true;
         return {
           id: request.id,
-          texture: resource.texture,
+          get texture() { return resource.texture; },
           width: bitmap.width,
           height: bitmap.height,
           resource,

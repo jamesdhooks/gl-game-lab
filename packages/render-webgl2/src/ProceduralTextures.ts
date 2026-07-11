@@ -19,7 +19,7 @@ export function createCircleSpriteTexture(
     height: size,
     filter: 'linear',
   });
-  return Object.freeze({ id, texture: resource.texture, width: size, height: size, resource });
+  return Object.freeze({ id, get texture() { return resource.texture; }, width: size, height: size, resource });
 }
 
 export function createCirclePixels(size: number): Uint8Array {

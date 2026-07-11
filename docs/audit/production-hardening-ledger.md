@@ -39,7 +39,7 @@ performance, or lifecycle claims.
 | AST-02 | High | No production asset manifest, dependency graph, budgets, or hot-reload path. | 5, 8 | Open | Manifest validation, cache diagnostics, budget warnings, and development reload test. |
 | RND-01 | Critical | WebGL context restoration does not recreate owned GPU resources. | 4 | Active | Prioritized restoration, built-in pipeline rebuild, owned texture recreation, image-source lifetime transfer, and atomic recreation of all six raw-GPU simulation bundles are implemented and unit-tested; forced-loss browser equivalence proof remains. |
 | RND-02 | High | RenderGraph is test-only while shipping rendering uses fixed manual ordering. | 4 | Verified | Shipping WebGL2 frames execute seven compiled graph passes over an external frame destination and expose pass/resource diagnostics. |
-| RND-03 | High | Public content imports concrete WebGL2 renderer APIs, preventing backend neutrality. | 4, 6, 7 | Active | Engine now owns the host-facing renderer contract and React uses it; content feature contracts still require migration. |
+| RND-03 | High | Public content imports concrete WebGL2 renderer APIs, preventing backend neutrality. | 4, 6, 7 | Active | Engine owns host and conventional 2D render contracts; ECS sprite extraction, logical texture ownership, cameras, and animation are backend-neutral. Existing content and advanced GPU feature contracts still require migration. |
 | RND-04 | High | Sprite draw-plan construction copies arrays per sprite and is quadratic. | 4 | Verified | Builder now appends to one mutable construction batch and freezes once; a 10,000-sprite regression case verifies one batch. |
 | RND-05 | High | GPU ownership, descriptor validation, pooling, and destruction are inconsistent. | 4 | Active | Device context resources now register stable IDs, priority, invalidation, restoration, and deterministic unregistration; byte/lifetime accounting remains. |
 | PRF-01 | High | Hot paths allocate temporary objects/arrays and upload avoidable full buffers per frame. | 4, 7, 8 | Open | Allocation/upload counters and profiles meet per-experience budgets. |
@@ -55,7 +55,7 @@ performance, or lifecycle claims.
 | QLT-03 | High | CI, source hygiene, and package-boundary enforcement were absent. | 2 | Active | Required CI executes frozen install, boundaries, hygiene, typecheck, tests, and build. |
 | TOL-01 | Medium | Diagnostics, frame/resource inspection, GPU debugging, and capture tooling are incomplete. | 8 | Open | Runtime overlay and machine-readable capture expose CPU/GPU/resource/pass data. |
 | TOL-02 | Medium | Serialization/editor inspection/hot reload lack production workflows. | 3, 8 | Open | Versioned save fixtures, inspector editing boundary, and reload documentation. |
-| DES-01 | Medium | Animation, cameras, UI layout/text, and a conventional 2D authoring layer are incomplete. | 5, 6 | Open | Reference Arena demonstrates sprite animation, camera, text/UI, input, audio, and save/load. |
+| DES-01 | Medium | Animation, cameras, UI layout/text, and a conventional 2D authoring layer are incomplete. | 5, 6 | Active | ECS sprites, logical RGBA textures, primary cameras, atlas animation, culling, sorting, and extraction now use a backend-neutral service; text/UI and full Reference Arena integration remain. |
 | DES-02 | Low | Full WebGPU backend, PBR 3D renderer, and production editor are not required for this release. | Post-release | Deferred | Backend contracts and ADRs must avoid precluding later implementations. |
 
 ## Phase exit gates
