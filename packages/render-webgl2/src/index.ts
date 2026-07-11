@@ -5,6 +5,7 @@ export {
   type InstancedSegmentRenderOptions,
 } from './InstancedSegmentRenderer.js';
 export { DynamicTriangleMeshRenderer, validateDynamicTriangleMeshBatch, type DynamicTriangleMeshBatch, type DynamicTriangleMeshOptions } from './DynamicTriangleMeshRenderer.js';
+export { StableFluidField2D, type FluidSplat2D, type StableFluidDisplayOptions, type StableFluidField2DOptions, type StableFluidStepOptions } from './StableFluidField2D.js';
 export {
   GpuFieldState,
   type GpuFieldStateOptions,
