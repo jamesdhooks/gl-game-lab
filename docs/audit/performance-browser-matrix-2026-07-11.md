@@ -69,7 +69,10 @@ and passed the engine CPU/draw/upload/resource envelope.
 - A same-mount definition replacement changed Reference Arena to Ball Pit. The
   replacement reached `running`; the previous engine reached `destroyed`; the
   diagnostics probe reported `lifecycle-passed`.
-- A real `WEBGL_lose_context` probe was attempted. The embedded Chromium renderer
-  process became blank and inaccessible immediately after forced loss, before the
-  page could report restoration. This is not accepted as restoration proof;
-  RND-01 remains active until the probe passes in an external browser/device run.
+- The hosted Chromium, Firefox, and WebKit release matrix passed accessibility,
+  touch, gamepad, lifecycle replacement, and deterministic context-resource
+  invalidation/rebuild. Each report records `strategy: registry` and proves that
+  generation advances while tracked resource counts and bytes remain stable.
+- Real `WEBGL_lose_context` remains a physical-browser gate. Hosted Linux software
+  drivers suspended page execution after forced loss in both headless and Xvfb
+  modes, so those attempts are not misrepresented as driver restoration proof.

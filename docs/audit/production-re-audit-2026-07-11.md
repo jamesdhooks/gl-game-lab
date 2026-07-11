@@ -2,11 +2,12 @@
 
 ## Decision
 
-This release candidate is suitable for an integration/RC branch. It is not yet
-ready to replace the production branch. The architecture no longer needs a broad
-rewrite, but release approval is blocked by one critical proof gap: forced WebGL
-context restoration has not completed successfully in a real browser run. The
-supported cross-browser and physical-mobile matrix is also incomplete.
+This release candidate is suitable for an integration/RC branch. The architecture
+does not need a broad rewrite, clean CI passes, and the hosted Chromium, Firefox,
+and WebKit release matrix is green. Production cutover still requires human scene
+parity review, physical iOS/Android performance, and a real-GPU driver-loss cycle;
+the hosted reports explicitly use deterministic resource-registry reconstruction
+rather than claiming unsupported software-driver restoration.
 
 ## Evidence reviewed
 
@@ -18,10 +19,10 @@ supported cross-browser and physical-mobile matrix is also incomplete.
   zero concrete WebGL renderer imports or WebGL context types.
 - Thirty 120-frame desktop/mobile-viewport captures, all within executable CPU,
   draw, upload, transient allocation, and GPU-memory budgets.
-- Current branch package typecheck, all TypeScript package builds, boundary check,
-  hygiene check, custom source-aliased production Vite build, and direct runtime
-  inspector smoke passed. The standard Vite/Vitest wrappers cannot run in this
-  sandbox because inherited dependency junctions traverse a denied host path.
+- Current branch frozen install, boundary and hygiene checks, all TypeScript builds
+  and typechecks, tests, and production Vite build pass in clean hosted CI.
+- Hosted Chromium, headed Firefox under Xvfb, and WebKit reports pass production
+  accessibility, touch, gamepad, lifecycle, and resource-rebuild invariants.
 
 ## 1. Overall architecture
 
@@ -93,11 +94,11 @@ commands are explicit, generations reject stale entities, and cleanup aggregates
 failures instead of abandoning later resources. Physics replay hashes improve
 regression detection.
 
-The critical unknown is WebGL context restoration. All known resources register a
-restoration path and deterministic ordering, but both forced-loss attempts caused
-the embedded Chromium renderer to become blank before the application could report
-equivalence. This may be an embedding limitation, but it cannot be called correct
-without an external-browser pass. Async asset cancellation still depends on loader
+All known GPU resources register deterministic invalidation/restoration paths.
+Hosted Chromium, Firefox, and WebKit rebuild every owned resource and preserve
+generation/count/byte invariants. Real `WEBGL_lose_context` attempts suspend hosted
+software-renderer execution, so physical GPU recovery remains unproven rather than
+waived. Async asset cancellation still depends on loader
 cooperation. Floating-point determinism is same-runtime replay determinism, not
 bit-identical cross-architecture determinism. Storage quota, audio-autoplay, worker
 CSP, and browser eviction policies need broader device testing.
@@ -129,20 +130,21 @@ deterministically ordered passes around every built-in graph stage.
 Important remaining systems are GPU pipeline/stall counters, material validation
 above the new shader reflection layer, a frame debugger beyond checksums, render-target
 pool telemetry, derived asset processing, hot shader reload, input rebinding UI,
-network/replay transport, localization, and editor UI. Cross-browser automation and
-physical-device performance jobs are release requirements, not optional polish.
+network/replay transport, localization, and editor UI. Cross-browser automation now
+passes; physical-device performance remains a release requirement, not optional polish.
 WebGPU and full 3D/PBR correctly remain post-release scope.
 
 ## 7. Technical debt
 
 ### Critical
 
-1. Forced WebGL context loss/restoration lacks passing browser evidence.
+1. Real GPU driver loss/restoration lacks physical-browser evidence; hosted
+   resource-registry reconstruction passes in all three engines.
 
 ### High
 
-1. Supported Firefox/Safari/iOS/Android behavior and physical-mobile performance
-   are not verified.
+1. Physical Safari/iOS/Android behavior and mobile performance are not verified;
+   hosted Chromium, Firefox, and WebKit behavior is verified.
 2. Optional GPU timing exists but is not yet device-matrix evidence; detailed
    stalls and per-pass costs can still pass CPU budgets unnoticed.
 3. `WebGL2Renderer` still combines managed textures/fonts with frame orchestration,
@@ -196,22 +198,22 @@ bgfx, or Wicked Engine.
 | Maintainability | B | Clean boundaries, but several large orchestrators/plugins need extraction. |
 | Performance | B+ | All catalog budgets pass; actual GPU timing and physical devices are missing. |
 | Scalability | B | Packed domains scale well; conventional ECS and scheduler are not chunked/parallel. |
-| Rendering | B | Capable WebGL2 pipeline; restoration proof, shader tooling, and pooling are incomplete. |
+| Rendering | B+ | Capable WebGL2 pipeline and cross-engine resource rebuild proof; physical driver loss and pooling remain. |
 | API design | B+ | Good code-first host/content contracts with backend neutrality. |
 | Code quality | B+ | Strict, consistent, hygienic, and tested; concentration remains. |
-| Production readiness | C+ | Strong RC, but critical browser recovery and support-matrix gates are open. |
+| Production readiness | B- | Automated RC gates are green; physical driver-loss/mobile and human parity remain. |
 
 ## Merge and rewrite recommendation
 
 Merge into an integration/release-candidate branch: yes. Replace the production
-branch: no. A major rewrite is not justified. Use a targeted Hardening Pass 2 for
-context-loss certification, browser/device coverage, GPU timing, and renderer
-decomposition.
+branch only after physical driver-loss/mobile evidence and human parity review. A
+major rewrite is not justified; remaining work is targeted certification and
+renderer/tooling evolution.
 
 The five criticisms most likely from another senior engine programmer are:
 
-1. You claim context recovery without one successful forced-loss browser run.
-2. Desktop Chromium viewport emulation is not a mobile/browser support matrix.
+1. Hosted registry reconstruction is not physical GPU driver-loss proof.
+2. Desktop viewport emulation is not physical mobile performance evidence.
 3. CPU timing and estimated bytes are not a GPU profiler.
 4. The renderer facade and several content plugins have accumulated too many jobs.
 5. Shader/material tooling and render-target pooling remain thin for third-party render plugins.
@@ -265,10 +267,11 @@ The five criticisms most likely from another senior engine programmer are:
 - Added `WebGL2FramePipelineService`: backend plugins can register deterministic,
   removable passes before or after every built-in stage. Duplicate/built-in IDs,
   invalid stages, and non-integer order values are rejected.
-- Added a pull-request browser release matrix for Chromium, Firefox, and WebKit.
-  Each isolated job verifies production Reference Arena accessibility, real touch
-  event observation, gamepad polling, exact lifecycle replacement, and forced
-  context-loss resource equivalence, then uploads a machine-readable report.
+- Added a passing pull-request browser release matrix for Chromium, Firefox, and
+  WebKit. Each isolated job verifies production Reference Arena accessibility,
+  real touch event observation, gamepad polling, exact lifecycle replacement, and
+  explicit registry-rebuild resource equivalence, then uploads a machine-readable
+  report. Physical driver-loss remains separately identified.
 - Corrected segment, mesh, and metaball upload accounting to use active element
   counts rather than backing-array capacity. Fresh Splash production captures fell
   from false ~2.1 MiB readings to 124,568 bytes desktop and 132,248 bytes mobile.
