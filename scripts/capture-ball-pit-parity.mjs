@@ -26,8 +26,20 @@ const staticFrameNumber = 1;
 const dynamicFrameNumbers = [60, 120, 180];
 const fixedDeltaSeconds = 1 / 60;
 const seed = 7;
-const style = 'rainbow';
 const mode = 'single';
+const styleNames = Object.freeze({
+  rainbow: 'Rainbow',
+  pastel: 'Pastel',
+  neon: 'Neon',
+  ocean: 'Ocean',
+  candy: 'Candy',
+  'rubber-room': 'Rubber Room',
+  'soda-pop': 'Soda Pop',
+  'moon-gym': 'Moon Gym',
+  'jungle-bounce': 'Jungle Bounce',
+  'monochrome-pop': 'Monochrome Pop',
+});
+const requestedStyles = process.argv.includes('--all-styles') ? Object.keys(styleNames) : ['rainbow'];
 const spatialCellSize = 32;
 const staticSsimThreshold = 0.97;
 const dynamicMinimumSpatialThreshold = 0.8;
@@ -51,19 +63,43 @@ try {
     headless: true,
     args: ['--disable-background-timer-throttling', '--disable-renderer-backgrounding'],
   });
-  const staticPair = await capturePair(browser, {
+  const styleReports = [];
+  for (const requestedStyle of requestedStyles) {
+    process.stderr.write(`Capturing Ball Pit style ${requestedStyle}\n`);
+    styleReports.push(await captureStyle(browser, requestedStyle));
+  }
+  const report = {
+    schemaVersion: 2,
+    experienceId: 'ball-pit',
+    referenceRevision,
+    capture: { width, height, fixedDeltaSeconds, seed, styles: requestedStyles, mode },
+    styles: styleReports,
+    passed: styleReports.every((styleReport) => styleReport.passed),
+  };
+  await writeFile(path.join(outputDirectory, 'report.json'), `${JSON.stringify(report, null, 2)}\n`, 'utf8');
+  process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
+  if (!report.passed) process.exitCode = 2;
+} finally {
+  await browser?.close();
+  for (const server of servers) server.stop();
+}
+
+async function captureStyle(activeBrowser, style) {
+  const staticPair = await capturePair(activeBrowser, {
     frameNumber: staticFrameNumber,
     profile: 'play',
     demo: false,
-    artifactPrefix: 'static',
+    style,
+    artifactPrefix: `${style}-static`,
   });
   const dynamicFrames = [];
   for (const dynamicFrameNumber of dynamicFrameNumbers) {
-    dynamicFrames.push(await capturePair(browser, {
+    dynamicFrames.push(await capturePair(activeBrowser, {
       frameNumber: dynamicFrameNumber,
       profile: 'demo',
       demo: true,
-      artifactPrefix: `demo-${String(dynamicFrameNumber).padStart(4, '0')}`,
+      style,
+      artifactPrefix: `${style}-demo-${String(dynamicFrameNumber).padStart(4, '0')}`,
     }));
   }
   const finalDynamicFrame = dynamicFrames[dynamicFrames.length - 1];
@@ -81,21 +117,12 @@ try {
       && dynamicSimilarities.reduce((sum, value) => sum + value, 0) / dynamicSimilarities.length >= dynamicMeanSpatialThreshold,
     frames: dynamicFrames.map(stripPng),
   };
-  const report = {
-    schemaVersion: 1,
-    experienceId: 'ball-pit',
-    referenceRevision,
-    capture: { width, height, fixedDeltaSeconds, seed, style, mode },
+  return {
+    style,
     static: stripPng(staticPair),
     dynamic,
     passed: staticPair.comparison.pixel.passed && dynamic.passed,
   };
-  await writeFile(path.join(outputDirectory, 'report.json'), `${JSON.stringify(report, null, 2)}\n`, 'utf8');
-  process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
-  if (!report.passed) process.exitCode = 2;
-} finally {
-  await browser?.close();
-  for (const server of servers) server.stop();
 }
 
 async function capturePair(activeBrowser, options) {
@@ -155,6 +182,7 @@ async function captureReference(context, options) {
     await dismiss.click();
     await page.clock.runFor(300);
   }
+  await selectFrozenStyle(page, options.style);
   if (options.demo) {
     await page.getByRole('button', { name: 'More controls' }).click();
     await page.clock.runFor(100);
@@ -187,6 +215,16 @@ async function captureReference(context, options) {
   };
 }
 
+async function selectFrozenStyle(page, style) {
+  const label = styleNames[style];
+  if (!label) throw new Error(`Unknown Ball Pit style: ${style}`);
+  if (style === 'rainbow') return;
+  await page.getByRole('button', { name: 'Palette', exact: true }).click();
+  await page.clock.runFor(100);
+  await page.getByRole('button', { name: label, exact: true }).click();
+  await page.clock.runFor(100);
+}
+
 async function waitForFrozenRuntime(page) {
   const debug = page.locator('button[aria-label="Open debug panel"]');
   await debug.waitFor({ state: 'visible', timeout: 30_000 });
@@ -208,7 +246,7 @@ async function captureRebuild(context, options) {
     profile: options.profile,
     seed: String(seed),
     mode,
-    style,
+    style: options.style,
   });
   const url = `http://127.0.0.1:${rebuildPort}/?${query}`;
   await page.goto(url, { waitUntil: 'domcontentloaded' });

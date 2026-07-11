@@ -56,6 +56,12 @@ Run the isolated Ball Pit comparison with:
 pnpm parity:capture:ball-pit
 ```
 
+Run the complete ten-style Single-mode matrix with:
+
+```text
+pnpm parity:capture:ball-pit:styles
+```
+
 The command starts both Vite hosts, launches an installed Chromium browser at
 `960x540` and device scale 1, seeds the frozen host's random source, advances
 its browser clock virtually, drives its public Demo control, and compares the
@@ -66,6 +72,11 @@ control.
 The verifier rejects uniform/blank images before computing SSIM. This prevents
 cleared WebGL drawing buffers from producing false perfect scores.
 
+The style matrix selects every palette through the frozen host's public Palette
+control and through the rebuild capture contract. Each style receives its own
+static pair and three independently isolated temporal pairs. The generated
+schema-v2 report records per-style gates as well as an aggregate pass result.
+
 The empty Rainbow play captures are byte-identical: SSIM `1.0`, zero mean
 absolute error, and matching SHA-256 hashes. With the frozen spawn position,
 velocity, color hash, and per-pass collision relaxation preserved, the demo
@@ -74,5 +85,10 @@ sequence scores `0.82751`, `0.94885`, and `0.94932` spatial similarity at frames
 the declared temporal gate without increasing the frozen `1200/sec` spawn
 rate. All reference and rebuild browser error lists are empty.
 
-These numbers certify Rainbow in the Single mode only. The other styles and
-modes remain separate parity obligations.
+The complete Single-mode style matrix proves byte-identical static output for
+all ten styles. Rainbow (`0.82714` minimum, `0.90921` mean) and Candy
+(`0.81195` minimum, `0.90619` mean) pass the temporal gate. Pastel, Neon,
+Ocean, Rubber Room, Soda Pop, Moon Gym, Jungle Bounce, and Monochrome Pop remain
+below one or both temporal thresholds. Every one of the 80 browser-side
+captures completed without a page error. Interaction-mode scenarios remain a
+separate parity obligation.
