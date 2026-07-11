@@ -74,7 +74,7 @@ async function verifyFunctional(browser, failures) {
     await page.touchscreen.tap(bounds.x + bounds.width * 0.5, bounds.y + bounds.height * 0.5);
     await page.waitForTimeout(100);
     await page.getByRole('button', { name: 'Report input state' }).click();
-    const controls = page.getByRole('complementary', { name: 'Engine diagnostic controls' });
+    const controls = page.locator('[aria-label="Engine diagnostic controls"]');
     const gamepadCount = Number(await controls.getAttribute('data-input-gamepads'));
     const pointerEvents = Number(await controls.getAttribute('data-input-pointer-events'));
     if (gamepadCount !== 1) failures.push(`Expected one polled gamepad, received ${gamepadCount}`);
@@ -98,7 +98,7 @@ async function verifyContextRecovery(browser, failures) {
     await page.goto(url({ experience: 'reference-arena', contextTest: '1' }), { waitUntil: 'domcontentloaded' });
     await page.locator('canvas[data-engine-state="running"]').waitFor({ state: 'visible', timeout: 60_000 });
     await page.getByRole('button', { name: 'Cycle GPU context' }).click();
-    const controls = page.getByRole('complementary', { name: 'Engine diagnostic controls' });
+    const controls = page.locator('[aria-label="Engine diagnostic controls"]');
     await page.waitForFunction(() => {
       const status = document.querySelector('[aria-label="Engine diagnostic controls"]')?.getAttribute('data-diagnostic-status');
       return status === 'context-passed' || status === 'context-failed' || status === 'context-error';
