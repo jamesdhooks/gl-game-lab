@@ -14,6 +14,7 @@ import {
 import { InputSourceRegistry } from './InputSourceRegistry.js';
 import type { Render2DService } from './Render2D.js';
 import type { Gpu2DService } from './Gpu2D.js';
+import type { EngineDiagnostics } from './Diagnostics.js';
 
 export const EngineWorld = createExtensionToken<World>('gl-game-lab.engine.world');
 export const EngineHierarchy = createExtensionToken<Hierarchy>('gl-game-lab.engine.hierarchy');
@@ -25,6 +26,7 @@ export const EngineSchedule = createExtensionToken<Schedule>('gl-game-lab.engine
 export const EngineScenes = createExtensionToken<SceneManager>('gl-game-lab.engine.scenes');
 export const EngineSchemas = createExtensionToken<ComponentSchemaRegistry>('gl-game-lab.engine.schemas');
 export const EngineSerializer = createExtensionToken<WorldSerializer>('gl-game-lab.engine.serializer');
+export const EngineDiagnosticsService = createExtensionToken<EngineDiagnostics>('gl-game-lab.engine.diagnostics');
 
 export type RenderBackendApi = 'webgl2' | 'webgpu' | 'headless';
 export type RenderBackendState = 'ready' | 'context-lost' | 'destroyed';

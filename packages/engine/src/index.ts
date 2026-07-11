@@ -5,6 +5,7 @@ export {
 } from './GameEngine.js';
 export {
   EngineAssets,
+  EngineDiagnosticsService,
   EngineAccessibility,
   EngineAudio,
   EngineEvents,
@@ -37,6 +38,16 @@ export {
   type WorkerService,
   type WorkerTaskOptions,
 } from './Services.js';
+export {
+  DEFAULT_PERFORMANCE_BUDGETS,
+  EngineDiagnostics,
+  type EngineDiagnosticsSnapshot,
+  type PerformanceBudget,
+  type PerformanceBudgetResult,
+  type PerformanceTier,
+  type RendererDiagnostics,
+  type SystemTimingSample,
+} from './Diagnostics.js';
 export {
   Camera2DComponent,
   DEFAULT_FONT_2D_ID,

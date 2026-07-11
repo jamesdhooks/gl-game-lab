@@ -11,7 +11,7 @@ describe('ContextResourceRegistry', () => {
       restore: () => { calls.push('pipeline:restore'); },
     });
     registry.register({
-      id: 'texture', priority: 0,
+      id: 'texture', priority: 0, estimatedBytes: () => 4096,
       invalidate: () => { calls.push('texture:invalidate'); },
       restore: () => { calls.push('texture:restore'); },
     });
@@ -24,6 +24,10 @@ describe('ContextResourceRegistry', () => {
       'texture:restore', 'pipeline:restore',
     ]);
     expect(registry.generation).toBe(1);
+    expect(registry.snapshot()).toEqual([
+      { id: 'texture', priority: 0, estimatedBytes: 4096 },
+      { id: 'pipeline', priority: 100, estimatedBytes: 0 },
+    ]);
   });
 
   it('attempts every restoration and advances generation only on success', () => {

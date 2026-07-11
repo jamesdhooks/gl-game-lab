@@ -1,10 +1,12 @@
-import { useEffect, useRef, type CSSProperties } from 'react';
+import { Fragment, useEffect, useRef, type CSSProperties } from 'react';
 import type { EnginePlugin, InputEvent } from '@hooksjam/gl-game-lab-core';
 import {
   EngineRenderer,
   EngineAccessibility,
   ExperienceRuntimeControllerService,
   GameEngine,
+  type EngineDiagnosticsSnapshot,
+  type PerformanceBudgetResult,
 } from '@hooksjam/gl-game-lab-engine';
 import {
   BrowserFrameLoop,
@@ -32,6 +34,8 @@ export interface FixedFrameCaptureResult {
   readonly profile: FrameProfileSummary;
   readonly checksum: string;
   readonly entityCount?: number;
+  readonly diagnostics: EngineDiagnosticsSnapshot;
+  readonly budgets: readonly PerformanceBudgetResult[];
 }
 
 export interface GameCanvasProps {
@@ -46,6 +50,7 @@ export interface GameCanvasProps {
   readonly preventDefaultInput?: boolean;
   readonly fixedFrameCapture?: FixedFrameCaptureOptions;
   readonly onFixedFrameCapture?: (result: FixedFrameCaptureResult) => void;
+  readonly showDiagnostics?: boolean;
 }
 
 const EMPTY_ENGINE_PLUGINS: readonly EnginePlugin[] = Object.freeze([]);
@@ -88,8 +93,10 @@ export function GameCanvas({
   preventDefaultInput = true,
   fixedFrameCapture,
   onFixedFrameCapture,
+  showDiagnostics = false,
 }: GameCanvasProps): JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const diagnosticsRef = useRef<HTMLOutputElement | null>(null);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -101,6 +108,7 @@ export function GameCanvas({
     let destroyFailureReported = false;
     let loop: BrowserFrameLoop | undefined;
     let fallbackInput: WebInputAdapter | undefined;
+    let diagnosticsFrame: number | undefined;
     const destroyHandle = createEngineDestroyHandle(engine);
     const reportError = (error: unknown): void => {
       canvas.dataset.engineState = 'error';
@@ -165,17 +173,24 @@ export function GameCanvas({
             profiler.record(performance.now() - startedAt);
           }
           const renderer = engine.kernel.get(EngineRenderer);
+          const diagnostics = engine.diagnostics.snapshot();
+          if (!diagnostics) throw new Error('Fixed frame capture did not produce engine diagnostics');
           const entityCount = engine.kernel.tryGet(ExperienceRuntimeControllerService)?.entityCount;
           const result = Object.freeze({
             ...capture,
             profile: profiler.summary,
             checksum: checksumRgba(renderer.readRgba()),
+            diagnostics,
+            budgets: Object.freeze([engine.diagnostics.evaluate('desktop'), engine.diagnostics.evaluate('mobile')]),
             ...(entityCount !== undefined ? { entityCount } : {}),
           });
           canvas.dataset.captureFrame = String(capture.frameNumber);
           canvas.dataset.captureDelta = String(capture.fixedDeltaSeconds);
           canvas.dataset.captureCpuP95 = String(result.profile.cpu.p95);
           canvas.dataset.captureChecksum = result.checksum;
+          canvas.dataset.captureDrawCalls = String(result.diagnostics.renderer?.drawCalls ?? 0);
+          canvas.dataset.captureUploadBytes = String((result.diagnostics.renderer?.bufferUploadBytes ?? 0) + (result.diagnostics.renderer?.textureUploadBytes ?? 0));
+          canvas.dataset.captureGpuBytes = String(result.diagnostics.renderer?.gpuResourceBytes ?? 0);
           if (result.entityCount !== undefined) canvas.dataset.captureEntityCount = String(result.entityCount);
           canvas.dataset.engineState = 'capture-ready';
           onFixedFrameCapture?.(result);
@@ -185,6 +200,15 @@ export function GameCanvas({
           });
           loop.start();
           canvas.dataset.engineState = 'running';
+        }
+        if (showDiagnostics) {
+          const updateDiagnostics = (): void => {
+            const output = diagnosticsRef.current;
+            const snapshot = engine.diagnostics.snapshot();
+            if (output && snapshot) output.textContent = diagnosticText(snapshot);
+            diagnosticsFrame = requestAnimationFrame(updateDiagnostics);
+          };
+          diagnosticsFrame = requestAnimationFrame(updateDiagnostics);
         }
         onReady?.(engine);
       } catch (error) {
@@ -211,6 +235,7 @@ export function GameCanvas({
       window.removeEventListener('resize', resize);
       fallbackInput?.destroy();
       loop?.stop();
+      if (diagnosticsFrame !== undefined) cancelAnimationFrame(diagnosticsFrame);
       void destroyHandle.destroy().catch((error) => {
         if (!destroyFailureReported) {
           destroyFailureReported = true;
@@ -218,9 +243,12 @@ export function GameCanvas({
         }
       });
     };
-  }, [createEngine, createPlugins, fixedFrameCapture, onError, onFixedFrameCapture, onReady, plugins, preventDefaultInput]);
+  }, [createEngine, createPlugins, fixedFrameCapture, onError, onFixedFrameCapture, onReady, plugins, preventDefaultInput, showDiagnostics]);
 
-  return <canvas ref={canvasRef} className={className} style={style} aria-label={ariaLabel} data-engine-state="created" />;
+  return <Fragment>
+    <canvas ref={canvasRef} className={className} style={style} aria-label={ariaLabel} data-engine-state="created" />
+    {showDiagnostics ? <output ref={diagnosticsRef} aria-live="off" style={DIAGNOSTICS_STYLE} /> : null}
+  </Fragment>;
 }
 
 export function normalizeFixedFrameCapture(options: FixedFrameCaptureOptions): Required<FixedFrameCaptureOptions> {
@@ -252,4 +280,27 @@ function describeError(error: unknown): string {
   }
   if (messages.length === 0) messages.push(String(error));
   return messages.join(': ');
+}
+
+const DIAGNOSTICS_STYLE: CSSProperties = {
+  position: 'absolute', top: 8, left: 8, zIndex: 20, pointerEvents: 'none',
+  whiteSpace: 'pre', padding: '6px 8px', borderRadius: 4,
+  color: '#d8f7ff', background: 'rgba(2, 10, 18, 0.82)',
+  font: '11px/1.35 ui-monospace, SFMono-Regular, Consolas, monospace',
+};
+
+function diagnosticText(snapshot: EngineDiagnosticsSnapshot): string {
+  const renderer = snapshot.renderer;
+  const uploads = (renderer?.bufferUploadBytes ?? 0) + (renderer?.textureUploadBytes ?? 0);
+  return [
+    `${snapshot.fps.toFixed(1)} fps  ${snapshot.frameCpuMs.toFixed(2)} ms CPU`,
+    `${renderer?.drawCalls ?? 0} draws  ${renderer?.points ?? 0} points`,
+    `${formatBytes(uploads)} uploads  ${formatBytes(renderer?.gpuResourceBytes ?? 0)} GPU`,
+  ].join('\n');
+}
+
+function formatBytes(value: number): string {
+  if (value < 1024) return `${value} B`;
+  if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KiB`;
+  return `${(value / (1024 * 1024)).toFixed(1)} MiB`;
 }

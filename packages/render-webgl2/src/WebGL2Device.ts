@@ -47,6 +47,16 @@ export interface WebGLImageTextureDescriptor extends Omit<WebGLTextureDescriptor
   readonly releaseSource?: () => void;
 }
 
+export interface WebGL2DeviceDiagnostics {
+  readonly textureCount: number;
+  readonly contextResourceCount: number;
+  readonly ownedContextResourceCount: number;
+  readonly estimatedTextureBytes: number;
+  readonly estimatedContextBytes: number;
+  readonly estimatedGpuBytes: number;
+  readonly contextGeneration: number;
+}
+
 export interface WebGLRgbaTextureDescriptor extends Omit<WebGLTextureDescriptor, 'width' | 'height' | 'format'> {
   readonly width: number;
   readonly height: number;
@@ -138,6 +148,23 @@ export class WebGL2Device {
 
   get contextRestorationError(): unknown {
     return this.restorationError;
+  }
+
+  diagnostics(): WebGL2DeviceDiagnostics {
+    const estimatedTextureBytes = [...this.resources].reduce((total, resource) => total + textureBytes(resource.descriptor), 0);
+    const context = this.contextResources.snapshot();
+    const estimatedContextBytes = context
+      .filter((resource) => !resource.id.startsWith('gl-game-lab.render-webgl2.texture.'))
+      .reduce((total, resource) => total + resource.estimatedBytes, 0);
+    return Object.freeze({
+      textureCount: this.resources.size,
+      contextResourceCount: context.length,
+      ownedContextResourceCount: context.filter((resource) => !resource.id.startsWith('gl-game-lab.render-webgl2.texture.')).length,
+      estimatedTextureBytes,
+      estimatedContextBytes,
+      estimatedGpuBytes: estimatedTextureBytes + estimatedContextBytes,
+      contextGeneration: this.contextGeneration,
+    });
   }
 
   registerContextResource(resource: ContextRestorableResource): () => void {
@@ -351,6 +378,7 @@ export class WebGL2Device {
     const unregister = this.contextResources.register({
       id: resourceId,
       priority: 0,
+      estimatedBytes: textureBytes(descriptor),
       restore: () => {
         if (!resource || resource.isDisposed) return;
         const restored = restoreAllocation();
@@ -395,4 +423,8 @@ function textureFilter(gl: WebGL2RenderingContext, filter: TextureFilter): numbe
 
 function textureWrap(gl: WebGL2RenderingContext, wrap: TextureWrap): number {
   return wrap === 'repeat' ? gl.REPEAT : gl.CLAMP_TO_EDGE;
+}
+
+function textureBytes(descriptor: NormalizedTextureDescriptor): number {
+  return descriptor.width * descriptor.height * (descriptor.format === 'rgba16f' ? 8 : 4);
 }

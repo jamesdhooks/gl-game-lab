@@ -59,10 +59,12 @@ class WebGLGpuFieldSystem implements GpuFieldSystem2D {
     id: string,
     options: GpuFieldSystem2DOptions,
     private readonly onDispose: () => void,
+    private readonly countDraw: (points?: number) => void,
   ) {
     this.owner = device.ownContextResource({
       id,
       priority: 50,
+      estimatedBytes: fieldBytes(options),
       create: () => createBundle(device.gl, options),
       dispose: disposeBundle,
       restored: () => { this.currentGeneration += 1; },
@@ -76,11 +78,13 @@ class WebGLGpuFieldSystem implements GpuFieldSystem2D {
   step(passId: string, uniforms: GpuUniforms2D | GpuUniformBinder2D = {}): void {
     const bundle = this.owner.value;
     requirePass(bundle, passId).step(bundle.state, (gl, uniform) => { applyBindings(gl, uniform, uniforms); });
+    this.countDraw();
   }
   render(passId: string, target: GpuRenderTarget2D, uniforms: GpuUniforms2D | GpuUniformBinder2D = {}): void {
     if (!(target instanceof WebGLGpuRenderTarget)) throw new Error('GPU target belongs to another backend');
     const bundle = this.owner.value;
     requirePass(bundle, passId).render(bundle.state, target.native, (gl, uniform) => { applyBindings(gl, uniform, uniforms); });
+    this.countDraw();
   }
   dispose(): void {
     if (this.disposed) return;
@@ -101,10 +105,13 @@ class WebGLGpuParticleSystem implements GpuParticleSystem2D {
     id: string,
     options: GpuParticleSystem2DOptions,
     private readonly onDispose: () => void,
+    private readonly countDraw: (points?: number) => void,
+    private readonly countUpload: (bytes: number) => void,
   ) {
     this.owner = device.ownContextResource({
       id,
       priority: 50,
+      estimatedBytes: particleBytes(options),
       create: () => createParticleBundle(device.gl, options),
       dispose: disposeParticleBundle,
       restored: (bundle) => {
@@ -128,22 +135,28 @@ class WebGLGpuParticleSystem implements GpuParticleSystem2D {
       ...(seed.velocities ? { velocities: seed.velocities.slice() } : {}),
     };
     this.owner.value.state.uploadSeed(this.retainedSeed);
+    this.countUpload(((seed.positions?.byteLength ?? 0) + (seed.velocities?.byteLength ?? 0)) * 2);
   }
   step(uniforms: GpuUniforms2D | GpuUniformBinder2D = {}): void {
     const bundle = this.owner.value;
     bundle.stepper.run(bundle.state, (gl, uniform) => { applyBindings(gl, uniform, uniforms); });
+    this.countDraw();
   }
   render(target: GpuRenderTarget2D, uniforms: GpuUniforms2D | GpuUniformBinder2D = {}): void {
     const native = requireTarget(target);
     const bundle = this.owner.value;
     bundle.points.render(bundle.state, native, (gl, uniform) => { applyBindings(gl, uniform, uniforms); });
+    this.countDraw(bundle.state.capacity);
   }
   beginTrails(width: number, height: number, fade: number): GpuRenderTarget2D {
     const trails = requireTrails(this.owner.value);
-    return new WebGLGpuRenderTarget(trails.beginFrame(width, height, fade));
+    const target = new WebGLGpuRenderTarget(trails.beginFrame(width, height, fade));
+    this.countDraw();
+    return target;
   }
   compositeTrails(target: GpuRenderTarget2D, background: readonly [number, number, number], bloom: number): void {
     requireTrails(this.owner.value).composite(requireTarget(target), background, bloom);
+    this.countDraw();
   }
   clearTrails(): void { this.owner.value.trails?.clear(); }
   dispose(): void {
@@ -160,6 +173,10 @@ export class WebGLGpu2DService implements Gpu2DService {
   private readonly particles = new Set<WebGLGpuParticleSystem>();
   private fieldId = 0;
   private particleId = 0;
+  private frameDrawCalls = 0;
+  private framePoints = 0;
+  private pendingUploadBytes = 0;
+  private pendingSubmissions = 0;
 
   constructor(private readonly device: WebGL2Device, private readonly queue: GpuRenderPassQueue) {}
 
@@ -172,6 +189,7 @@ export class WebGLGpu2DService implements Gpu2DService {
       `gl-game-lab.render-webgl2.field.${this.fieldId}.${normalized}`,
       options,
       () => { if (field) this.fields.delete(field); },
+      () => { this.frameDrawCalls += 1; },
     );
     this.fieldId += 1;
     this.fields.add(field);
@@ -187,6 +205,8 @@ export class WebGLGpu2DService implements Gpu2DService {
       `gl-game-lab.render-webgl2.particles.${this.particleId}.${normalized}`,
       options,
       () => { if (particles) this.particles.delete(particles); },
+      (points = 0) => { this.frameDrawCalls += 1; this.framePoints += points; },
+      (bytes) => { this.pendingUploadBytes += bytes; },
     );
     this.particleId += 1;
     this.particles.add(particles);
@@ -194,11 +214,20 @@ export class WebGLGpu2DService implements Gpu2DService {
   }
 
   submit(id: string, execute: (target: GpuRenderTarget2D) => void): void {
+    this.pendingSubmissions += 1;
     const pass: GpuFrameRenderPass = {
       id,
       execute: (destination) => { execute(new WebGLGpuRenderTarget(destination)); },
     };
     this.queue.submit(pass);
+  }
+
+  beginFrameDiagnostics(): void { this.frameDrawCalls = 0; this.framePoints = 0; }
+  diagnostics(): { readonly drawCalls: number; readonly points: number; readonly uploadBytes: number; readonly submissions: number } {
+    const snapshot = Object.freeze({ drawCalls: this.frameDrawCalls, points: this.framePoints, uploadBytes: this.pendingUploadBytes, submissions: this.pendingSubmissions });
+    this.pendingUploadBytes = 0;
+    this.pendingSubmissions = 0;
+    return snapshot;
   }
 
   destroy(): void {
@@ -313,4 +342,14 @@ function applyBindings(
 
 function nativeLocation(location: GpuUniformLocation2D, uniform: (name: string) => WebGLUniformLocation | null): WebGLUniformLocation | null {
   return uniform(location.name);
+}
+
+function fieldBytes(options: GpuFieldSystem2DOptions): number {
+  return options.width * options.height * (options.precision === 'float' ? 16 : 8) * 2;
+}
+
+function particleBytes(options: GpuParticleSystem2DOptions): number {
+  const width = options.width ?? Math.ceil(Math.sqrt(options.capacity));
+  const height = options.height ?? Math.ceil(options.capacity / width);
+  return width * height * (options.precision === 'half-float' ? 8 : 16) * 4;
 }

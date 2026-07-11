@@ -91,6 +91,7 @@ export {
   type SystemAccess,
   type SystemContext,
   type SystemDefinition,
+  type SystemProfiler,
 } from './kernel/Schedule.js';
 export { ScheduleRunner, type ScheduleRunnerState } from './kernel/ScheduleRunner.js';
 export {

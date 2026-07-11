@@ -2,6 +2,7 @@ import { createExtensionToken, type EnginePlugin } from '@hooksjam/gl-game-lab-c
 import {
   EngineRender2D,
   EngineGpu2D,
+  EngineDiagnosticsService,
   EngineRenderer,
   EngineSchedule,
   EngineWorld,
@@ -26,6 +27,7 @@ import {
   type FluidStep2DOptions,
   type Text2DDraw,
   type Texture2DHandle,
+  type RendererDiagnostics,
 } from '@hooksjam/gl-game-lab-engine';
 import {
   SpriteRenderer,
@@ -34,9 +36,10 @@ import {
   type SpriteCamera2D,
   type SpriteInstance,
   type SpriteTexture,
+  type SpriteDrawPlan,
 } from './SpriteRenderer.js';
 import { WebGL2Device, type WebGL2DeviceOptions, type WebGLTextureResource } from './WebGL2Device.js';
-import { ParticlePointRenderer, ParticlePointRenderQueue } from './ParticlePointRenderer.js';
+import { ParticlePointRenderer, ParticlePointRenderQueue, type ParticlePointDrawPlan } from './ParticlePointRenderer.js';
 import {
   BloomPostProcess,
   normalizeBloomOptions,
@@ -129,10 +132,18 @@ class WebGLFluidField2D implements FluidField2D {
   private readonly velocityTexture: WebGLGpuTexture2D;
   private readonly dyeTexture: WebGLGpuTexture2D;
 
-  constructor(device: WebGL2Device, id: string, width: number, height: number, private readonly onDispose: () => void) {
+  constructor(
+    device: WebGL2Device,
+    id: string,
+    width: number,
+    height: number,
+    private readonly onDispose: () => void,
+    private readonly recordWork: (drawCalls: number, uploadBytes?: number) => void,
+  ) {
     this.owner = device.ownContextResource({
       id,
       priority: 50,
+      estimatedBytes: width * height * 8 * 8,
       create: () => new StableFluidField2D(device.gl, { width, height }),
       dispose: (field) => { field.dispose(); },
       restored: (field) => {
@@ -146,19 +157,24 @@ class WebGLFluidField2D implements FluidField2D {
 
   get width(): number { return this.owner.value.width; }
   get height(): number { return this.owner.value.height; }
-  step(options: FluidStep2DOptions, splats: readonly FluidSplat2D[] = []): void { this.owner.value.step(options, splats); }
+  step(options: FluidStep2DOptions, splats: readonly FluidSplat2D[] = []): void {
+    this.owner.value.step(options, splats);
+    this.recordWork(5 + Math.max(1, Math.min(48, Math.floor(options.pressureIterations))) + splats.length * 2);
+  }
   seed(kind: 'blank' | 'random' | 'voronoi' | 'cloud', seed: number): void {
     this.lastSeed = { kind, seed };
     this.dyeRgba = undefined;
     this.owner.value.seed(kind, seed);
+    if (kind !== 'blank') this.recordWork(1);
   }
   uploadDyeRgba(values: Float32Array): void {
     this.dyeRgba = values.slice();
     this.owner.value.uploadDyeRgba(this.dyeRgba);
+    this.recordWork(0, this.dyeRgba.byteLength * 2);
   }
   texture(channel: 'velocity' | 'dye'): WebGLGpuTexture2D { return channel === 'velocity' ? this.velocityTexture : this.dyeTexture; }
   clear(): void { this.owner.value.clear(); }
-  render(destination: GpuParticleRenderDestination, display: FluidDisplay2DOptions): void { this.owner.value.render(destination, display); }
+  render(destination: GpuParticleRenderDestination, display: FluidDisplay2DOptions): void { this.owner.value.render(destination, display); this.recordWork(1); }
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
@@ -196,6 +212,12 @@ export class WebGL2Renderer implements RenderBackend, Render2DService {
   private readonly fonts2D = new Map<string, ManagedBitmapFont2D>();
   private readonly fluidFields = new Set<WebGLFluidField2D>();
   private fluidFieldId = 0;
+  private pendingBufferUploadBytes = 0;
+  private pendingTextureUploadBytes = 0;
+  private pendingGpuDrawCalls = 0;
+  private renderedSpritePlan: SpriteDrawPlan | undefined;
+  private renderedParticlePlan: ParticlePointDrawPlan | undefined;
+  private lastFrameDiagnostics: RendererDiagnostics | undefined;
   private destroyed = false;
 
   get state(): RenderBackendState {
@@ -250,10 +272,14 @@ export class WebGL2Renderer implements RenderBackend, Render2DService {
       },
       effects: ({ target }) => { this.effectRenderer.render(this.effects.snapshot(), target); },
       particles: ({ target }) => {
-        this.particleRenderer.render(this.particles.buildPlan(), this.sprites.activeCamera, target);
+        const plan = this.particles.buildPlan();
+        this.renderedParticlePlan = plan;
+        this.particleRenderer.render(plan, this.sprites.activeCamera, target);
       },
       sprites: ({ target }) => {
-        this.spriteRenderer.render(this.sprites.buildPlan(), this.sprites.activeCamera, target);
+        const plan = this.sprites.buildPlan();
+        this.renderedSpritePlan = plan;
+        this.spriteRenderer.render(plan, this.sprites.activeCamera, target);
       },
       composite: ({ composite }) => { if (composite) this.bloom.composite(); },
     });
@@ -321,6 +347,8 @@ export class WebGL2Renderer implements RenderBackend, Render2DService {
     return this.framePipeline.snapshot();
   }
 
+  get diagnosticsSnapshot(): RendererDiagnostics | undefined { return this.lastFrameDiagnostics; }
+
   get width(): number {
     return this.device.canvas.width;
   }
@@ -347,6 +375,7 @@ export class WebGL2Renderer implements RenderBackend, Render2DService {
     if (normalizedId.length === 0) throw new Error('2D texture id cannot be empty');
     if (this.textures2D.has(normalizedId)) throw new Error(`2D texture id is already registered: ${normalizedId}`);
     const resource = this.device.createTextureFromRgbaPixels(pixels, { width, height });
+    this.pendingTextureUploadBytes += pixels.byteLength;
     const handle = Object.freeze({ id: normalizedId, width, height });
     const spriteTexture: SpriteTexture = {
       id: normalizedId,
@@ -442,6 +471,7 @@ export class WebGL2Renderer implements RenderBackend, Render2DService {
   }
 
   submitSegments(batch: SegmentBatch2D): void {
+    this.pendingBufferUploadBytes += batch.segments.byteLength + batch.styles.byteLength;
     this.gpuPasses.submit({
       id: batch.id,
       execute: (destination) => {
@@ -452,6 +482,7 @@ export class WebGL2Renderer implements RenderBackend, Render2DService {
   }
 
   submitTriangleMesh(batch: TriangleMeshBatch2D): void {
+    this.pendingBufferUploadBytes += batch.positions.byteLength + batch.colorSeeds.byteLength;
     this.gpuPasses.submit({
       id: batch.id,
       execute: (destination) => {
@@ -462,6 +493,7 @@ export class WebGL2Renderer implements RenderBackend, Render2DService {
   }
 
   submitMetaballs(batch: MetaballBatch2D): void {
+    this.pendingBufferUploadBytes += batch.positions.byteLength + batch.radii.byteLength + batch.temperatures.byteLength;
     this.gpuPasses.submit({
       id: batch.id,
       execute: (destination) => {
@@ -490,6 +522,7 @@ export class WebGL2Renderer implements RenderBackend, Render2DService {
       width,
       height,
       () => { if (field) this.fluidFields.delete(field); },
+      (drawCalls, uploadBytes = 0) => { this.pendingGpuDrawCalls += drawCalls; this.pendingBufferUploadBytes += uploadBytes; },
     );
     this.fluidFieldId += 1;
     this.fluidFields.add(field);
@@ -512,9 +545,32 @@ export class WebGL2Renderer implements RenderBackend, Render2DService {
   render(): void {
     this.assertUsable();
     if (this.state === 'context-lost') return;
+    this.renderedSpritePlan = undefined;
+    this.renderedParticlePlan = undefined;
+    this.gpu2D.beginFrameDiagnostics();
     const scene = this.bloom.sceneTarget;
     const target = scene ? { resource: scene } : undefined;
     this.framePipeline.execute({ ...(target ? { target } : {}), composite: scene !== undefined });
+    const sprites = this.renderedSpritePlan ?? buildSpriteDrawPlan([], this.sprites.activeCamera);
+    const particles = this.renderedParticlePlan ?? this.particles.buildPlan();
+    const gpu = this.gpu2D.diagnostics();
+    const device = this.device.diagnostics();
+    const bloom = this.bloom.stats;
+    const rawGpuPasses = Math.max(0, this.gpuPasses.count - gpu.submissions);
+    this.lastFrameDiagnostics = Object.freeze({
+      backend: this.id,
+      drawCalls: sprites.batches.length + particles.drawCalls + this.effects.count + gpu.drawCalls + this.pendingGpuDrawCalls + rawGpuPasses + (this.backdropOptions ? 1 : 0) + bloom.passes,
+      points: particles.particleCount + gpu.points,
+      triangles: sprites.spriteCount * 2 + this.effects.count + rawGpuPasses + (this.backdropOptions ? 1 : 0) + bloom.passes,
+      bufferUploadBytes: this.pendingBufferUploadBytes + sprites.spriteCount * 15 * Float32Array.BYTES_PER_ELEMENT + particles.particleCount * 4 * Float32Array.BYTES_PER_ELEMENT + gpu.uploadBytes,
+      textureUploadBytes: this.pendingTextureUploadBytes,
+      gpuResourceCount: device.textureCount + device.ownedContextResourceCount,
+      gpuResourceBytes: device.estimatedGpuBytes,
+      renderPasses: this.framePipeline.snapshot().passes,
+    });
+    this.pendingBufferUploadBytes = 0;
+    this.pendingTextureUploadBytes = 0;
+    this.pendingGpuDrawCalls = 0;
   }
 
   destroy(): void {
@@ -599,6 +655,7 @@ export function createWebGL2RendererPlugin(
     version: '1.0.0',
     dependencies: [{ id: 'gl-game-lab.runtime' }],
     install: (context) => {
+      const diagnostics = context.get(EngineDiagnosticsService);
       context.provide(EngineRender2D, renderer);
       context.provide(EngineGpu2D, renderer.gpu2D);
       context.provide(EngineRenderer, renderer);
@@ -621,6 +678,7 @@ export function createWebGL2RendererPlugin(
         id: 'gl-game-lab.render-webgl2.clear-sprites',
         stage: 'postRender',
         run: () => {
+          if (renderer.diagnosticsSnapshot) diagnostics.reportRenderer(renderer.diagnosticsSnapshot);
           renderer.sprites.clear();
           renderer.particles.clear();
           renderer.effects.clear();

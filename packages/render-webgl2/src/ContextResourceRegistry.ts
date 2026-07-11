@@ -1,6 +1,7 @@
 export interface ContextRestorableResource {
   readonly id: string;
   readonly priority?: number;
+  readonly estimatedBytes?: number | (() => number);
   invalidate?(): void;
   restore(): void;
 }
@@ -59,10 +60,11 @@ export class ContextResourceRegistry {
     this.currentGeneration += 1;
   }
 
-  snapshot(): readonly { readonly id: string; readonly priority: number }[] {
+  snapshot(): readonly { readonly id: string; readonly priority: number; readonly estimatedBytes: number }[] {
     return Object.freeze(this.orderedEntries().map(({ resource }) => Object.freeze({
       id: resource.id,
       priority: resource.priority ?? 0,
+      estimatedBytes: estimatedBytes(resource.estimatedBytes),
     })));
   }
 
@@ -76,6 +78,11 @@ export class ContextResourceRegistry {
       || left.order - right.order,
     );
   }
+}
+
+function estimatedBytes(value: ContextRestorableResource['estimatedBytes']): number {
+  const resolved = typeof value === 'function' ? value() : value ?? 0;
+  return Number.isSafeInteger(resolved) && resolved >= 0 ? resolved : 0;
 }
 
 function contextFailures(message: string, failures: readonly unknown[]): unknown {

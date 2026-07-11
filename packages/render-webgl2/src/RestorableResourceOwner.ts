@@ -3,6 +3,7 @@ import type { ContextResourceRegistry } from './ContextResourceRegistry.js';
 export interface RestorableResourceDescriptor<T> {
   readonly id: string;
   readonly priority?: number;
+  readonly estimatedBytes?: number | (() => number);
   readonly create: () => T;
   readonly dispose: (resource: T) => void;
   readonly invalidate?: (resource: T) => void;
@@ -24,6 +25,7 @@ export class RestorableResourceOwner<T> {
       this.unregister = registry.register({
         id: descriptor.id,
         ...(descriptor.priority === undefined ? {} : { priority: descriptor.priority }),
+        ...(descriptor.estimatedBytes === undefined ? {} : { estimatedBytes: descriptor.estimatedBytes }),
         invalidate: () => {
           if (!this.disposed) descriptor.invalidate?.(this.current);
         },

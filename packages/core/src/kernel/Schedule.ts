@@ -41,6 +41,10 @@ export interface SystemDefinition {
   readonly run: (context: SystemContext) => void;
 }
 
+export interface SystemProfiler {
+  measure(systemId: string, stage: string, run: () => void): void;
+}
+
 interface RegisteredSystem {
   readonly definition: SystemDefinition;
   readonly registrationOrder: number;
@@ -67,6 +71,12 @@ export class Schedule {
   private registrationOrder = 0;
   private dirty = true;
   private runningStage: string | undefined;
+  private profiler: SystemProfiler | undefined;
+
+  setProfiler(profiler: SystemProfiler | undefined): void {
+    this.assertNotRunning();
+    this.profiler = profiler;
+  }
 
   get stageIds(): readonly string[] {
     return this.stages;
@@ -130,7 +140,11 @@ export class Schedule {
     this.runningStage = stage;
     try {
       world.withStructuralChangesDeferred(() => {
-        for (const system of systems) system.run({ world, commands, time, stage });
+        for (const system of systems) {
+          const run = (): void => { system.run({ world, commands, time, stage }); };
+          if (this.profiler) this.profiler.measure(system.id, stage, run);
+          else run();
+        }
       });
       commands.apply(world);
     } catch (error) {
