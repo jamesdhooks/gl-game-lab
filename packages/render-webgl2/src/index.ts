@@ -1,4 +1,10 @@
 export {
+  FullscreenEffectRenderer,
+  FullscreenEffectRenderQueue,
+  type FullscreenEffect,
+  type FullscreenUniform,
+} from './FullscreenEffectRenderer.js';
+export {
   PaletteBackdropRenderer,
   normalizePaletteBackdropOptions,
   type NormalizedPaletteBackdropOptions,
@@ -56,6 +62,7 @@ export {
 export {
   WEBGL2_RENDERER_PLUGIN_ID,
   ParticlePointRenderQueueService,
+  FullscreenEffectRenderQueueService,
   SpriteRenderQueue,
   SpriteRenderQueueService,
   WebGL2Renderer,
