@@ -38,7 +38,7 @@ const DEFAULT_BLOOM: NormalizedBloomOptions = Object.freeze({
 export function normalizeBloomOptions(options: BloomOptions = {}): NormalizedBloomOptions {
   const threshold = finiteRange(options.threshold ?? DEFAULT_BLOOM.threshold, 0, 1, 'Bloom threshold');
   const intensity = finiteRange(options.intensity ?? DEFAULT_BLOOM.intensity, 0, 8, 'Bloom intensity');
-  const radius = finiteRange(options.radius ?? DEFAULT_BLOOM.radius, 0.25, 4, 'Bloom radius');
+  const radius = finiteRange(options.radius ?? DEFAULT_BLOOM.radius, 0.25, 16, 'Bloom radius');
   const resolutionScale = finiteRange(options.resolutionScale ?? DEFAULT_BLOOM.resolutionScale, 0.125, 1, 'Bloom resolution scale');
   const iterations = options.iterations ?? DEFAULT_BLOOM.iterations;
   if (!Number.isSafeInteger(iterations) || iterations < 1 || iterations > 12) {

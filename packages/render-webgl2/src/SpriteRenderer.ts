@@ -120,6 +120,8 @@ export class SpriteRenderer {
   private readonly viewportLocation: WebGLUniformLocation;
   private readonly textureLocation: WebGLUniformLocation;
   private disposed = false;
+  private instanceData = new Float32Array(0);
+  private allocatedBytes = 0;
 
   constructor(private readonly device: WebGL2Device) {
     this.gl = device.gl;
@@ -148,7 +150,7 @@ export class SpriteRenderer {
     for (const batch of plan.batches) {
       configureBlend(gl, batch.blend);
       gl.bindTexture(gl.TEXTURE_2D, batch.texture.texture);
-      const data = packSprites(batch.sprites);
+      const data = this.packSprites(batch.sprites);
       gl.bindBuffer(gl.ARRAY_BUFFER, this.instanceBuffer);
       gl.bufferData(gl.ARRAY_BUFFER, data, gl.DYNAMIC_DRAW);
       gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, batch.sprites.length);
@@ -165,6 +167,24 @@ export class SpriteRenderer {
     this.gl.deleteBuffer(this.instanceBuffer);
     this.gl.deleteVertexArray(this.vao);
     this.gl.deleteProgram(this.program);
+  }
+
+  consumeAllocatedBytes(): number {
+    const bytes = this.allocatedBytes;
+    this.allocatedBytes = 0;
+    return bytes;
+  }
+
+  private packSprites(sprites: readonly SpriteInstance[]): Float32Array {
+    const length = sprites.length * INSTANCE_FLOATS;
+    if (this.instanceData.length < length) {
+      let capacity = Math.max(INSTANCE_FLOATS, this.instanceData.length);
+      while (capacity < length) capacity *= 2;
+      this.instanceData = new Float32Array(capacity);
+      this.allocatedBytes += this.instanceData.byteLength;
+    }
+    packSpritesInto(sprites, this.instanceData);
+    return this.instanceData.subarray(0, length);
   }
 
   private configureGeometry(): void {
@@ -198,8 +218,7 @@ export class SpriteRenderer {
   }
 }
 
-function packSprites(sprites: readonly SpriteInstance[]): Float32Array {
-  const data = new Float32Array(sprites.length * INSTANCE_FLOATS);
+function packSpritesInto(sprites: readonly SpriteInstance[], data: Float32Array): void {
   let offset = 0;
   for (const sprite of sprites) {
     const tint = sprite.tint ?? [1, 1, 1, 1];
@@ -217,7 +236,6 @@ function packSprites(sprites: readonly SpriteInstance[]): Float32Array {
     ], offset);
     offset += INSTANCE_FLOATS;
   }
-  return data;
 }
 
 function isSpriteVisible(sprite: SpriteInstance, camera: SpriteCamera2D): boolean {

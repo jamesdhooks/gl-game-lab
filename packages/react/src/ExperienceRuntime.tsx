@@ -31,6 +31,7 @@ export interface ExperienceRuntimeProps {
   readonly seed?: number;
   readonly fixedFrameCapture?: FixedFrameCaptureOptions;
   readonly onFixedFrameCapture?: (result: FixedFrameCaptureResult) => void;
+  readonly showDiagnostics?: boolean;
 }
 
 export function ExperienceRuntime({
@@ -46,6 +47,7 @@ export function ExperienceRuntime({
   seed,
   fixedFrameCapture,
   onFixedFrameCapture,
+  showDiagnostics = false,
 }: ExperienceRuntimeProps): JSX.Element {
   const defaultModeId = initialModeId ?? definition.modes?.[0]?.id ?? 'default';
   const defaultStyleId = initialStyleId ?? definition.styleManifest?.defaultStyleId ?? 'default';
@@ -167,6 +169,7 @@ export function ExperienceRuntime({
           createPlugins={createPlugins}
           ariaLabel={`${definition.name} game canvas`}
           onReady={handleReady}
+          showDiagnostics={showDiagnostics}
           {...(fixedFrameCapture ? { fixedFrameCapture } : {})}
           {...(onFixedFrameCapture ? { onFixedFrameCapture } : {})}
           {...(canvasClassName ? { className: canvasClassName } : {})}

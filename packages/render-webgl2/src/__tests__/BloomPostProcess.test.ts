@@ -31,6 +31,10 @@ describe('normalizeBloomOptions', () => {
     });
   });
 
+  it('supports wide-kernel bloom used by liquid surfaces', () => {
+    expect(normalizeBloomOptions({ enabled: true, radius: 8 }).radius).toBe(8);
+  });
+
   it.each([
     [{ threshold: -0.1 }, 'Bloom threshold'],
     [{ intensity: 9 }, 'Bloom intensity'],

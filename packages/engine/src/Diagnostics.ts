@@ -16,6 +16,7 @@ export interface RendererDiagnostics {
   readonly triangles: number;
   readonly bufferUploadBytes: number;
   readonly textureUploadBytes: number;
+  readonly transientAllocationBytes: number;
   readonly gpuResourceCount: number;
   readonly gpuResourceBytes: number;
   readonly renderPasses: readonly string[];
@@ -38,6 +39,7 @@ export interface PerformanceBudget {
   readonly maxDrawCalls: number;
   readonly maxUploadBytesPerFrame: number;
   readonly maxGpuResourceBytes: number;
+  readonly maxTransientAllocationBytes: number;
 }
 
 export interface PerformanceBudgetResult {
@@ -49,8 +51,8 @@ export interface PerformanceBudgetResult {
 }
 
 export const DEFAULT_PERFORMANCE_BUDGETS: Readonly<Record<PerformanceTier, PerformanceBudget>> = Object.freeze({
-  desktop: Object.freeze({ minimumSamples: 120, p95FrameMs: 16.67, maxDrawCalls: 64, maxUploadBytesPerFrame: 32 * 1024 * 1024, maxGpuResourceBytes: 512 * 1024 * 1024 }),
-  mobile: Object.freeze({ minimumSamples: 120, p95FrameMs: 33.34, maxDrawCalls: 48, maxUploadBytesPerFrame: 12 * 1024 * 1024, maxGpuResourceBytes: 256 * 1024 * 1024 }),
+  desktop: Object.freeze({ minimumSamples: 120, p95FrameMs: 16.67, maxDrawCalls: 64, maxUploadBytesPerFrame: 32 * 1024 * 1024, maxGpuResourceBytes: 512 * 1024 * 1024, maxTransientAllocationBytes: 2 * 1024 * 1024 }),
+  mobile: Object.freeze({ minimumSamples: 120, p95FrameMs: 33.34, maxDrawCalls: 48, maxUploadBytesPerFrame: 12 * 1024 * 1024, maxGpuResourceBytes: 256 * 1024 * 1024, maxTransientAllocationBytes: 1024 * 1024 }),
 });
 
 interface MutableSystemTiming { id: string; stage: string; calls: number; cpuMs: number }
@@ -124,6 +126,7 @@ export class EngineDiagnostics implements SystemProfiler {
     if (renderer && renderer.drawCalls > budget.maxDrawCalls) violations.push(`draw calls ${renderer.drawCalls} exceed ${budget.maxDrawCalls}`);
     if (renderer && renderer.bufferUploadBytes + renderer.textureUploadBytes > budget.maxUploadBytesPerFrame) violations.push('per-frame uploads exceed budget');
     if (renderer && renderer.gpuResourceBytes > budget.maxGpuResourceBytes) violations.push('GPU resources exceed budget');
+    if (renderer && renderer.transientAllocationBytes > budget.maxTransientAllocationBytes) violations.push('tracked transient allocations exceed budget');
     return Object.freeze({ tier, samples: this.frameDurations.length, p95FrameMs: p95, passed: violations.length === 0, violations: Object.freeze(violations) });
   }
 }

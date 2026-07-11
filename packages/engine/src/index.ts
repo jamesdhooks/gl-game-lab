@@ -6,6 +6,7 @@ export {
 export {
   EngineAssets,
   EngineDiagnosticsService,
+  EngineQuality,
   EngineAccessibility,
   EngineAudio,
   EngineEvents,
@@ -48,6 +49,7 @@ export {
   type RendererDiagnostics,
   type SystemTimingSample,
 } from './Diagnostics.js';
+export { AdaptiveQualityService, type QualitySnapshot } from './Quality.js';
 export {
   Camera2DComponent,
   DEFAULT_FONT_2D_ID,

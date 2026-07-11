@@ -12,6 +12,7 @@ export {
   BALL_PIT_DEFAULTS,
   BALL_PIT_SETTINGS,
   ballPitConfigForProfile,
+  ballPitConfigForQuality,
   createBallPitConfig,
   type BallPitConfig,
   type BallPitMode,

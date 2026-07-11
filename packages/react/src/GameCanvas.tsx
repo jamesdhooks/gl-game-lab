@@ -3,6 +3,7 @@ import type { EnginePlugin, InputEvent } from '@hooksjam/gl-game-lab-core';
 import {
   EngineRenderer,
   EngineAccessibility,
+  EngineQuality,
   ExperienceRuntimeControllerService,
   GameEngine,
   type EngineDiagnosticsSnapshot,
@@ -125,6 +126,11 @@ export function GameCanvas({
         Math.max(1, bounds.height),
         fixedFrameCapture ? 1 : window.devicePixelRatio || 1,
       );
+      engine.kernel.get(EngineQuality).configureViewport(
+        Math.max(1, bounds.width),
+        Math.max(1, bounds.height),
+        fixedFrameCapture ? 1 : window.devicePixelRatio || 1,
+      );
     };
     const observer = typeof ResizeObserver === 'undefined' ? undefined : new ResizeObserver(resize);
     observer?.observe(canvas);
@@ -191,6 +197,9 @@ export function GameCanvas({
           canvas.dataset.captureDrawCalls = String(result.diagnostics.renderer?.drawCalls ?? 0);
           canvas.dataset.captureUploadBytes = String((result.diagnostics.renderer?.bufferUploadBytes ?? 0) + (result.diagnostics.renderer?.textureUploadBytes ?? 0));
           canvas.dataset.captureGpuBytes = String(result.diagnostics.renderer?.gpuResourceBytes ?? 0);
+          canvas.dataset.captureDesktopBudget = String(result.budgets.find((budget) => budget.tier === 'desktop')?.passed ?? false);
+          canvas.dataset.captureMobileBudget = String(result.budgets.find((budget) => budget.tier === 'mobile')?.passed ?? false);
+          canvas.dataset.captureDiagnostics = engine.diagnostics.capture();
           if (result.entityCount !== undefined) canvas.dataset.captureEntityCount = String(result.entityCount);
           canvas.dataset.engineState = 'capture-ready';
           onFixedFrameCapture?.(result);
@@ -296,6 +305,7 @@ function diagnosticText(snapshot: EngineDiagnosticsSnapshot): string {
     `${snapshot.fps.toFixed(1)} fps  ${snapshot.frameCpuMs.toFixed(2)} ms CPU`,
     `${renderer?.drawCalls ?? 0} draws  ${renderer?.points ?? 0} points`,
     `${formatBytes(uploads)} uploads  ${formatBytes(renderer?.gpuResourceBytes ?? 0)} GPU`,
+    `${formatBytes(renderer?.transientAllocationBytes ?? 0)} tracked alloc`,
   ].join('\n');
 }
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { EngineDiagnostics } from '../index.js';
+import { AdaptiveQualityService, EngineDiagnostics } from '../index.js';
 
 const EMPTY_ASSETS = Object.freeze({
   records: 0, ready: 0, references: 0, byteLength: 0,
@@ -7,6 +7,12 @@ const EMPTY_ASSETS = Object.freeze({
 });
 
 describe('EngineDiagnostics', () => {
+  it('selects stable recommended desktop and mobile quality tiers', () => {
+    const quality = new AdaptiveQualityService();
+    expect(quality.configureViewport(1280, 720)).toMatchObject({ tier: 'desktop', targetFps: 60 });
+    expect(quality.configureViewport(390, 844, 2)).toMatchObject({ tier: 'mobile', targetFps: 30, particleScale: 0.4 });
+    expect(() => quality.configureViewport(0, 720)).toThrow('positive');
+  });
   it('captures system timings and exports machine-readable frame state', () => {
     let now = 0;
     const diagnostics = new EngineDiagnostics(() => now, 8);
@@ -15,6 +21,7 @@ describe('EngineDiagnostics', () => {
     diagnostics.reportRenderer({
       backend: 'test', drawCalls: 3, points: 12, triangles: 8,
       bufferUploadBytes: 128, textureUploadBytes: 0,
+      transientAllocationBytes: 0,
       gpuResourceCount: 2, gpuResourceBytes: 1024, renderPasses: ['frame.render'],
     });
     now += 6;
@@ -33,6 +40,7 @@ describe('EngineDiagnostics', () => {
       diagnostics.reportRenderer({
         backend: 'test', drawCalls: 4, points: 0, triangles: 2,
         bufferUploadBytes: 64, textureUploadBytes: 0,
+        transientAllocationBytes: 0,
         gpuResourceCount: 1, gpuResourceBytes: 512, renderPasses: [],
       });
       now += 8;

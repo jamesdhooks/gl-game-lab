@@ -22,6 +22,7 @@ import {
   GAME_REGISTRY,
   ballPitDefinition,
   ballPitConfigForProfile,
+  ballPitConfigForQuality,
   createBallPitConfig,
 } from '../index.js';
 
@@ -93,6 +94,13 @@ describe('Ball Pit experience', () => {
       solverPasses: 2,
       substeps: 1,
       gravity: 1050,
+    });
+    expect(ballPitConfigForQuality(BALL_PIT_DEFAULTS, 'mobile', 'demo')).toMatchObject({
+      maxParticles: 2048,
+      spawnRate: 240,
+      solverPasses: 2,
+      substeps: 1,
+      burstCount: 1500,
     });
     expect(() => createBallPitConfig({ radius: 100 })).toThrow('outside its supported range');
   });

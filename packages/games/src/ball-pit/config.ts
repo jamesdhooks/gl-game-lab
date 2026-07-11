@@ -1,4 +1,4 @@
-import type { ExperienceSetting, ExperienceSettingValue } from '@hooksjam/gl-game-lab-engine';
+import type { ExperienceSetting, ExperienceSettingValue, PerformanceTier } from '@hooksjam/gl-game-lab-engine';
 
 export type BallPitMode = 'single' | 'stream' | 'interact' | 'explosion';
 
@@ -112,6 +112,18 @@ export function ballPitConfigForProfile(config: BallPitConfig, profile: 'play' |
     friction: 0.72,
     collisionSoftness: 1.05,
     impactBounceThreshold: 150,
+  });
+}
+
+export function ballPitConfigForQuality(config: BallPitConfig, tier: PerformanceTier, profile: 'play' | 'preview' | 'demo' = 'play'): BallPitConfig {
+  if (tier !== 'mobile' || profile === 'preview') return config;
+  return Object.freeze({
+    ...config,
+    maxParticles: Math.min(config.maxParticles, 2_048),
+    spawnRate: Math.min(config.spawnRate, 240),
+    solverPasses: Math.min(config.solverPasses, 2),
+    substeps: 1,
+    burstCount: Math.min(config.burstCount, 1_500),
   });
 }
 

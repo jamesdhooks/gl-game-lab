@@ -1,6 +1,7 @@
 import { createExtensionToken, type EnginePlugin, type PointerInputEvent } from '@hooksjam/gl-game-lab-core';
 import {
   EngineInput,
+  EngineQuality,
   EngineRender2D,
   EngineSchedule,
   ExperienceRuntimeControllerService,
@@ -16,6 +17,7 @@ import {
 import {
   BALL_PIT_DEFAULTS,
   ballPitConfigForProfile,
+  ballPitConfigForQuality,
   createBallPitConfig,
   type BallPitConfig,
   type BallPitMode,
@@ -42,7 +44,9 @@ export function createBallPitPlugin(
   launch: ExperienceLaunchOptions = {},
 ): EnginePlugin {
   let requestedConfig = config;
-  let currentConfig = ballPitConfigForProfile(requestedConfig, launch.profile);
+  let profileConfig = ballPitConfigForProfile(requestedConfig, launch.profile);
+  let currentConfig = profileConfig;
+  let appliedTier: 'desktop' | 'mobile' = 'desktop';
   let mode = validMode(launch.modeId) ?? 'single';
   let styleId = validStyleId(launch.styleId) ?? BALL_PIT_STYLE_MANIFEST.defaultStyleId;
   let spawnAccumulator = 0;
@@ -61,6 +65,7 @@ export function createBallPitPlugin(
       const world = context.get(DenseCircleParticleWorld2DService);
       const renderer = context.get(EngineRender2D);
       const input = context.get(EngineInput);
+      const quality = context.get(EngineQuality);
       applyStyle(renderer, styleId);
       configureWorld(world, currentConfig);
       const controller: BallPitController = {
@@ -85,8 +90,8 @@ export function createBallPitPlugin(
         },
         setSetting: (key, value) => {
           requestedConfig = createBallPitConfig({ ...configRecord(requestedConfig), [key]: value });
-          currentConfig = ballPitConfigForProfile(requestedConfig, launch.profile);
-          configureWorld(world, currentConfig);
+          profileConfig = ballPitConfigForProfile(requestedConfig, launch.profile);
+          applyQuality(true);
         },
         reset: () => {
           world.clear(normalizeSeed(launch.seed));
@@ -102,6 +107,7 @@ export function createBallPitPlugin(
         id: 'gl-game-lab.games.ball-pit.input',
         stage: 'update',
         run: ({ time }) => {
+          applyQuality(false);
           elapsedSeconds += time.deltaSeconds;
           const width = renderer.viewport.width;
           const height = renderer.viewport.height;
@@ -117,6 +123,12 @@ export function createBallPitPlugin(
           }
         },
       });
+      function applyQuality(force: boolean): void {
+        if (!force && appliedTier === quality.tier) return;
+        appliedTier = quality.tier;
+        currentConfig = ballPitConfigForQuality(profileConfig, appliedTier, launch.profile);
+        configureWorld(world, currentConfig);
+      }
       context.get(EngineSchedule).addSystem({
         id: 'gl-game-lab.games.ball-pit.render',
         stage: 'renderExtract',

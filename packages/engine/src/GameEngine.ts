@@ -17,6 +17,7 @@ import {
 import {
   EngineAssets,
   EngineDiagnosticsService,
+  EngineQuality,
   EngineEvents,
   EngineHierarchy,
   EngineInput,
@@ -30,6 +31,7 @@ import {
 import { InputSourceRegistry } from './InputSourceRegistry.js';
 import { advanceSpriteAnimations } from './Render2D.js';
 import { EngineDiagnostics } from './Diagnostics.js';
+import { AdaptiveQualityService } from './Quality.js';
 
 export const GAME_ENGINE_RUNTIME_PLUGIN_ID = 'gl-game-lab.runtime';
 
@@ -47,6 +49,7 @@ export class GameEngine {
   readonly inputSources = new InputSourceRegistry();
   readonly assets: AssetManager;
   readonly diagnostics = new EngineDiagnostics();
+  readonly quality = new AdaptiveQualityService();
   readonly schedule = new Schedule();
   readonly scenes: SceneManager;
   readonly schemas = createCoreSchemaRegistry();
@@ -125,6 +128,7 @@ export class GameEngine {
         context.provide(EngineInputSources, this.inputSources);
         context.provide(EngineAssets, this.assets);
         context.provide(EngineDiagnosticsService, this.diagnostics);
+        context.provide(EngineQuality, this.quality);
         context.provide(EngineSchedule, this.schedule);
         context.provide(EngineScenes, this.scenes);
         context.provide(EngineSchemas, this.schemas);

@@ -564,6 +564,7 @@ export class WebGL2Renderer implements RenderBackend, Render2DService {
       triangles: sprites.spriteCount * 2 + this.effects.count + rawGpuPasses + (this.backdropOptions ? 1 : 0) + bloom.passes,
       bufferUploadBytes: this.pendingBufferUploadBytes + sprites.spriteCount * 15 * Float32Array.BYTES_PER_ELEMENT + particles.particleCount * 4 * Float32Array.BYTES_PER_ELEMENT + gpu.uploadBytes,
       textureUploadBytes: this.pendingTextureUploadBytes,
+      transientAllocationBytes: this.spriteRenderer.consumeAllocatedBytes(),
       gpuResourceCount: device.textureCount + device.ownedContextResourceCount,
       gpuResourceBytes: device.estimatedGpuBytes,
       renderPasses: this.framePipeline.snapshot().passes,

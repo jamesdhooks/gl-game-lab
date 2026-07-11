@@ -10,6 +10,7 @@ export function App(): JSX.Element {
   const [runtimeError, setRuntimeError] = useState<string>();
   const capture = parseDemoCaptureOptions(window.location.search);
   const experienceId = new URLSearchParams(window.location.search).get('experience');
+  const showDiagnostics = new URLSearchParams(window.location.search).get('diagnostics') === '1';
   const experience = experienceId === 'harmonic-sand'
     ? harmonicSandDefinition
     : experienceId === 'fireworks' ? fireworksDefinition
@@ -41,6 +42,7 @@ export function App(): JSX.Element {
         {...(capture.enabled && capture.modeId ? { initialModeId: capture.modeId } : {})}
         {...(capture.enabled && capture.styleId ? { initialStyleId: capture.styleId } : {})}
         showChrome={!capture.enabled}
+        showDiagnostics={showDiagnostics}
         onError={(error) => { setRuntimeError(error instanceof Error ? error.message : String(error)); }}
         {...(capture.enabled ? { fixedFrameCapture: {
           frameNumber: capture.frameNumber,
