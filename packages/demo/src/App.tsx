@@ -1,13 +1,301 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { ExperienceRuntime } from '@hooksjam/gl-game-lab-react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
+import { AlertTriangle, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, PanelBottom, PanelLeft, PanelRight, Pin, PinOff, Play } from 'lucide-react';
+import { ExperienceRuntime, GameCanvas } from '@hooksjam/gl-game-lab-react';
 import type { ExperienceDefinition, GameEngine } from '@hooksjam/gl-game-lab-engine';
 import { WebGL2RendererService, type ContextCycleDiagnostics } from '@hooksjam/gl-game-lab-render-webgl2';
 import './index.css';
 import { parseDemoCaptureOptions } from './captureOptions.js';
 import { ballPitCaptureInputEvents } from './ballPitCaptureScenarios.js';
-import { loadDemoExperience, loadLifecycleAlternate } from './experienceLoader.js';
+import { loadDemoCatalog, loadDemoExperience, loadLifecycleAlternate } from './experienceLoader.js';
+import { hasPassedDemoQa } from './demoQaStatus.js';
+
+type FilterKind = 'all' | 'game' | 'simulation';
+
+const KIND_LABELS: Readonly<Record<FilterKind, string>> = Object.freeze({
+  all: 'All',
+  game: 'Games',
+  simulation: 'Simulations',
+});
+
+const LOGO_PARTICLES: ReadonlyArray<readonly [number, string, string, string, number, number, number]> = [
+  [0.55, '#a78bfa', '15%', '30%', 10, 3.2, 0],
+  [0.38, '#38bdf8', '85%', '25%', 8, 2.8, 0.6],
+  [0.60, '#818cf8', '18%', '72%', 12, 3.5, 1.1],
+  [0.32, '#f472b6', '82%', '68%', 9, 2.6, 0.3],
+  [0.44, '#34d399', '20%', '15%', 7, 3, 1.7],
+  [0.34, '#60a5fa', '80%', '20%', 9, 2.9, 0.9],
+  [0.28, '#c084fc', '22%', '80%', 8, 3.3, 1.4],
+  [0.42, '#fb923c', '78%', '65%', 6, 3.6, 0.5],
+];
 
 export function App(): JSX.Element {
+  const query = new URLSearchParams(window.location.search);
+  const capture = parseDemoCaptureOptions(window.location.search);
+  const diagnosticHost = capture.enabled
+    || query.get('diagnostics') === '1'
+    || query.get('contextTest') === '1'
+    || query.get('lifecycleTest') === '1'
+    || query.get('inputTest') === '1';
+  return diagnosticHost ? <DiagnosticExperienceHost /> : <DemoGallery />;
+}
+
+function DemoGallery(): JSX.Element {
+  const [catalog, setCatalog] = useState<readonly ExperienceDefinition[]>([]);
+  const [active, setActive] = useState<ExperienceDefinition>();
+  const [filter, setFilter] = useState<FilterKind>('all');
+  const [dark, setDark] = useState(true);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [pickerFilter, setPickerFilter] = useState<FilterKind>('all');
+  const [pickerSide, setPickerSide] = useState<'bottom' | 'left' | 'right'>('bottom');
+  const [pickerDocked, setPickerDocked] = useState(false);
+  const [demoMode, setDemoMode] = useState(false);
+  const [demoIndex, setDemoIndex] = useState(0);
+  const scrollerRef = useRef<HTMLDivElement>(null);
+  const portraitMobile = usePortraitMobile();
+  const effectivePickerSide = portraitMobile ? 'bottom' : pickerSide;
+  const pickerBottom = effectivePickerSide === 'bottom';
+  const pickerLeft = effectivePickerSide === 'left';
+  const dockedInset = pickerOpen && pickerDocked
+    ? pickerBottom ? { bottom: 164 } : pickerLeft ? { left: 196 } : { right: 196 }
+    : undefined;
+
+  useEffect(() => {
+    let mounted = true;
+    void loadDemoCatalog().then((definitions) => {
+      if (!mounted) return;
+      setCatalog(definitions);
+      const requested = new URLSearchParams(window.location.search).get('experience');
+      if (requested) setActive(definitions.find((definition) => definition.id === requested) ?? definitions[0]);
+    });
+    return () => { mounted = false; };
+  }, []);
+
+  const filtered = useMemo(() => filter === 'all' ? catalog : catalog.filter((definition) => definition.kind === filter), [catalog, filter]);
+  const pickerItems = useMemo(() => pickerFilter === 'all' ? catalog : catalog.filter((definition) => definition.kind === pickerFilter), [catalog, pickerFilter]);
+  const activeIndex = active ? pickerItems.findIndex((definition) => definition.id === active.id) : -1;
+
+  const selectExperience = useCallback((definition: ExperienceDefinition): void => {
+    setDemoMode(false);
+    setActive(definition);
+    const url = new URL(window.location.href);
+    url.searchParams.set('experience', definition.id);
+    window.history.replaceState(null, '', url);
+  }, []);
+
+  const quit = useCallback((): void => {
+    setActive(undefined);
+    setDemoMode(false);
+    setPickerOpen(false);
+    const url = new URL(window.location.href);
+    url.searchParams.delete('experience');
+    window.history.replaceState(null, '', url);
+  }, []);
+
+  const startDemo = useCallback((): void => {
+    if (catalog.length === 0) return;
+    setDemoIndex(0);
+    setDemoMode(true);
+    setActive(catalog[0]);
+  }, [catalog]);
+
+  useEffect(() => {
+    if (!demoMode || catalog.length === 0) return;
+    const timeout = window.setTimeout(() => {
+      setDemoIndex((index) => {
+        const next = (index + 1) % catalog.length;
+        setActive(catalog[next]!);
+        return next;
+      });
+    }, 10_000);
+    return () => { window.clearTimeout(timeout); };
+  }, [catalog, demoIndex, demoMode]);
+
+  const move = (direction: -1 | 1): void => {
+    if (pickerItems.length === 0) return;
+    const next = (Math.max(0, activeIndex) + direction + pickerItems.length) % pickerItems.length;
+    selectExperience(pickerItems[next]!);
+  };
+
+  return (
+    <div className={dark ? 'dark' : ''}>
+      <div className="relative h-screen w-screen overflow-hidden bg-white dark:bg-[#080810]">
+        <AnimatePresence mode="wait">
+          {active ? (
+            <motion.div
+              key={active.id}
+              className="absolute inset-0 overflow-hidden bg-black"
+              {...(dockedInset ? { style: dockedInset } : {})}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.2 }}
+            >
+              <ExperienceRuntime
+                definition={active}
+                profile={demoMode ? 'demo' : 'play'}
+                presentation="immersive"
+                onQuit={quit}
+                showChrome
+                className="h-full w-full"
+                canvasClassName="game-canvas"
+              />
+              {demoMode && (
+                <div className="pointer-events-none fixed left-3 top-14 z-[70] flex max-w-[72vw] items-center gap-2 rounded-lg bg-black/55 px-2.5 py-2 text-white backdrop-blur-md">
+                  <span className="flex h-7 w-7 items-center justify-center rounded-md bg-gradient-to-br from-violet-400 via-sky-300 to-cyan-300 text-slate-950">{active.icon}</span>
+                  <div><div className="text-xs font-semibold">{active.name}</div><div className="text-[9px] font-semibold uppercase tracking-wide text-cyan-200">Demo mode</div></div>
+                </div>
+              )}
+            </motion.div>
+          ) : (
+            <motion.div key="gallery" className="absolute inset-0 overflow-y-auto text-slate-900 dark:text-slate-100" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+              <main className="mx-auto max-w-5xl px-4 pb-16 pt-8 sm:px-8 sm:pb-32 sm:pt-16">
+                <div className="relative mb-5 flex justify-center sm:mb-8">
+                  {LOGO_PARTICLES.map(([size, color, left, top, drift, duration, delay], index) => (
+                    <motion.span key={index} aria-hidden className="pointer-events-none absolute rounded-full" style={{ width: `${size}rem`, height: `${size}rem`, background: color, left, top }} animate={{ y: [0, -drift, 0], opacity: [0.35, 0.7, 0.35] }} transition={{ duration, repeat: Infinity, delay, ease: 'easeInOut' }} />
+                  ))}
+                  <h1 className="relative bg-gradient-to-r from-violet-400 via-sky-300 to-cyan-400 bg-clip-text text-center text-4xl font-bold tracking-tight text-transparent sm:text-6xl lg:text-7xl">GLGameLab</h1>
+                </div>
+                <div className="mb-3 flex justify-center sm:mb-4">
+                  <div className="inline-flex gap-0.5 rounded-xl bg-slate-100 p-1 dark:bg-white/[0.06] sm:rounded-2xl sm:p-1.5">
+                    {(Object.keys(KIND_LABELS) as FilterKind[]).map((kind) => (
+                      <button key={kind} type="button" onClick={() => { setFilter(kind); }} className={`rounded-lg px-3 py-2 text-xs font-semibold transition-all sm:rounded-xl sm:px-6 sm:py-2.5 sm:text-sm ${filter === kind ? 'bg-white text-slate-900 shadow-md dark:bg-slate-700 dark:text-white' : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200'}`}>{KIND_LABELS[kind]}</button>
+                    ))}
+                  </div>
+                </div>
+                <div className="mb-8 flex justify-center">
+                  <button type="button" onClick={startDemo} className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-violet-500 via-sky-400 to-cyan-400 px-4 py-2 text-sm font-bold text-white shadow-md shadow-sky-500/20 transition-transform hover:scale-[1.02] active:scale-[0.98]"><Play size={14} />Demo mode</button>
+                </div>
+                {catalog.length === 0 ? <p className="py-24 text-center text-slate-400" role="status">Loading GLGameLab experiences…</p> : (
+                  <div className="grid grid-cols-2 gap-x-6 gap-y-10 sm:grid-cols-3 lg:grid-cols-4">
+                    {filtered.map((definition, index) => <ExperienceCard key={definition.id} definition={definition} index={index} onSelect={selectExperience} />)}
+                  </div>
+                )}
+              </main>
+              <footer className="pb-10 text-center text-xs text-slate-400 dark:text-slate-600">@hooksjam/gl-game-lab · GPU-first · WebGL2</footer>
+              <button type="button" onClick={() => { setDark((value) => !value); }} aria-label="Toggle theme" className="fixed bottom-6 right-6 flex h-11 w-11 items-center justify-center rounded-full bg-slate-100 text-lg shadow-lg transition-transform hover:scale-110 active:scale-95 dark:bg-slate-800">{dark ? '☀️' : '🌙'}</button>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {active && (
+          <>
+            {!pickerOpen && <button type="button" aria-label="Show experience picker" onClick={() => { setPickerOpen(true); }} className={`fixed z-[80] flex items-center justify-center text-white/30 hover:text-white/70 ${pickerBottom ? 'bottom-1 left-1/2 h-8 w-12 -translate-x-1/2' : pickerLeft ? 'left-1 top-1/2 h-12 w-8 -translate-y-1/2' : 'right-1 top-1/2 h-12 w-8 -translate-y-1/2'}`}>{pickerBottom ? <ChevronUp size={16} /> : pickerLeft ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}</button>}
+            <AnimatePresence>
+              {pickerOpen && (
+                <motion.section
+                  data-picker-side={effectivePickerSide}
+                  data-picker-docked={pickerDocked}
+                  initial={pickerBottom ? { y: '100%' } : pickerLeft ? { x: '-100%' } : { x: '100%' }}
+                  animate={pickerBottom ? { y: 0 } : { x: 0 }}
+                  exit={pickerBottom ? { y: '100%' } : pickerLeft ? { x: '-100%' } : { x: '100%' }}
+                  transition={{ type: 'spring', stiffness: 400, damping: 40 }}
+                  className={`fixed z-[80] flex flex-col bg-black/90 backdrop-blur-xl ${pickerBottom ? 'bottom-0 left-0 right-0 border-t border-white/10' : pickerLeft ? 'bottom-0 left-0 top-0 w-[196px] border-r border-white/10' : 'bottom-0 right-0 top-0 w-[196px] border-l border-white/10'}`}
+                >
+                  <header className="flex shrink-0 items-center border-b border-white/[0.07] px-3 py-1.5">
+                    <span className="mr-auto text-[10px] font-semibold uppercase tracking-widest text-white/30">Experiences</span>
+                    {!portraitMobile && (['left', 'bottom', 'right'] as const).map((side) => {
+                      const Icon = side === 'left' ? PanelLeft : side === 'bottom' ? PanelBottom : PanelRight;
+                      return <button key={side} type="button" aria-label={`Move to ${side}`} onClick={() => { setPickerSide(side); }} className={`flex h-6 w-6 items-center justify-center ${pickerSide === side ? 'text-white/70' : 'text-white/20 hover:text-white/50'}`}><Icon size={12} /></button>;
+                    })}
+                    <button type="button" aria-label={pickerDocked ? 'Undock' : 'Dock'} onClick={() => { setPickerDocked((value) => !value); }} className={`flex h-6 w-6 items-center justify-center ${pickerDocked ? 'text-white/70' : 'text-white/20 hover:text-white/50'}`}>{pickerDocked ? <PinOff size={12} /> : <Pin size={12} />}</button>
+                    <button type="button" aria-label="Close carousel" onClick={() => { setPickerOpen(false); }} className="flex h-6 w-6 items-center justify-center text-white/30 hover:text-white">{pickerBottom ? <ChevronDown size={14} /> : pickerLeft ? <ChevronLeft size={14} /> : <ChevronRight size={14} />}</button>
+                  </header>
+                  {pickerBottom ? (
+                    <div className="flex h-[132px] items-center">
+                      <div className="flex h-full shrink-0 flex-col justify-center gap-0.5 border-r border-white/[0.07] px-2">
+                        {(Object.keys(KIND_LABELS) as FilterKind[]).map((kind) => <button key={kind} type="button" onClick={() => { setPickerFilter(kind); }} className={`rounded-md px-2 py-0.5 text-[9px] font-semibold ${pickerFilter === kind ? 'bg-white/15 text-white' : 'text-white/30 hover:text-white/60'}`}>{KIND_LABELS[kind]}</button>)}
+                      </div>
+                      <button type="button" aria-label="Previous" onClick={() => { move(-1); }} className="px-2 text-white/30 hover:text-white"><ChevronLeft size={16} /></button>
+                      <div ref={scrollerRef} className="flex flex-1 items-center gap-2 overflow-x-auto px-1" style={{ scrollbarWidth: 'none' }}>
+                        {pickerItems.map((definition, index) => <CarouselTile key={definition.id} definition={definition} index={index} active={definition.id === active.id} onSelect={selectExperience} />)}
+                      </div>
+                      <button type="button" aria-label="Next" onClick={() => { move(1); }} className="px-2 text-white/30 hover:text-white"><ChevronRight size={16} /></button>
+                    </div>
+                  ) : (
+                    <div className="flex min-h-0 flex-1 flex-col">
+                      <div className="flex shrink-0 gap-1 overflow-x-auto border-b border-white/[0.07] px-2 py-1.5" style={{ scrollbarWidth: 'none' }}>
+                        {(Object.keys(KIND_LABELS) as FilterKind[]).map((kind) => <button key={kind} type="button" onClick={() => { setPickerFilter(kind); }} className={`shrink-0 rounded-md px-2 py-0.5 text-[9px] font-semibold ${pickerFilter === kind ? 'bg-white/15 text-white' : 'text-white/30 hover:text-white/60'}`}>{KIND_LABELS[kind]}</button>)}
+                      </div>
+                      <button type="button" aria-label="Previous" onClick={() => { move(-1); }} className="py-1 text-white/30 hover:text-white"><ChevronUp className="mx-auto" size={16} /></button>
+                      <div ref={scrollerRef} className="flex flex-1 flex-col items-center gap-2 overflow-y-auto px-2 py-1" style={{ scrollbarWidth: 'none' }}>
+                        {pickerItems.map((definition, index) => <CarouselTile key={definition.id} definition={definition} index={index} active={definition.id === active.id} onSelect={selectExperience} horizontal />)}
+                      </div>
+                      <button type="button" aria-label="Next" onClick={() => { move(1); }} className="py-1 text-white/30 hover:text-white"><ChevronDown className="mx-auto" size={16} /></button>
+                    </div>
+                  )}
+                </motion.section>
+              )}
+            </AnimatePresence>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+interface ExperienceCardProps {
+  readonly definition: ExperienceDefinition;
+  readonly index: number;
+  readonly onSelect: (definition: ExperienceDefinition) => void;
+}
+
+function ExperienceCard({ definition, index, onSelect }: ExperienceCardProps): JSX.Element {
+  const badge = definition.kind === 'game' ? 'bg-blue-100 text-blue-600 dark:bg-blue-500/15 dark:text-blue-300' : 'bg-violet-100 text-violet-600 dark:bg-violet-500/15 dark:text-violet-300';
+  const needsDemoQa = definition.capabilities.demo === true && !hasPassedDemoQa(definition.id);
+  return (
+    <button type="button" data-demo-experience-card={definition.id} onClick={() => { onSelect(definition); }} className="group cursor-pointer select-none text-left">
+      <div className="relative aspect-square w-full overflow-hidden rounded-2xl bg-slate-100 transition-transform duration-200 group-hover:scale-[1.03] dark:bg-[#0d0d1e]">
+        <PreviewTile definition={definition} index={index} />
+        <span className={`absolute bottom-2 left-2 rounded-full px-2 py-0.5 text-[10px] font-semibold capitalize ${badge}`}>{definition.kind}</span>
+        {needsDemoQa && <span className="absolute right-2 top-2 inline-flex items-center gap-1 rounded-md bg-amber-300/95 px-1.5 py-1 text-[9px] font-bold uppercase text-amber-950"><AlertTriangle size={10} />Needs QA</span>}
+      </div>
+      <p className="mt-3 text-center text-sm font-semibold leading-tight text-slate-800 dark:text-slate-200">{definition.name}</p>
+    </button>
+  );
+}
+
+function PreviewTile({ definition, index }: { readonly definition: ExperienceDefinition; readonly index: number }): JSX.Element {
+  const rootRef = useRef<HTMLDivElement>(null);
+  const [visible, setVisible] = useState(false);
+  const [ready, setReady] = useState(false);
+  const createPlugins = useCallback(() => definition.createPlugins({ profile: 'preview', seed: 536_611 + index }), [definition, index]);
+  useEffect(() => {
+    const root = rootRef.current;
+    if (!root) return;
+    const observer = new IntersectionObserver(([entry]) => { setVisible(entry?.isIntersecting ?? false); }, { rootMargin: '120px', threshold: 0.01 });
+    observer.observe(root);
+    return () => { observer.disconnect(); };
+  }, []);
+  useEffect(() => {
+    if (!visible) { setReady(false); return; }
+    const timeout = window.setTimeout(() => { setReady(true); }, index * 120);
+    return () => { window.clearTimeout(timeout); };
+  }, [index, visible]);
+  return (
+    <div ref={rootRef} className="h-full w-full">
+      {ready ? <GameCanvas createPlugins={createPlugins} ariaLabel={`${definition.name} preview`} className="h-full w-full touch-none" /> : <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-indigo-500 via-violet-500 to-pink-500 text-6xl text-white">{definition.icon}</div>}
+      <div className="pointer-events-none absolute inset-0 rounded-2xl bg-gradient-to-br from-white/10 via-transparent to-black/20 shadow-[inset_0_1px_0_rgba(255,255,255,.28)]" />
+    </div>
+  );
+}
+
+function CarouselTile({ definition, index, active, onSelect, horizontal = false }: ExperienceCardProps & { readonly active: boolean; readonly horizontal?: boolean }): JSX.Element {
+  return <button type="button" onClick={() => { onSelect(definition); }} className={`flex shrink-0 items-center gap-1.5 ${horizontal ? 'w-full flex-row' : 'w-20 flex-col'}`}><div className={`relative shrink-0 overflow-hidden rounded-2xl ${horizontal ? 'h-[74px] w-[74px]' : 'h-20 w-20'} ${active ? 'ring-2 ring-white/70' : ''}`}><PreviewTile definition={definition} index={index} /></div><span className={`truncate text-[9px] font-medium text-white/50 ${horizontal ? 'min-w-0 flex-1 text-left' : 'max-w-20 text-center'}`}>{definition.name}</span></button>;
+}
+
+function usePortraitMobile(): boolean {
+  const [matches, setMatches] = useState(() => window.matchMedia('(max-width: 720px) and (orientation: portrait)').matches);
+  useEffect(() => {
+    const query = window.matchMedia('(max-width: 720px) and (orientation: portrait)');
+    const update = (): void => { setMatches(query.matches); };
+    query.addEventListener('change', update);
+    return () => { query.removeEventListener('change', update); };
+  }, []);
+  return matches;
+}
+
+function DiagnosticExperienceHost(): JSX.Element {
   const [runtimeError, setRuntimeError] = useState<string>();
   const [diagnosticStatus, setDiagnosticStatus] = useState('idle');
   const [contextResult, setContextResult] = useState<ContextCycleDiagnostics>();

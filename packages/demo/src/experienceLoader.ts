@@ -1,5 +1,13 @@
 import type { ExperienceDefinition } from '@hooksjam/gl-game-lab-engine';
 
+export async function loadDemoCatalog(): Promise<readonly ExperienceDefinition[]> {
+  const [games, simulations] = await Promise.all([
+    import('@hooksjam/gl-game-lab-games'),
+    import('@hooksjam/gl-game-lab-simulations'),
+  ]);
+  return Object.freeze([...games.GAME_REGISTRY.values(), ...simulations.SIMULATION_REGISTRY.values()]);
+}
+
 export async function loadDemoExperience(id: string | null): Promise<ExperienceDefinition> {
   const normalized = id?.trim().toLowerCase() ?? 'ball-pit';
   if (normalized === 'ball-pit' || normalized === 'reference-arena') {

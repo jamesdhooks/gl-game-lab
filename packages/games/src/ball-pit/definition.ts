@@ -12,12 +12,12 @@ export const BALL_PIT_TUTORIAL_PAGES: readonly ExperienceTutorialPage[] = Object
 
 export const ballPitDefinition: ExperienceDefinition = {
   id: 'ball-pit',
-  kind: 'simulation',
+  kind: 'game',
   name: 'Ball Pit',
   short: 'Drop bouncy balls and push them around the pit.',
   long: 'Fill the screen with bouncy balls and stir them around.',
   icon: '🔴',
-  tags: ['physics', 'simulation', 'raw-webgl', 'advanced-engine'],
+  tags: ['physics', 'game', 'webgl2', 'advanced-engine'],
   paletteHint: 'rainbow',
   capabilities: {
     interactive: true,

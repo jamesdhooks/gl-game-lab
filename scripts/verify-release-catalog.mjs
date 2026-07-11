@@ -13,8 +13,13 @@ if (JSON.stringify(actualIds) !== JSON.stringify(RELEASE_EXPERIENCE_IDS)) {
 }
 
 for (const definition of definitions) {
-  if (definition.kind !== 'simulation') throw new Error(`${definition.id} has unsupported release kind: ${definition.kind}`);
+  const expectedKind = definition.id === 'ball-pit' ? 'game' : 'simulation';
+  if (definition.kind !== expectedKind) throw new Error(`${definition.id} has unsupported release kind: ${definition.kind}; expected ${expectedKind}`);
+  if (definition.capabilities.settings !== true) throw new Error(`${definition.id} does not expose its tuning menu`);
   if ((definition.settings?.length ?? 0) === 0) throw new Error(`${definition.id} has no release settings`);
+  if (definition.capabilities.tutorial !== true || (definition.tutorialPages?.length ?? 0) === 0) {
+    throw new Error(`${definition.id} does not expose its tutorial flow`);
+  }
   const styles = definition.styleManifest?.styles ?? [];
   if (styles.length === 0) throw new Error(`${definition.id} has no release styles`);
   if (!styles.some((style) => style.id === definition.styleManifest.defaultStyleId)) {

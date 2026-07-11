@@ -1,3 +1,7 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
 :root {
   color: #d9ecff;
   background: #07101f;
@@ -6,6 +10,7 @@
 
 * { box-sizing: border-box; }
 body { margin: 0; min-width: 320px; min-height: 100vh; }
+button, input, select, textarea { font: inherit; }
 
 .shell {
   min-height: 100vh;
@@ -54,6 +59,9 @@ h1 { margin: 0; font-size: clamp(2.4rem, 8vw, 5rem); letter-spacing: -.06em; }
 .gl-experience-advanced-toggle { display: flex; justify-content: flex-end; gap: .45rem; margin: .65rem 0; color: #a9c5e6; font-size: .8rem; }
 .gl-experience-setting-list { display: grid; gap: .35rem; }
 .gl-experience-setting { display: grid; grid-template-columns: minmax(7rem, 1fr) minmax(8rem, 1.35fr); align-items: center; gap: .75rem; min-height: 2.5rem; color: #bcd4ee; font-size: .82rem; }
+.gl-experience-setting-label { display: grid; gap: .15rem; }
+.gl-experience-setting-label strong { color: inherit; font-size: .82rem; }
+.gl-experience-setting-label small { color: rgb(255 255 255 / .42); font-size: .7rem; font-weight: 400; line-height: 1.35; }
 .gl-experience-number-control { display: grid; grid-template-columns: 1fr 4.5rem; align-items: center; gap: .5rem; }
 .gl-experience-number-control output { text-align: right; color: #f1f7ff; font-variant-numeric: tabular-nums; }
 .gl-experience-setting input[type="range"] { width: 100%; accent-color: #56bfff; }
@@ -76,9 +84,190 @@ h1 { margin: 0; font-size: clamp(2.4rem, 8vw, 5rem); letter-spacing: -.06em; }
 .gl-experience-tutorial-actions { display: flex; justify-content: flex-end; gap: .55rem; }
 .gl-experience-tutorial button:disabled { opacity: .4; cursor: default; }
 
+.gl-experience-runtime-immersive.surface,
+.gl-experience-runtime-immersive {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  overflow: hidden;
+  background: #05070d;
+}
+.gl-experience-runtime-immersive .gl-experience-stage {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  aspect-ratio: auto;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+.gl-experience-runtime-immersive .gl-experience-toolbar {
+  position: absolute;
+  inset: 0 0 auto;
+  z-index: 40;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: .75rem;
+  pointer-events: none;
+}
+.gl-experience-runtime-immersive .gl-experience-toolbar button,
+.gl-experience-runtime-immersive .gl-experience-toolbar select {
+  min-height: 2rem;
+  border: 0;
+  border-radius: .75rem;
+  background: rgb(0 0 0 / .3);
+  color: white;
+  box-shadow: none;
+  backdrop-filter: blur(12px);
+  pointer-events: auto;
+}
+.gl-experience-runtime-immersive .gl-experience-quit {
+  position: absolute;
+  left: .75rem;
+  top: .75rem;
+  display: flex;
+  align-items: center;
+  gap: .35rem;
+  padding: .38rem .75rem;
+  font-size: .875rem;
+  font-weight: 500;
+}
+.gl-experience-runtime-immersive .gl-experience-quit span:first-child { font-size: 1.1rem; line-height: .8; }
+.gl-experience-runtime-immersive .gl-experience-modes {
+  display: flex;
+  height: 2rem;
+  align-items: center;
+  gap: .125rem;
+  border-radius: .75rem;
+  padding: .25rem;
+  background: rgb(0 0 0 / .3);
+  backdrop-filter: blur(12px);
+  pointer-events: auto;
+}
+.gl-experience-runtime-immersive .gl-experience-mode {
+  min-height: 1.5rem;
+  padding: .2rem .75rem;
+  background: transparent;
+  color: rgb(255 255 255 / .5);
+  font-size: .75rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.gl-experience-runtime-immersive .gl-experience-mode[aria-pressed="true"] {
+  background: rgb(255 255 255 / .2);
+  color: white;
+}
+.gl-experience-runtime-immersive .gl-experience-actions {
+  position: absolute;
+  right: .75rem;
+  top: .75rem;
+  display: flex;
+  align-items: center;
+  gap: .35rem;
+  pointer-events: auto;
+}
+.gl-experience-runtime-immersive .gl-experience-actions button { padding: .35rem .65rem; font-size: .75rem; }
+.gl-experience-runtime-immersive .gl-experience-action-control { display: inline-flex; align-items: center; justify-content: center; gap: .3rem; }
+.gl-experience-runtime-immersive .gl-experience-style-label {
+  height: 2rem;
+  border-radius: .75rem;
+  padding-left: .65rem;
+  background: rgb(0 0 0 / .3);
+  color: rgb(255 255 255 / .5);
+  backdrop-filter: blur(12px);
+}
+.gl-experience-runtime-immersive .gl-experience-style-label select { padding: .25rem .55rem; background: transparent; }
+.gl-experience-runtime-immersive .gl-experience-intro-card {
+  position: fixed;
+  left: 50%;
+  top: 50%;
+  z-index: 70;
+  display: flex;
+  width: max-content;
+  min-width: 260px;
+  max-width: min(460px, calc(100vw - 32px));
+  transform: translate(-50%, -50%);
+  align-items: flex-start;
+  gap: 1rem;
+  border: 0;
+  border-radius: 1rem;
+  padding: 1.5rem 1.75rem;
+  background: rgb(0 0 0 / .75);
+  color: white;
+  text-align: left;
+  box-shadow: 0 25px 60px rgb(0 0 0 / .5);
+  backdrop-filter: blur(20px);
+  cursor: pointer;
+  animation: gl-card-in .24s ease-out;
+}
+@keyframes gl-card-in { from { opacity: 0; transform: translate(-50%, calc(-50% + 12px)) scale(.92); } }
+.gl-experience-intro-icon { flex: none; font-size: 3rem; line-height: 1; }
+.gl-experience-intro-copy { display: grid; min-width: 0; gap: .35rem; }
+.gl-experience-intro-copy > strong { font-size: 1.5rem; line-height: 1.15; }
+.gl-experience-intro-copy > span { color: rgb(255 255 255 / .55); font-size: .875rem; line-height: 1.4; }
+.gl-experience-intro-hints { display: grid; gap: .35rem; margin-top: .65rem; padding-top: .75rem; border-top: 1px solid rgb(255 255 255 / .1); }
+.gl-experience-intro-hints > span { display: flex; align-items: baseline; gap: .6rem; color: rgb(255 255 255 / .7); }
+.gl-experience-intro-hints b { border-radius: .3rem; padding: .15rem .4rem; background: rgb(255 255 255 / .1); color: rgb(255 255 255 / .65); font: 600 .68rem ui-monospace, monospace; text-transform: uppercase; }
+.gl-experience-intro-copy small { margin-top: .65rem; color: rgb(255 255 255 / .25); font-size: .68rem; text-align: center; }
+.gl-experience-runtime-immersive .gl-experience-settings {
+  position: absolute;
+  right: .75rem;
+  top: 3rem;
+  z-index: 60;
+  width: min(30rem, calc(100vw - 1.5rem));
+  max-height: 76vh;
+  padding: .9rem;
+  border: 1px solid rgb(255 255 255 / .12);
+  border-radius: 1rem;
+  background: rgb(0 0 0 / .8);
+  box-shadow: 0 18px 50px rgb(0 0 0 / .55);
+  backdrop-filter: blur(16px);
+}
+.gl-experience-runtime-immersive .gl-experience-setting { color: rgb(255 255 255 / .75); }
+.gl-experience-runtime-immersive .gl-experience-tutorial-backdrop {
+  position: absolute;
+  inset: auto auto .75rem .75rem;
+  z-index: 65;
+  display: block;
+  width: min(400px, calc(100vw - 1.5rem));
+  padding: 0;
+  background: transparent;
+  backdrop-filter: none;
+}
+.gl-experience-runtime-immersive .gl-experience-tutorial {
+  width: 100%;
+  padding: 1.25rem;
+  border: 0;
+  border-radius: 1rem;
+  background: rgb(0 0 0 / .75);
+  color: white;
+  text-align: left;
+  backdrop-filter: blur(20px);
+}
+.gl-experience-runtime-immersive .gl-experience-tutorial-progress { justify-content: flex-start; margin: 1rem 0; }
+.gl-experience-runtime-immersive .gl-experience-attributions { position: absolute; right: .75rem; bottom: .75rem; z-index: 30; padding: .35rem .55rem; border-radius: .5rem; background: rgb(0 0 0 / .4); }
+
 @media (max-width: 720px) {
   .gl-experience-toolbar { align-items: stretch; }
   .gl-experience-modes, .gl-experience-actions { width: 100%; }
   .gl-experience-mode { flex: 1; justify-content: center; }
   .gl-experience-actions { justify-content: flex-end; }
+  .gl-experience-runtime-immersive .gl-experience-toolbar { padding: .5rem; }
+  .gl-experience-runtime-immersive .gl-experience-quit { left: .5rem; top: .5rem; }
+  .gl-experience-runtime-immersive .gl-experience-modes { position: absolute; left: .5rem; right: .5rem; top: 3rem; width: auto; flex-wrap: nowrap; overflow-x: auto; }
+  .gl-experience-runtime-immersive .gl-experience-actions { right: .5rem; top: .5rem; width: auto; max-width: calc(100vw - 4.5rem); flex-wrap: nowrap; justify-content: flex-start; overflow-x: auto; scrollbar-width: none; }
+  .gl-experience-runtime-immersive .gl-experience-actions::-webkit-scrollbar,
+  .gl-experience-runtime-immersive .gl-experience-modes::-webkit-scrollbar { display: none; }
+  .gl-experience-runtime-immersive .gl-experience-quit span:last-child,
+  .gl-experience-runtime-immersive .gl-experience-action-label { display: none; }
+  .gl-experience-runtime-immersive .gl-experience-actions button { width: 2rem; flex: 0 0 2rem; padding: .35rem; font-size: .85rem; }
+  .gl-experience-runtime-immersive .gl-experience-style-label { flex: 0 0 auto; padding-left: 0; }
+  .gl-experience-runtime-immersive .gl-experience-style-label select { width: 7.5rem; }
+  .gl-experience-runtime-immersive .gl-experience-style-label > span { display: none; }
+  .gl-experience-runtime-immersive .gl-experience-actions button { white-space: nowrap; }
+  .gl-experience-runtime-immersive .gl-experience-intro-card { padding: 1.2rem; }
 }

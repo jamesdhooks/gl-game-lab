@@ -40,15 +40,65 @@ async function verifyBrowser(browserName, browserType) {
   const failures = [];
   try {
     const functionalBrowser = await browserType.launch(browserLaunchOptions(browserName));
+    const shell = await verifyDemoShell(functionalBrowser, failures);
     const functional = await verifyFunctional(functionalBrowser, failures)
       .finally(async () => { await functionalBrowser.close(); });
     const contextBrowser = await browserType.launch(browserLaunchOptions(browserName));
     const context = await verifyContextRecovery(contextBrowser, failures)
       .finally(async () => { await contextBrowser.close(); });
-    return Object.freeze({ browser: browserName, functional, context, failures, passed: failures.length === 0 });
+    return Object.freeze({ browser: browserName, shell, functional, context, failures, passed: failures.length === 0 });
   } catch (error) {
     failures.push(describe(error));
     return Object.freeze({ browser: browserName, failures, passed: false });
+  }
+}
+
+async function verifyDemoShell(browser, failures) {
+  const context = await browser.newContext({ viewport: { width: 1280, height: 720 } });
+  const page = await context.newPage();
+  const pageErrors = [];
+  page.on('pageerror', (error) => { pageErrors.push(error.message); });
+  try {
+    await page.goto(`http://127.0.0.1:${port}/`, { waitUntil: 'domcontentloaded' });
+    await page.getByRole('heading', { name: 'GLGameLab' }).waitFor({ state: 'visible', timeout: 60_000 });
+    const cards = page.locator('[data-demo-experience-card]');
+    await page.waitForFunction(() => document.querySelectorAll('[data-demo-experience-card]').length === 15, undefined, { timeout: 60_000 });
+    const totalCards = await cards.count();
+    if (totalCards !== 15) failures.push(`Expected 15 demo cards, received ${totalCards}`);
+
+    await page.getByRole('button', { name: 'Games', exact: true }).click();
+    const gameCards = await cards.count();
+    if (gameCards !== 1) failures.push(`Expected one game card, received ${gameCards}`);
+    if (await page.locator('[data-demo-experience-card="ball-pit"]').count() !== 1) failures.push('Ball Pit is missing from the Games filter');
+
+    await page.getByRole('button', { name: 'Simulations', exact: true }).click();
+    const simulationCards = await cards.count();
+    if (simulationCards !== 14) failures.push(`Expected 14 simulation cards, received ${simulationCards}`);
+
+    await page.getByRole('button', { name: 'All', exact: true }).click();
+    await page.locator('[data-demo-experience-card="ball-pit"]').click();
+    await page.locator('[data-experience-id="ball-pit"] canvas[data-engine-state="running"]').waitFor({ state: 'visible', timeout: 60_000 });
+    await page.locator('.gl-experience-intro-card').waitFor({ state: 'visible', timeout: 10_000 });
+    await page.locator('.gl-experience-intro-card').click();
+    await page.getByRole('button', { name: 'Settings', exact: true }).click();
+    await page.locator('[aria-label="Ball Pit settings"]').waitFor({ state: 'visible', timeout: 10_000 });
+    const settingCount = await page.locator('[aria-label="Ball Pit settings"] .gl-experience-setting').count();
+    if (settingCount < 10) failures.push(`Ball Pit settings drawer exposed only ${settingCount} controls`);
+    await page.getByRole('button', { name: 'Close settings' }).click();
+    await page.getByRole('button', { name: 'Show experience picker' }).click();
+    await page.getByRole('button', { name: 'Move to left' }).click();
+    await page.getByRole('button', { name: 'Dock', exact: true }).click();
+    await page.locator('[data-picker-side="left"][data-picker-docked="true"]').waitFor({ state: 'visible', timeout: 10_000 });
+    await page.getByRole('button', { name: 'Close carousel' }).click();
+    await page.getByRole('button', { name: 'How to play', exact: true }).click();
+    await page.getByRole('dialog', { name: 'Ball Pit tutorial' }).waitFor({ state: 'visible', timeout: 10_000 });
+    failures.push(...pageErrors.map((message) => `Demo shell page error: ${message}`));
+    return Object.freeze({ totalCards, gameCards, simulationCards, intro: true, settings: settingCount, picker: true, tutorial: true });
+  } catch (error) {
+    failures.push(`Demo shell failed: ${describe(error)}`);
+    return undefined;
+  } finally {
+    await context.close();
   }
 }
 
