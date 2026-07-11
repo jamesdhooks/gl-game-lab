@@ -15,6 +15,10 @@ pnpm browser:release -- --browser=webkit
 
 The gate verifies:
 
+- the public demo shell exposes exactly 15 live experience cards, one game and
+  fourteen simulations through the expected category filters;
+- Ball Pit opens through the immersive launcher with its intro card, complete
+  tuning drawer, tutorial, and dockable left/bottom/right experience picker;
 - Reference Arena reaches the running state through the public runtime contract;
 - its score is present in an ARIA live region;
 - real browser touch down/up events reach the engine input snapshot;

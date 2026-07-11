@@ -13,7 +13,7 @@ rather than claiming unsupported software-driver restoration.
 
 - Ten workspace packages with enforced dependency boundaries and zero source
   hygiene exceptions.
-- 66 test files and 215 directly enumerated `it`/`test` cases, plus production
+- 70 test files and 222 directly enumerated `it`/`test` cases, plus production
   Chromium fixed-frame, lifecycle, and accessibility probes.
 - All 15 shipped experiences through engine-level render contracts; content has
   zero concrete WebGL renderer imports or WebGL context types.
@@ -23,6 +23,9 @@ rather than claiming unsupported software-driver restoration.
   and typechecks, tests, and production Vite build pass in clean hosted CI.
 - Hosted Chromium, headed Firefox under Xvfb, and WebKit reports pass production
   accessibility, touch, gamepad, lifecycle, and resource-rebuild invariants.
+- The public GitHub Pages build exposes the restored 15-card live gallery and
+  immersive launcher. The three-engine gate checks filtering, intro, complete
+  Ball Pit settings, tutorials, and dockable experience navigation.
 
 ## 1. Overall architecture
 
@@ -109,7 +112,10 @@ Extensibility is good at the kernel, service, system, scene, asset-loader, schem
 input-source, and content-plugin layers. API ergonomics are credible for code-first
 2D games: definitions compose plugins, scenes own entities, prefabs instantiate
 content, and renderer-neutral components cover sprites, cameras, animation, and
-text. Reference Arena proves the intended route.
+text. Reference Arena proves the intended route. The restored demo shell is again
+a first-class consumer of the same definitions: modes, styles, setting schemas,
+tutorial pages, and capabilities drive reusable launcher UI without content-specific
+imports.
 
 Resource management and scene management are approaching production quality.
 The asset pipeline has manifests, dependencies, leases, budgets, and safe reload,
@@ -279,6 +285,12 @@ The five criticisms most likely from another senior engine programmer are:
   `SIMULATION_REGISTRY` resolution and dynamic game/simulation package boundaries.
   Ball Pit, Turing Skin, Particle Fluid, Splash capture, Reference Arena lifecycle,
   and unknown-ID fallback routes passed against the production output.
+- Restored the established demo product shell under GLGameLab branding: live
+  gallery previews, category filters, demo cycling, intro cards, immersive controls,
+  complete tuning drawers, tutorials, responsive mobile chrome, and dockable
+  three-side navigation. A preview teardown race found during browser QA now defers
+  destruction until boot settles. The shell passes Chromium, Firefox, and WebKit
+  and is deployed at `https://jamesdhooks.github.io/gl-game-lab/`.
 - Routed the remaining bloom, backdrop, trail, segment, triangle-mesh, and
   metaball programs through `createShaderProgram`. Required locations are cached
   and validated once; recurring palette/background allocations were removed.
