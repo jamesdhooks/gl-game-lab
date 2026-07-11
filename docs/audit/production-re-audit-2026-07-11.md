@@ -53,9 +53,9 @@ restoration, and plugin installation. Hardening Pass 2 extracted its sprite queu
 and restorable fluid adapter, reducing it to 645 lines, but managed textures/fonts
 and orchestration still share the facade. `DenseCircleParticleWorld2D.ts` is 651 lines;
 `AssetManager.ts` is 583. Sparks and orbital-shrapnel plugins exceed 450 lines.
-These are not unreadable, but they are clear extraction candidates. The demo's
-nested experience selection expression is intentionally temporary and poor as a
-long-term gallery registry.
+These are not unreadable, but they are clear extraction candidates. Hardening
+Pass 2 removed the demo's nested selector in favor of an async registry-backed
+loader with explicit game/simulation chunk boundaries.
 
 Abstraction boundaries are otherwise strong. Content no longer imports backend
 types. `WorldInspector` uses registered schemas instead of private ECS storage.
@@ -154,13 +154,11 @@ WebGPU and full 3D/PBR correctly remain post-release scope.
    active-count upload diagnostics now expose that cost accurately.
 3. The sparse-set ECS has no chunk iteration, change detection, or parallel system
    execution.
-4. The production demo bundle is roughly 617 kB minified in one chunk.
-5. Inspector stable-ID resolution is linear; acceptable for tooling, not bulk edits.
+4. Inspector stable-ID resolution is linear; acceptable for tooling, not bulk edits.
 
 ### Low
 
-1. Demo-only experience selection is a nested conditional.
-2. Some earlier local commits omit the conventional space after the scope colon.
+1. Some earlier local commits omit the conventional space after the scope colon.
 
 ## 8. If starting again
 
@@ -244,10 +242,9 @@ The five criticisms most likely from another senior engine programmer are:
 
 ### Low priority — nice to have
 
-1. Code-split the demo catalog and replace conditional selection with a registry.
-2. Add archetype/chunk storage and parallel scheduling only after conventional-game
+1. Add archetype/chunk storage and parallel scheduling only after conventional-game
    profiles demonstrate a real need.
-3. Build editor UI on `WorldInspector`, asset diagnostics, and scene serialization.
+2. Build editor UI on `WorldInspector`, asset diagnostics, and scene serialization.
 
 ## Hardening Pass 2 progress
 
@@ -256,8 +253,9 @@ The five criticisms most likely from another senior engine programmer are:
   reports optional `gpuMs` through engine diagnostics, and displays unsupported
   state explicitly in the live overlay.
 - The production source-aliased bundle rebuilt successfully after the complete
-  local remediation slice (206 modules, 619.35 kB minified). Device-matrix timer
-  evidence remains open.
+  local remediation slice. Its former 619 kB monolith is now four JavaScript chunks
+  (19.95, 22.28, 222.36, and 361.84 kB; 208 modules) with no size warning.
+  Device-matrix timer evidence remains open.
 - Added a shared labeled shader compiler/reflection layer for every content-provided
   fullscreen, field, simulation, and particle program. Driver failures now include
   stage and numbered source instead of renderer-specific opaque messages.
@@ -273,3 +271,7 @@ The five criticisms most likely from another senior engine programmer are:
 - Corrected segment, mesh, and metaball upload accounting to use active element
   counts rather than backing-array capacity. Fresh Splash production captures fell
   from false ~2.1 MiB readings to 124,568 bytes desktop and 132,248 bytes mobile.
+- Replaced the demo's nested selector/static catalog imports with async
+  `SIMULATION_REGISTRY` resolution and dynamic game/simulation package boundaries.
+  Ball Pit, Turing Skin, Particle Fluid, Splash capture, Reference Arena lifecycle,
+  and unknown-ID fallback routes passed against the production output.

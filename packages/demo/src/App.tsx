@@ -1,18 +1,19 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { ExperienceRuntime } from '@hooksjam/gl-game-lab-react';
 import type { ExperienceDefinition, GameEngine } from '@hooksjam/gl-game-lab-engine';
-import { ballPitDefinition, referenceArenaDefinition } from '@hooksjam/gl-game-lab-games';
 import { WebGL2RendererService, type ContextCycleDiagnostics } from '@hooksjam/gl-game-lab-render-webgl2';
-import { alienVascularTreeDefinition, chainRainDefinition, fireworksDefinition, fluidTankDefinition, harmonicSandDefinition, lavaLampDefinition, myceliumDefinition, orbitalShrapnelDefinition, particleFluidDefinition, softBodyBlobDefinition, sparksDefinition, splashMpmDefinition, turingSkinDefinition, waterTankDefinition } from '@hooksjam/gl-game-lab-simulations';
 import './index.css';
 import { parseDemoCaptureOptions } from './captureOptions.js';
 import { ballPitCaptureInputEvents } from './ballPitCaptureScenarios.js';
+import { loadDemoExperience, loadLifecycleAlternate } from './experienceLoader.js';
 
 export function App(): JSX.Element {
   const [runtimeError, setRuntimeError] = useState<string>();
   const [diagnosticStatus, setDiagnosticStatus] = useState('idle');
   const [contextResult, setContextResult] = useState<ContextCycleDiagnostics>();
   const [lifecycleAlternate, setLifecycleAlternate] = useState(false);
+  const [selectedExperience, setSelectedExperience] = useState<ExperienceDefinition>();
+  const [alternateExperience, setAlternateExperience] = useState<ExperienceDefinition>();
   const [inputPointers, setInputPointers] = useState(0);
   const [inputGamepads, setInputGamepads] = useState(0);
   const [inputKeys, setInputKeys] = useState(0);
@@ -27,23 +28,19 @@ export function App(): JSX.Element {
   const contextTest = query.get('contextTest') === '1';
   const lifecycleTest = query.get('lifecycleTest') === '1';
   const inputTest = query.get('inputTest') === '1';
-  const selectedExperience: ExperienceDefinition = experienceId === 'reference-arena' ? referenceArenaDefinition
-    : experienceId === 'harmonic-sand'
-    ? harmonicSandDefinition
-    : experienceId === 'fireworks' ? fireworksDefinition
-      : experienceId === 'sparks' ? sparksDefinition
-        : experienceId === 'orbital-shrapnel' ? orbitalShrapnelDefinition
-          : experienceId === 'turing-skin' ? turingSkinDefinition
-            : experienceId === 'mycelium' ? myceliumDefinition
-              : experienceId === 'alien-vascular-tree' ? alienVascularTreeDefinition
-                : experienceId === 'chain-rain' ? chainRainDefinition
-                  : experienceId === 'soft-body-blob' ? softBodyBlobDefinition
-                    : experienceId === 'fluid-tank' ? fluidTankDefinition
-                      : experienceId === 'particle-fluid' ? particleFluidDefinition
-                        : experienceId === 'lava-lamp' ? lavaLampDefinition
-                          : experienceId === 'water-tank' ? waterTankDefinition
-                            : experienceId === 'splash-mpm' ? splashMpmDefinition : ballPitDefinition;
-  const experience = lifecycleAlternate ? (selectedExperience.id === 'reference-arena' ? ballPitDefinition : referenceArenaDefinition) : selectedExperience;
+  useEffect(() => {
+    let active = true;
+    setSelectedExperience(undefined);
+    setAlternateExperience(undefined);
+    setLifecycleAlternate(false);
+    void loadDemoExperience(experienceId).then((definition) => {
+      if (active) setSelectedExperience(definition);
+    }).catch((error: unknown) => {
+      if (active) setRuntimeError(error instanceof Error ? error.message : String(error));
+    });
+    return () => { active = false; };
+  }, [experienceId]);
+  const experience = lifecycleAlternate && alternateExperience ? alternateExperience : selectedExperience;
   const handleReady = useCallback((engine: GameEngine): void => {
     previousEngineRef.current = engineRef.current;
     engineRef.current = engine;
@@ -91,6 +88,25 @@ export function App(): JSX.Element {
     setInputKeys(Math.max(inputObservedRef.current.keys, snapshot?.keysDown.length ?? 0));
     setDiagnosticStatus('input-reported');
   };
+  const replaceExperience = async (): Promise<void> => {
+    if (!selectedExperience) return;
+    setDiagnosticStatus('lifecycle-cycling');
+    if (!alternateExperience) {
+      try {
+        const alternate = await loadLifecycleAlternate(selectedExperience.id);
+        setAlternateExperience(alternate);
+        setLifecycleAlternate(true);
+      } catch (error) {
+        setRuntimeError(error instanceof Error ? error.message : String(error));
+        setDiagnosticStatus('lifecycle-error');
+      }
+      return;
+    }
+    setLifecycleAlternate((value) => !value);
+  };
+  if (!experience) {
+    return <main className="shell"><p role="status">Loading GLGameLab experience…</p>{runtimeError && <p className="runtime-error" role="alert">Engine error: {runtimeError}</p>}</main>;
+  }
   return (
     <main className={capture.enabled ? 'shell capture-shell' : 'shell'}>
       {!capture.enabled && (
@@ -137,7 +153,7 @@ export function App(): JSX.Element {
           data-input-keys={inputKeys}
         >
           {contextTest && <button type="button" onClick={() => { void cycleContext(); }}>Cycle GPU context</button>}
-          {lifecycleTest && <button type="button" onClick={() => { setDiagnosticStatus('lifecycle-cycling'); setLifecycleAlternate((value) => !value); }}>Replace experience</button>}
+          {lifecycleTest && <button type="button" onClick={() => { void replaceExperience(); }}>Replace experience</button>}
           {inputTest && <button type="button" onClick={reportInput}>Report input state</button>}
           <output aria-live="polite">{diagnosticStatus}</output>
         </aside>

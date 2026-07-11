@@ -60,3 +60,12 @@ built demo and writes machine-readable release evidence. The pull-request workfl
 installs each browser independently and uploads its report even on failure. Browser
 errors, recovery timeouts, missing touch/gamepad observations, and resource drift
 are hard failures. See `docs/audit/browser-release-gate.md` for the contract.
+
+## Demo experience loading
+
+The demo resolves `?experience=<id>` through `loadDemoExperience`. Games and
+simulations are dynamic package boundaries, so a basic 2D game does not download
+the simulation catalog. Simulation IDs resolve through `SIMULATION_REGISTRY`;
+`reference-arena` remains an internal diagnostics route; unknown IDs retain the
+historical Ball Pit fallback. Capture and lifecycle probes wait for the same async
+definition and therefore exercise production loading rather than a parallel host.
