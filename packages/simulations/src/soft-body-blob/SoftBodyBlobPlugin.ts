@@ -1,6 +1,5 @@
 import { createExtensionToken, type EnginePlugin } from '@hooksjam/gl-game-lab-core';
-import { EngineInput, EngineSchedule, ExperienceRuntimeControllerService, type ExperienceLaunchOptions, type ExperienceRuntimeController, type ExperienceSettingValue } from '@hooksjam/gl-game-lab-engine';
-import { DynamicTriangleMeshRenderer, GpuRenderPassQueueService, InstancedSegmentRenderer, ParticlePointRenderQueueService, WEBGL2_RENDERER_PLUGIN_ID, WebGL2RendererService } from '@hooksjam/gl-game-lab-render-webgl2';
+import { EngineInput, EngineRender2D, EngineSchedule, ExperienceRuntimeControllerService, type ExperienceLaunchOptions, type ExperienceRuntimeController, type ExperienceSettingValue } from '@hooksjam/gl-game-lab-engine';
 import { blobNumber, blobString, createSoftBodyBlobConfig, SOFT_BODY_BLOB_DEFAULTS, type SoftBodyBlobConfig } from './config.js';
 import { SoftBodyModel } from './SoftBodyModel.js';
 import { blobColor3, blobColor4, SOFT_BODY_BLOB_STYLE_MANIFEST } from './styles.js';
@@ -21,17 +20,10 @@ export function createSoftBodyBlobPlugin(initial: SoftBodyBlobConfig = SOFT_BODY
   return {
     id: SOFT_BODY_BLOB_PLUGIN_ID,
     version: '1.0.0',
-    dependencies: [
-      {
-        id: WEBGL2_RENDERER_PLUGIN_ID
-      }
-    ],
+    dependencies: [{ id: 'gl-game-lab.runtime' }],
     install: context => {
-      const renderer = context.get(WebGL2RendererService), input = context.get(EngineInput), particles = context.get(ParticlePointRenderQueueService), passes = context.get(GpuRenderPassQueueService), mesh = new DynamicTriangleMeshRenderer(renderer.device.gl), outlines = new InstancedSegmentRenderer(renderer.device.gl);
-      cleanup = () => {
-        mesh.dispose();
-        outlines.dispose();
-      };
+      const renderer = context.get(EngineRender2D), input = context.get(EngineInput);
+      cleanup = () => undefined;
       applyConfig();
       applyStyle();
       const controller: SoftBodyBlobController = {
@@ -87,7 +79,7 @@ export function createSoftBodyBlobPlugin(initial: SoftBodyBlobConfig = SOFT_BODY
         id: 'gl-game-lab.simulations.soft-body-blob.update',
         stage: 'update',
         run: ({ time }) => {
-          const nextWidth = Math.max(1, renderer.sprites.activeCamera.viewportWidth), nextHeight = Math.max(1, renderer.sprites.activeCamera.viewportHeight), dt = Math.min(1 / 30, time.deltaSeconds);
+          const nextWidth = Math.max(1, renderer.viewport.width), nextHeight = Math.max(1, renderer.viewport.height), dt = Math.min(1 / 30, time.deltaSeconds);
           elapsed += dt;
           if (pendingReset || width !== nextWidth || height !== nextHeight) {
             width = nextWidth;
@@ -157,45 +149,26 @@ export function createSoftBodyBlobPlugin(initial: SoftBodyBlobConfig = SOFT_BODY
         stage: 'renderExtract',
         run: () => {
           const style = requireStyle(), palette3 = style.palette.slice(0, 4).map(blobColor3), palette4 = style.palette.slice(0, 4).map(color => blobColor4(color)), renderStyle = blobString(config, 'renderStyle');
-          passes.submit({
-            id: 'soft-body-blob.mesh',
-            execute: destination => {
-              if (renderStyle !== 'basic') {
-                const packed = model.packMesh();
-                mesh.update(packed);
-                if (renderStyle === 'ultra')
-                  mesh.render(destination, {
-                    worldWidth: width,
-                    worldHeight: height,
-                    palette: palette3,
-                    opacity: 0.18,
-                    blend: 'additive'
-                  });
-                mesh.render(destination, {
-                  worldWidth: width,
-                  worldHeight: height,
-                  palette: palette3,
-                  opacity: renderStyle === 'ultra' ? blobNumber(config, 'opacity') * 0.78 : 0.72,
-                  blend: 'alpha'
-                });
-              }
-              const outline = model.packOutlines();
-              outlines.update(outline);
-              outlines.render(destination, {
-                worldWidth: width,
-                worldHeight: height,
-                palette: palette3,
-                radiusScale: renderStyle === 'basic' ? 0.72 : 1,
-                opacity: 0.9,
-                blend: 'alpha'
-              });
-            }
+          if (renderStyle !== 'basic') {
+            const packed = model.packMesh();
+            if (renderStyle === 'ultra') renderer.submitTriangleMesh({
+              id: 'soft-body-blob.mesh-glow', ...packed, worldWidth: width, worldHeight: height,
+              palette: palette3, opacity: 0.18, blend: 'additive'
+            });
+            renderer.submitTriangleMesh({
+              id: 'soft-body-blob.mesh', ...packed, worldWidth: width, worldHeight: height,
+              palette: palette3, opacity: renderStyle === 'ultra' ? blobNumber(config, 'opacity') * 0.78 : 0.72, blend: 'alpha'
+            });
+          }
+          renderer.submitSegments({
+            id: 'soft-body-blob.outlines', ...model.packOutlines(), worldWidth: width, worldHeight: height,
+            palette: palette3, radiusScale: renderStyle === 'basic' ? 0.72 : 1, opacity: 0.9, blend: 'alpha'
           });
           const visual = model.packVisualPoints(renderStyle === 'basic' ? blobNumber(config, 'liquidFillDensity') : 0), scale = renderStyle === 'ultra' ? blobNumber(config, 'liquidParticleRadius') : renderStyle === 'enhanced' ? 0.72 : 1, radii = new Float32Array(visual.count);
           for (let i = 0; i < visual.count; i++)
             radii[i] = (visual.radii[i] ?? 1) * scale;
           if (renderStyle === 'ultra')
-            particles.submit({
+            renderer.submitParticles({
               id: 'soft-body-blob-density',
               count: visual.count,
               positions: visual.positions,
@@ -205,7 +178,7 @@ export function createSoftBodyBlobPlugin(initial: SoftBodyBlobConfig = SOFT_BODY
               blend: 'additive',
               opacity: 0.22
             });
-          particles.submit({
+          renderer.submitParticles({
             id: 'soft-body-blob-points',
             count: visual.count,
             positions: visual.positions,
@@ -253,7 +226,7 @@ export function createSoftBodyBlobPlugin(initial: SoftBodyBlobConfig = SOFT_BODY
           background[2],
           1
         ]);
-        renderer.setPaletteBackdrop({
+        renderer.setBackdrop({
           base: [
             background[0],
             background[1],

@@ -15,6 +15,10 @@ import {
   type RenderViewport,
   type Sprite2DDraw,
   type ParticleBatch2D,
+  type SegmentBatch2D,
+  type TriangleMeshBatch2D,
+  type MetaballBatch2D,
+  type FullscreenShaderEffect2D,
   type Text2DDraw,
   type Texture2DHandle,
 } from '@hooksjam/gl-game-lab-engine';
@@ -43,6 +47,9 @@ import { FullscreenEffectRenderer, FullscreenEffectRenderQueue } from './Fullscr
 import { GpuRenderPassQueue } from './GpuRenderPassQueue.js';
 import { FrameRenderPipeline, type FrameRenderGraphSnapshot } from './FrameRenderPipeline.js';
 import { createDefaultBitmapFontAtlas } from './DefaultBitmapFont.js';
+import { InstancedSegmentRenderer } from './InstancedSegmentRenderer.js';
+import { DynamicTriangleMeshRenderer } from './DynamicTriangleMeshRenderer.js';
+import { DensityMetaballRenderer } from './DensityMetaballRenderer.js';
 
 export interface WebGL2RendererOptions {
   readonly device?: WebGL2DeviceOptions;
@@ -116,6 +123,9 @@ export class WebGL2Renderer implements RenderBackend, Render2DService {
   private spriteRenderer: SpriteRenderer;
   private particleRenderer: ParticlePointRenderer;
   private effectRenderer: FullscreenEffectRenderer;
+  private segmentRenderer: InstancedSegmentRenderer;
+  private meshRenderer: DynamicTriangleMeshRenderer;
+  private metaballRenderer: DensityMetaballRenderer;
   private bloom: BloomPostProcess;
   private backdrop: PaletteBackdropRenderer;
   private readonly framePipeline: FrameRenderPipeline;
@@ -159,6 +169,9 @@ export class WebGL2Renderer implements RenderBackend, Render2DService {
     this.spriteRenderer = new SpriteRenderer(this.device);
     this.particleRenderer = new ParticlePointRenderer(this.device);
     this.effectRenderer = new FullscreenEffectRenderer(this.device);
+    this.segmentRenderer = new InstancedSegmentRenderer(this.device.gl);
+    this.meshRenderer = new DynamicTriangleMeshRenderer(this.device.gl);
+    this.metaballRenderer = new DensityMetaballRenderer(this.device.gl);
     this.bloomOptions = normalizeBloomOptions(options.bloom);
     this.bloom = new BloomPostProcess(this.device, this.bloomOptions);
     this.backdrop = new PaletteBackdropRenderer(this.device);
@@ -369,6 +382,45 @@ export class WebGL2Renderer implements RenderBackend, Render2DService {
     this.particles.submit(batch);
   }
 
+  submitSegments(batch: SegmentBatch2D): void {
+    this.gpuPasses.submit({
+      id: batch.id,
+      execute: (destination) => {
+        this.segmentRenderer.update(batch);
+        this.segmentRenderer.render(destination, batch);
+      },
+    });
+  }
+
+  submitTriangleMesh(batch: TriangleMeshBatch2D): void {
+    this.gpuPasses.submit({
+      id: batch.id,
+      execute: (destination) => {
+        this.meshRenderer.update(batch);
+        this.meshRenderer.render(destination, batch);
+      },
+    });
+  }
+
+  submitMetaballs(batch: MetaballBatch2D): void {
+    this.gpuPasses.submit({
+      id: batch.id,
+      execute: (destination) => {
+        this.metaballRenderer.update(batch);
+        this.metaballRenderer.render(destination, batch);
+      },
+    });
+  }
+
+  submitFullscreenEffect(effect: FullscreenShaderEffect2D): void {
+    this.effects.submit({
+      id: effect.id,
+      fragmentSource: effect.fragmentSource,
+      ...(effect.uniforms ? { uniforms: effect.uniforms } : {}),
+      ...(effect.blend ? { blend: effect.blend } : {}),
+    });
+  }
+
   setBackdrop(options: Backdrop2DOptions | undefined): void {
     this.setPaletteBackdrop(options);
   }
@@ -398,6 +450,9 @@ export class WebGL2Renderer implements RenderBackend, Render2DService {
     for (const texture of this.textures2D.values()) texture.resource.dispose();
     this.textures2D.clear();
     this.effectRenderer.destroy();
+    this.segmentRenderer.dispose();
+    this.meshRenderer.dispose();
+    this.metaballRenderer.dispose();
     this.particleRenderer.destroy();
     this.spriteRenderer.destroy();
     this.bloom.destroy();
@@ -411,6 +466,9 @@ export class WebGL2Renderer implements RenderBackend, Render2DService {
 
   private restoreContext(): void {
     this.effectRenderer.destroy();
+    this.segmentRenderer.dispose();
+    this.meshRenderer.dispose();
+    this.metaballRenderer.dispose();
     this.particleRenderer.destroy();
     this.spriteRenderer.destroy();
     this.bloom.destroy();
@@ -418,6 +476,9 @@ export class WebGL2Renderer implements RenderBackend, Render2DService {
     this.spriteRenderer = new SpriteRenderer(this.device);
     this.particleRenderer = new ParticlePointRenderer(this.device);
     this.effectRenderer = new FullscreenEffectRenderer(this.device);
+    this.segmentRenderer = new InstancedSegmentRenderer(this.device.gl);
+    this.meshRenderer = new DynamicTriangleMeshRenderer(this.device.gl);
+    this.metaballRenderer = new DensityMetaballRenderer(this.device.gl);
     this.bloom = new BloomPostProcess(this.device, this.bloomOptions);
     this.backdrop = new PaletteBackdropRenderer(this.device);
     this.backdrop.configure(this.backdropOptions);

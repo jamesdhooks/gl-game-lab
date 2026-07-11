@@ -216,6 +216,10 @@ class FakeRender2D implements Render2DService {
   submit(_sprite: Sprite2DDraw): void {}
   submitText(_text: Text2DDraw): void {}
   submitParticles(batch: ParticleBatch2D): void { this.batches.push(batch); }
+  submitSegments(): void {}
+  submitTriangleMesh(): void {}
+  submitMetaballs(): void {}
+  submitFullscreenEffect(): void {}
   setCamera(_camera: Camera2DState): void {}
   setClearColor(color: readonly [number, number, number, number]): void { this.onClear(color); }
   setBloom(options: { readonly enabled: boolean }): void { this.onBloom(options.enabled); }

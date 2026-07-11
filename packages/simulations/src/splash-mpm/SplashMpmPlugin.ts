@@ -1,6 +1,5 @@
 import { createExtensionToken, type EnginePlugin } from '@hooksjam/gl-game-lab-core';
-import { EngineInput, EngineSchedule, ExperienceRuntimeControllerService, type ExperienceLaunchOptions, type ExperienceRuntimeController, type ExperienceSettingValue } from '@hooksjam/gl-game-lab-engine';
-import { DensityMetaballRenderer, GpuRenderPassQueueService, InstancedSegmentRenderer, ParticlePointRenderQueueService, WEBGL2_RENDERER_PLUGIN_ID, WebGL2RendererService } from '@hooksjam/gl-game-lab-render-webgl2';
+import { EngineInput, EngineRender2D, EngineSchedule, ExperienceRuntimeControllerService, type ExperienceLaunchOptions, type ExperienceRuntimeController, type ExperienceSettingValue } from '@hooksjam/gl-game-lab-engine';
 import { createSplashMpmConfig, SPLASH_MPM_DEFAULTS, splashNumber, splashString, type SplashMpmConfig } from './config.js';
 import { SplashMpmModel, type SplashMpmTuning } from './SplashMpmModel.js';
 import { splashRgb, splashRgba, SPLASH_MPM_STYLE_MANIFEST } from './styles.js';
@@ -22,17 +21,10 @@ export function createSplashMpmPlugin(initial: SplashMpmConfig = SPLASH_MPM_DEFA
   return {
     id: SPLASH_MPM_PLUGIN_ID,
     version: '1.0.0',
-    dependencies: [
-      {
-        id: WEBGL2_RENDERER_PLUGIN_ID
-      }
-    ],
+    dependencies: [{ id: 'gl-game-lab.runtime' }],
     install: context => {
-      const renderer = context.get(WebGL2RendererService), input = context.get(EngineInput), points = context.get(ParticlePointRenderQueueService), queue = context.get(GpuRenderPassQueueService), surface = new DensityMetaballRenderer(renderer.device.gl), segments = new InstancedSegmentRenderer(renderer.device.gl);
-      cleanup = () => {
-        surface.dispose();
-        segments.dispose();
-      };
+      const renderer = context.get(EngineRender2D), input = context.get(EngineInput);
+      cleanup = () => undefined;
       applyStyle();
       const controller: SplashMpmController = {
         get mode() {
@@ -91,7 +83,7 @@ export function createSplashMpmPlugin(initial: SplashMpmConfig = SPLASH_MPM_DEFA
         id: 'gl-game-lab.simulations.splash-mpm.update',
         stage: 'update',
         run: ({ time: clock }) => {
-          const w = Math.max(1, renderer.sprites.activeCamera.viewportWidth), h = Math.max(1, renderer.sprites.activeCamera.viewportHeight), dt = Math.min(1 / 30, clock.deltaSeconds);
+          const w = Math.max(1, renderer.viewport.width), h = Math.max(1, renderer.viewport.height), dt = Math.min(1 / 30, clock.deltaSeconds);
           time += dt;
           if (pendingReset || w !== width || h !== height) {
             width = w;
@@ -161,59 +153,25 @@ export function createSplashMpmPlugin(initial: SplashMpmConfig = SPLASH_MPM_DEFA
         stage: 'renderExtract',
         run: () => {
           const style = requireStyle(), renderStyle = splashString(config, 'renderStyle'), palette = style.palette.slice(0, 4).map(splashRgb);
-          queue.submit({
-            id: 'splash-mpm.surface-obstacles',
-            execute: target => {
-              if (renderStyle !== 'basic') {
-                surface.update({
-                  count: model.count,
-                  positions: model.world.positions,
-                  radii: model.world.radii,
-                  temperatures: model.foam
-                });
-                surface.render(target, {
-                  worldWidth: width,
-                  worldHeight: height,
-                  fieldScale: Math.max(0.2, Math.min(1, splashNumber(config, 'enhancedQuality') * splashNumber(config, 'liquidFieldScale') * 0.75)),
-                  particleRadiusScale: splashNumber(config, 'enhancedSplatSize') * splashNumber(config, 'liquidParticleRadius'),
-                  threshold: splashNumber(config, 'liquidSurfaceThreshold'),
-                  edgeSoftness: splashNumber(config, 'liquidEdgeSoftness') * (2 - splashNumber(config, 'liquidEdgeTightness')),
-                  palette,
-                  background: splashRgb(style.background),
-                  thermalContrast: renderStyle === 'ultra' ? 1 + splashNumber(config, 'liquidFoamStrength') * 0.3 : splashNumber(config, 'enhancedDepth'),
-                  refraction: splashNumber(config, 'liquidRefraction'),
-                  gloss: splashNumber(config, 'liquidGloss'),
-                  rimLighting: splashNumber(config, 'enhancedEdge'),
-                  opacity: splashNumber(config, 'opacity'),
-                  time,
-                  backgroundDepth: 0
-                });
-              }
-              const packed = model.packSegments();
-              segments.update(packed);
-              segments.render(target, {
-                worldWidth: width,
-                worldHeight: height,
-                palette: [
-                  [
-                    0.35,
-                    0.4,
-                    0.46
-                  ],
-                  [
-                    0.78,
-                    0.82,
-                    0.86
-                  ]
-                ],
-                radiusScale: 1,
-                opacity: 0.92,
-                blend: 'alpha'
-              });
-            }
+          if (renderStyle !== 'basic') renderer.submitMetaballs({
+            id: 'splash-mpm.surface', count: model.count, positions: model.world.positions,
+            radii: model.world.radii, temperatures: model.foam, worldWidth: width, worldHeight: height,
+            fieldScale: Math.max(0.2, Math.min(1, splashNumber(config, 'enhancedQuality') * splashNumber(config, 'liquidFieldScale') * 0.75)),
+            particleRadiusScale: splashNumber(config, 'enhancedSplatSize') * splashNumber(config, 'liquidParticleRadius'),
+            threshold: splashNumber(config, 'liquidSurfaceThreshold'),
+            edgeSoftness: splashNumber(config, 'liquidEdgeSoftness') * (2 - splashNumber(config, 'liquidEdgeTightness')),
+            palette, background: splashRgb(style.background),
+            thermalContrast: renderStyle === 'ultra' ? 1 + splashNumber(config, 'liquidFoamStrength') * 0.3 : splashNumber(config, 'enhancedDepth'),
+            refraction: splashNumber(config, 'liquidRefraction'), gloss: splashNumber(config, 'liquidGloss'),
+            rimLighting: splashNumber(config, 'enhancedEdge'), opacity: splashNumber(config, 'opacity'),
+            time, backgroundDepth: 0
+          });
+          renderer.submitSegments({
+            id: 'splash-mpm.obstacles', ...model.packSegments(), worldWidth: width, worldHeight: height,
+            palette: [[0.35, 0.4, 0.46], [0.78, 0.82, 0.86]], radiusScale: 1, opacity: 0.92, blend: 'alpha'
           });
           if (renderStyle === 'basic' || renderStyle === 'ultra')
-            points.submit({
+            renderer.submitParticles({
               id: 'splash-mpm-particles',
               count: model.count,
               positions: model.world.positions,
@@ -231,7 +189,7 @@ export function createSplashMpmPlugin(initial: SplashMpmConfig = SPLASH_MPM_DEFA
               opacity: renderStyle === 'basic' ? splashNumber(config, 'opacity') : 0.22
             });
           const pegs = model.packPegs();
-          points.submit({
+          renderer.submitParticles({
             id: 'splash-mpm-pegs',
             count: pegs.count,
             positions: pegs.positions,
@@ -290,7 +248,7 @@ export function createSplashMpmPlugin(initial: SplashMpmConfig = SPLASH_MPM_DEFA
           bg[2],
           1
         ]);
-        renderer.setPaletteBackdrop(undefined);
+        renderer.setBackdrop(undefined);
         renderer.setBloom({
           enabled: ultra,
           intensity: ultra ? splashNumber(config, 'liquidBloomStrength') : 0,

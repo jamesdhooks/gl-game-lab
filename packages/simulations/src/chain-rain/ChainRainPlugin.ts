@@ -1,7 +1,6 @@
 import { createExtensionToken, type EnginePlugin } from '@hooksjam/gl-game-lab-core';
-import { EngineInput, EngineSchedule, ExperienceRuntimeControllerService, type ExperienceLaunchOptions, type ExperienceRuntimeController, type ExperienceSettingValue } from '@hooksjam/gl-game-lab-engine';
+import { EngineInput, EngineRender2D, EngineSchedule, ExperienceRuntimeControllerService, type ExperienceLaunchOptions, type ExperienceRuntimeController, type ExperienceSettingValue } from '@hooksjam/gl-game-lab-engine';
 import { ConstrainedCircleParticleWorld2D } from '@hooksjam/gl-game-lab-physics-2d';
-import { GpuRenderPassQueueService, InstancedSegmentRenderer, ParticlePointRenderQueueService, WEBGL2_RENDERER_PLUGIN_ID, WebGL2RendererService } from '@hooksjam/gl-game-lab-render-webgl2';
 import { CHAIN_RAIN_DEFAULTS, chainNumber, chainString, createChainRainConfig, type ChainRainConfig } from './config.js';
 import { chainColor3, chainColor4, CHAIN_RAIN_STYLE_MANIFEST } from './styles.js';
 export type ChainRainMode = 'draw' | 'build' | 'interact';
@@ -21,14 +20,10 @@ export function createChainRainPlugin(initial: ChainRainConfig = CHAIN_RAIN_DEFA
   return {
     id: CHAIN_RAIN_PLUGIN_ID,
     version: '1.0.0',
-    dependencies: [
-      {
-        id: WEBGL2_RENDERER_PLUGIN_ID
-      }
-    ],
+    dependencies: [{ id: 'gl-game-lab.runtime' }],
     install: context => {
-      const renderer = context.get(WebGL2RendererService), input = context.get(EngineInput), particles = context.get(ParticlePointRenderQueueService), gpuPasses = context.get(GpuRenderPassQueueService), segments = new InstancedSegmentRenderer(renderer.device.gl);
-      cleanup = () => segments.dispose();
+      const renderer = context.get(EngineRender2D), input = context.get(EngineInput);
+      cleanup = () => undefined;
       applyConfig();
       applyStyle();
       const controller: ChainRainController = {
@@ -84,7 +79,7 @@ export function createChainRainPlugin(initial: ChainRainConfig = CHAIN_RAIN_DEFA
         id: 'gl-game-lab.simulations.chain-rain.update',
         stage: 'update',
         run: ({ time }) => {
-          const nextWidth = Math.max(1, renderer.sprites.activeCamera.viewportWidth), nextHeight = Math.max(1, renderer.sprites.activeCamera.viewportHeight), dt = Math.min(1 / 30, time.deltaSeconds);
+          const nextWidth = Math.max(1, renderer.viewport.width), nextHeight = Math.max(1, renderer.viewport.height), dt = Math.min(1 / 30, time.deltaSeconds);
           elapsed += dt;
           if (pendingReset || nextWidth !== width || nextHeight !== height) {
             width = nextWidth;
@@ -147,29 +142,15 @@ export function createChainRainPlugin(initial: ChainRainConfig = CHAIN_RAIN_DEFA
         stage: 'renderExtract',
         run: () => {
           const style = requireStyle(), palette3 = style.palette.slice(0, 4).map(chainColor3), palette4 = style.palette.slice(0, 4).map(color => chainColor4(color, 1)), renderStyle = chainString(config, 'renderStyle'), skin = chainNumber(config, 'skinWidth');
-          gpuPasses.submit({
-            id: 'chain-rain.links',
-            execute: destination => {
-              const packed = world.packSegments();
-              segments.update(packed);
-              if (renderStyle !== 'basic')
-                segments.render(destination, {
-                  worldWidth: width,
-                  worldHeight: height,
-                  palette: palette3,
-                  radiusScale: renderStyle === 'ultra' ? skin * 2.15 : skin * 1.5,
-                  opacity: renderStyle === 'ultra' ? 0.2 : 0.16,
-                  blend: 'additive'
-                });
-              segments.render(destination, {
-                worldWidth: width,
-                worldHeight: height,
-                palette: palette3,
-                radiusScale: renderStyle === 'basic' ? 0.72 : skin,
-                opacity: 0.96,
-                blend: 'alpha'
-              });
-            }
+          const packed = world.packSegments();
+          if (renderStyle !== 'basic') renderer.submitSegments({
+            id: 'chain-rain.links-glow', ...packed, worldWidth: width, worldHeight: height, palette: palette3,
+            radiusScale: renderStyle === 'ultra' ? skin * 2.15 : skin * 1.5,
+            opacity: renderStyle === 'ultra' ? 0.2 : 0.16, blend: 'additive'
+          });
+          renderer.submitSegments({
+            id: 'chain-rain.links', ...packed, worldWidth: width, worldHeight: height, palette: palette3,
+            radiusScale: renderStyle === 'basic' ? 0.72 : skin, opacity: 0.96, blend: 'alpha'
           });
           const radiusScale = renderStyle === 'ultra' ? chainNumber(config, 'liquidParticleRadius') : renderStyle === 'enhanced' ? skin : 1;
           for (let i = 0; i < world.count; i += 1) {
@@ -177,7 +158,7 @@ export function createChainRainPlugin(initial: ChainRainConfig = CHAIN_RAIN_DEFA
             renderSeeds[i] = world.colorSeeds[i] ?? i;
           }
           if (renderStyle === 'ultra')
-            particles.submit({
+            renderer.submitParticles({
               id: 'chain-rain-density',
               count: world.count,
               positions: world.positions,
@@ -187,7 +168,7 @@ export function createChainRainPlugin(initial: ChainRainConfig = CHAIN_RAIN_DEFA
               blend: 'additive',
               opacity: Math.min(0.3, chainNumber(config, 'opacity') * 0.25)
             });
-          particles.submit({
+          renderer.submitParticles({
             id: 'chain-rain-nodes',
             count: world.count,
             positions: world.positions,
@@ -232,7 +213,7 @@ export function createChainRainPlugin(initial: ChainRainConfig = CHAIN_RAIN_DEFA
           background[2],
           1
         ]);
-        renderer.setPaletteBackdrop({
+        renderer.setBackdrop({
           base: [
             background[0],
             background[1],

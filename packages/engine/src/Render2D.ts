@@ -85,6 +85,71 @@ export interface Backdrop2DOptions {
   readonly blendStrength?: number;
 }
 
+export interface SegmentBatch2D {
+  readonly id: string;
+  readonly count: number;
+  readonly segments: Float32Array;
+  readonly styles: Float32Array;
+  readonly worldWidth: number;
+  readonly worldHeight: number;
+  readonly palette: readonly (readonly [number, number, number])[];
+  readonly radiusScale?: number;
+  readonly opacity?: number;
+  readonly blend?: BlendMode2D;
+}
+
+export interface TriangleMeshBatch2D {
+  readonly id: string;
+  readonly vertexCount: number;
+  readonly positions: Float32Array;
+  readonly colorSeeds: Float32Array;
+  readonly worldWidth: number;
+  readonly worldHeight: number;
+  readonly palette: readonly (readonly [number, number, number])[];
+  readonly opacity?: number;
+  readonly blend?: BlendMode2D;
+}
+
+export interface MetaballBatch2D {
+  readonly id: string;
+  readonly count: number;
+  readonly positions: Float32Array;
+  readonly radii: Float32Array;
+  readonly temperatures: Float32Array;
+  readonly worldWidth: number;
+  readonly worldHeight: number;
+  readonly fieldScale: number;
+  readonly particleRadiusScale: number;
+  readonly threshold: number;
+  readonly edgeSoftness: number;
+  readonly palette: readonly (readonly [number, number, number])[];
+  readonly background: readonly [number, number, number];
+  readonly thermalContrast: number;
+  readonly refraction: number;
+  readonly gloss: number;
+  readonly rimLighting: number;
+  readonly opacity: number;
+  readonly time?: number;
+  readonly backgroundDepth?: number;
+}
+
+export type ShaderUniform2D =
+  | { readonly type: '1f'; readonly value: number }
+  | { readonly type: '1i'; readonly value: number }
+  | { readonly type: '1fv'; readonly value: Float32Array }
+  | { readonly type: '2f'; readonly value: readonly [number, number] }
+  | { readonly type: '3f'; readonly value: readonly [number, number, number] }
+  | { readonly type: '4f'; readonly value: readonly [number, number, number, number] }
+  | { readonly type: '4fv'; readonly value: Float32Array };
+
+export interface FullscreenShaderEffect2D {
+  readonly id: string;
+  readonly language: 'glsl-es-300';
+  readonly fragmentSource: string;
+  readonly uniforms?: Readonly<Record<string, ShaderUniform2D>>;
+  readonly blend?: BlendMode2D;
+}
+
 export interface Render2DService {
   readonly viewport: { readonly width: number; readonly height: number };
   createRgbaTexture(id: string, width: number, height: number, pixels: Uint8Array): Texture2DHandle;
@@ -98,6 +163,10 @@ export interface Render2DService {
   submit(sprite: Sprite2DDraw): void;
   submitText(text: Text2DDraw): void;
   submitParticles(batch: ParticleBatch2D): void;
+  submitSegments(batch: SegmentBatch2D): void;
+  submitTriangleMesh(batch: TriangleMeshBatch2D): void;
+  submitMetaballs(batch: MetaballBatch2D): void;
+  submitFullscreenEffect(effect: FullscreenShaderEffect2D): void;
   setCamera(camera: Camera2DState): void;
   setClearColor(color: ColorRgba): void;
   setBloom(options: Bloom2DOptions): void;

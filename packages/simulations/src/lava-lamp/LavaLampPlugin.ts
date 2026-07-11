@@ -1,6 +1,5 @@
 import { createExtensionToken, type EnginePlugin } from '@hooksjam/gl-game-lab-core';
-import { EngineInput, EngineSchedule, ExperienceRuntimeControllerService, type ExperienceLaunchOptions, type ExperienceRuntimeController, type ExperienceSettingValue } from '@hooksjam/gl-game-lab-engine';
-import { DensityMetaballRenderer, GpuRenderPassQueueService, ParticlePointRenderQueueService, WEBGL2_RENDERER_PLUGIN_ID, WebGL2RendererService } from '@hooksjam/gl-game-lab-render-webgl2';
+import { EngineInput, EngineRender2D, EngineSchedule, ExperienceRuntimeControllerService, type ExperienceLaunchOptions, type ExperienceRuntimeController, type ExperienceSettingValue } from '@hooksjam/gl-game-lab-engine';
 import { createLavaLampConfig, LAVA_LAMP_DEFAULTS, lavaNumber, lavaString, type LavaLampConfig } from './config.js';
 import { LavaLampModel, type LavaLampTuning } from './LavaLampModel.js';
 import { lavaColor3, lavaColor4, LAVA_LAMP_STYLE_MANIFEST } from './styles.js';
@@ -17,14 +16,10 @@ export function createLavaLampPlugin(initial: LavaLampConfig = LAVA_LAMP_DEFAULT
   return {
     id: LAVA_LAMP_PLUGIN_ID,
     version: '1.0.0',
-    dependencies: [
-      {
-        id: WEBGL2_RENDERER_PLUGIN_ID
-      }
-    ],
+    dependencies: [{ id: 'gl-game-lab.runtime' }],
     install: context => {
-      const renderer = context.get(WebGL2RendererService), input = context.get(EngineInput), particles = context.get(ParticlePointRenderQueueService), queue = context.get(GpuRenderPassQueueService), surface = new DensityMetaballRenderer(renderer.device.gl);
-      cleanup = () => surface.dispose();
+      const renderer = context.get(EngineRender2D), input = context.get(EngineInput);
+      cleanup = () => undefined;
       applyStyle();
       const controller: LavaLampController = {
         get mode() {
@@ -77,7 +72,7 @@ export function createLavaLampPlugin(initial: LavaLampConfig = LAVA_LAMP_DEFAULT
         id: 'gl-game-lab.simulations.lava-lamp.update',
         stage: 'update',
         run: ({ time }) => {
-          const nextWidth = Math.max(1, renderer.sprites.activeCamera.viewportWidth), nextHeight = Math.max(1, renderer.sprites.activeCamera.viewportHeight), dt = Math.min(1 / 30, time.deltaSeconds) * lavaNumber(config, 'timeScale');
+          const nextWidth = Math.max(1, renderer.viewport.width), nextHeight = Math.max(1, renderer.viewport.height), dt = Math.min(1 / 30, time.deltaSeconds) * lavaNumber(config, 'timeScale');
           elapsed += dt;
           if (pendingReset || width !== nextWidth || height !== nextHeight) {
             width = nextWidth;
@@ -109,7 +104,7 @@ export function createLavaLampPlugin(initial: LavaLampConfig = LAVA_LAMP_DEFAULT
         run: () => {
           const renderStyle = lavaString(config, 'renderStyle'), style = requireStyle(), palette3 = style.palette.slice(0, 4).map(lavaColor3);
           if (renderStyle === 'basic') {
-            particles.submit({
+            renderer.submitParticles({
               id: 'lava-lamp-basic',
               count: model.count,
               positions: model.world.positions,
@@ -121,16 +116,12 @@ export function createLavaLampPlugin(initial: LavaLampConfig = LAVA_LAMP_DEFAULT
             });
             return;
           }
-          queue.submit({
-            id: 'lava-lamp.density-surface',
-            execute: destination => {
-              surface.update({
+          renderer.submitMetaballs({
+                id: 'lava-lamp.density-surface',
                 count: model.count,
                 positions: model.world.positions,
                 radii: model.world.radii,
-                temperatures: model.temperatures
-              });
-              surface.render(destination, {
+                temperatures: model.temperatures,
                 worldWidth: width,
                 worldHeight: height,
                 fieldScale: Math.min(1, lavaNumber(config, 'liquidFieldScale') * lavaNumber(config, 'enhancedQuality')),
@@ -146,8 +137,6 @@ export function createLavaLampPlugin(initial: LavaLampConfig = LAVA_LAMP_DEFAULT
                 opacity: Math.min(1, lavaNumber(config, 'opacity') + lavaNumber(config, 'metaballBlend') * 0.45),
                 time: elapsed,
                 backgroundDepth: renderStyle === 'ultra' ? 0.9 : 0
-              });
-            }
           });
         }
       });
@@ -193,7 +182,7 @@ export function createLavaLampPlugin(initial: LavaLampConfig = LAVA_LAMP_DEFAULT
           background[2],
           1
         ]);
-        renderer.setPaletteBackdrop(ultra ? undefined : {
+        renderer.setBackdrop(ultra ? undefined : {
           base: [
             background[0],
             background[1],

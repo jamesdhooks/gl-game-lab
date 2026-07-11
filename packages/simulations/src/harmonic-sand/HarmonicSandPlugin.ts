@@ -1,17 +1,13 @@
 import { createExtensionToken, type EnginePlugin, type PointerInputEvent } from '@hooksjam/gl-game-lab-core';
 import {
   EngineInput,
+  EngineRender2D,
   EngineSchedule,
   ExperienceRuntimeControllerService,
   type ExperienceLaunchOptions,
   type ExperienceRuntimeController,
   type ExperienceSettingValue,
 } from '@hooksjam/gl-game-lab-engine';
-import {
-  FullscreenEffectRenderQueueService,
-  WEBGL2_RENDERER_PLUGIN_ID,
-  WebGL2RendererService,
-} from '@hooksjam/gl-game-lab-render-webgl2';
 import { createHarmonicSandConfig, HARMONIC_SAND_DEFAULTS, type HarmonicSandConfig } from './config.js';
 import { HARMONIC_SAND_FRAGMENT_SHADER } from './shader.js';
 import { HARMONIC_SAND_STYLE_MANIFEST, rgb } from './styles.js';
@@ -46,10 +42,9 @@ export function createHarmonicSandPlugin(
   return {
     id: HARMONIC_SAND_PLUGIN_ID,
     version: '1.0.0',
-    dependencies: [{ id: WEBGL2_RENDERER_PLUGIN_ID }],
+    dependencies: [{ id: 'gl-game-lab.runtime' }],
     install: (context) => {
-      const renderer = context.get(WebGL2RendererService);
-      const effects = context.get(FullscreenEffectRenderQueueService);
+      const renderer = context.get(EngineRender2D);
       const input = context.get(EngineInput);
       resetEmitters();
       applyBackground();
@@ -91,11 +86,12 @@ export function createHarmonicSandPlugin(
           fillEmitterArrays();
           const style = requireStyle();
           const palette = style.palette;
-          effects.submit({
+          renderer.submitFullscreenEffect({
             id: 'harmonic-sand.field',
+            language: 'glsl-es-300',
             fragmentSource: HARMONIC_SAND_FRAGMENT_SHADER,
             uniforms: {
-              uResolution: { type: '2f', value: [renderer.width, renderer.height] },
+              uResolution: { type: '2f', value: [renderer.viewport.width, renderer.viewport.height] },
               uFieldResolution: { type: '1f', value: config.resolution },
               uTime: { type: '1f', value: elapsed / config.wavePeriod },
               uBaseFrequency: { type: '1f', value: config.baseFrequency },
@@ -120,12 +116,12 @@ export function createHarmonicSandPlugin(
       function applyBackground(): void {
         const background = rgb(requireStyle().background);
         renderer.setClearColor([background[0], background[1], background[2], 1]);
-        renderer.setPaletteBackdrop(undefined);
+        renderer.setBackdrop(undefined);
         renderer.setBloom({ enabled: false });
       }
 
       function routePointer(event: PointerInputEvent): void {
-        const point = toPlate(event.x, event.y, renderer.sprites.activeCamera.viewportWidth, renderer.sprites.activeCamera.viewportHeight);
+        const point = toPlate(event.x, event.y, renderer.viewport.width, renderer.viewport.height);
         if (event.phase === 'down') {
           const nearest = nearestEmitter(point.x, point.y);
           if (nearest !== undefined && nearest === lastTapIndex && elapsed - lastTapTime <= 0.32) {

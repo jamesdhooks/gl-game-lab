@@ -1,6 +1,5 @@
 import { createExtensionToken, type EnginePlugin } from '@hooksjam/gl-game-lab-core';
-import { EngineInput, EngineSchedule, ExperienceRuntimeControllerService, type ExperienceLaunchOptions, type ExperienceRuntimeController, type ExperienceSettingValue } from '@hooksjam/gl-game-lab-engine';
-import { FullscreenEffectRenderQueueService, GpuRenderPassQueueService, InstancedSegmentRenderer, WEBGL2_RENDERER_PLUGIN_ID, WebGL2RendererService } from '@hooksjam/gl-game-lab-render-webgl2';
+import { EngineInput, EngineRender2D, EngineSchedule, ExperienceRuntimeControllerService, type ExperienceLaunchOptions, type ExperienceRuntimeController, type ExperienceSettingValue } from '@hooksjam/gl-game-lab-engine';
 import { createVascularTreeConfig, VASCULAR_TREE_DEFAULTS, type VascularTreeConfig } from './config.js';
 import { VASCULAR_MARKER_SHADER } from './shaders.js';
 import { vascularColor3, VASCULAR_TREE_STYLE_MANIFEST } from './styles.js';
@@ -22,14 +21,10 @@ export function createVascularTreePlugin(initial: VascularTreeConfig = VASCULAR_
   return {
     id: VASCULAR_TREE_PLUGIN_ID,
     version: '1.0.0',
-    dependencies: [
-      {
-        id: WEBGL2_RENDERER_PLUGIN_ID
-      }
-    ],
+    dependencies: [{ id: 'gl-game-lab.runtime' }],
     install: context => {
-      const renderer = context.get(WebGL2RendererService), input = context.get(EngineInput), gpuPasses = context.get(GpuRenderPassQueueService), effects = context.get(FullscreenEffectRenderQueueService), segments = new InstancedSegmentRenderer(renderer.device.gl);
-      cleanup = () => segments.dispose();
+      const renderer = context.get(EngineRender2D), input = context.get(EngineInput);
+      cleanup = () => undefined;
       applyStyle();
       const controller: VascularTreeController = {
         get mode() {
@@ -81,7 +76,7 @@ export function createVascularTreePlugin(initial: VascularTreeConfig = VASCULAR_
         id: 'gl-game-lab.simulations.alien-vascular-tree.update',
         stage: 'update',
         run: ({ time }) => {
-          const width = Math.max(1, renderer.sprites.activeCamera.viewportWidth), height = Math.max(1, renderer.sprites.activeCamera.viewportHeight), dt = Math.min(0.05, time.deltaSeconds) * config.timeScale;
+          const width = Math.max(1, renderer.viewport.width), height = Math.max(1, renderer.viewport.height), dt = Math.min(0.05, time.deltaSeconds) * config.timeScale;
           if (pendingReset || lastWidth !== width || lastHeight !== height) {
             model.reset(width, height);
             lastWidth = width;
@@ -126,32 +121,12 @@ export function createVascularTreePlugin(initial: VascularTreeConfig = VASCULAR_
         id: 'gl-game-lab.simulations.alien-vascular-tree.render',
         stage: 'renderExtract',
         run: () => {
-          gpuPasses.submit({
-            id: 'alien-vascular-tree.instanced-branches',
-            execute: destination => {
-              const packed = model.pack(elapsed, config.nutrientFlow), style = requireStyle(), palette = style.palette.slice(0, 4).map(vascularColor3);
-              segments.update(packed);
-              segments.render(destination, {
-                worldWidth: lastWidth,
-                worldHeight: lastHeight,
-                palette,
-                radiusScale: 3.2 * (config.resolution / 128) ** 0.1,
-                opacity: 0.3,
-                blend: 'additive'
-              });
-              segments.render(destination, {
-                worldWidth: lastWidth,
-                worldHeight: lastHeight,
-                palette,
-                radiusScale: 1,
-                opacity: 1,
-                blend: 'alpha'
-              });
-            }
-          });
-          const style = requireStyle();
-          effects.submit({
+          const packed = model.pack(elapsed, config.nutrientFlow), style = requireStyle(), palette = style.palette.slice(0, 4).map(vascularColor3);
+          renderer.submitSegments({ id: 'alien-vascular-tree.branches-glow', ...packed, worldWidth: lastWidth, worldHeight: lastHeight, palette, radiusScale: 3.2 * (config.resolution / 128) ** 0.1, opacity: 0.3, blend: 'additive' });
+          renderer.submitSegments({ id: 'alien-vascular-tree.branches', ...packed, worldWidth: lastWidth, worldHeight: lastHeight, palette, radiusScale: 1, opacity: 1, blend: 'alpha' });
+          renderer.submitFullscreenEffect({
             id: 'alien-vascular-tree.guide',
+            language: 'glsl-es-300',
             fragmentSource: VASCULAR_MARKER_SHADER,
             blend: 'alpha',
             uniforms: {
@@ -193,7 +168,7 @@ export function createVascularTreePlugin(initial: VascularTreeConfig = VASCULAR_
           background[2],
           1
         ]);
-        renderer.setPaletteBackdrop({
+        renderer.setBackdrop({
           base: [
             background[0],
             background[1],

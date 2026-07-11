@@ -78,6 +78,10 @@ class FakeRender2D implements Render2DService {
   submit(sprite: Sprite2DDraw): void { this.draws.push(sprite); }
   submitText(text: Text2DDraw): void { this.text.push(text); }
   submitParticles(): void {}
+  submitSegments(): void {}
+  submitTriangleMesh(): void {}
+  submitMetaballs(): void {}
+  submitFullscreenEffect(): void {}
   setCamera(camera: Camera2DState): void { this.camera = camera; }
   setClearColor(): void {}
   setBloom(): void {}
