@@ -12,6 +12,7 @@ import { fluidTankDefinition } from './fluid-tank/definition.js';
 import { particleFluidDefinition } from './particle-fluid/definition.js';
 import { lavaLampDefinition } from './lava-lamp/definition.js';
 import { waterTankDefinition } from './water-tank/definition.js';
+import { splashMpmDefinition } from './splash-mpm/definition.js';
 
 export { harmonicSandDefinition } from './harmonic-sand/definition.js';
 export { fireworksDefinition } from './fireworks/definition.js';
@@ -47,6 +48,11 @@ export { WATER_TANK_DEFAULTS, WATER_TANK_SETTINGS, createWaterTankConfig, waterN
 export { WATER_TANK_PLUGIN_ID, WaterTankControllerService, createWaterTankPlugin, type WaterTankController, type WaterTankMode } from './water-tank/WaterTankPlugin.js';
 export { WATER_TANK_STYLE_MANIFEST } from './water-tank/styles.js';
 export { WaterTankModel, type WaterObstacle, type WaterTankTuning } from './water-tank/WaterTankModel.js';
+export { splashMpmDefinition } from './splash-mpm/definition.js';
+export { SPLASH_MPM_DEFAULTS, SPLASH_MPM_SETTINGS, createSplashMpmConfig, splashNumber, splashString, type SplashMpmConfig } from './splash-mpm/config.js';
+export { SPLASH_MPM_PLUGIN_ID, SplashMpmControllerService, createSplashMpmPlugin, type SplashMpmController, type SplashMpmMode } from './splash-mpm/SplashMpmPlugin.js';
+export { SPLASH_MPM_STYLE_MANIFEST } from './splash-mpm/styles.js';
+export { SplashMpmModel, type SplashMpmTuning } from './splash-mpm/SplashMpmModel.js';
 export { VASCULAR_TREE_DEFAULTS, VASCULAR_TREE_SETTINGS, createVascularTreeConfig, type VascularTreeConfig } from './alien-vascular-tree/config.js';
 export { VASCULAR_TREE_PLUGIN_ID, VascularTreeControllerService, createVascularTreePlugin, type VascularTreeController, type VascularTreeMode } from './alien-vascular-tree/VascularTreePlugin.js';
 export { VASCULAR_TREE_STYLE_MANIFEST } from './alien-vascular-tree/styles.js';
@@ -81,4 +87,4 @@ export {
 } from './harmonic-sand/HarmonicSandPlugin.js';
 export { HARMONIC_SAND_STYLE_MANIFEST } from './harmonic-sand/styles.js';
 
-export const SIMULATION_REGISTRY = new ExperienceRegistry().register(harmonicSandDefinition).register(fireworksDefinition).register(sparksDefinition).register(orbitalShrapnelDefinition).register(turingSkinDefinition).register(myceliumDefinition).register(alienVascularTreeDefinition).register(chainRainDefinition).register(softBodyBlobDefinition).register(fluidTankDefinition).register(particleFluidDefinition).register(lavaLampDefinition).register(waterTankDefinition);
+export const SIMULATION_REGISTRY = new ExperienceRegistry().register(harmonicSandDefinition).register(fireworksDefinition).register(sparksDefinition).register(orbitalShrapnelDefinition).register(turingSkinDefinition).register(myceliumDefinition).register(alienVascularTreeDefinition).register(chainRainDefinition).register(softBodyBlobDefinition).register(fluidTankDefinition).register(particleFluidDefinition).register(lavaLampDefinition).register(waterTankDefinition).register(splashMpmDefinition);

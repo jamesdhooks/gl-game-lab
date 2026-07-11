@@ -17,3 +17,7 @@ GLGameLab's Lava Lamp experience is inspired by [WebGL Lava Lamp](https://github
 ## Water particle relaxation
 
 GLGameLab's Water Tank experience is inspired by [gl-water2d](https://github.com/Erkaman/gl-water2d) by Eric Arnebäck, distributed under the MIT License. GLGameLab provides its own spatial-hash relaxation model, buildable obstacles, engine settings, and GPU surface renderer.
+
+## Particle-grid splash simulation
+
+GLGameLab's Splash MPM experience is inspired by [Splash](https://github.com/matsuoka-601/Splash) by matsuoka-601, distributed under the MIT License. GLGameLab provides its own PIC/FLIP-style particle-grid solver, buildable collision surfaces, and GPU density-surface renderer.
