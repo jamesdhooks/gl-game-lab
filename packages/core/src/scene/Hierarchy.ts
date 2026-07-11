@@ -57,11 +57,24 @@ export class Hierarchy {
   }
 
   despawnSubtree(root: Entity): void {
+    const failures: unknown[] = [];
+    this.despawnSubtreeCollectingFailures(root, failures);
+    if (failures.length === 1) throw failures[0];
+    if (failures.length > 1) throw new AggregateError(failures, 'Hierarchy subtree despawn failed');
+  }
+
+  private despawnSubtreeCollectingFailures(root: Entity, failures: unknown[]): void {
     const children = [...(this.world.tryGet(root, ChildrenComponent) ?? [])];
     for (const child of children) {
-      if (this.world.isAlive(child)) this.despawnSubtree(child);
+      if (this.world.isAlive(child)) this.despawnSubtreeCollectingFailures(child, failures);
     }
-    if (this.world.isAlive(root)) this.world.despawn(root);
+    if (this.world.isAlive(root)) {
+      try {
+        this.world.despawn(root);
+      } catch (error) {
+        failures.push(error);
+      }
+    }
   }
 
   destroy(): void {

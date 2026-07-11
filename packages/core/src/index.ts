@@ -110,6 +110,7 @@ export {
   SceneContext,
   SceneFailureEvent,
   SceneLoadedEvent,
+  SceneLoadCancelledError,
   SceneManager,
   SceneRootComponent,
   SceneSuspendedEvent,

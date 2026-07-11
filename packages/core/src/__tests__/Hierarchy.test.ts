@@ -78,6 +78,21 @@ describe('Hierarchy', () => {
     expect(world.entityCount).toBe(0);
     hierarchy.destroy();
   });
+
+  it('continues subtree cleanup after despawn listener failures', () => {
+    const world = new World();
+    const hierarchy = new Hierarchy(world);
+    const root = world.spawn();
+    const child = world.spawn();
+    const grandchild = world.spawn();
+    hierarchy.setParent(child, root);
+    hierarchy.setParent(grandchild, child);
+    world.onBeforeDespawn(() => { throw new Error('observer failed'); });
+
+    expect(() => hierarchy.despawnSubtree(root)).toThrow(AggregateError);
+    expect(world.entityCount).toBe(0);
+    hierarchy.destroy();
+  });
 });
 
 describe('Resources', () => {
