@@ -58,7 +58,35 @@ export interface Text2DDraw {
   readonly zIndex?: number;
 }
 
+export interface ParticleBatch2D {
+  readonly id: string;
+  readonly count: number;
+  readonly positions: Float32Array;
+  readonly radii: Float32Array;
+  readonly colorSeeds: Float32Array;
+  readonly palette: readonly ColorRgba[];
+  readonly blend?: BlendMode2D;
+  readonly opacity?: number;
+}
+
+export interface Bloom2DOptions {
+  readonly enabled: boolean;
+  readonly threshold?: number;
+  readonly intensity?: number;
+  readonly radius?: number;
+  readonly iterations?: number;
+  readonly resolutionScale?: number;
+}
+
+export interface Backdrop2DOptions {
+  readonly base: ColorRgba;
+  readonly palette: readonly ColorRgba[];
+  readonly tier?: number;
+  readonly blendStrength?: number;
+}
+
 export interface Render2DService {
+  readonly viewport: { readonly width: number; readonly height: number };
   createRgbaTexture(id: string, width: number, height: number, pixels: Uint8Array): Texture2DHandle;
   destroyTexture(texture: Texture2DHandle): void;
   hasTexture(id: string): boolean;
@@ -69,7 +97,11 @@ export interface Render2DService {
   bitmapFont(id: string): BitmapFont2DHandle;
   submit(sprite: Sprite2DDraw): void;
   submitText(text: Text2DDraw): void;
+  submitParticles(batch: ParticleBatch2D): void;
   setCamera(camera: Camera2DState): void;
+  setClearColor(color: ColorRgba): void;
+  setBloom(options: Bloom2DOptions): void;
+  setBackdrop(options: Backdrop2DOptions | undefined): void;
 }
 
 export interface Sprite2D {

@@ -66,6 +66,7 @@ class FakeRender2D implements Render2DService {
   readonly font = Object.freeze({ id: 'gl-game-lab.font.default-5x7', characters: 'ABC?', columns: 4, glyphWidth: 6, glyphHeight: 8, lineHeight: 8 });
   readonly text: Text2DDraw[] = [];
   camera: Camera2DState | undefined;
+  readonly viewport = { width: 800, height: 450 };
   createRgbaTexture(): Texture2DHandle { return this.handle; }
   destroyTexture(): void {}
   hasTexture(id: string): boolean { return id === 'hero'; }
@@ -76,5 +77,9 @@ class FakeRender2D implements Render2DService {
   bitmapFont(): BitmapFont2DHandle { return this.font; }
   submit(sprite: Sprite2DDraw): void { this.draws.push(sprite); }
   submitText(text: Text2DDraw): void { this.text.push(text); }
+  submitParticles(): void {}
   setCamera(camera: Camera2DState): void { this.camera = camera; }
+  setClearColor(): void {}
+  setBloom(): void {}
+  setBackdrop(): void {}
 }

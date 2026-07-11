@@ -1,6 +1,7 @@
 import { createExtensionToken, type EnginePlugin, type PointerInputEvent } from '@hooksjam/gl-game-lab-core';
 import {
   EngineInput,
+  EngineRender2D,
   EngineSchedule,
   ExperienceRuntimeControllerService,
   type ExperienceLaunchOptions,
@@ -12,12 +13,6 @@ import {
   DenseCircleParticleWorld2D,
   DenseCircleParticleWorld2DService,
 } from '@hooksjam/gl-game-lab-physics-2d';
-import {
-  ParticlePointRenderQueueService,
-  WEBGL2_RENDERER_PLUGIN_ID,
-  WebGL2RendererService,
-  createSpriteCamera2D,
-} from '@hooksjam/gl-game-lab-render-webgl2';
 import {
   BALL_PIT_DEFAULTS,
   ballPitConfigForProfile,
@@ -60,13 +55,11 @@ export function createBallPitPlugin(
     id: BALL_PIT_PLUGIN_ID,
     version: '1.0.0',
     dependencies: [
-      { id: WEBGL2_RENDERER_PLUGIN_ID },
       { id: DENSE_CIRCLE_PARTICLE_PLUGIN_ID },
     ],
     install: (context) => {
       const world = context.get(DenseCircleParticleWorld2DService);
-      const renderer = context.get(WebGL2RendererService);
-      const particles = context.get(ParticlePointRenderQueueService);
+      const renderer = context.get(EngineRender2D);
       const input = context.get(EngineInput);
       applyStyle(renderer, styleId);
       configureWorld(world, currentConfig);
@@ -110,12 +103,9 @@ export function createBallPitPlugin(
         stage: 'update',
         run: ({ time }) => {
           elapsedSeconds += time.deltaSeconds;
-          const activeCamera = renderer.sprites.activeCamera;
-          const width = activeCamera.viewportWidth;
-          const height = activeCamera.viewportHeight;
-          if (activeCamera.centerX !== width * 0.5 || activeCamera.centerY !== height * 0.5) {
-            renderer.sprites.setCamera(createSpriteCamera2D(width, height, { centerX: width * 0.5, centerY: height * 0.5 }));
-          }
+          const width = renderer.viewport.width;
+          const height = renderer.viewport.height;
+          renderer.setCamera({ centerX: width * 0.5, centerY: height * 0.5, zoom: 1 });
           const floorDropped = demoFloorIsDropped(launch.profile, elapsedSeconds);
           const floorHeight = floorDropped ? height + Math.max(180, height * 1.4) : height;
           world.setBounds(width, floorHeight);
@@ -131,7 +121,7 @@ export function createBallPitPlugin(
         id: 'gl-game-lab.games.ball-pit.render',
         stage: 'renderExtract',
         run: () => {
-          particles.submit({
+          renderer.submitParticles({
             id: 'ball-pit.particles',
             count: world.count,
             positions: world.positions,
@@ -250,17 +240,13 @@ function configureWorld(world: DenseCircleParticleWorld2D, config: BallPitConfig
   });
 }
 
-function applyStyle(renderer: {
-  setClearColor(color: readonly [number, number, number, number]): void;
-  setBloom(options: { readonly enabled: boolean; readonly threshold?: number; readonly intensity?: number; readonly radius?: number; readonly iterations?: number }): void;
-  setPaletteBackdrop(options: { readonly base: readonly [number, number, number, number]; readonly palette: readonly (readonly [number, number, number, number])[]; readonly tier?: number; readonly blendStrength?: number } | undefined): void;
-}, styleId: string): void {
+function applyStyle(renderer: import('@hooksjam/gl-game-lab-engine').Render2DService, styleId: string): void {
   const style = BALL_PIT_STYLE_MANIFEST.styles.find((candidate) => candidate.id === styleId);
   if (!style) throw new Error(`Unknown Ball Pit style: ${styleId}`);
   const background = rgbHexToRgba(style.background);
   const palette = requirePalette(styleId);
   renderer.setClearColor(background);
-  renderer.setPaletteBackdrop({ base: background, palette, tier: 0.55, blendStrength: 0.12 });
+  renderer.setBackdrop({ base: background, palette, tier: 0.55, blendStrength: 0.12 });
   renderer.setBloom({ enabled: false });
 }
 

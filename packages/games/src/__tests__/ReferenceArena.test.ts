@@ -102,6 +102,7 @@ class FakeRender2D implements Render2DService {
   readonly text: Text2DDraw[] = [];
   readonly font: BitmapFont2DHandle = Object.freeze({ id: DEFAULT_FONT_2D_ID, characters: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 ?', columns: 12, glyphWidth: 6, glyphHeight: 8, lineHeight: 8 });
   camera: Camera2DState | undefined;
+  readonly viewport = { width: 960, height: 540 };
   createRgbaTexture(id: string, width: number, height: number): Texture2DHandle {
     const handle = Object.freeze({ id, width, height }); this.textures.set(id, handle); return handle;
   }
@@ -114,7 +115,11 @@ class FakeRender2D implements Render2DService {
   bitmapFont(): BitmapFont2DHandle { return this.font; }
   submit(sprite: Sprite2DDraw): void { this.draws.push(sprite); }
   submitText(text: Text2DDraw): void { this.text.push(text); }
+  submitParticles(): void {}
   setCamera(camera: Camera2DState): void { this.camera = camera; }
+  setClearColor(): void {}
+  setBloom(): void {}
+  setBackdrop(): void {}
 }
 
 class FakeAccessibility implements AccessibilityService {

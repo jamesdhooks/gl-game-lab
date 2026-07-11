@@ -7,12 +7,14 @@ import {
   DEFAULT_FONT_2D_ID,
   extractSprite2D,
   type Render2DService,
+  type Backdrop2DOptions,
   type BitmapFont2DHandle,
   type RenderBackend,
   type RenderBackendCapabilities,
   type RenderBackendState,
   type RenderViewport,
   type Sprite2DDraw,
+  type ParticleBatch2D,
   type Text2DDraw,
   type Texture2DHandle,
 } from '@hooksjam/gl-game-lab-engine';
@@ -361,6 +363,14 @@ export class WebGL2Renderer implements RenderBackend, Render2DService {
         });
       });
     });
+  }
+
+  submitParticles(batch: ParticleBatch2D): void {
+    this.particles.submit(batch);
+  }
+
+  setBackdrop(options: Backdrop2DOptions | undefined): void {
+    this.setPaletteBackdrop(options);
   }
 
   setCamera(camera: { readonly centerX: number; readonly centerY: number; readonly zoom: number }): void {

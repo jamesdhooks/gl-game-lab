@@ -1,16 +1,17 @@
 import { describe, expect, it } from 'vitest';
-import type { PluginInstallContext } from '@hooksjam/gl-game-lab-core';
 import { DENSE_CIRCLE_PARTICLE_PLUGIN_ID, DenseCircleParticleWorld2DService } from '@hooksjam/gl-game-lab-physics-2d';
-import { GameEngine } from '@hooksjam/gl-game-lab-engine';
 import {
-  ParticlePointRenderQueue,
-  ParticlePointRenderQueueService,
-  SpriteRenderQueue,
-  SpriteRenderQueueService,
-  WEBGL2_RENDERER_PLUGIN_ID,
-  WebGL2RendererService,
-  type WebGL2Renderer,
-} from '@hooksjam/gl-game-lab-render-webgl2';
+  DEFAULT_FONT_2D_ID,
+  EngineRender2D,
+  GameEngine,
+  type BitmapFont2DHandle,
+  type Camera2DState,
+  type ParticleBatch2D,
+  type Render2DService,
+  type Sprite2DDraw,
+  type Text2DDraw,
+  type Texture2DHandle,
+} from '@hooksjam/gl-game-lab-engine';
 import {
   BALL_PIT_DEFAULTS,
   BALL_PIT_PLUGIN_ID,
@@ -99,24 +100,15 @@ describe('Ball Pit experience', () => {
   it('runs as a vertical engine plugin and responds to pointer input', async () => {
     let clearColor: readonly number[] = [];
     let bloomEnabled = false;
-    const sprites = new SpriteRenderQueue(800, 600);
-    const particles = new ParticlePointRenderQueue();
-    const renderer = {
-      sprites,
-      particles,
-      setClearColor: (color: readonly number[]) => { clearColor = color; },
-      setBloom: (options: { readonly enabled?: boolean }) => { bloomEnabled = options.enabled === true; },
-      setPaletteBackdrop: () => undefined,
-    } as unknown as WebGL2Renderer;
+    const renderer = new FakeRender2D(
+      (color) => { clearColor = color; },
+      (enabled) => { bloomEnabled = enabled; },
+    );
     const fakeRendererPlugin = {
-      id: WEBGL2_RENDERER_PLUGIN_ID,
+      id: 'test.render-2d',
       version: '1.0.0',
       dependencies: [{ id: 'gl-game-lab.runtime' }],
-      install: (context: PluginInstallContext) => {
-        context.provide(WebGL2RendererService, renderer);
-        context.provide(SpriteRenderQueueService, sprites);
-        context.provide(ParticlePointRenderQueueService, particles);
-      },
+      install: (context: import('@hooksjam/gl-game-lab-core').PluginInstallContext) => { context.provide(EngineRender2D, renderer); },
     };
     const engine = new GameEngine({ plugins: [fakeRendererPlugin, ...ballPitDefinition.createPlugins()] });
     await engine.initialize();
@@ -125,12 +117,11 @@ describe('Ball Pit experience', () => {
     engine.frame(1 / 60);
     const controller = engine.kernel.get(BallPitControllerService);
     expect(controller.bodyCount).toBe(0);
-    expect(particles.count).toBe(0);
-    particles.clear();
+    expect(renderer.particleCount).toBe(0);
     engine.input.ingest({ kind: 'pointer', phase: 'down', id: 1, x: 400, y: 100, buttons: 1 });
     engine.frame(1 / 60);
     expect(controller.bodyCount).toBe(1);
-    expect(particles.count).toBe(1);
+    expect(renderer.particleCount).toBe(1);
     controller.setStyle('neon');
     expect(bloomEnabled).toBe(false);
     controller.setStyle('ocean');
@@ -182,24 +173,12 @@ describe('Ball Pit experience', () => {
   });
 
   it('uses deterministic automatic spawning only for preview and demo profiles', async () => {
-    const sprites = new SpriteRenderQueue(800, 600);
-    const particles = new ParticlePointRenderQueue();
-    const renderer = {
-      sprites,
-      particles,
-      setClearColor: () => undefined,
-      setBloom: () => undefined,
-      setPaletteBackdrop: () => undefined,
-    } as unknown as WebGL2Renderer;
+    const renderer = new FakeRender2D();
     const fakeRendererPlugin = {
-      id: WEBGL2_RENDERER_PLUGIN_ID,
+      id: 'test.render-2d',
       version: '1.0.0',
       dependencies: [{ id: 'gl-game-lab.runtime' }],
-      install: (context: PluginInstallContext) => {
-        context.provide(WebGL2RendererService, renderer);
-        context.provide(SpriteRenderQueueService, sprites);
-        context.provide(ParticlePointRenderQueueService, particles);
-      },
+      install: (context: import('@hooksjam/gl-game-lab-core').PluginInstallContext) => { context.provide(EngineRender2D, renderer); },
     };
     const engine = new GameEngine({ plugins: [fakeRendererPlugin, ...ballPitDefinition.createPlugins({ profile: 'preview', seed: 7 })] });
     await engine.initialize();
@@ -213,7 +192,32 @@ describe('Ball Pit experience', () => {
     await demoEngine.start();
     for (let frame = 0; frame < 60; frame += 1) demoEngine.frame(1 / 60);
     expect(demoEngine.kernel.get(BallPitControllerService).bodyCount).toBe(BALL_PIT_DEFAULTS.spawnRate);
-    expect(particles.buildPlan().batches[0]?.colorSeeds[0]).toBeCloseTo(7147.87598, 4);
+    expect(renderer.batches.at(-1)?.colorSeeds?.[0]).toBeCloseTo(7147.87598, 4);
     await demoEngine.destroy();
   });
 });
+
+class FakeRender2D implements Render2DService {
+  readonly viewport = { width: 800, height: 600 };
+  readonly batches: ParticleBatch2D[] = [];
+  constructor(
+    private readonly onClear: (color: readonly number[]) => void = () => undefined,
+    private readonly onBloom: (enabled: boolean) => void = () => undefined,
+  ) {}
+  get particleCount(): number { return this.batches.at(-1)?.count ?? 0; }
+  createRgbaTexture(): Texture2DHandle { throw new Error('not used'); }
+  destroyTexture(): void {}
+  hasTexture(): boolean { return false; }
+  texture(): Texture2DHandle { throw new Error('not used'); }
+  createBitmapFont(): BitmapFont2DHandle { throw new Error('not used'); }
+  destroyBitmapFont(): void {}
+  hasBitmapFont(id: string): boolean { return id === DEFAULT_FONT_2D_ID; }
+  bitmapFont(): BitmapFont2DHandle { throw new Error('not used'); }
+  submit(_sprite: Sprite2DDraw): void {}
+  submitText(_text: Text2DDraw): void {}
+  submitParticles(batch: ParticleBatch2D): void { this.batches.push(batch); }
+  setCamera(_camera: Camera2DState): void {}
+  setClearColor(color: readonly [number, number, number, number]): void { this.onClear(color); }
+  setBloom(options: { readonly enabled: boolean }): void { this.onBloom(options.enabled); }
+  setBackdrop(): void {}
+}
