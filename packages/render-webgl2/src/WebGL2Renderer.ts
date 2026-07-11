@@ -20,6 +20,7 @@ import { BloomPostProcess, type BloomOptions } from './BloomPostProcess.js';
 import { PaletteBackdropRenderer, type PaletteBackdropOptions } from './PaletteBackdropRenderer.js';
 import { FullscreenEffectRenderer, FullscreenEffectRenderQueue } from './FullscreenEffectRenderer.js';
 import { GpuRenderPassQueue } from './GpuRenderPassQueue.js';
+import { FrameRenderPipeline, type FrameRenderGraphSnapshot } from './FrameRenderPipeline.js';
 
 export interface WebGL2RendererOptions {
   readonly device?: WebGL2DeviceOptions;
@@ -84,6 +85,7 @@ export class WebGL2Renderer implements RenderBackend {
   private readonly effectRenderer: FullscreenEffectRenderer;
   private readonly bloom: BloomPostProcess;
   private readonly backdrop: PaletteBackdropRenderer;
+  private readonly framePipeline: FrameRenderPipeline;
   private clearColor: readonly [number, number, number, number];
   private destroyed = false;
 
@@ -118,6 +120,28 @@ export class WebGL2Renderer implements RenderBackend {
     this.bloom = new BloomPostProcess(this.device, options.bloom);
     this.backdrop = new PaletteBackdropRenderer(this.device);
     this.clearColor = options.clearColor ?? [0, 0, 0, 0];
+    this.framePipeline = new FrameRenderPipeline({
+      clear: ({ target }) => {
+        if (target) this.bloom.clearScene(this.clearColor);
+        else this.device.clear(...this.clearColor);
+      },
+      backdrop: ({ target }) => { this.backdrop.render(target); },
+      gpuSimulation: ({ target }) => {
+        this.gpuPasses.execute({
+          ...(target?.resource.framebuffer ? { framebuffer: target.resource.framebuffer } : {}),
+          width: target?.resource.descriptor.width ?? this.width,
+          height: target?.resource.descriptor.height ?? this.height,
+        });
+      },
+      effects: ({ target }) => { this.effectRenderer.render(this.effects.snapshot(), target); },
+      particles: ({ target }) => {
+        this.particleRenderer.render(this.particles.buildPlan(), this.sprites.activeCamera, target);
+      },
+      sprites: ({ target }) => {
+        this.spriteRenderer.render(this.sprites.buildPlan(), this.sprites.activeCamera, target);
+      },
+      composite: ({ composite }) => { if (composite) this.bloom.composite(); },
+    });
   }
 
   resize(cssWidth: number, cssHeight: number, pixelRatio = 1): void {
@@ -160,6 +184,10 @@ export class WebGL2Renderer implements RenderBackend {
     return this.bloom.stats;
   }
 
+  get renderGraphSnapshot(): FrameRenderGraphSnapshot {
+    return this.framePipeline.snapshot();
+  }
+
   get width(): number {
     return this.device.canvas.width;
   }
@@ -183,19 +211,8 @@ export class WebGL2Renderer implements RenderBackend {
   render(): void {
     this.assertUsable();
     const scene = this.bloom.sceneTarget;
-    if (scene) this.bloom.clearScene(this.clearColor);
-    else this.device.clear(...this.clearColor);
     const target = scene ? { resource: scene } : undefined;
-    this.backdrop.render(target);
-    this.gpuPasses.execute({
-      ...(target?.resource.framebuffer ? { framebuffer: target.resource.framebuffer } : {}),
-      width: target?.resource.descriptor.width ?? this.width,
-      height: target?.resource.descriptor.height ?? this.height,
-    });
-    this.effectRenderer.render(this.effects.snapshot(), target);
-    this.particleRenderer.render(this.particles.buildPlan(), this.sprites.activeCamera, target);
-    this.spriteRenderer.render(this.sprites.buildPlan(), this.sprites.activeCamera, target);
-    if (scene) this.bloom.composite();
+    this.framePipeline.execute({ ...(target ? { target } : {}), composite: scene !== undefined });
   }
 
   destroy(): void {

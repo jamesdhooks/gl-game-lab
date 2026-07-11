@@ -1,4 +1,11 @@
 export {
+  FrameRenderPipeline,
+  WEBGL2_FRAME_PASS_IDS,
+  type FrameRenderDestination,
+  type FrameRenderGraphSnapshot,
+  type FrameRenderStages,
+} from './FrameRenderPipeline.js';
+export {
   InstancedSegmentRenderer,
   validateInstancedSegmentBatch,
   type InstancedSegmentBatch,
