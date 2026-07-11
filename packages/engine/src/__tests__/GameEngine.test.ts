@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   GAME_ENGINE_RUNTIME_PLUGIN_ID,
   EngineSchedule,
@@ -50,6 +50,18 @@ describe('GameEngine', () => {
     await engine.destroy();
     expect(engine.state).toBe('destroyed');
     expect(() => engine.assets.createGroup('after-destroy')).toThrow('destroyed');
+  });
+
+  it('attempts every runtime cleanup when a never-initialized engine fails disposal', async () => {
+    const engine = new GameEngine();
+    const unload = vi.spyOn(engine.scenes, 'unloadAll').mockRejectedValue(new Error('scene failed'));
+    const destroyAssets = vi.spyOn(engine.assets, 'destroy').mockRejectedValue(new Error('assets failed'));
+
+    await expect(engine.destroy()).rejects.toBeInstanceOf(AggregateError);
+
+    expect(unload).toHaveBeenCalledOnce();
+    expect(destroyAssets).toHaveBeenCalledOnce();
+    expect(engine.state).toBe('destroyed');
   });
 
   it('advances platform-fed input before update systems run', async () => {

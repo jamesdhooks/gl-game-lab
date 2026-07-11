@@ -80,8 +80,23 @@ export class GameEngine {
   }
 
   async destroy(): Promise<void> {
-    if (this.kernel.state === 'created') await this.disposeRuntime();
-    await this.kernel.destroy();
+    if (this.kernel.state !== 'created') {
+      await this.kernel.destroy();
+      return;
+    }
+    const failures: unknown[] = [];
+    try {
+      await this.disposeRuntime();
+    } catch (error) {
+      failures.push(error);
+    }
+    try {
+      await this.kernel.destroy();
+    } catch (error) {
+      failures.push(error);
+    }
+    if (failures.length === 1) throw failures[0];
+    if (failures.length > 1) throw new AggregateError(failures, 'Game engine destruction failed');
   }
 
   private runtimePlugin(): EnginePlugin {
@@ -108,19 +123,20 @@ export class GameEngine {
   private async disposeRuntime(): Promise<void> {
     if (this.runtimeDisposed) return;
     this.runtimeDisposed = true;
-    let firstFailure: unknown;
+    const failures: unknown[] = [];
     try {
       await this.scenes.unloadAll();
     } catch (error) {
-      firstFailure = error;
+      failures.push(error);
     }
     try {
       await this.assets.destroy();
     } catch (error) {
-      firstFailure ??= error;
+      failures.push(error);
     } finally {
       this.hierarchy.destroy();
     }
-    if (firstFailure !== undefined) throw firstFailure;
+    if (failures.length === 1) throw failures[0];
+    if (failures.length > 1) throw new AggregateError(failures, 'Game runtime disposal failed');
   }
 }
