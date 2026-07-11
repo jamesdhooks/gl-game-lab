@@ -35,7 +35,7 @@ performance, or lifecycle claims.
 | ECS-01 | High | ECS, hierarchy, scenes, and serialization are not the content runtime's authoritative model. | 3, 6, 7 | Open | Reference Arena and all migrated experiences exercise the public scene/ECS path. |
 | ECS-02 | High | Structural mutation and query invalidation semantics are incomplete for scheduled systems. | 3 | Open | Command-buffer/query tests cover mutation during execution and stale entity generations. |
 | SCN-01 | High | Scene transitions, async loading, persistence, and failure recovery are incomplete. | 3 | Open | Additive/replace transition tests with cancellation and failed-load rollback. |
-| AST-01 | Critical | Concurrent asset-group failure can leak leases; request identity omits behavior-affecting options. | 3 | Open | Concurrent failure/cancel/retry tests prove zero leaked leases and stable cache keys. |
+| AST-01 | Critical | Concurrent asset-group failure can leak leases; request identity omits behavior-affecting options. | 3 | Verified | Concurrent group/release and failed-parent dependency tests prove zero leases remain; deterministic option keys reject incompatible reuse. |
 | AST-02 | High | No production asset manifest, dependency graph, budgets, or hot-reload path. | 5, 8 | Open | Manifest validation, cache diagnostics, budget warnings, and development reload test. |
 | RND-01 | Critical | WebGL context restoration does not recreate owned GPU resources. | 4 | Open | Automated context-loss/restore test renders equivalent content after restoration. |
 | RND-02 | High | RenderGraph is test-only while shipping rendering uses fixed manual ordering. | 4 | Open | Shipping frame capture identifies compiled graph passes/resources and executes them. |

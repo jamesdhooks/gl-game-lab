@@ -61,9 +61,11 @@ type UnknownAssetLoader = AssetLoader<unknown, unknown>;
 
 interface AssetRecord {
   readonly request: UnknownAssetRequest;
+  readonly optionsKey: string;
   readonly loader: UnknownAssetLoader;
   readonly controller: AbortController;
   readonly dependencies: AssetLease<unknown>[];
+  readonly dependencyLoads: Promise<unknown>[];
   state: AssetState;
   references: number;
   value: unknown;
@@ -102,7 +104,8 @@ export class AssetLease<Value> {
 }
 
 export class AssetGroup {
-  private readonly leases = new Map<string, AssetLease<unknown>>();
+  private readonly leases = new Map<string, GroupLease>();
+  private readonly pending = new Map<string, GroupLoad>();
   private released = false;
 
   constructor(
@@ -114,34 +117,69 @@ export class AssetGroup {
     if (this.released) throw new Error(`Asset group has been released: ${this.id}`);
     const existing = this.leases.get(request.id);
     if (existing) {
-      if (existing.typeId !== request.type.id) {
-        throw new Error(`Asset group ${this.id} already owns ${request.id} with another type`);
+      assertGroupRequest(this.id, existing.request, existing.optionsKey, request);
+      return existing.lease.value as Value;
+    }
+    const pending = this.pending.get(request.id);
+    if (pending) {
+      assertGroupRequest(this.id, pending.request, pending.optionsKey, request);
+      return pending.promise as Promise<Value>;
+    }
+
+    const optionsKey = stableOptionsKey(request.options);
+    const promise = this.manager.load(request).then(async (lease) => {
+      if (this.released) {
+        await lease.release();
+        throw new Error(`Asset group was released while loading: ${this.id}`);
       }
-      return existing.value as Value;
-    }
-    const lease = await this.manager.load(request);
-    if (this.released) {
-      await lease.release();
-      throw new Error(`Asset group was released while loading: ${this.id}`);
-    }
-    this.leases.set(request.id, lease as AssetLease<unknown>);
-    return lease.value;
+      this.leases.set(request.id, {
+        request: request as UnknownAssetRequest,
+        optionsKey,
+        lease: lease as AssetLease<unknown>,
+      });
+      return lease.value;
+    }).finally(() => {
+      if (this.pending.get(request.id)?.promise === promise) this.pending.delete(request.id);
+    });
+    this.pending.set(request.id, {
+      request: request as UnknownAssetRequest,
+      optionsKey,
+      promise: promise as Promise<unknown>,
+    });
+    return promise;
   }
 
   async release(): Promise<void> {
     if (this.released) return;
     this.released = true;
-    let firstFailure: unknown;
-    for (const lease of [...this.leases.values()].reverse()) {
+    const failures: unknown[] = [];
+    const pendingResults = await Promise.allSettled([...this.pending.values()].map((load) => load.promise));
+    for (const result of pendingResults) {
+      if (result.status === 'rejected' && !isReleasedDuringLoadError(result.reason)) failures.push(result.reason);
+    }
+    for (const entry of [...this.leases.values()].reverse()) {
       try {
-        await lease.release();
+        await entry.lease.release();
       } catch (error) {
-        firstFailure ??= error;
+        failures.push(error);
       }
     }
+    this.pending.clear();
     this.leases.clear();
-    if (firstFailure !== undefined) throw firstFailure;
+    if (failures.length > 0) throw aggregateAssetFailures(`Asset group ${this.id} release failed`, failures);
   }
+}
+
+interface GroupLease {
+  readonly request: UnknownAssetRequest;
+  readonly optionsKey: string;
+  readonly lease: AssetLease<unknown>;
+}
+
+interface GroupLoad {
+  readonly request: UnknownAssetRequest;
+  readonly optionsKey: string;
+  readonly promise: Promise<unknown>;
 }
 
 export class AssetManager {
@@ -234,6 +272,7 @@ export class AssetManager {
   ): Promise<AssetLease<Value>> {
     this.assertUsable();
     const normalized = normalizeRequest(request);
+    const optionsKey = stableOptionsKey(normalized.options);
     this.registerType(normalized.type);
     if (ancestry.includes(normalized.id)) {
       throw new Error(`Asset dependency cycle: ${[...ancestry, normalized.id].join(' -> ')}`);
@@ -241,14 +280,16 @@ export class AssetManager {
 
     let record = this.records.get(normalized.id);
     if (record) {
-      this.assertCompatibleRequest(record, normalized);
+      this.assertCompatibleRequest(record, normalized, optionsKey);
     } else {
       const loader = this.resolveLoader(normalized);
       record = {
         request: normalized as UnknownAssetRequest,
+        optionsKey,
         loader,
         controller: new AbortController(),
         dependencies: [],
+        dependencyLoads: [],
         state: 'loading',
         references: 0,
         value: undefined,
@@ -269,13 +310,17 @@ export class AssetManager {
     const context: AssetLoaderContext = {
       signal: record.controller.signal,
       load: async <Value, Options>(request: AssetRequest<Value, Options>): Promise<Value> => {
-        const lease = await this.loadFrom(request, ancestry);
-        record.dependencies.push(lease as AssetLease<unknown>);
-        return lease.value;
+        const dependencyLoad = this.loadFrom(request, ancestry).then((lease) => {
+          record.dependencies.push(lease as AssetLease<unknown>);
+          return lease.value;
+        });
+        record.dependencyLoads.push(dependencyLoad);
+        return dependencyLoad;
       },
     };
     try {
       const value = await record.loader.load(context, record.request);
+      await Promise.all(record.dependencyLoads);
       if (value === undefined) throw new Error(`Asset loader ${record.loader.id} returned undefined`);
       if (record.controller.signal.aborted) throw abortError(record.controller.signal.reason);
       record.value = value;
@@ -286,7 +331,12 @@ export class AssetManager {
       record.state = 'failed';
       this.events.emit(AssetFailedEvent, { asset: snapshot(record), error });
       this.records.delete(record.request.id);
-      await releaseDependencies(record.dependencies);
+      await Promise.allSettled(record.dependencyLoads);
+      try {
+        await releaseDependencies(record.dependencies);
+      } catch (cleanupError) {
+        throw aggregateAssetFailures(`Asset ${record.request.id} load and cleanup failed`, [error, cleanupError]);
+      }
       throw error;
     }
   }
@@ -314,20 +364,22 @@ export class AssetManager {
     }
     record.state = 'unloading';
     const unloading = snapshot(record);
-    let failure: unknown;
+    const failures: unknown[] = [];
     try {
       await record.loader.dispose?.(record.value);
     } catch (error) {
-      failure = error;
+      failures.push(error);
     }
     try {
       await releaseDependencies(record.dependencies);
     } catch (error) {
-      failure ??= error;
+      failures.push(error);
     }
     this.records.delete(record.request.id);
     this.events.emit(AssetUnloadedEvent, { asset: unloading });
-    if (failure !== undefined) throw failure;
+    if (failures.length > 0) {
+      throw aggregateAssetFailures(`Asset ${record.request.id} disposal failed`, failures);
+    }
   }
 
   private resolveLoader(request: UnknownAssetRequest): UnknownAssetLoader {
@@ -347,10 +399,17 @@ export class AssetManager {
     if (record.request.type !== type) throw new Error(`Asset ${record.request.id} was loaded with another type`);
   }
 
-  private assertCompatibleRequest(record: AssetRecord, request: UnknownAssetRequest): void {
+  private assertCompatibleRequest(
+    record: AssetRecord,
+    request: UnknownAssetRequest,
+    optionsKey: string,
+  ): void {
     this.assertRecordType(record, request.type);
     if (record.request.source !== request.source) {
       throw new Error(`Asset ${request.id} was already requested from another source`);
+    }
+    if (record.optionsKey !== optionsKey) {
+      throw new Error(`Asset ${request.id} was already requested with different options`);
     }
   }
 
@@ -360,16 +419,16 @@ export class AssetManager {
 }
 
 async function releaseDependencies(dependencies: AssetLease<unknown>[]): Promise<void> {
-  let firstFailure: unknown;
+  const failures: unknown[] = [];
   for (const dependency of [...dependencies].reverse()) {
     try {
       await dependency.release();
     } catch (error) {
-      firstFailure ??= error;
+      failures.push(error);
     }
   }
   dependencies.length = 0;
-  if (firstFailure !== undefined) throw firstFailure;
+  if (failures.length > 0) throw aggregateAssetFailures('Asset dependency release failed', failures);
 }
 
 function normalizeRequest<Value, Options>(request: AssetRequest<Value, Options>): AssetRequest<Value, Options> {
@@ -401,4 +460,62 @@ function normalizeId(id: string, label: string): string {
 
 function abortError(reason: unknown): Error {
   return new Error('Asset load aborted', { cause: reason });
+}
+
+function assertGroupRequest<Value, Options>(
+  groupId: string,
+  existing: UnknownAssetRequest,
+  existingOptionsKey: string,
+  request: AssetRequest<Value, Options>,
+): void {
+  if (existing.type !== request.type) {
+    throw new Error(`Asset group ${groupId} already owns ${request.id} with another type`);
+  }
+  if (existing.source.trim() !== request.source.trim()) {
+    throw new Error(`Asset group ${groupId} already owns ${request.id} from another source`);
+  }
+  if (existingOptionsKey !== stableOptionsKey(request.options)) {
+    throw new Error(`Asset group ${groupId} already owns ${request.id} with different options`);
+  }
+}
+
+function stableOptionsKey(value: unknown): string {
+  return stableValueKey(value, new Set<object>());
+}
+
+function stableValueKey(value: unknown, ancestors: Set<object>): string {
+  if (value === undefined) return 'undefined';
+  if (value === null) return 'null';
+  if (typeof value === 'string') return `string:${JSON.stringify(value)}`;
+  if (typeof value === 'boolean') return `boolean:${value}`;
+  if (typeof value === 'number') {
+    if (!Number.isFinite(value)) throw new Error('Asset request options must contain finite numbers');
+    return `number:${Object.is(value, -0) ? '-0' : String(value)}`;
+  }
+  if (typeof value !== 'object') {
+    throw new Error(`Asset request options contain unsupported ${typeof value} value`);
+  }
+  if (ancestors.has(value)) throw new Error('Asset request options cannot contain cycles');
+  ancestors.add(value);
+  try {
+    if (Array.isArray(value)) {
+      return `array:[${value.map((entry) => stableValueKey(entry, ancestors)).join(',')}]`;
+    }
+    const prototype = Object.getPrototypeOf(value) as object | null;
+    if (prototype !== Object.prototype && prototype !== null) {
+      throw new Error('Asset request options must use plain objects and arrays');
+    }
+    const entries = Object.entries(value).sort(([left], [right]) => left.localeCompare(right));
+    return `object:{${entries.map(([key, entry]) => `${JSON.stringify(key)}:${stableValueKey(entry, ancestors)}`).join(',')}}`;
+  } finally {
+    ancestors.delete(value);
+  }
+}
+
+function aggregateAssetFailures(message: string, failures: readonly unknown[]): unknown {
+  return failures.length === 1 ? failures[0] : new AggregateError(failures, message);
+}
+
+function isReleasedDuringLoadError(error: unknown): boolean {
+  return error instanceof Error && error.message.startsWith('Asset group was released while loading:');
 }

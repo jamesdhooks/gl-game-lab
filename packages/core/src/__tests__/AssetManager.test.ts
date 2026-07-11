@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   AssetManager,
   AssetReadyEvent,
@@ -114,7 +114,88 @@ describe('AssetManager', () => {
     await expect(manager.load({ id: 'copy', type: OtherTextAsset, source: 'copy.txt' })).rejects.toThrow(
       'another type',
     );
+    await expect(manager.load({
+      id: 'copy', type: TextAsset, source: 'copy.txt', options: { uppercase: true },
+    })).rejects.toThrow('different options');
     await lease.release();
+    await manager.destroy();
+  });
+
+  it('deduplicates concurrent group loads without leaking a lease', async () => {
+    const manager = new AssetManager({ releaseUnused: true });
+    const load = vi.fn(async (_context, request: Parameters<ReturnType<typeof textLoader>['load']>[1]) => {
+      await Promise.resolve();
+      return request.source;
+    });
+    manager.registerLoader({ ...textLoader(), load });
+    const group = manager.createGroup('concurrent');
+    const request = { id: 'copy', type: TextAsset, source: 'copy.txt' } as const;
+
+    const [first, second] = await Promise.all([group.load(request), group.load(request)]);
+
+    expect(first).toBe(second);
+    expect(load).toHaveBeenCalledOnce();
+    expect(manager.snapshot('copy')?.references).toBe(1);
+    await group.release();
+    expect(manager.snapshot('copy')).toBeUndefined();
+  });
+
+  it('waits for in-flight group loads and releases their leases', async () => {
+    let resolveLoad: ((value: string) => void) | undefined;
+    const manager = new AssetManager({ releaseUnused: true });
+    manager.registerLoader({
+      ...textLoader(),
+      load: () => new Promise<string>((resolve) => { resolveLoad = resolve; }),
+    });
+    const group = manager.createGroup('closing');
+    const loading = group.load({ id: 'copy', type: TextAsset, source: 'copy.txt' });
+    const releasing = group.release();
+    resolveLoad?.('copy.txt');
+
+    await expect(loading).rejects.toThrow('released while loading');
+    await releasing;
+    expect(manager.snapshot('copy')).toBeUndefined();
+  });
+
+  it('settles unawaited dependency loads before cleaning up a failed parent', async () => {
+    const ParentAsset = createAssetType<string>('asset.parent');
+    let resolveDependency: ((value: string) => void) | undefined;
+    const manager = new AssetManager({ releaseUnused: true });
+    manager.registerLoader({
+      ...textLoader(),
+      load: () => new Promise<string>((resolve) => { resolveDependency = resolve; }),
+    });
+    manager.registerLoader({
+      id: 'test.parent-loader',
+      type: ParentAsset,
+      canLoad: () => true,
+      load(context) {
+        void context.load({ id: 'dependency', type: TextAsset, source: 'dependency.txt' });
+        throw new Error('parent failed');
+      },
+    });
+
+    const loading = manager.load({ id: 'parent', type: ParentAsset, source: 'parent.data' });
+    await Promise.resolve();
+    resolveDependency?.('dependency.txt');
+
+    await expect(loading).rejects.toThrow('parent failed');
+    expect(manager.snapshots()).toEqual([]);
+  });
+
+  it('deduplicates structurally equivalent option objects', async () => {
+    const manager = new AssetManager();
+    manager.registerLoader(textLoader());
+    const first = manager.load({
+      id: 'copy', type: TextAsset, source: 'copy.txt', options: { uppercase: false },
+    });
+    const second = manager.load({
+      id: 'copy', type: TextAsset, source: 'copy.txt', options: { uppercase: false },
+    });
+
+    const leases = await Promise.all([first, second]);
+    expect(manager.snapshot('copy')?.references).toBe(2);
+    await Promise.all(leases.map((lease) => lease.release()));
     await manager.destroy();
   });
 });
