@@ -65,6 +65,25 @@ High-count particles, fields, fluids, and constraints remain specialized
 data-oriented resources. They are not represented as one ECS entity per GPU
 element.
 
+This is a deliberate dual-authority model, not a migration gap:
+
+- ECS entities are authoritative for heterogeneous gameplay objects, scene
+  ownership, hierarchy, transforms, conventional sprites, UI text, cameras,
+  physics bodies, serialization, and editor-visible state.
+- Packed typed-array or GPU-resident domains are authoritative for homogeneous,
+  high-count particles, grids, fields, fluids, and solver state. Each domain is
+  owned by an engine plugin/resource, advances through registered schedule
+  systems, submits through backend-neutral render contracts, publishes
+  diagnostics, and releases through engine ownership.
+- Bridges between the models are explicit systems. A game may represent a
+  particle emitter or fluid volume as an ECS entity, but its individual samples
+  stay in the packed domain. Per-element ECS mirroring is prohibited unless the
+  elements need independent gameplay identity or serialization.
+
+This preserves normal game-engine authoring for sprites and complex scenes
+without sacrificing the cache locality and GPU residency required by the
+simulation library.
+
 ## Schedule
 
 The standard schedule is:
@@ -154,3 +173,9 @@ Interactive world entities can publish semantic descriptions to a DOM mirror
 for keyboard navigation and screen readers. Reduced motion, contrast, captions,
 and input remapping are engine-level capabilities rather than content-specific
 afterthoughts.
+
+`WorldInspector` is the non-UI editing boundary. It emits hierarchy and
+schema-backed component snapshots, applies edits through the same validation and
+migration path as serialization, rejects unknown components, and delegates
+parent changes to `Hierarchy`. Editor UI remains a later tools-layer concern and
+does not receive private ECS storage access.

@@ -178,6 +178,12 @@ export {
   type SerializedWorld,
 } from './serialization/WorldSerializer.js';
 export {
+  WorldInspector,
+  type InspectedComponent,
+  type InspectedEntity,
+  type WorldInspectionSnapshot,
+} from './serialization/WorldInspector.js';
+export {
   SaveSnapshotCodec,
   type RestoredSave,
   type SaveSchema,
