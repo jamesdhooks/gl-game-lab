@@ -1,6 +1,6 @@
 import { ExperienceRuntime } from '@hooksjam/gl-game-lab-react';
 import { ballPitDefinition } from '@hooksjam/gl-game-lab-games';
-import { fireworksDefinition, harmonicSandDefinition, myceliumDefinition, orbitalShrapnelDefinition, sparksDefinition, turingSkinDefinition } from '@hooksjam/gl-game-lab-simulations';
+import { alienVascularTreeDefinition, fireworksDefinition, harmonicSandDefinition, myceliumDefinition, orbitalShrapnelDefinition, sparksDefinition, turingSkinDefinition } from '@hooksjam/gl-game-lab-simulations';
 import './index.css';
 import { parseDemoCaptureOptions } from './captureOptions.js';
 import { ballPitCaptureInputEvents } from './ballPitCaptureScenarios.js';
@@ -14,7 +14,8 @@ export function App(): JSX.Element {
       : experienceId === 'sparks' ? sparksDefinition
         : experienceId === 'orbital-shrapnel' ? orbitalShrapnelDefinition
           : experienceId === 'turing-skin' ? turingSkinDefinition
-            : experienceId === 'mycelium' ? myceliumDefinition : ballPitDefinition;
+            : experienceId === 'mycelium' ? myceliumDefinition
+              : experienceId === 'alien-vascular-tree' ? alienVascularTreeDefinition : ballPitDefinition;
   return (
     <main className={capture.enabled ? 'shell capture-shell' : 'shell'}>
       {!capture.enabled && (

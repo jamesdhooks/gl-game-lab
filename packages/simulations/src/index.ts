@@ -5,6 +5,7 @@ import { sparksDefinition } from './sparks/definition.js';
 import { orbitalShrapnelDefinition } from './orbital-shrapnel/definition.js';
 import { turingSkinDefinition } from './turing-skin/definition.js';
 import { myceliumDefinition } from './mycelium/definition.js';
+import { alienVascularTreeDefinition } from './alien-vascular-tree/definition.js';
 
 export { harmonicSandDefinition } from './harmonic-sand/definition.js';
 export { fireworksDefinition } from './fireworks/definition.js';
@@ -12,6 +13,11 @@ export { sparksDefinition } from './sparks/definition.js';
 export { orbitalShrapnelDefinition } from './orbital-shrapnel/definition.js';
 export { turingSkinDefinition } from './turing-skin/definition.js';
 export { myceliumDefinition } from './mycelium/definition.js';
+export { alienVascularTreeDefinition } from './alien-vascular-tree/definition.js';
+export { VASCULAR_TREE_DEFAULTS, VASCULAR_TREE_SETTINGS, createVascularTreeConfig, type VascularTreeConfig } from './alien-vascular-tree/config.js';
+export { VASCULAR_TREE_PLUGIN_ID, VascularTreeControllerService, createVascularTreePlugin, type VascularTreeController, type VascularTreeMode } from './alien-vascular-tree/VascularTreePlugin.js';
+export { VASCULAR_TREE_STYLE_MANIFEST } from './alien-vascular-tree/styles.js';
+export { VascularGrowthModel, type PackedVascularSegments, type VascularNode } from './alien-vascular-tree/VascularGrowthModel.js';
 export { MYCELIUM_DEFAULTS, MYCELIUM_SETTINGS, createMyceliumConfig, myceliumNumber, myceliumString, type MyceliumConfig } from './mycelium/config.js';
 export { MYCELIUM_PLUGIN_ID, MyceliumControllerService, createMyceliumPlugin, type MyceliumController } from './mycelium/MyceliumPlugin.js';
 export { MYCELIUM_STYLE_MANIFEST } from './mycelium/styles.js';
@@ -42,4 +48,4 @@ export {
 } from './harmonic-sand/HarmonicSandPlugin.js';
 export { HARMONIC_SAND_STYLE_MANIFEST } from './harmonic-sand/styles.js';
 
-export const SIMULATION_REGISTRY = new ExperienceRegistry().register(harmonicSandDefinition).register(fireworksDefinition).register(sparksDefinition).register(orbitalShrapnelDefinition).register(turingSkinDefinition).register(myceliumDefinition);
+export const SIMULATION_REGISTRY = new ExperienceRegistry().register(harmonicSandDefinition).register(fireworksDefinition).register(sparksDefinition).register(orbitalShrapnelDefinition).register(turingSkinDefinition).register(myceliumDefinition).register(alienVascularTreeDefinition);

@@ -1,0 +1,2 @@
+export const VASCULAR_MARKER_SHADER=`#version 300 es
+precision highp float;in vec2 vUv;out vec4 outColor;uniform vec2 uResolution;uniform vec2 uPoint;uniform float uRadius;uniform vec3 uColor;uniform float uVisible;void main(){vec2 p=vec2(vUv.x*uResolution.x,(1.0-vUv.y)*uResolution.y);float d=length(p-uPoint),ring=smoothstep(2.6,.4,abs(d-uRadius)),core=smoothstep(5.0,0.0,d);float alpha=(ring*.72+core*.5)*uVisible;outColor=vec4(uColor,alpha);}`;
