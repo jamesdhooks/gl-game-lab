@@ -19,12 +19,14 @@ import {
   EngineEvents,
   EngineHierarchy,
   EngineInput,
+  EngineInputSources,
   EngineSchedule,
   EngineScenes,
   EngineSchemas,
   EngineSerializer,
   EngineWorld,
 } from './Services.js';
+import { InputSourceRegistry } from './InputSourceRegistry.js';
 
 export const GAME_ENGINE_RUNTIME_PLUGIN_ID = 'gl-game-lab.runtime';
 
@@ -39,6 +41,7 @@ export class GameEngine {
   readonly hierarchy = new Hierarchy(this.world);
   readonly events = new EventBus();
   readonly input = new InputState();
+  readonly inputSources = new InputSourceRegistry();
   readonly assets: AssetManager;
   readonly schedule = new Schedule();
   readonly scenes: SceneManager;
@@ -71,6 +74,7 @@ export class GameEngine {
     if (this.kernel.state !== 'running') {
       throw new Error(`Game engine cannot run a frame while ${this.kernel.state}`);
     }
+    this.inputSources.poll(this.input);
     this.input.advanceFrame();
     this.runner.runFrame(realDeltaSeconds);
   }
@@ -108,6 +112,7 @@ export class GameEngine {
         context.provide(EngineHierarchy, this.hierarchy);
         context.provide(EngineEvents, this.events);
         context.provide(EngineInput, this.input);
+        context.provide(EngineInputSources, this.inputSources);
         context.provide(EngineAssets, this.assets);
         context.provide(EngineSchedule, this.schedule);
         context.provide(EngineScenes, this.scenes);
@@ -135,6 +140,11 @@ export class GameEngine {
       failures.push(error);
     } finally {
       this.hierarchy.destroy();
+    }
+    try {
+      this.inputSources.reset(this.input);
+    } catch (error) {
+      failures.push(error);
     }
     if (failures.length === 1) throw failures[0];
     if (failures.length > 1) throw new AggregateError(failures, 'Game runtime disposal failed');

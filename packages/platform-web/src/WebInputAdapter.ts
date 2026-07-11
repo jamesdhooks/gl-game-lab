@@ -8,8 +8,10 @@ export interface LogicalViewport {
 export interface WebInputAdapterOptions {
   readonly input: InputState;
   readonly getViewport: () => LogicalViewport;
-  readonly keyboardTarget?: Window;
+  readonly keyboardTarget?: Window | HTMLElement;
+  readonly document?: Document;
   readonly preventDefault?: boolean;
+  readonly focusOnPointer?: boolean;
 }
 
 export interface ClientRectLike {
@@ -39,21 +41,31 @@ export function normalizePointerCoordinates(
 }
 
 export class WebInputAdapter {
-  private readonly keyboardTarget: Window;
+  private readonly keyboardTarget: Window | HTMLElement;
+  private readonly document: Document;
+  private readonly pointers = new Map<number, PointerEvent>();
+  private readonly keys = new Map<string, string>();
+  private readonly previousTabIndex: number;
   private destroyed = false;
 
   constructor(
     private readonly canvas: HTMLCanvasElement,
     private readonly options: WebInputAdapterOptions,
   ) {
-    this.keyboardTarget = options.keyboardTarget ?? canvas.ownerDocument.defaultView ?? requireWindow();
+    this.keyboardTarget = options.keyboardTarget ?? canvas;
+    this.document = options.document ?? canvas.ownerDocument;
+    this.previousTabIndex = canvas.tabIndex;
+    if (canvas.tabIndex < 0) canvas.tabIndex = 0;
     canvas.addEventListener('pointerdown', this.onPointerDown);
     canvas.addEventListener('pointermove', this.onPointerMove);
     canvas.addEventListener('pointerup', this.onPointerUp);
     canvas.addEventListener('pointercancel', this.onPointerCancel);
+    canvas.addEventListener('lostpointercapture', this.onLostPointerCapture);
     canvas.addEventListener('wheel', this.onWheel, { passive: false });
-    this.keyboardTarget.addEventListener('keydown', this.onKeyDown);
-    this.keyboardTarget.addEventListener('keyup', this.onKeyUp);
+    this.keyboardTarget.addEventListener('keydown', this.onKeyDown as EventListener);
+    this.keyboardTarget.addEventListener('keyup', this.onKeyUp as EventListener);
+    this.keyboardTarget.addEventListener('blur', this.onBlur);
+    this.document.addEventListener('visibilitychange', this.onVisibilityChange);
   }
 
   destroy(): void {
@@ -63,12 +75,18 @@ export class WebInputAdapter {
     this.canvas.removeEventListener('pointermove', this.onPointerMove);
     this.canvas.removeEventListener('pointerup', this.onPointerUp);
     this.canvas.removeEventListener('pointercancel', this.onPointerCancel);
+    this.canvas.removeEventListener('lostpointercapture', this.onLostPointerCapture);
     this.canvas.removeEventListener('wheel', this.onWheel);
-    this.keyboardTarget.removeEventListener('keydown', this.onKeyDown);
-    this.keyboardTarget.removeEventListener('keyup', this.onKeyUp);
+    this.keyboardTarget.removeEventListener('keydown', this.onKeyDown as EventListener);
+    this.keyboardTarget.removeEventListener('keyup', this.onKeyUp as EventListener);
+    this.keyboardTarget.removeEventListener('blur', this.onBlur);
+    this.document.removeEventListener('visibilitychange', this.onVisibilityChange);
+    this.cancelActiveInput();
+    this.canvas.tabIndex = this.previousTabIndex;
   }
 
   private readonly onPointerDown = (event: PointerEvent): void => {
+    if (this.options.focusOnPointer !== false) this.canvas.focus({ preventScroll: true });
     this.canvas.setPointerCapture(event.pointerId);
     this.ingestPointer(event, 'down');
   };
@@ -85,6 +103,12 @@ export class WebInputAdapter {
   private readonly onPointerCancel = (event: PointerEvent): void => {
     this.ingestPointer(event, 'cancel');
     this.releasePointer(event.pointerId);
+  };
+
+  private readonly onLostPointerCapture = (event: PointerEvent): void => {
+    const pointer = this.pointers.get(event.pointerId);
+    if (!pointer) return;
+    this.ingestPointer(pointer, 'cancel');
   };
 
   private readonly onWheel = (event: WheelEvent): void => {
@@ -106,11 +130,19 @@ export class WebInputAdapter {
       key: event.key,
       repeat: event.repeat,
     });
+    this.keys.set(event.code, event.key);
   };
 
   private readonly onKeyUp = (event: KeyboardEvent): void => {
     if (this.options.preventDefault === true) event.preventDefault();
     this.options.input.ingest({ kind: 'key', phase: 'up', code: event.code, key: event.key });
+    this.keys.delete(event.code);
+  };
+
+  private readonly onBlur = (): void => { this.cancelActiveInput(); };
+
+  private readonly onVisibilityChange = (): void => {
+    if (this.document.visibilityState === 'hidden') this.cancelActiveInput();
   };
 
   private ingestPointer(event: PointerEvent, phase: 'down' | 'move' | 'up' | 'cancel'): void {
@@ -126,14 +158,19 @@ export class WebInputAdapter {
       pressure: event.pressure,
       primary: event.isPrimary,
     });
+    if (phase === 'up' || phase === 'cancel') this.pointers.delete(event.pointerId);
+    else this.pointers.set(event.pointerId, event);
   }
 
   private releasePointer(pointerId: number): void {
     if (this.canvas.hasPointerCapture(pointerId)) this.canvas.releasePointerCapture(pointerId);
   }
-}
 
-function requireWindow(): Window {
-  if (typeof window === 'undefined') throw new Error('WebInputAdapter requires a browser window');
-  return window;
+  private cancelActiveInput(): void {
+    for (const pointer of [...this.pointers.values()]) this.ingestPointer(pointer, 'cancel');
+    for (const [code, key] of this.keys) {
+      this.options.input.ingest({ kind: 'key', phase: 'up', code, key });
+    }
+    this.keys.clear();
+  }
 }

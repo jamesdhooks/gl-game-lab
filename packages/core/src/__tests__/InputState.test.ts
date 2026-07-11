@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { InputState } from '../index.js';
+import { ActionMap, InputState } from '../index.js';
 
 describe('InputState', () => {
   it('creates immutable frame snapshots from pointer, keyboard, and wheel input', () => {
@@ -38,5 +38,24 @@ describe('InputState', () => {
     const input = new InputState();
     expect(() => input.ingest({ kind: 'pointer', phase: 'move', id: 1, x: Number.NaN, y: 0, buttons: 0 })).toThrow('finite');
     expect(() => input.ingest({ kind: 'key', phase: 'down', code: '', key: '' })).toThrow('cannot be empty');
+  });
+
+  it('captures immutable gamepad snapshots and evaluates unified action bindings', () => {
+    const input = new InputState();
+    const actions = new ActionMap([
+      { id: 'jump', bindings: [{ kind: 'key', code: 'Space' }, { kind: 'gamepad-button', button: 0 }] },
+      { id: 'move-right', bindings: [{ kind: 'gamepad-axis', axis: 0, direction: 1, threshold: 0.2 }] },
+    ]);
+    input.setGamepads([{
+      index: 0, id: 'Standard Pad', mapping: 'standard', timestamp: 1,
+      axes: [0.6], buttons: [{ pressed: true, touched: true, value: 1 }],
+    }]);
+
+    const first = actions.update(input.advanceFrame());
+    expect(first.jump).toMatchObject({ value: 1, down: true, pressed: true, released: false });
+    expect(first['move-right']?.value).toBeCloseTo(0.5);
+    input.setGamepads([]);
+    const second = actions.update(input.advanceFrame());
+    expect(second.jump).toMatchObject({ down: false, pressed: false, released: true });
   });
 });

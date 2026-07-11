@@ -37,9 +37,25 @@ export interface PointerSnapshot {
   readonly primary: boolean;
 }
 
+export interface GamepadButtonSnapshot {
+  readonly pressed: boolean;
+  readonly touched: boolean;
+  readonly value: number;
+}
+
+export interface GamepadSnapshot {
+  readonly index: number;
+  readonly id: string;
+  readonly mapping: string;
+  readonly timestamp: number;
+  readonly axes: readonly number[];
+  readonly buttons: readonly GamepadButtonSnapshot[];
+}
+
 export interface InputSnapshot {
   readonly events: readonly InputEvent[];
   readonly pointers: readonly PointerSnapshot[];
+  readonly gamepads: readonly GamepadSnapshot[];
   readonly keysDown: readonly string[];
   readonly keysPressed: readonly string[];
   readonly keysReleased: readonly string[];
@@ -60,7 +76,8 @@ export class InputState {
   private wheelDeltaX = 0;
   private wheelDeltaY = 0;
   private wheelDeltaZ = 0;
-  private currentSnapshot: InputSnapshot = createSnapshot([], [], [], [], [], 0, 0, 0);
+  private gamepads: readonly GamepadSnapshot[] = Object.freeze([]);
+  private currentSnapshot: InputSnapshot = createSnapshot([], [], [], [], [], [], 0, 0, 0);
 
   get snapshot(): InputSnapshot {
     return this.currentSnapshot;
@@ -96,10 +113,15 @@ export class InputState {
     this.pendingEvents.push(Object.freeze({ ...event }));
   }
 
+  setGamepads(gamepads: readonly GamepadSnapshot[]): void {
+    this.gamepads = Object.freeze(gamepads.map(normalizeGamepad));
+  }
+
   advanceFrame(): InputSnapshot {
     this.currentSnapshot = createSnapshot(
       this.pendingEvents,
       [...this.pointers.values()],
+      this.gamepads,
       [...this.keysDown],
       [...this.pendingPressed],
       [...this.pendingReleased],
@@ -125,13 +147,15 @@ export class InputState {
     this.wheelDeltaX = 0;
     this.wheelDeltaY = 0;
     this.wheelDeltaZ = 0;
-    this.currentSnapshot = createSnapshot([], [], [], [], [], 0, 0, 0);
+    this.gamepads = Object.freeze([]);
+    this.currentSnapshot = createSnapshot([], [], [], [], [], [], 0, 0, 0);
   }
 }
 
 function createSnapshot(
   events: readonly InputEvent[],
   pointers: readonly PointerSnapshot[],
+  gamepads: readonly GamepadSnapshot[],
   keysDown: readonly string[],
   keysPressed: readonly string[],
   keysReleased: readonly string[],
@@ -145,6 +169,7 @@ function createSnapshot(
   return Object.freeze({
     events: Object.freeze([...events]),
     pointers: Object.freeze([...pointers]),
+    gamepads: Object.freeze([...gamepads]),
     keysDown: Object.freeze([...down].sort()),
     keysPressed: Object.freeze([...pressed].sort()),
     keysReleased: Object.freeze([...released].sort()),
@@ -154,6 +179,29 @@ function createSnapshot(
     isKeyDown: (code: string) => down.has(code),
     isKeyPressed: (code: string) => pressed.has(code),
     isKeyReleased: (code: string) => released.has(code),
+  });
+}
+
+function normalizeGamepad(gamepad: GamepadSnapshot): GamepadSnapshot {
+  if (!Number.isSafeInteger(gamepad.index) || gamepad.index < 0) throw new Error('Gamepad index must be a non-negative integer');
+  if (gamepad.id.trim().length === 0) throw new Error('Gamepad id cannot be empty');
+  if (!Number.isFinite(gamepad.timestamp) || gamepad.timestamp < 0) throw new Error('Gamepad timestamp must be non-negative');
+  if (!gamepad.axes.every((axis) => Number.isFinite(axis) && axis >= -1 && axis <= 1)) {
+    throw new Error('Gamepad axes must be finite values between negative one and one');
+  }
+  const buttons = gamepad.buttons.map((button) => {
+    if (!Number.isFinite(button.value) || button.value < 0 || button.value > 1) {
+      throw new Error('Gamepad button values must be between zero and one');
+    }
+    return Object.freeze({ pressed: button.pressed, touched: button.touched, value: button.value });
+  });
+  return Object.freeze({
+    index: gamepad.index,
+    id: gamepad.id,
+    mapping: gamepad.mapping,
+    timestamp: gamepad.timestamp,
+    axes: Object.freeze([...gamepad.axes]),
+    buttons: Object.freeze(buttons),
   });
 }
 

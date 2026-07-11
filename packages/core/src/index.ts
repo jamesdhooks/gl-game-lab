@@ -177,9 +177,18 @@ export {
   InputState,
   type InputEvent,
   type InputSnapshot,
+  type GamepadButtonSnapshot,
+  type GamepadSnapshot,
   type KeyInputEvent,
   type PointerInputEvent,
   type PointerPhase,
   type PointerSnapshot,
   type WheelInputEvent,
 } from './input/InputState.js';
+export {
+  ActionMap,
+  type ActionBinding,
+  type ActionDefinition,
+  type ActionSnapshot,
+  type ActionState,
+} from './input/ActionMap.js';
