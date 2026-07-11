@@ -4,6 +4,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright-core';
 import { startDemoServer, waitForServer } from './browser-harness.mjs';
+import { RELEASE_EXPERIENCE_IDS } from './release-catalog.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const demo = path.join(root, 'packages', 'demo');
@@ -13,11 +14,7 @@ const executablePath = process.env.GL_GAME_LAB_BROWSER_EXECUTABLE ?? findBrowser
 const requestedTier = argument('tier');
 const requestedExperience = argument('experience');
 const enforce = process.argv.includes('--enforce');
-const experiences = Object.freeze([
-  'ball-pit', 'harmonic-sand', 'fireworks', 'sparks', 'orbital-shrapnel',
-  'turing-skin', 'mycelium', 'alien-vascular-tree', 'chain-rain',
-  'soft-body-blob', 'fluid-tank', 'particle-fluid', 'lava-lamp', 'water-tank', 'splash-mpm',
-]);
+const experiences = RELEASE_EXPERIENCE_IDS;
 const tiers = Object.freeze({
   desktop: { viewport: { width: 1280, height: 720 }, frames: 180, delta: 1 / 60, deviceScaleFactor: 1 },
   mobile: { viewport: { width: 390, height: 844 }, frames: 120, delta: 1 / 30, deviceScaleFactor: 2, isMobile: true, hasTouch: true },

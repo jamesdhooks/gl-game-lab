@@ -1,0 +1,17 @@
+export const RELEASE_EXPERIENCE_IDS = Object.freeze([
+  'ball-pit',
+  'harmonic-sand',
+  'fireworks',
+  'sparks',
+  'orbital-shrapnel',
+  'turing-skin',
+  'mycelium',
+  'alien-vascular-tree',
+  'chain-rain',
+  'soft-body-blob',
+  'fluid-tank',
+  'particle-fluid',
+  'lava-lamp',
+  'water-tank',
+  'splash-mpm',
+]);
