@@ -119,6 +119,15 @@ interface ManagedTexture2D {
   readonly spriteTexture: SpriteTexture;
 }
 
+export interface ContextCycleDiagnostics {
+  readonly generationBefore: number;
+  readonly generationAfter: number;
+  readonly resourcesBefore: number;
+  readonly resourcesAfter: number;
+  readonly bytesBefore: number;
+  readonly bytesAfter: number;
+}
+
 interface ManagedBitmapFont2D {
   readonly handle: BitmapFont2DHandle;
   readonly texture: Texture2DHandle;
@@ -367,6 +376,33 @@ export class WebGL2Renderer implements RenderBackend, Render2DService {
     gl.readPixels(0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
     flipRows(pixels, width, height);
     return pixels;
+  }
+
+  async cycleContextForDiagnostics(): Promise<ContextCycleDiagnostics> {
+    this.assertUsable();
+    const extension = this.device.gl.getExtension('WEBGL_lose_context');
+    if (!extension) throw new Error('WEBGL_lose_context is unavailable');
+    const before = this.device.diagnostics();
+    const restored = new Promise<void>((resolve, reject) => {
+      const timeout = globalThis.setTimeout(() => { reject(new Error('WebGL2 context restoration timed out')); }, 5_000);
+      this.device.canvas.addEventListener('webglcontextrestored', () => {
+        globalThis.clearTimeout(timeout);
+        resolve();
+      }, { once: true });
+    });
+    extension.loseContext();
+    globalThis.setTimeout(() => { extension.restoreContext(); }, 50);
+    await restored;
+    if (this.device.contextRestorationError) throw new Error('WebGL2 context restoration failed', { cause: this.device.contextRestorationError });
+    const after = this.device.diagnostics();
+    return Object.freeze({
+      generationBefore: before.contextGeneration,
+      generationAfter: after.contextGeneration,
+      resourcesBefore: before.textureCount + before.ownedContextResourceCount,
+      resourcesAfter: after.textureCount + after.ownedContextResourceCount,
+      bytesBefore: before.estimatedGpuBytes,
+      bytesAfter: after.estimatedGpuBytes,
+    });
   }
 
   createRgbaTexture(id: string, width: number, height: number, pixels: Uint8Array): Texture2DHandle {

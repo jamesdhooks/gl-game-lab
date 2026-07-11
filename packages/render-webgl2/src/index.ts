@@ -137,6 +137,7 @@ export {
   WebGL2Renderer,
   WebGL2RendererService,
   createWebGL2RendererPlugin,
+  type ContextCycleDiagnostics,
   type WebGL2RendererOptions,
 } from './WebGL2Renderer.js';
 export {

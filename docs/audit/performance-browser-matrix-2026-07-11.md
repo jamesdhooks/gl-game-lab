@@ -57,3 +57,15 @@ and passed the engine CPU/draw/upload/resource envelope.
   publishes a host-controlled adaptive quality tier; the mobile recommendation caps
   particle count/emission and reduces solver work without altering desktop defaults
   or the explicit stress-setting range. The repaired result is 2.10 ms p95.
+
+## Functional browser evidence
+
+- Reference Arena booted in the production bundle, rendered through the public 2D
+  path, and exposed both its visible score and ARIA live score announcement.
+- A same-mount definition replacement changed Reference Arena to Ball Pit. The
+  replacement reached `running`; the previous engine reached `destroyed`; the
+  diagnostics probe reported `lifecycle-passed`.
+- A real `WEBGL_lose_context` probe was attempted. The embedded Chromium renderer
+  process became blank and inaccessible immediately after forced loss, before the
+  page could report restoration. This is not accepted as restoration proof;
+  RND-01 remains active until the probe passes in an external browser/device run.
