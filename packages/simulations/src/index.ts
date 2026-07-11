@@ -7,6 +7,7 @@ import { turingSkinDefinition } from './turing-skin/definition.js';
 import { myceliumDefinition } from './mycelium/definition.js';
 import { alienVascularTreeDefinition } from './alien-vascular-tree/definition.js';
 import { chainRainDefinition } from './chain-rain/definition.js';
+import { softBodyBlobDefinition } from './soft-body-blob/definition.js';
 
 export { harmonicSandDefinition } from './harmonic-sand/definition.js';
 export { fireworksDefinition } from './fireworks/definition.js';
@@ -19,6 +20,11 @@ export { chainRainDefinition } from './chain-rain/definition.js';
 export { CHAIN_RAIN_DEFAULTS, CHAIN_RAIN_SETTINGS, createChainRainConfig, chainNumber, chainString, type ChainRainConfig } from './chain-rain/config.js';
 export { CHAIN_RAIN_PLUGIN_ID, ChainRainControllerService, createChainRainPlugin, type ChainRainController, type ChainRainMode } from './chain-rain/ChainRainPlugin.js';
 export { CHAIN_RAIN_STYLE_MANIFEST } from './chain-rain/styles.js';
+export { softBodyBlobDefinition } from './soft-body-blob/definition.js';
+export { SOFT_BODY_BLOB_DEFAULTS, SOFT_BODY_BLOB_SETTINGS, createSoftBodyBlobConfig, blobNumber, blobString, type SoftBodyBlobConfig } from './soft-body-blob/config.js';
+export { SOFT_BODY_BLOB_PLUGIN_ID, SoftBodyBlobControllerService, createSoftBodyBlobPlugin, type SoftBodyBlobController, type SoftBodyBlobMode } from './soft-body-blob/SoftBodyBlobPlugin.js';
+export { SOFT_BODY_BLOB_STYLE_MANIFEST } from './soft-body-blob/styles.js';
+export { SoftBodyModel, type SoftBody, type SoftBodyTuning } from './soft-body-blob/SoftBodyModel.js';
 export { VASCULAR_TREE_DEFAULTS, VASCULAR_TREE_SETTINGS, createVascularTreeConfig, type VascularTreeConfig } from './alien-vascular-tree/config.js';
 export { VASCULAR_TREE_PLUGIN_ID, VascularTreeControllerService, createVascularTreePlugin, type VascularTreeController, type VascularTreeMode } from './alien-vascular-tree/VascularTreePlugin.js';
 export { VASCULAR_TREE_STYLE_MANIFEST } from './alien-vascular-tree/styles.js';
@@ -53,4 +59,4 @@ export {
 } from './harmonic-sand/HarmonicSandPlugin.js';
 export { HARMONIC_SAND_STYLE_MANIFEST } from './harmonic-sand/styles.js';
 
-export const SIMULATION_REGISTRY = new ExperienceRegistry().register(harmonicSandDefinition).register(fireworksDefinition).register(sparksDefinition).register(orbitalShrapnelDefinition).register(turingSkinDefinition).register(myceliumDefinition).register(alienVascularTreeDefinition).register(chainRainDefinition);
+export const SIMULATION_REGISTRY = new ExperienceRegistry().register(harmonicSandDefinition).register(fireworksDefinition).register(sparksDefinition).register(orbitalShrapnelDefinition).register(turingSkinDefinition).register(myceliumDefinition).register(alienVascularTreeDefinition).register(chainRainDefinition).register(softBodyBlobDefinition);
