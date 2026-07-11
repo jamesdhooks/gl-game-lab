@@ -293,15 +293,11 @@ export class WebGL2Renderer implements RenderBackend, Render2DService {
     const extension = this.device.gl.getExtension('WEBGL_lose_context');
     if (!extension) throw new Error('WEBGL_lose_context is unavailable');
     const before = this.device.diagnostics();
-    const restored = new Promise<void>((resolve, reject) => {
-      const timeout = globalThis.setTimeout(() => { reject(new Error('WebGL2 context restoration timed out')); }, 5_000);
-      this.device.canvas.addEventListener('webglcontextrestored', () => {
-        globalThis.clearTimeout(timeout);
-        resolve();
-      }, { once: true });
-    });
+    const lost = waitForContextEvent(this.device.canvas, 'webglcontextlost', 5_000);
     extension.loseContext();
-    globalThis.setTimeout(() => { extension.restoreContext(); }, 50);
+    await lost;
+    const restored = waitForContextEvent(this.device.canvas, 'webglcontextrestored', 10_000);
+    extension.restoreContext();
     await restored;
     if (this.device.contextRestorationError) throw new Error('WebGL2 context restoration failed', { cause: this.device.contextRestorationError });
     const after = this.device.diagnostics();
@@ -578,6 +574,24 @@ export class WebGL2Renderer implements RenderBackend, Render2DService {
     this.backdrop.configure(this.backdropOptions);
     this.device.resize(this.logicalWidth, this.logicalHeight, this.pixelRatio);
   }
+}
+
+function waitForContextEvent(
+  canvas: HTMLCanvasElement,
+  type: 'webglcontextlost' | 'webglcontextrestored',
+  timeoutMilliseconds: number,
+): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
+    const handleEvent = (): void => {
+      globalThis.clearTimeout(timeout);
+      resolve();
+    };
+    const timeout = globalThis.setTimeout(() => {
+      canvas.removeEventListener(type, handleEvent);
+      reject(new Error(`WebGL2 ${type === 'webglcontextlost' ? 'context loss' : 'context restoration'} timed out`));
+    }, timeoutMilliseconds);
+    canvas.addEventListener(type, handleEvent, { once: true });
+  });
 }
 
 function flipRows(pixels: Uint8Array, width: number, height: number): void {
