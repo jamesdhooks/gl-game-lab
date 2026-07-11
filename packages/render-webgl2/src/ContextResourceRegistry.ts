@@ -41,7 +41,7 @@ export class ContextResourceRegistry {
       try {
         resource.invalidate?.();
       } catch (error) {
-        failures.push(error);
+        failures.push(resourceFailure(resource.id, 'invalidation', error));
       }
     }
     if (failures.length > 0) throw contextFailures('Context resource invalidation failed', failures);
@@ -53,7 +53,7 @@ export class ContextResourceRegistry {
       try {
         resource.restore();
       } catch (error) {
-        failures.push(error);
+        failures.push(resourceFailure(resource.id, 'restoration', error));
       }
     }
     if (failures.length > 0) throw contextFailures('Context resource restoration failed', failures);
@@ -87,4 +87,9 @@ function estimatedBytes(value: ContextRestorableResource['estimatedBytes']): num
 
 function contextFailures(message: string, failures: readonly unknown[]): unknown {
   return failures.length === 1 ? failures[0] : new AggregateError(failures, message);
+}
+
+function resourceFailure(id: string, operation: 'invalidation' | 'restoration', cause: unknown): Error {
+  const detail = cause instanceof Error ? cause.message : String(cause);
+  return new Error(`Context resource ${operation} failed: ${id} (${detail})`, { cause });
 }

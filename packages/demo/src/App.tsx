@@ -432,6 +432,7 @@ function DiagnosticExperienceHost(): JSX.Element {
           className="diagnostic-controls"
           aria-label="Engine diagnostic controls"
           data-diagnostic-status={diagnosticStatus}
+          data-diagnostic-error={runtimeError ?? undefined}
           data-ready-count={readyCountRef.current}
           data-context-generation-before={contextResult?.generationBefore}
           data-context-strategy={contextResult?.strategy}

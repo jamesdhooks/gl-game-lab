@@ -160,7 +160,9 @@ export class WebGL2Device {
   async waitForContextRestoration(): Promise<void> {
     await this.restorationPromise;
     if (this.restorationError) {
-      throw new Error('WebGL2 context restoration failed', { cause: this.restorationError });
+      throw new Error(`WebGL2 context restoration failed: ${describeFailure(this.restorationError)}`, {
+        cause: this.restorationError,
+      });
     }
   }
 
@@ -311,9 +313,12 @@ export class WebGL2Device {
     this.contextLost = true;
     this.restorationPromise = waitForRestoredDriver().then(() => {
       if (this.destroyed) return;
+      // The restored event means the replacement WebGL context is usable.
+      // Resource restorers must be allowed to call normal device APIs while
+      // rebuilding pipelines, viewports, textures, and framebuffers.
+      this.contextLost = false;
       try {
         this.contextResources.restore();
-        this.contextLost = false;
       } catch (error) {
         this.restorationError = error;
         this.contextLost = true;
@@ -434,6 +439,18 @@ function waitForRestoredDriver(): Promise<void> {
     }
     globalThis.setTimeout(resolve, 0);
   });
+}
+
+function describeFailure(error: unknown): string {
+  if (error instanceof AggregateError) {
+    return error.errors.map((entry: unknown) => describeFailure(entry)).join('; ');
+  }
+  if (error instanceof Error) {
+    return error.cause === undefined
+      ? error.message
+      : `${error.message} (${describeFailure(error.cause)})`;
+  }
+  return String(error);
 }
 
 export function normalizeTextureDescriptor(descriptor: WebGLTextureDescriptor): NormalizedTextureDescriptor {

@@ -290,6 +290,10 @@ export class WebGL2Renderer implements RenderBackend, Render2DService {
     const lost = waitForContextEvent(this.device.canvas, 'webglcontextlost', 5_000);
     extension.loseContext();
     await lost;
+    // WEBGL_lose_context forbids restoration until the context-lost event has
+    // fully completed. An await continuation is a microtask and may run before
+    // the user agent marks the context restorable, so cross a task boundary.
+    await waitForNextTask();
     const restored = waitForContextEvent(this.device.canvas, 'webglcontextrestored', 10_000);
     extension.restoreContext();
     await restored;
@@ -539,6 +543,12 @@ function waitForContextEvent(
       reject(new Error(`WebGL2 ${type === 'webglcontextlost' ? 'context loss' : 'context restoration'} timed out`));
     }, timeoutMilliseconds);
     canvas.addEventListener(type, handleEvent, { once: true });
+  });
+}
+
+function waitForNextTask(): Promise<void> {
+  return new Promise((resolve) => {
+    globalThis.setTimeout(resolve, 0);
   });
 }
 

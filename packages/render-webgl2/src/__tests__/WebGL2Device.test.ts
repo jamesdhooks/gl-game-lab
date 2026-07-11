@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest';
-import { normalizeTextureDescriptor, WebGLTextureResource } from '../index.js';
+import { describe, expect, it, vi } from 'vitest';
+import { normalizeTextureDescriptor, WebGL2Device, WebGLTextureResource } from '../index.js';
 
 describe('normalizeTextureDescriptor', () => {
   it('applies explicit GPU-safe defaults', () => {
@@ -63,5 +63,40 @@ describe('WebGLTextureResource', () => {
     resource.dispose();
 
     expect(() => resource.restore({} as WebGLTexture, undefined)).toThrow('Disposed WebGL texture');
+  });
+});
+
+describe('WebGL2Device context restoration', () => {
+  it('allows registered restorers to use device APIs after the restored event', async () => {
+    let driverLost = false;
+    const viewport = vi.fn();
+    const gl = {
+      isContextLost: () => driverLost,
+      viewport,
+    } as unknown as WebGL2RenderingContext;
+    const events = new EventTarget();
+    const canvas = Object.assign(events, {
+      width: 8,
+      height: 8,
+      getContext: () => gl,
+    }) as unknown as HTMLCanvasElement;
+    const device = new WebGL2Device(canvas);
+    device.registerContextResource({
+      id: 'device-api-restorer',
+      restore: () => { device.resize(16, 9); },
+    });
+
+    driverLost = true;
+    canvas.dispatchEvent(new Event('webglcontextlost', { cancelable: true }));
+    expect(device.isContextLost).toBe(true);
+
+    driverLost = false;
+    canvas.dispatchEvent(new Event('webglcontextrestored'));
+    await device.waitForContextRestoration();
+
+    expect(device.isContextLost).toBe(false);
+    expect(viewport).toHaveBeenCalledWith(0, 0, 16, 9);
+    expect(device.contextGeneration).toBe(1);
+    device.destroy();
   });
 });
