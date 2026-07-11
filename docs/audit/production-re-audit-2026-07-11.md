@@ -101,7 +101,11 @@ All known GPU resources register deterministic invalidation/restoration paths.
 Hosted Chromium, Firefox, and WebKit rebuild every owned resource and preserve
 generation/count/byte invariants. Real `WEBGL_lose_context` attempts suspend hosted
 software-renderer execution, so physical GPU recovery remains unproven rather than
-waived. Async asset cancellation still depends on loader
+waived. A desktop embedded-browser attempt exposed a separate host defect: inline
+callback identity changes rebuilt `GameCanvas` while its context was lost. Callbacks
+now use live refs, the engine remains single-mounted, and restoration work waits for
+a post-event driver turn. That embedded driver still never emits the restored event,
+so physical certification remains open. Async asset cancellation still depends on loader
 cooperation. Floating-point determinism is same-runtime replay determinism, not
 bit-identical cross-architecture determinism. Storage quota, audio-autoplay, worker
 CSP, and browser eviction policies need broader device testing.
@@ -276,6 +280,13 @@ The five criticisms most likely from another senior engine programmer are:
 - Added a repository-owned Node Vitest configuration. Package-local test wrappers
   now execute their actual suites in nested worktrees instead of inheriting the
   legacy parent checkout and reporting false zero-test success.
+- Exercised the real driver-loss strategy in the desktop embedded browser. The probe
+  found callback prop churn could remount the engine during loss; `GameCanvas` and
+  `ExperienceRuntime` now retain live callbacks without making them engine-build
+  dependencies, and driver resource restoration is deferred one driver turn. The
+  repaired host stays at `readyCount=1` with no shader/runtime error. This embedded
+  driver still times out without emitting `webglcontextrestored`, so physical desktop
+  restoration remains an external acceptance item rather than a claimed pass.
 - Added `WebGL2FramePipelineService`: backend plugins can register deterministic,
   removable passes before or after every built-in stage. Duplicate/built-in IDs,
   invalid stages, and non-integer order values are rejected.
