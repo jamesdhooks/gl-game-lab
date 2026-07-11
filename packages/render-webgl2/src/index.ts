@@ -1,4 +1,12 @@
 export {
+  GpuFieldState,
+  type GpuFieldStateOptions,
+} from './GpuFieldState.js';
+export {
+  GpuFieldPass,
+  type GpuFieldUniformBinder,
+} from './GpuFieldPass.js';
+export {
   GpuRenderPassQueue,
   type GpuFrameRenderPass,
 } from './GpuRenderPassQueue.js';
