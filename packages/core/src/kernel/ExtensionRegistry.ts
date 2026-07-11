@@ -22,12 +22,13 @@ export class ExtensionRegistry {
     return this.entries.get(token.id)?.value as T | undefined;
   }
 
-  contextFor(owner: string): PluginInstallContext {
+  contextFor(owner: string, own: PluginInstallContext['own'] = () => undefined): PluginInstallContext {
     return {
       pluginId: owner,
       provide: <T>(token: ExtensionToken<T>, value: T) => this.provide(owner, token, value),
       get: <T>(token: ExtensionToken<T>) => this.get(token),
       tryGet: <T>(token: ExtensionToken<T>) => this.tryGet(token),
+      own,
     };
   }
 
@@ -39,6 +40,10 @@ export class ExtensionRegistry {
 
   clear(): void {
     this.entries.clear();
+  }
+
+  idsForOwner(owner: string): readonly string[] {
+    return Object.freeze([...this.entries].filter(([, entry]) => entry.owner === owner).map(([id]) => id).sort());
   }
 
   private provide<T>(owner: string, token: ExtensionToken<T>, value: T): void {

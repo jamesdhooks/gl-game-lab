@@ -23,6 +23,8 @@ export interface PluginInstallContext {
   provide<T>(token: ExtensionToken<T>, value: T): void;
   get<T>(token: ExtensionToken<T>): T;
   tryGet<T>(token: ExtensionToken<T>): T | undefined;
+  /** Registers plugin-lifetime cleanup that the engine runs in reverse acquisition order. */
+  own(label: string, dispose: () => void | Promise<void>): void;
 }
 
 export interface EnginePlugin {

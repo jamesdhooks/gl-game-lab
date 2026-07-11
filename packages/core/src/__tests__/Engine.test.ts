@@ -189,6 +189,36 @@ describe('Engine', () => {
     await engine.destroy();
     expect(engine.state).toBe('destroyed');
   });
+
+  it('tracks plugin ownership and always releases resources in reverse order', async () => {
+    const calls: string[] = [];
+    const token = createExtensionToken<number>('owned.value');
+    const engine = new Engine({
+      plugins: [{
+        id: 'owner',
+        version: '1',
+        install: (context) => {
+          context.provide(token, 42);
+          context.own('first', () => { calls.push('first'); });
+          context.own('second', async () => { calls.push('second'); });
+        },
+        dispose: () => { calls.push('plugin'); },
+      }],
+    });
+    await engine.initialize();
+
+    expect(engine.ownershipSnapshot()).toEqual({
+      state: 'ready',
+      plugins: [{
+        id: 'owner', dependencies: [], installed: true, started: false,
+        extensions: ['owned.value'], resources: ['first', 'second'],
+      }],
+    });
+
+    await engine.destroy();
+    expect(calls).toEqual(['plugin', 'second', 'first']);
+    expect(engine.ownershipSnapshot().plugins[0]).toMatchObject({ installed: false, resources: [], extensions: [] });
+  });
 });
 
 function plugin(

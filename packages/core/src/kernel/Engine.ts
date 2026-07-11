@@ -22,6 +22,25 @@ export interface EngineOptions {
   readonly plugins?: readonly EnginePlugin[];
 }
 
+export interface PluginOwnershipSnapshot {
+  readonly id: string;
+  readonly dependencies: readonly string[];
+  readonly installed: boolean;
+  readonly started: boolean;
+  readonly extensions: readonly string[];
+  readonly resources: readonly string[];
+}
+
+export interface EngineOwnershipSnapshot {
+  readonly state: EngineState;
+  readonly plugins: readonly PluginOwnershipSnapshot[];
+}
+
+interface OwnedPluginResource {
+  readonly label: string;
+  readonly dispose: () => void | Promise<void>;
+}
+
 export class EngineLifecycleError extends Error {
   constructor(
     message: string,
@@ -39,6 +58,7 @@ export class Engine {
   private orderedPlugins: EnginePlugin[] = [];
   private installedPlugins: EnginePlugin[] = [];
   private startedPlugins: EnginePlugin[] = [];
+  private readonly ownedResources = new Map<string, OwnedPluginResource[]>();
   private currentState: EngineState = 'created';
 
   constructor(options: EngineOptions = {}) {
@@ -68,6 +88,20 @@ export class Engine {
 
   tryGet<T>(token: ExtensionToken<T>): T | undefined {
     return this.extensions.tryGet(token);
+  }
+
+  ownershipSnapshot(): EngineOwnershipSnapshot {
+    return Object.freeze({
+      state: this.currentState,
+      plugins: Object.freeze([...this.plugins.values()].map((plugin) => Object.freeze({
+        id: plugin.id,
+        dependencies: Object.freeze((plugin.dependencies ?? []).map((dependency) => dependency.id)),
+        installed: this.installedPlugins.includes(plugin),
+        started: this.startedPlugins.includes(plugin),
+        extensions: this.extensions.idsForOwner(plugin.id),
+        resources: Object.freeze((this.ownedResources.get(plugin.id) ?? []).map((resource) => resource.label)),
+      }))),
+    });
   }
 
   async initialize(): Promise<void> {
@@ -133,6 +167,7 @@ export class Engine {
       } catch (error) {
         failures.push(error);
       } finally {
+        failures.push(...await this.releaseOwnedResources(plugin.id));
         this.extensions.removeOwner(plugin.id);
       }
     }
@@ -144,7 +179,14 @@ export class Engine {
   }
 
   private contextFor(plugin: EnginePlugin): PluginInstallContext {
-    return this.extensions.contextFor(plugin.id);
+    return this.extensions.contextFor(plugin.id, (label, dispose) => {
+      const normalized = label.trim();
+      if (normalized.length === 0) throw new Error(`Engine plugin ${plugin.id} owned resource label cannot be empty`);
+      const resources = this.ownedResources.get(plugin.id) ?? [];
+      if (resources.some((resource) => resource.label === normalized)) throw new Error(`Engine plugin ${plugin.id} already owns resource ${normalized}`);
+      resources.push({ label: normalized, dispose });
+      this.ownedResources.set(plugin.id, resources);
+    });
   }
 
   private async stopStartedPlugins(): Promise<unknown[]> {
@@ -168,11 +210,26 @@ export class Engine {
       } catch (error) {
         failures.push(error);
       } finally {
+        failures.push(...await this.releaseOwnedResources(plugin.id));
         this.extensions.removeOwner(plugin.id);
       }
     }
     this.installedPlugins = [];
     this.extensions.clear();
+    return failures;
+  }
+
+  private async releaseOwnedResources(pluginId: string): Promise<unknown[]> {
+    const failures: unknown[] = [];
+    const resources = this.ownedResources.get(pluginId) ?? [];
+    this.ownedResources.delete(pluginId);
+    for (const resource of [...resources].reverse()) {
+      try {
+        await resource.dispose();
+      } catch (error) {
+        failures.push(error);
+      }
+    }
     return failures;
   }
 

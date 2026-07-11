@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
+  AssetBudgetExceededEvent,
+  AssetManifest,
   AssetManager,
   AssetReadyEvent,
   createAssetType,
@@ -197,5 +199,42 @@ describe('AssetManager', () => {
     expect(manager.snapshot('copy')?.references).toBe(2);
     await Promise.all(leases.map((lease) => lease.release()));
     await manager.destroy();
+  });
+
+  it('reports cache budgets and reloads unreferenced development assets', async () => {
+    const manager = new AssetManager({ budgetBytes: 4 });
+    let revision = 0;
+    manager.registerLoader({
+      ...textLoader(),
+      load: () => `revision-${++revision}`,
+    });
+    const budgetEvents: number[] = [];
+    manager.events.on(AssetBudgetExceededEvent, ({ byteLength }) => { budgetEvents.push(byteLength); });
+
+    const first = await manager.load({ id: 'copy', type: TextAsset, source: 'copy.txt' });
+    expect(first.value).toBe('revision-1');
+    await first.release();
+    const second = await manager.reload<string>('copy');
+
+    expect(second.value).toBe('revision-2');
+    expect(manager.diagnostics()).toMatchObject({ records: 1, ready: 1, references: 1, overBudget: true });
+    expect(manager.snapshot('copy')?.byteLength).toBeGreaterThan(4);
+    expect(budgetEvents).toHaveLength(2);
+    await second.release();
+    await manager.destroy();
+  });
+
+  it('validates manifest dependencies, budgets, and deterministic load order', () => {
+    const manifest = new AssetManifest([
+      { id: 'atlas', typeId: 'texture', source: 'atlas.png', budgetBytes: 1024 },
+      { id: 'level', typeId: 'json', source: 'level.json', dependencies: ['atlas'], budgetBytes: 256 },
+    ]);
+    expect(manifest.diagnostics).toEqual({
+      entries: 2, declaredBudgetBytes: 1280, dependencyEdges: 1, loadOrder: ['atlas', 'level'],
+    });
+    expect(() => new AssetManifest([
+      { id: 'a', typeId: 'json', source: 'a', dependencies: ['b'] },
+      { id: 'b', typeId: 'json', source: 'b', dependencies: ['a'] },
+    ])).toThrow('dependency cycle');
   });
 });

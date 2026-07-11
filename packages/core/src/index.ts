@@ -6,6 +6,8 @@ export {
   EngineLifecycleError,
   type EngineOptions,
   type EngineState,
+  type EngineOwnershipSnapshot,
+  type PluginOwnershipSnapshot,
 } from './kernel/Engine.js';
 export {
   createExtensionToken,
@@ -123,6 +125,12 @@ export {
   type SceneState,
 } from './scene/SceneManager.js';
 export {
+  AssetManifest,
+  type AssetManifestDiagnostics,
+  type AssetManifestEntry,
+} from './assets/AssetManifest.js';
+export {
+  AssetBudgetExceededEvent,
   AssetFailedEvent,
   AssetGroup,
   AssetLease,
@@ -132,6 +140,7 @@ export {
   AssetUnloadedEvent,
   createAssetType,
   type AssetLifecycleEvent,
+  type AssetCacheDiagnostics,
   type AssetLoader,
   type AssetLoaderContext,
   type AssetManagerOptions,

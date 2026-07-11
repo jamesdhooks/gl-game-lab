@@ -27,6 +27,7 @@ export interface AssetLoader<Value, Options = unknown> {
   canLoad(request: AssetRequest<Value, Options>): boolean;
   load(context: AssetLoaderContext, request: AssetRequest<Value, Options>): Value | Promise<Value>;
   dispose?(value: Value): void | Promise<void>;
+  byteLength?(value: Value): number;
 }
 
 export type AssetState = 'loading' | 'ready' | 'failed' | 'unloading';
@@ -38,6 +39,16 @@ export interface AssetSnapshot {
   readonly loaderId: string;
   readonly state: AssetState;
   readonly references: number;
+  readonly byteLength: number;
+}
+
+export interface AssetCacheDiagnostics {
+  readonly records: number;
+  readonly ready: number;
+  readonly references: number;
+  readonly byteLength: number;
+  readonly budgetBytes: number | undefined;
+  readonly overBudget: boolean;
 }
 
 export interface AssetLifecycleEvent {
@@ -49,10 +60,12 @@ export const AssetLoadingEvent = createEventToken<AssetLifecycleEvent>('engine.a
 export const AssetReadyEvent = createEventToken<AssetLifecycleEvent>('engine.asset-ready');
 export const AssetFailedEvent = createEventToken<AssetLifecycleEvent>('engine.asset-failed');
 export const AssetUnloadedEvent = createEventToken<AssetLifecycleEvent>('engine.asset-unloaded');
+export const AssetBudgetExceededEvent = createEventToken<AssetCacheDiagnostics>('engine.asset-budget-exceeded');
 
 export interface AssetManagerOptions {
   readonly releaseUnused?: boolean;
   readonly events?: EventBus;
+  readonly budgetBytes?: number;
 }
 
 type UnknownAssetType = AssetType<unknown, unknown>;
@@ -69,6 +82,7 @@ interface AssetRecord {
   state: AssetState;
   references: number;
   value: unknown;
+  byteLength: number;
   promise: Promise<unknown>;
 }
 
@@ -185,6 +199,7 @@ interface GroupLoad {
 export class AssetManager {
   readonly events: EventBus;
   private readonly releaseUnused: boolean;
+  private readonly budgetBytes: number | undefined;
   private readonly typeTokens = new Map<string, UnknownAssetType>();
   private readonly loadersByType = new Map<string, UnknownAssetLoader[]>();
   private readonly loaderIds = new Set<string>();
@@ -194,6 +209,7 @@ export class AssetManager {
   constructor(options: AssetManagerOptions = {}) {
     this.releaseUnused = options.releaseUnused ?? false;
     this.events = options.events ?? new EventBus();
+    this.budgetBytes = options.budgetBytes === undefined ? undefined : positiveSafeInteger(options.budgetBytes, 'Asset budget bytes');
   }
 
   registerLoader<Value, Options>(loader: AssetLoader<Value, Options>): this {
@@ -239,6 +255,29 @@ export class AssetManager {
 
   snapshots(): readonly AssetSnapshot[] {
     return [...this.records.values()].map(snapshot);
+  }
+
+  diagnostics(): AssetCacheDiagnostics {
+    const records = [...this.records.values()];
+    const byteLength = records.reduce((total, record) => total + record.byteLength, 0);
+    return Object.freeze({
+      records: records.length,
+      ready: records.filter((record) => record.state === 'ready').length,
+      references: records.reduce((total, record) => total + record.references, 0),
+      byteLength,
+      budgetBytes: this.budgetBytes,
+      overBudget: this.budgetBytes !== undefined && byteLength > this.budgetBytes,
+    });
+  }
+
+  async reload<Value = unknown>(id: string): Promise<AssetLease<Value>> {
+    this.assertUsable();
+    const record = this.records.get(normalizeId(id, 'Asset'));
+    if (!record) throw new Error(`Asset is not loaded: ${id}`);
+    if (record.references > 0) throw new Error(`Asset must have zero references before reload: ${id}`);
+    const request = record.request;
+    await this.disposeRecord(record);
+    return this.loadFrom(request, []) as Promise<AssetLease<Value>>;
   }
 
   async evict(id: string): Promise<boolean> {
@@ -293,6 +332,7 @@ export class AssetManager {
         state: 'loading',
         references: 0,
         value: undefined,
+        byteLength: 0,
         promise: Promise.resolve(undefined),
       };
       this.records.set(normalized.id, record);
@@ -324,8 +364,11 @@ export class AssetManager {
       if (value === undefined) throw new Error(`Asset loader ${record.loader.id} returned undefined`);
       if (record.controller.signal.aborted) throw abortError(record.controller.signal.reason);
       record.value = value;
+      record.byteLength = measuredByteLength(record.loader, value);
       record.state = 'ready';
       this.events.emit(AssetReadyEvent, { asset: snapshot(record) });
+      const diagnostics = this.diagnostics();
+      if (diagnostics.overBudget) this.events.emit(AssetBudgetExceededEvent, diagnostics);
       return value;
     } catch (error) {
       record.state = 'failed';
@@ -449,6 +492,7 @@ function snapshot(record: AssetRecord): AssetSnapshot {
     loaderId: record.loader.id,
     state: record.state,
     references: record.references,
+    byteLength: record.byteLength,
   });
 }
 
@@ -518,4 +562,22 @@ function aggregateAssetFailures(message: string, failures: readonly unknown[]): 
 
 function isReleasedDuringLoadError(error: unknown): boolean {
   return error instanceof Error && error.message.startsWith('Asset group was released while loading:');
+}
+
+function measuredByteLength(loader: UnknownAssetLoader, value: unknown): number {
+  const measured = loader.byteLength?.(value) ?? inferredByteLength(value);
+  if (!Number.isSafeInteger(measured) || measured < 0) throw new Error(`Asset loader ${loader.id} returned an invalid byte length`);
+  return measured;
+}
+
+function inferredByteLength(value: unknown): number {
+  if (typeof value === 'string') return new TextEncoder().encode(value).byteLength;
+  if (value instanceof ArrayBuffer) return value.byteLength;
+  if (ArrayBuffer.isView(value)) return value.byteLength;
+  return 0;
+}
+
+function positiveSafeInteger(value: number, label: string): number {
+  if (!Number.isSafeInteger(value) || value < 1) throw new Error(`${label} must be a positive safe integer`);
+  return value;
 }
