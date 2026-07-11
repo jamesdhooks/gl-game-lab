@@ -92,3 +92,9 @@ Ocean, Rubber Room, Soda Pop, Moon Gym, Jungle Bounce, and Monochrome Pop remain
 below one or both temporal thresholds. Every one of the 80 browser-side
 captures completed without a page error. Interaction-mode scenarios remain a
 separate parity obligation.
+
+The first matrix exposed an incorrectly active Ball Pit bloom pass in the
+rebuild's Neon style. Disabling that scene-level pass to match the frozen raw
+renderer improved Neon from `0.71384` minimum and `0.74201` mean to `0.78686`
+minimum and `0.85395` mean. The visible white clipping is resolved, but Neon
+still remains below the temporal gate because of particle-distribution drift.

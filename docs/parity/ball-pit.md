@@ -7,7 +7,7 @@ Frozen behavior reference: `1273b5f4145c5e9e87123cba535f5cc939a77a61`.
 | Identity and registry | Implemented | Registry test covers id, kind, copy, tags, icon, and capabilities. |
 | Settings schema | Implemented | All 17 fields, defaults, ranges, steps, advanced flags, mode visibility, and power-of-two scaling are covered by package tests. |
 | Modes | Implemented | Single, Stream, Interact, and Explosion route through the shared runtime controller. |
-| Styles | Implemented | Ten frozen manifests, palettes, and backgrounds are implemented. Neon enables the shared bright-pass, ping-pong blur, and composite pipeline; other styles bypass it without allocating render targets. |
+| Styles | Implemented | Ten frozen manifests, palettes, and backgrounds are implemented. Ball Pit preserves the frozen raw-scene output without applying post-processing; the shared bloom pipeline remains available to experiences whose reference rendering uses it. |
 | Tutorial | Implemented | Three frozen pages render through the shared tutorial host. |
 | Reset | Implemented | Physics state, deterministic seed, pointer picks, and spawn timing reset together. |
 | Normal play | Implemented | Starts empty and responds to deterministic pointer input. |

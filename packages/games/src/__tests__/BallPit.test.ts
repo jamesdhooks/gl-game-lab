@@ -132,7 +132,7 @@ describe('Ball Pit experience', () => {
     expect(controller.bodyCount).toBe(1);
     expect(particles.count).toBe(1);
     controller.setStyle('neon');
-    expect(bloomEnabled).toBe(true);
+    expect(bloomEnabled).toBe(false);
     controller.setStyle('ocean');
     expect(controller.styleId).toBe('ocean');
     expect(bloomEnabled).toBe(false);

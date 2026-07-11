@@ -256,9 +256,7 @@ function applyStyle(renderer: {
   const palette = requirePalette(styleId);
   renderer.setClearColor(background);
   renderer.setPaletteBackdrop({ base: background, palette, tier: 0.55, blendStrength: 0.12 });
-  renderer.setBloom(styleId === 'neon'
-    ? { enabled: true, threshold: 0.48, intensity: 1.15, radius: 1.15, iterations: 4 }
-    : { enabled: false });
+  renderer.setBloom({ enabled: false });
 }
 
 function requirePalette(styleId: string): readonly (readonly [number, number, number, number])[] {

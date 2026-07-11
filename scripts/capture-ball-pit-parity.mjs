@@ -39,7 +39,13 @@ const styleNames = Object.freeze({
   'jungle-bounce': 'Jungle Bounce',
   'monochrome-pop': 'Monochrome Pop',
 });
-const requestedStyles = process.argv.includes('--all-styles') ? Object.keys(styleNames) : ['rainbow'];
+const requestedStyleArgument = process.argv.find((argument) => argument.startsWith('--style='))?.slice('--style='.length);
+if (requestedStyleArgument && !(requestedStyleArgument in styleNames)) {
+  throw new Error(`Unknown Ball Pit style: ${requestedStyleArgument}`);
+}
+const requestedStyles = process.argv.includes('--all-styles')
+  ? Object.keys(styleNames)
+  : [requestedStyleArgument ?? 'rainbow'];
 const spatialCellSize = 32;
 const staticSsimThreshold = 0.97;
 const dynamicMinimumSpatialThreshold = 0.8;
