@@ -1,4 +1,8 @@
 import type { RenderResourceAllocator } from './RenderGraph.js';
+import {
+  ContextResourceRegistry,
+  type ContextRestorableResource,
+} from './ContextResourceRegistry.js';
 
 export type TextureFormat = 'rgba8' | 'rgba16f';
 export type TextureFilter = 'linear' | 'nearest';
@@ -69,9 +73,11 @@ export class WebGLTextureResource {
 
 export class WebGL2Device {
   readonly gl: WebGL2RenderingContext;
+  readonly contextResources = new ContextResourceRegistry();
   private readonly resources = new Set<WebGLTextureResource>();
   private destroyed = false;
   private contextLost = false;
+  private restorationError: unknown;
 
   constructor(
     readonly canvas: HTMLCanvasElement,
@@ -94,6 +100,19 @@ export class WebGL2Device {
 
   get isContextLost(): boolean {
     return this.contextLost || this.gl.isContextLost();
+  }
+
+  get contextGeneration(): number {
+    return this.contextResources.generation;
+  }
+
+  get contextRestorationError(): unknown {
+    return this.restorationError;
+  }
+
+  registerContextResource(resource: ContextRestorableResource): () => void {
+    this.assertNotDestroyed();
+    return this.contextResources.register(resource);
   }
 
   resize(cssWidth: number, cssHeight: number, pixelRatio = 1): void {
@@ -248,6 +267,7 @@ export class WebGL2Device {
     this.destroyed = true;
     for (const resource of this.resources) resource.dispose();
     this.resources.clear();
+    this.contextResources.clear();
     this.canvas.removeEventListener('webglcontextlost', this.handleContextLost, false);
     this.canvas.removeEventListener('webglcontextrestored', this.handleContextRestored, false);
   }
@@ -255,15 +275,32 @@ export class WebGL2Device {
   private readonly handleContextLost = (event: Event): void => {
     event.preventDefault();
     this.contextLost = true;
+    this.restorationError = undefined;
+    try {
+      this.contextResources.invalidate();
+    } catch (error) {
+      this.restorationError = error;
+    }
   };
 
   private readonly handleContextRestored = (): void => {
     this.contextLost = false;
+    this.restorationError = undefined;
+    try {
+      this.contextResources.restore();
+    } catch (error) {
+      this.restorationError = error;
+      this.contextLost = true;
+    }
   };
 
   private assertUsable(): void {
-    if (this.destroyed) throw new Error('WebGL2 device has been destroyed');
+    this.assertNotDestroyed();
     if (this.isContextLost) throw new Error('WebGL2 context is lost');
+  }
+
+  private assertNotDestroyed(): void {
+    if (this.destroyed) throw new Error('WebGL2 device has been destroyed');
   }
 
   private trackTexture(

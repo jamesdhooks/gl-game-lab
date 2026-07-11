@@ -1,4 +1,8 @@
 export {
+  ContextResourceRegistry,
+  type ContextRestorableResource,
+} from './ContextResourceRegistry.js';
+export {
   FrameRenderPipeline,
   WEBGL2_FRAME_PASS_IDS,
   type FrameRenderDestination,

@@ -16,8 +16,17 @@ import {
 } from './SpriteRenderer.js';
 import { WebGL2Device, type WebGL2DeviceOptions } from './WebGL2Device.js';
 import { ParticlePointRenderer, ParticlePointRenderQueue } from './ParticlePointRenderer.js';
-import { BloomPostProcess, type BloomOptions } from './BloomPostProcess.js';
-import { PaletteBackdropRenderer, type PaletteBackdropOptions } from './PaletteBackdropRenderer.js';
+import {
+  BloomPostProcess,
+  normalizeBloomOptions,
+  type BloomOptions,
+  type NormalizedBloomOptions,
+} from './BloomPostProcess.js';
+import {
+  PaletteBackdropRenderer,
+  normalizePaletteBackdropOptions,
+  type PaletteBackdropOptions,
+} from './PaletteBackdropRenderer.js';
 import { FullscreenEffectRenderer, FullscreenEffectRenderQueue } from './FullscreenEffectRenderer.js';
 import { GpuRenderPassQueue } from './GpuRenderPassQueue.js';
 import { FrameRenderPipeline, type FrameRenderGraphSnapshot } from './FrameRenderPipeline.js';
@@ -80,13 +89,19 @@ export class WebGL2Renderer implements RenderBackend {
   readonly particles: ParticlePointRenderQueue;
   readonly effects: FullscreenEffectRenderQueue;
   readonly gpuPasses: GpuRenderPassQueue;
-  private readonly spriteRenderer: SpriteRenderer;
-  private readonly particleRenderer: ParticlePointRenderer;
-  private readonly effectRenderer: FullscreenEffectRenderer;
-  private readonly bloom: BloomPostProcess;
-  private readonly backdrop: PaletteBackdropRenderer;
+  private spriteRenderer: SpriteRenderer;
+  private particleRenderer: ParticlePointRenderer;
+  private effectRenderer: FullscreenEffectRenderer;
+  private bloom: BloomPostProcess;
+  private backdrop: PaletteBackdropRenderer;
   private readonly framePipeline: FrameRenderPipeline;
   private clearColor: readonly [number, number, number, number];
+  private bloomOptions: NormalizedBloomOptions;
+  private backdropOptions: PaletteBackdropOptions | undefined = undefined;
+  private logicalWidth: number;
+  private logicalHeight: number;
+  private pixelRatio = 1;
+  private readonly unregisterContextResource: () => void;
   private destroyed = false;
 
   get state(): RenderBackendState {
@@ -95,11 +110,10 @@ export class WebGL2Renderer implements RenderBackend {
   }
 
   get viewport(): RenderViewport {
-    const camera = this.sprites.activeCamera;
     return Object.freeze({
-      width: camera.viewportWidth,
-      height: camera.viewportHeight,
-      pixelRatio: this.device.canvas.width / camera.viewportWidth,
+      width: this.logicalWidth,
+      height: this.logicalHeight,
+      pixelRatio: this.pixelRatio,
     });
   }
 
@@ -110,6 +124,8 @@ export class WebGL2Renderer implements RenderBackend {
     this.device = new WebGL2Device(canvas, options.device);
     const width = Math.max(1, canvas.clientWidth || canvas.width || 1);
     const height = Math.max(1, canvas.clientHeight || canvas.height || 1);
+    this.logicalWidth = width;
+    this.logicalHeight = height;
     this.sprites = new SpriteRenderQueue(width, height);
     this.particles = new ParticlePointRenderQueue();
     this.effects = new FullscreenEffectRenderQueue();
@@ -117,7 +133,8 @@ export class WebGL2Renderer implements RenderBackend {
     this.spriteRenderer = new SpriteRenderer(this.device);
     this.particleRenderer = new ParticlePointRenderer(this.device);
     this.effectRenderer = new FullscreenEffectRenderer(this.device);
-    this.bloom = new BloomPostProcess(this.device, options.bloom);
+    this.bloomOptions = normalizeBloomOptions(options.bloom);
+    this.bloom = new BloomPostProcess(this.device, this.bloomOptions);
     this.backdrop = new PaletteBackdropRenderer(this.device);
     this.clearColor = options.clearColor ?? [0, 0, 0, 0];
     this.framePipeline = new FrameRenderPipeline({
@@ -142,20 +159,33 @@ export class WebGL2Renderer implements RenderBackend {
       },
       composite: ({ composite }) => { if (composite) this.bloom.composite(); },
     });
+    this.unregisterContextResource = this.device.registerContextResource({
+      id: 'gl-game-lab.render-webgl2.pipeline',
+      priority: 100,
+      restore: () => { this.restoreContext(); },
+    });
   }
 
   resize(cssWidth: number, cssHeight: number, pixelRatio = 1): void {
     this.assertUsable();
-    this.device.resize(cssWidth, cssHeight, pixelRatio);
     const previous = this.sprites.activeCamera;
-    this.sprites.setCamera(createSpriteCamera2D(cssWidth, cssHeight, {
+    const camera = createSpriteCamera2D(cssWidth, cssHeight, {
       centerX: previous.centerX,
       centerY: previous.centerY,
       zoom: previous.zoom,
-    }));
+    });
+    if (!Number.isFinite(pixelRatio) || pixelRatio <= 0) {
+      throw new Error('Renderer pixel ratio must be positive');
+    }
+    if (this.state === 'ready') this.device.resize(cssWidth, cssHeight, pixelRatio);
+    this.logicalWidth = cssWidth;
+    this.logicalHeight = cssHeight;
+    this.pixelRatio = pixelRatio;
+    this.sprites.setCamera(camera);
   }
 
   setClearColor(color: readonly [number, number, number, number]): void {
+    this.assertUsable();
     if (color.length !== 4 || !color.every((component) => Number.isFinite(component) && component >= 0 && component <= 1)) {
       throw new Error('Renderer clear color components must be between zero and one');
     }
@@ -168,16 +198,19 @@ export class WebGL2Renderer implements RenderBackend {
 
   setBloom(options: BloomOptions): void {
     this.assertUsable();
-    this.bloom.configure(options);
+    this.bloomOptions = normalizeBloomOptions(options);
+    if (this.state === 'ready') this.bloom.configure(this.bloomOptions);
   }
 
   setPaletteBackdrop(options: PaletteBackdropOptions | undefined): void {
     this.assertUsable();
-    this.backdrop.configure(options);
+    if (options) normalizePaletteBackdropOptions(options);
+    this.backdropOptions = options;
+    if (this.state === 'ready') this.backdrop.configure(options);
   }
 
   get bloomConfiguration() {
-    return this.bloom.configuration;
+    return this.bloomOptions;
   }
 
   get postProcessStats() {
@@ -210,6 +243,7 @@ export class WebGL2Renderer implements RenderBackend {
 
   render(): void {
     this.assertUsable();
+    if (this.state === 'context-lost') return;
     const scene = this.bloom.sceneTarget;
     const target = scene ? { resource: scene } : undefined;
     this.framePipeline.execute({ ...(target ? { target } : {}), composite: scene !== undefined });
@@ -218,6 +252,7 @@ export class WebGL2Renderer implements RenderBackend {
   destroy(): void {
     if (this.destroyed) return;
     this.destroyed = true;
+    this.unregisterContextResource();
     this.sprites.clear();
     this.particles.clear();
     this.effects.clear();
@@ -232,6 +267,21 @@ export class WebGL2Renderer implements RenderBackend {
 
   private assertUsable(): void {
     if (this.destroyed) throw new Error('WebGL2 renderer has been destroyed');
+  }
+
+  private restoreContext(): void {
+    this.effectRenderer.destroy();
+    this.particleRenderer.destroy();
+    this.spriteRenderer.destroy();
+    this.bloom.destroy();
+    this.backdrop.destroy();
+    this.spriteRenderer = new SpriteRenderer(this.device);
+    this.particleRenderer = new ParticlePointRenderer(this.device);
+    this.effectRenderer = new FullscreenEffectRenderer(this.device);
+    this.bloom = new BloomPostProcess(this.device, this.bloomOptions);
+    this.backdrop = new PaletteBackdropRenderer(this.device);
+    this.backdrop.configure(this.backdropOptions);
+    this.device.resize(this.logicalWidth, this.logicalHeight, this.pixelRatio);
   }
 }
 
