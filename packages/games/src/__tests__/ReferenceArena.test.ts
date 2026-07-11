@@ -49,7 +49,7 @@ describe('Reference Arena', () => {
     engine.input.ingest({ kind: 'key', phase: 'down', code: 'KeyD', key: 'd' });
     for (let frame = 0; frame < 12; frame += 1) engine.frame(1 / 60);
     expect(playerX(engine)).toBeGreaterThan(before);
-    expect(accessibility.status).toContain('Reference Arena');
+    expect(accessibility.status).toBe('Reference Arena score 0, best 25.');
 
     await engine.destroy();
     expect(renderer.textures.size).toBe(0);

@@ -173,7 +173,7 @@ export function createReferenceArenaPlugin(): EnginePlugin {
       await context.get(EngineScenes).load(REFERENCE_ARENA_SCENE_ID, { activate: true, exclusive: true });
       if (scoreLabel) context.get(EngineWorld).get(scoreLabel, Text2DComponent).text = `SCORE 0  BEST ${highScore}`;
       loaded = true;
-      context.get(EngineAccessibility).setStatus(`Reference Arena ready. Best score ${highScore}.`);
+      context.get(EngineAccessibility).setStatus(`Reference Arena score 0, best ${highScore}.`);
     },
     dispose: async (context) => {
       loaded = false;
