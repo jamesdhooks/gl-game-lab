@@ -4,6 +4,7 @@ export {
   type InstancedSegmentBatch,
   type InstancedSegmentRenderOptions,
 } from './InstancedSegmentRenderer.js';
+export { DynamicTriangleMeshRenderer, validateDynamicTriangleMeshBatch, type DynamicTriangleMeshBatch, type DynamicTriangleMeshOptions } from './DynamicTriangleMeshRenderer.js';
 export {
   GpuFieldState,
   type GpuFieldStateOptions,

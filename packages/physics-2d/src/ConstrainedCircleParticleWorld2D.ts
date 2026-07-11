@@ -12,6 +12,7 @@ export class ConstrainedCircleParticleWorld2D {
   private readonly stiffness: Float32Array;
   private activeConstraints = 0;
   private constraintPasses = 2;
+  private constraintStiffnessScale = 1;
 
   constructor(readonly capacity: number, readonly constraintCapacity = capacity * 2, settings: Partial<DenseCircleParticleSettings> = {}, seed = 0x9e3779b9) {
     if (!Number.isSafeInteger(constraintCapacity) || constraintCapacity < 1) throw new Error('Constraint capacity must be a positive integer');
@@ -30,13 +31,14 @@ export class ConstrainedCircleParticleWorld2D {
   get inverseMasses(): Float32Array { return this.particles.inverseMasses }
   get colorSeeds(): Float32Array { return this.particles.colorSeeds }
 
-  configure(settings: Partial<DenseCircleParticleSettings> & { readonly constraintPasses?: number }): void {
-    const { constraintPasses, ...particleSettings } = settings;
+  configure(settings: Partial<DenseCircleParticleSettings> & { readonly constraintPasses?: number; readonly constraintStiffnessScale?: number }): void {
+    const { constraintPasses, constraintStiffnessScale, ...particleSettings } = settings;
     this.particles.configure(particleSettings);
     if (constraintPasses !== undefined) {
       if (!Number.isSafeInteger(constraintPasses) || constraintPasses < 1 || constraintPasses > 16) throw new Error('Constraint passes must be an integer between 1 and 16');
       this.constraintPasses = constraintPasses;
     }
+    if (constraintStiffnessScale !== undefined) this.constraintStiffnessScale = bounded(constraintStiffnessScale, 0, 2, 'Constraint stiffness scale');
   }
 
   setBounds(width: number, height: number): void { this.particles.setBounds(width, height) }
@@ -82,7 +84,7 @@ export class ConstrainedCircleParticleWorld2D {
       const distance = Math.max(1e-5, Math.hypot(dx, dy)), wa = this.inverseMasses[a] ?? 0, wb = this.inverseMasses[b] ?? 0, total = wa + wb;
       if (total <= 0) continue;
       dx /= distance; dy /= distance;
-      const correction = (distance - (this.rest[i] ?? distance)) * (this.stiffness[i] ?? 1) / total;
+      const correction = (distance - (this.rest[i] ?? distance)) * (this.stiffness[i] ?? 1) * this.constraintStiffnessScale / total;
       const ax = dx * correction * wa, ay = dy * correction * wa, bx = dx * correction * wb, by = dy * correction * wb;
       this.positions[ao] = (this.positions[ao] ?? 0) + ax; this.positions[ao + 1] = (this.positions[ao + 1] ?? 0) + ay;
       this.positions[bo] = (this.positions[bo] ?? 0) - bx; this.positions[bo + 1] = (this.positions[bo + 1] ?? 0) - by;
