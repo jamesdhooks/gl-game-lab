@@ -24,4 +24,16 @@ describe('BrowserFrameLoop', () => {
     expect(cancelled).toEqual([7]);
     expect(loop.isRunning).toBe(false);
   });
+
+  it('stops and reports runtime frame failures', () => {
+    let callback: FrameRequestCallback | undefined;
+    const driver: AnimationFrameDriver = { request: (next) => { callback = next; return 9; }, cancel: () => undefined };
+    const failures: unknown[] = [];
+    const loop = new BrowserFrameLoop({ frame: () => { throw new Error('shader failed'); } } as never, driver, (error) => { failures.push(error); });
+    loop.start();
+    callback?.(1000);
+    expect(loop.isRunning).toBe(false);
+    expect(failures).toHaveLength(1);
+    expect(failures[0]).toBeInstanceOf(Error);
+  });
 });

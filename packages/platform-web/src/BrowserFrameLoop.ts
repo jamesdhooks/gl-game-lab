@@ -13,6 +13,7 @@ export class BrowserFrameLoop {
   constructor(
     private readonly engine: GameEngine,
     private readonly driver: AnimationFrameDriver = browserAnimationFrameDriver(),
+    private readonly onError?: (error: unknown) => void,
   ) {}
 
   get isRunning(): boolean {
@@ -37,7 +38,14 @@ export class BrowserFrameLoop {
     if (!this.running) return;
     const previous = this.previousTimestamp ?? timestamp;
     this.previousTimestamp = timestamp;
-    this.engine.frame(Math.max(0, timestamp - previous) / 1000);
+    try {
+      this.engine.frame(Math.max(0, timestamp - previous) / 1000);
+    } catch (error) {
+      this.stop();
+      if (this.onError) this.onError(error);
+      else queueMicrotask(() => { throw error; });
+      return;
+    }
     if (this.running) this.frameHandle = this.driver.request(this.onFrame);
   };
 }

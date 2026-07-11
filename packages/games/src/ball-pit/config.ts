@@ -86,8 +86,10 @@ export function createBallPitConfig(
       normalizedValue = field.numericScale === 'powerOfTwo'
         ? 2 ** Math.round(Math.log2(value))
         : snapNumber(value, field.min, field.step);
-    } else if (typeof value !== 'string' || !field.options.some((option) => option.value === value)) {
+    } else if (field.type === 'select' && (typeof value !== 'string' || !field.options.some((option) => option.value === value))) {
       throw new Error(`Ball Pit setting ${key} is not a supported option`);
+    } else if (field.type === 'string' && typeof value !== 'string') {
+      throw new Error(`Ball Pit setting ${key} must be text`);
     }
     values[key] = normalizedValue;
   }

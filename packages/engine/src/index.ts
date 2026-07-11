@@ -19,6 +19,7 @@ export {
   ExperienceRuntimeControllerService,
   type BooleanSetting,
   type ExperienceCapabilities,
+  type ExperienceAttribution,
   type ExperienceDefinition,
   type ExperienceKind,
   type ExperienceLaunchOptions,
@@ -33,4 +34,5 @@ export {
   type ExperienceTutorialPage,
   type NumberSetting,
   type SelectSetting,
+  type StringSetting,
 } from './Experience.js';

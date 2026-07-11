@@ -27,6 +27,7 @@ const example: ExperienceDefinition = {
     }],
   },
   tutorialPages: [{ icon: '●', title: 'Tap', body: 'Tap to add a ball.' }],
+  attributions: [{ label: 'Example', href: 'https://example.com', license: 'MIT' }],
   createPlugins: () => [],
 };
 
@@ -58,5 +59,10 @@ describe('ExperienceRegistry', () => {
       id: 'invalid-tutorial',
       tutorialPages: [{ icon: '', title: 'Tap', body: 'Tap to add a ball.' }],
     })).toThrow('tutorial pages');
+    expect(() => new ExperienceRegistry().register({
+      ...example,
+      id: 'invalid-attribution',
+      attributions: [{ label: 'Broken', href: 'not a url' }],
+    })).toThrow('attribution link');
   });
 });

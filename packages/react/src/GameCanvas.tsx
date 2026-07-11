@@ -146,7 +146,12 @@ export function GameCanvas({
           canvas.dataset.engineState = 'capture-ready';
           onFixedFrameCapture?.(result);
         } else {
-          loop = new BrowserFrameLoop(engine);
+          loop = new BrowserFrameLoop(engine, undefined, (error) => {
+            canvas.dataset.engineState = 'error';
+            canvas.dataset.engineError = describeError(error);
+            if (onError) onError(error);
+            else queueMicrotask(() => { throw error; });
+          });
           loop.start();
           canvas.dataset.engineState = 'running';
         }

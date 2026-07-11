@@ -91,6 +91,7 @@ export function ExperienceRuntime({
   const visibleSettings = (definition.settings ?? []).filter((setting) => (
     (showAdvanced || setting.advanced !== true)
     && (!setting.visibleModes || setting.visibleModes.includes(modeId))
+    && (!setting.visibleRenderStyles || setting.visibleRenderStyles.includes(String(settings.renderStyle ?? '')))
   ));
   const tutorialPages = definition.tutorialPages ?? [];
   const tutorialPage = tutorialPages[tutorialIndex];
@@ -161,6 +162,17 @@ export function ExperienceRuntime({
           {...(onError ? { onError } : {})}
         />
       </div>
+
+      {showChrome && (definition.attributions?.length ?? 0) > 0 && (
+        <footer className="gl-experience-attributions" aria-label={`${definition.name} attributions`}>
+          Inspired by {definition.attributions?.map((attribution, index) => (
+            <span key={attribution.href}>
+              {index > 0 ? ', ' : ''}<a href={attribution.href} target="_blank" rel="noreferrer">{attribution.label}</a>
+              {attribution.author ? ` by ${attribution.author}` : ''}{attribution.license ? ` (${attribution.license})` : ''}
+            </span>
+          ))}
+        </footer>
+      )}
 
       {showChrome && settingsOpen && (
         <aside className="gl-experience-settings" aria-label={`${definition.name} settings`}>
@@ -247,6 +259,14 @@ function SettingControl({ setting, value, onChange }: SettingControlProps): JSX.
         <select value={String(value)} onChange={(event) => { onChange(event.currentTarget.value); }}>
           {setting.options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
         </select>
+      </label>
+    );
+  }
+  if (setting.type === 'string') {
+    return (
+      <label className="gl-experience-setting">
+        <span>{setting.label}</span>
+        <input type="url" value={String(value)} placeholder={setting.placeholder} onChange={(event) => { onChange(event.currentTarget.value); }} />
       </label>
     );
   }

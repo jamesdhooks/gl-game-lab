@@ -57,8 +57,11 @@ h1 { margin: 0; font-size: clamp(2.4rem, 8vw, 5rem); letter-spacing: -.06em; }
 .gl-experience-number-control { display: grid; grid-template-columns: 1fr 4.5rem; align-items: center; gap: .5rem; }
 .gl-experience-number-control output { text-align: right; color: #f1f7ff; font-variant-numeric: tabular-nums; }
 .gl-experience-setting input[type="range"] { width: 100%; accent-color: #56bfff; }
-.gl-experience-setting input[type="number"], .gl-experience-setting select { width: 100%; min-height: 2rem; padding: .3rem .45rem; }
+.gl-experience-setting input[type="number"], .gl-experience-setting input[type="url"], .gl-experience-setting select { width: 100%; min-height: 2rem; padding: .3rem .45rem; }
 .gl-experience-setting-boolean input { justify-self: end; accent-color: #56bfff; }
+.gl-experience-attributions { color: #8099b7; font-size: .72rem; }
+.gl-experience-attributions a { color: #8bc9ff; }
+.runtime-error { max-width: 72rem; margin: 0; padding: .75rem 1rem; border: 1px solid #ef6a78; border-radius: .65rem; background: #3a0b13; color: #ffd7dc; }
 .gl-experience-tutorial-backdrop { position: absolute; z-index: 8; inset: 0; display: grid; place-items: center; padding: 1rem; border-radius: 1rem; background: #020711c9; backdrop-filter: blur(9px); }
 .gl-experience-tutorial { width: min(28rem, 100%); padding: 1.5rem; border: 1px solid #4d77aa; border-radius: 1rem; background: #0b192c; text-align: center; box-shadow: 0 2rem 5rem #000c; }
 .gl-experience-tutorial-icon { font-size: 2.5rem; }

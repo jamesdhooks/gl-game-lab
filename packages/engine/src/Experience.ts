@@ -28,7 +28,9 @@ interface SettingBase {
   readonly label: string;
   readonly section?: string;
   readonly advanced?: boolean;
+  readonly description?: string;
   readonly visibleModes?: readonly string[];
+  readonly visibleRenderStyles?: readonly string[];
 }
 
 export interface NumberSetting extends SettingBase {
@@ -51,7 +53,13 @@ export interface SelectSetting extends SettingBase {
   readonly options: readonly { readonly value: string; readonly label: string }[];
 }
 
-export type ExperienceSetting = NumberSetting | BooleanSetting | SelectSetting;
+export interface StringSetting extends SettingBase {
+  readonly type: 'string';
+  readonly default: string;
+  readonly placeholder?: string;
+}
+
+export type ExperienceSetting = NumberSetting | BooleanSetting | SelectSetting | StringSetting;
 
 export interface ExperienceStyle {
   readonly id: string;
@@ -74,6 +82,13 @@ export interface ExperienceTutorialPage {
   readonly icon: string;
   readonly title: string;
   readonly body: string;
+}
+
+export interface ExperienceAttribution {
+  readonly label: string;
+  readonly href: string;
+  readonly author?: string;
+  readonly license?: string;
 }
 
 export interface ExperiencePhysicsDescriptor {
@@ -126,6 +141,7 @@ export interface ExperienceDefinition {
   readonly settings?: readonly ExperienceSetting[];
   readonly styleManifest?: ExperienceStyleManifest;
   readonly tutorialPages?: readonly ExperienceTutorialPage[];
+  readonly attributions?: readonly ExperienceAttribution[];
   readonly physics?: ExperiencePhysicsDescriptor;
   createPlugins(options?: ExperienceLaunchOptions): readonly EnginePlugin[];
 }
@@ -191,6 +207,10 @@ function validateDefinition(definition: ExperienceDefinition): void {
     if (page.icon.trim().length === 0 || page.title.trim().length === 0 || page.body.trim().length === 0) {
       throw new Error(`Experience ${definition.id} tutorial pages must be complete`);
     }
+  }
+  for (const attribution of definition.attributions ?? []) {
+    if (attribution.label.trim().length === 0 || attribution.href.trim().length === 0) throw new Error(`Experience ${definition.id} attributions must include a label and link`);
+    try { new URL(attribution.href); } catch { throw new Error(`Experience ${definition.id} attribution link is invalid`); }
   }
 }
 
