@@ -4,6 +4,7 @@ import {
   createComponentType,
   type World,
 } from '@hooksjam/gl-game-lab-core';
+import type { GpuTexture2D } from './Gpu2D.js';
 
 export type BlendMode2D = 'alpha' | 'additive' | 'multiply' | 'opaque';
 export type UvRect = readonly [number, number, number, number];
@@ -184,6 +185,7 @@ export interface FluidField2D {
   step(options: FluidStep2DOptions, splats?: readonly FluidSplat2D[]): void;
   seed(kind: 'blank' | 'random' | 'voronoi' | 'cloud', seed: number): void;
   uploadDyeRgba(values: Float32Array): void;
+  texture(channel: 'velocity' | 'dye'): GpuTexture2D;
   clear(): void;
   dispose(): void;
 }

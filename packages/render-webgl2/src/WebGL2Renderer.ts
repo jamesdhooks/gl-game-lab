@@ -58,7 +58,7 @@ import { DensityMetaballRenderer } from './DensityMetaballRenderer.js';
 import { StableFluidField2D } from './StableFluidField2D.js';
 import type { GpuParticleRenderDestination } from './GpuParticleRenderer.js';
 import type { RestorableResourceOwner } from './RestorableResourceOwner.js';
-import { WebGLGpu2DService } from './WebGLGpu2DService.js';
+import { WebGLGpu2DService, WebGLGpuTexture2D } from './WebGLGpu2DService.js';
 
 export interface WebGL2RendererOptions {
   readonly device?: WebGL2DeviceOptions;
@@ -126,6 +126,8 @@ class WebGLFluidField2D implements FluidField2D {
   private disposed = false;
   private lastSeed: { readonly kind: 'blank' | 'random' | 'voronoi' | 'cloud'; readonly seed: number } | undefined;
   private dyeRgba: Float32Array | undefined;
+  private readonly velocityTexture: WebGLGpuTexture2D;
+  private readonly dyeTexture: WebGLGpuTexture2D;
 
   constructor(device: WebGL2Device, id: string, width: number, height: number, private readonly onDispose: () => void) {
     this.owner = device.ownContextResource({
@@ -138,6 +140,8 @@ class WebGLFluidField2D implements FluidField2D {
         else if (this.lastSeed) field.seed(this.lastSeed.kind, this.lastSeed.seed);
       },
     });
+    this.velocityTexture = new WebGLGpuTexture2D(width, height, () => this.owner.value.velocity.targets.read.texture);
+    this.dyeTexture = new WebGLGpuTexture2D(width, height, () => this.owner.value.dye.targets.read.texture);
   }
 
   get width(): number { return this.owner.value.width; }
@@ -152,6 +156,7 @@ class WebGLFluidField2D implements FluidField2D {
     this.dyeRgba = values.slice();
     this.owner.value.uploadDyeRgba(this.dyeRgba);
   }
+  texture(channel: 'velocity' | 'dye'): WebGLGpuTexture2D { return channel === 'velocity' ? this.velocityTexture : this.dyeTexture; }
   clear(): void { this.owner.value.clear(); }
   render(destination: GpuParticleRenderDestination, display: FluidDisplay2DOptions): void { this.owner.value.render(destination, display); }
   dispose(): void {

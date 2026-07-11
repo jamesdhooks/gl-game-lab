@@ -1,6 +1,5 @@
 import { createExtensionToken, type EnginePlugin, type PointerInputEvent } from '@hooksjam/gl-game-lab-core';
-import { EngineInput, EngineSchedule, ExperienceRuntimeControllerService, type ExperienceLaunchOptions, type ExperienceRuntimeController, type ExperienceSettingValue } from '@hooksjam/gl-game-lab-engine';
-import { FullscreenEffectRenderQueueService, GpuParticleRenderer, GpuParticleState, GpuRenderPassQueueService, GpuSimulationPass, TrailFeedbackRenderer, WEBGL2_RENDERER_PLUGIN_ID, WebGL2RendererService } from '@hooksjam/gl-game-lab-render-webgl2';
+import { EngineGpu2D, EngineInput, EngineRender2D, EngineSchedule, ExperienceRuntimeControllerService, type ExperienceLaunchOptions, type ExperienceRuntimeController, type ExperienceSettingValue, type GpuParticleSystem2D } from '@hooksjam/gl-game-lab-engine';
 import { createSparksConfig, SPARKS_DEFAULTS, sparksNumber, sparksString, type SparksConfig } from './config.js';
 import { SPARKS_POINT_FRAGMENT_SHADER, SPARKS_POINT_VERTEX_SHADER, SPARKS_RAIL_SHADER, SPARKS_STEP_SHADER } from './shaders.js';
 import { sparksColor3, SPARKS_STYLE_MANIFEST } from './styles.js';
@@ -24,12 +23,6 @@ interface SpawnCommand {
   lifeVariation: number;
   seed: number;
   paletteSeed: number;
-}
-interface SparksGpuResources {
-  state: GpuParticleState;
-  readonly stepper: GpuSimulationPass;
-  readonly points: GpuParticleRenderer;
-  readonly trails: TrailFeedbackRenderer;
 }
 export interface SparksController extends ExperienceRuntimeController {
   readonly mode: SparksMode;
@@ -58,21 +51,11 @@ export function createSparksPlugin(initial: SparksConfig = SPARKS_DEFAULTS, laun
   return {
     id: SPARKS_PLUGIN_ID,
     version: '1.0.0',
-    dependencies: [
-      {
-        id: WEBGL2_RENDERER_PLUGIN_ID
-      }
-    ],
+    dependencies: [{ id: 'gl-game-lab.runtime' }],
     install: context => {
-      const renderer = context.get(WebGL2RendererService), input = context.get(EngineInput), gpuPasses = context.get(GpuRenderPassQueueService), effects = context.get(FullscreenEffectRenderQueueService), gl = renderer.device.gl;
-      const gpuResources = renderer.device.ownContextResource<SparksGpuResources>({
-        id: `${SPARKS_PLUGIN_ID}.gpu`,
-        priority: 50,
-        create: createGpuResources,
-        dispose: disposeGpuResources,
-        restored: () => { resetSimulation(); },
-      });
-      cleanup = () => { gpuResources.dispose(); };
+      const renderer = context.get(EngineRender2D), gpu = context.get(EngineGpu2D), input = context.get(EngineInput);
+      let particles = createParticles(), observedGeneration = particles.generation;
+      cleanup = () => { particles.dispose(); };
       seedRails();
       applyStyle();
       const controller: SparksController = {
@@ -94,10 +77,10 @@ export function createSparksPlugin(initial: SparksConfig = SPARKS_DEFAULTS, laun
           return rails.length;
         },
         get particleCapacity() {
-          return gpuResources.value.state.capacity;
+          return particles.capacity;
         },
         get entityCount() {
-          return gpuResources.value.state.capacity;
+          return particles.capacity;
         },
         setMode: value => {
           const next = validMode(value);
@@ -154,7 +137,7 @@ export function createSparksPlugin(initial: SparksConfig = SPARKS_DEFAULTS, laun
           else if ((launch.profile === 'preview' || launch.profile === 'demo') && mode !== 'build') {
             emissionAccumulator += dt * (launch.profile === 'preview' ? 5 : 9);
             while (emissionAccumulator >= 1) {
-              const x = renderer.sprites.activeCamera.viewportWidth * (0.5 + Math.sin(elapsed * 0.7) * 0.28), y = renderer.sprites.activeCamera.viewportHeight * (0.58 + Math.cos(elapsed * 0.9) * 0.12);
+              const x = renderer.viewport.width * (0.5 + Math.sin(elapsed * 0.7) * 0.28), y = renderer.viewport.height * (0.58 + Math.cos(elapsed * 0.9) * 0.12);
               queueContact(x, y, Math.cos(elapsed * 2) * 120, Math.sin(elapsed * 1.7) * 80, false);
               emissionAccumulator -= 1;
             }
@@ -165,16 +148,15 @@ export function createSparksPlugin(initial: SparksConfig = SPARKS_DEFAULTS, laun
         id: 'gl-game-lab.simulations.sparks.render',
         stage: 'renderExtract',
         run: () => {
-          gpuPasses.submit({
-            id: 'sparks.gpu-field',
-            execute: destination => {
-              const resources = gpuResources.value;
+          gpu.submit('sparks.gpu-field', destination => {
+              if (particles.generation !== observedGeneration) { observedGeneration = particles.generation; resetCpuState(); }
               if (rebuildState) {
-                resources.state.dispose();
-                resources.state = createState();
+                particles.dispose();
+                particles = createParticles();
+                observedGeneration = particles.generation;
                 cursor = 0;
                 rebuildState = false;
-                resources.trails.clear();
+                particles.clearTrails();
               }
               const dt = pendingDt;
               pendingDt = 0;
@@ -184,9 +166,9 @@ export function createSparksPlugin(initial: SparksConfig = SPARKS_DEFAULTS, laun
                 commands.splice(0, 16).forEach((command, index) => runStep(index === 0 ? dt : 0, command));
               const renderStyle = sparksString(config, 'renderStyle');
               const fade = renderStyle === 'ultra' ? sparksNumber(config, 'trailFade') : renderStyle === 'enhanced' ? 0.82 : 0;
-              const trailDestination = resources.trails.beginFrame(destination.width, destination.height, fade);
+              const trailDestination = particles.beginTrails(destination.width, destination.height, fade);
               const palette = paletteData();
-              resources.points.render(resources.state, trailDestination, (g, u) => {
+              particles.render(trailDestination, (g, u) => {
                 g.uniform2f(u('uCanvasSize'), destination.width, destination.height);
                 g.uniform1f(u('uPrimarySize'), sparksNumber(config, 'primarySparkSize'));
                 g.uniform1f(u('uCoreSize'), sparksNumber(config, 'coreSparkSize'));
@@ -198,20 +180,20 @@ export function createSparksPlugin(initial: SparksConfig = SPARKS_DEFAULTS, laun
                 g.uniform3fv(u('uPalette[0]'), palette.data);
                 g.uniform1i(u('uPaletteCount'), palette.count);
               });
-              resources.trails.composite(destination, sparksColor3(requireStyle().background), renderStyle === 'ultra' ? sparksNumber(config, 'bloomStrength') : renderStyle === 'enhanced' ? 0.9 : 0.35);
-            }
+              particles.compositeTrails(destination, sparksColor3(requireStyle().background), renderStyle === 'ultra' ? sparksNumber(config, 'bloomStrength') : renderStyle === 'enhanced' ? 0.9 : 0.35);
           });
           const surfaceData = writeRails();
-          effects.submit({
+          renderer.submitFullscreenEffect({
             id: 'sparks.rails',
+            language: 'glsl-es-300',
             fragmentSource: SPARKS_RAIL_SHADER,
             blend: 'alpha',
             uniforms: {
               uResolution: {
                 type: '2f',
                 value: [
-                  renderer.sprites.activeCamera.viewportWidth,
-                  renderer.sprites.activeCamera.viewportHeight
+                  renderer.viewport.width,
+                  renderer.viewport.height
                 ]
               },
               uSurfaceCount: {
@@ -286,13 +268,12 @@ export function createSparksPlugin(initial: SparksConfig = SPARKS_DEFAULTS, laun
         }
       }
       function runStep(dt: number, spawn?: SpawnCommand): void {
-        const { state, stepper } = gpuResources.value;
-        const count = spawn ? Math.min(spawn.count, state.capacity) : 0, start = cursor;
+        const count = spawn ? Math.min(spawn.count, particles.capacity) : 0, start = cursor;
         if (spawn)
-          cursor = (cursor + count) % state.capacity;
+          cursor = (cursor + count) % particles.capacity;
         const railData = writeRails(false);
-        stepper.run(state, (g, u) => {
-          g.uniform1i(u('uCapacity'), state.capacity);
+        particles.step((g, u) => {
+          g.uniform1i(u('uCapacity'), particles.capacity);
           g.uniform1f(u('uDt'), dt);
           g.uniform1f(u('uGravity'), sparksNumber(config, 'gravity'));
           g.uniform1f(u('uDamping'), sparksNumber(config, 'airDrag'));
@@ -311,7 +292,7 @@ export function createSparksPlugin(initial: SparksConfig = SPARKS_DEFAULTS, laun
           g.uniform1f(u('uBounceSparkLifespanVariability'), sparksNumber(config, 'bounceSparkLifespanVariability'));
           g.uniform1f(u('uTime'), elapsed);
           g.uniform1f(u('uTurbulence'), sparksNumber(config, 'sparkTurbulence'));
-          g.uniform2f(u('uWorldSize'), renderer.sprites.activeCamera.viewportWidth, renderer.sprites.activeCamera.viewportHeight);
+          g.uniform2f(u('uWorldSize'), renderer.viewport.width, renderer.viewport.height);
           g.uniform1f(u('uBuildRadius'), sparksNumber(config, 'buildRadius'));
           g.uniform1i(u('uBuildSurfaceCount'), Math.min(13, rails.length));
           g.uniform4fv(u('uBuildSurfaces[0]'), railData);
@@ -330,34 +311,19 @@ export function createSparksPlugin(initial: SparksConfig = SPARKS_DEFAULTS, laun
           g.uniform1f(u('uLifeVariability'), spawn?.lifeVariation ?? 0);
         });
       }
-      function createState(): GpuParticleState {
+      function createParticles(): GpuParticleSystem2D {
         const requested = Number(sparksString(config, 'rawParticleTextureSize')), size = launch.profile === 'preview' ? Math.min(256, requested) : requested;
-        return new GpuParticleState(gl, {
+        return gpu.createParticleSystem(`${SPARKS_PLUGIN_ID}.particles`, {
           capacity: size * size,
           width: size,
           height: size,
-          precision: 'float'
+          precision: 'float',
+          simulationFragmentSource: SPARKS_STEP_SHADER,
+          particleVertexSource: SPARKS_POINT_VERTEX_SHADER,
+          particleFragmentSource: SPARKS_POINT_FRAGMENT_SHADER,
+          blend: 'additive',
+          trails: true,
         });
-      }
-      function createGpuResources(): SparksGpuResources {
-        const disposers: Array<() => void> = [];
-        try {
-          const state = createState(); disposers.push(() => { state.dispose(); });
-          const stepper = new GpuSimulationPass(gl, SPARKS_STEP_SHADER); disposers.push(() => { stepper.dispose(); });
-          const points = new GpuParticleRenderer(gl, {
-            vertexSource: SPARKS_POINT_VERTEX_SHADER,
-            fragmentSource: SPARKS_POINT_FRAGMENT_SHADER,
-            blend: 'additive'
-          }); disposers.push(() => { points.dispose(); });
-          const trails = new TrailFeedbackRenderer(gl); disposers.push(() => { trails.dispose(); });
-          return { state, stepper, points, trails };
-        } catch (error) {
-          for (const dispose of disposers.reverse()) dispose();
-          throw error;
-        }
-      }
-      function disposeGpuResources(resources: SparksGpuResources): void {
-        resources.trails.dispose(); resources.points.dispose(); resources.stepper.dispose(); resources.state.dispose();
       }
       function applyStyle(): void {
         const background = sparksColor3(requireStyle().background);
@@ -367,15 +333,18 @@ export function createSparksPlugin(initial: SparksConfig = SPARKS_DEFAULTS, laun
           background[2],
           1
         ]);
-        renderer.setPaletteBackdrop(undefined);
+        renderer.setBackdrop(undefined);
         renderer.setBloom({
           enabled: false
         });
-        gpuResources.value.trails.clear();
+        particles.clearTrails();
       }
       function resetSimulation(): void {
-        gpuResources.value.state.clear();
-        gpuResources.value.trails.clear();
+        particles.clear();
+        particles.clearTrails();
+        resetCpuState();
+      }
+      function resetCpuState(): void {
         commands.length = 0;
         previousPointers.clear();
         rails.length = 0;

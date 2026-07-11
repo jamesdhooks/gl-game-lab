@@ -1,14 +1,5 @@
 import { createExtensionToken, type EnginePlugin, type PointerInputEvent } from '@hooksjam/gl-game-lab-core';
-import { EngineInput, EngineSchedule, ExperienceRuntimeControllerService, type ExperienceLaunchOptions, type ExperienceRuntimeController, type ExperienceSettingValue } from '@hooksjam/gl-game-lab-engine';
-import {
-  GpuParticleRenderer,
-  GpuParticleState,
-  GpuRenderPassQueueService,
-  GpuSimulationPass,
-  TrailFeedbackRenderer,
-  WEBGL2_RENDERER_PLUGIN_ID,
-  WebGL2RendererService,
-} from '@hooksjam/gl-game-lab-render-webgl2';
+import { EngineGpu2D, EngineInput, EngineRender2D, EngineSchedule, ExperienceRuntimeControllerService, type ExperienceLaunchOptions, type ExperienceRuntimeController, type ExperienceSettingValue, type GpuParticleSystem2D } from '@hooksjam/gl-game-lab-engine';
 import { createFireworksConfig, FIREWORKS_DEFAULTS, type FireworksConfig } from './config.js';
 import { FIREWORKS_POINT_FRAGMENT_SHADER, FIREWORKS_POINT_VERTEX_SHADER, FIREWORKS_STEP_SHADER } from './shaders.js';
 import { color3, FIREWORKS_STYLE_MANIFEST } from './styles.js';
@@ -17,12 +8,6 @@ export type FireworksMode = 'single' | 'stream';
 interface SpawnCommand { x: number; y: number; vx: number; vy: number; kind: number; count: number; power: number; life: number; seed: number; paletteSeed: number }
 interface ShellActor { x: number; y: number; vx: number; vy: number; age: number; fuse: number; generation: number; paletteSeed: number }
 interface DelayedBurst { x: number; y: number; delay: number; generation: number; paletteSeed: number }
-interface FireworksGpuResources {
-  state: GpuParticleState;
-  readonly stepper: GpuSimulationPass;
-  readonly points: GpuParticleRenderer;
-  readonly trails: TrailFeedbackRenderer;
-}
 
 export interface FireworksController extends ExperienceRuntimeController { readonly mode: FireworksMode; readonly activeShells: number; readonly particleCapacity: number }
 export const FireworksControllerService = createExtensionToken<FireworksController>('gl-game-lab.simulations.fireworks.controller');
@@ -48,26 +33,19 @@ export function createFireworksPlugin(initial: FireworksConfig = FIREWORKS_DEFAU
   return {
     id: FIREWORKS_PLUGIN_ID,
     version: '1.0.0',
-    dependencies: [{ id: WEBGL2_RENDERER_PLUGIN_ID }],
+    dependencies: [{ id: 'gl-game-lab.runtime' }],
     install: (context) => {
-      const renderer = context.get(WebGL2RendererService);
+      const renderer = context.get(EngineRender2D);
+      const gpu = context.get(EngineGpu2D);
       const input = context.get(EngineInput);
-      const gpuPasses = context.get(GpuRenderPassQueueService);
-      const gl = renderer.device.gl;
-      const gpuResources = renderer.device.ownContextResource<FireworksGpuResources>({
-        id: `${FIREWORKS_PLUGIN_ID}.gpu`,
-        priority: 50,
-        create: createGpuResources,
-        dispose: disposeGpuResources,
-        restored: () => { resetSimulation(); },
-      });
-      cleanupResources = () => { gpuResources.dispose(); };
+      let particles = createParticles(), observedGeneration = particles.generation;
+      cleanupResources = () => { particles.dispose(); };
       applyStyle();
 
       const controller: FireworksController = {
         get mode() { return mode; }, get modeId() { return mode; }, get styleId() { return styleId; },
         get settings() { return Object.freeze({ ...config }); }, get activeShells() { return shells.length; },
-        get particleCapacity() { return gpuResources.value.state.capacity; }, get entityCount() { return gpuResources.value.state.capacity; },
+        get particleCapacity() { return particles.capacity; }, get entityCount() { return particles.capacity; },
         setMode: (value) => { if (value !== 'single' && value !== 'stream') throw new Error(`Unknown Fireworks mode: ${value}`); mode = value; launchAccumulator = 0; },
         setStyle: (value) => { const next = validStyle(value); if (!next) throw new Error(`Unknown Fireworks style: ${value}`); styleId = next; applyStyle(); },
         setSetting: (key, value) => {
@@ -84,8 +62,8 @@ export function createFireworksPlugin(initial: FireworksConfig = FIREWORKS_DEFAU
         id: 'gl-game-lab.simulations.fireworks.update', stage: 'update',
         run: ({ time }) => {
           const dt = Math.min(0.05, time.deltaSeconds);
-          viewportWidth = renderer.sprites.activeCamera.viewportWidth;
-          viewportHeight = renderer.sprites.activeCamera.viewportHeight;
+          viewportWidth = renderer.viewport.width;
+          viewportHeight = renderer.viewport.height;
           elapsed += dt; pendingDt += dt;
           updateShells(dt); updateDelayed(dt);
           const pointerEvents = input.snapshot.events.filter((event): event is PointerInputEvent => event.kind === 'pointer');
@@ -96,44 +74,43 @@ export function createFireworksPlugin(initial: FireworksConfig = FIREWORKS_DEFAU
             while (pointer && launchAccumulator >= 1) { launchShell(pointer.x, pointer.y); launchAccumulator -= 1; }
           } else if ((launch.profile === 'preview' || launch.profile === 'demo') && input.snapshot.pointers.length === 0) {
             launchAccumulator += dt * (launch.profile === 'preview' ? 0.75 : 1.25);
-            while (launchAccumulator >= 1) { launchShell(renderer.width * (0.2 + nextRandom() * 0.6), renderer.height * (0.15 + nextRandom() * 0.38)); launchAccumulator -= 1; }
+            while (launchAccumulator >= 1) { launchShell(renderer.viewport.width * (0.2 + nextRandom() * 0.6), renderer.viewport.height * (0.15 + nextRandom() * 0.38)); launchAccumulator -= 1; }
           }
         },
       });
       context.get(EngineSchedule).addSystem({
         id: 'gl-game-lab.simulations.fireworks.render', stage: 'renderExtract',
         run: () => {
-          gpuPasses.submit({ id: 'fireworks.gpu-show', execute: (destination) => {
-            const resources = gpuResources.value;
-            if (rebuildState) { resources.state.dispose(); resources.state = createState(); cursor = 0; rebuildState = false; resources.trails.clear(); }
+          gpu.submit('fireworks.gpu-show', (destination) => {
+            if (particles.generation !== observedGeneration) { observedGeneration = particles.generation; resetCpuState(); }
+            if (rebuildState) { particles.dispose(); particles = createParticles(); observedGeneration = particles.generation; cursor = 0; rebuildState = false; particles.clearTrails(); }
             const dt = pendingDt; pendingDt = 0;
             if (commands.length === 0) runStep(dt);
             else {
               const queued = commands.splice(0, 12);
               queued.forEach((command, index) => runStep(index === 0 ? dt : 0, command));
             }
-            const trailDestination = resources.trails.beginFrame(destination.width, destination.height, config.trailFade);
+            const trailDestination = particles.beginTrails(destination.width, destination.height, config.trailFade);
             const palette = paletteData();
-            resources.points.render(resources.state, trailDestination, (contextGl, uniform) => {
+            particles.render(trailDestination, (contextGl, uniform) => {
               contextGl.uniform2f(uniform('uCanvasSize'), destination.width, destination.height);
-              contextGl.uniform1f(uniform('uParticleSize'), config.particleSize * Math.max(1, destination.width / Math.max(1, renderer.sprites.activeCamera.viewportWidth)));
+              contextGl.uniform1f(uniform('uParticleSize'), config.particleSize * Math.max(1, destination.width / Math.max(1, renderer.viewport.width)));
               contextGl.uniform1f(uniform('uSizeVariability'), config.sparkSizeVariability);
               contextGl.uniform1f(uniform('uCrackle'), config.crackleIntensity);
               contextGl.uniform3fv(uniform('uPalette[0]'), palette.data);
               contextGl.uniform1i(uniform('uPaletteCount'), palette.count);
             });
-            resources.trails.composite(destination, color3(requireStyle().background), config.bloomStrength);
-          } });
+            particles.compositeTrails(destination, color3(requireStyle().background), config.bloomStrength);
+          });
         },
       });
 
       function runStep(dt: number, spawn?: SpawnCommand): void {
-        const { state, stepper } = gpuResources.value;
-        const count = spawn ? Math.min(spawn.count, state.capacity) : 0;
+        const count = spawn ? Math.min(spawn.count, particles.capacity) : 0;
         const start = cursor;
-        if (spawn) cursor = (cursor + count) % state.capacity;
-        stepper.run(state, (contextGl, uniform) => {
-          contextGl.uniform1i(uniform('uCapacity'), state.capacity);
+        if (spawn) cursor = (cursor + count) % particles.capacity;
+        particles.step((contextGl, uniform) => {
+          contextGl.uniform1i(uniform('uCapacity'), particles.capacity);
           contextGl.uniform1f(uniform('uDt'), dt);
           contextGl.uniform1f(uniform('uGravity'), config.gravity);
           contextGl.uniform1f(uniform('uDamping'), config.airDrag);
@@ -152,40 +129,35 @@ export function createFireworksPlugin(initial: FireworksConfig = FIREWORKS_DEFAU
       }
 
       function resetSimulation(): void {
-        const resources = gpuResources.value;
-        resources.state.clear(); resources.trails.clear(); commands.length = 0; shells.length = 0; delayed.length = 0;
+        particles.clear(); particles.clearTrails(); resetCpuState();
+      }
+
+      function resetCpuState(): void {
+        commands.length = 0; shells.length = 0; delayed.length = 0;
         elapsed = 0; pendingDt = 0; launchAccumulator = 0; cursor = 0; randomState = normalizeSeed(launch.seed);
       }
 
-      function createState(): GpuParticleState {
+      function createParticles(): GpuParticleSystem2D {
         const size = Number(config.rawParticleTextureSize);
         const profileSize = launch.profile === 'preview' ? Math.min(256, size) : size;
-        return new GpuParticleState(gl, { capacity: profileSize * profileSize, width: profileSize, height: profileSize, precision: 'float' });
-      }
-
-      function createGpuResources(): FireworksGpuResources {
-        const disposers: Array<() => void> = [];
-        try {
-          const state = createState(); disposers.push(() => { state.dispose(); });
-          const stepper = new GpuSimulationPass(gl, FIREWORKS_STEP_SHADER); disposers.push(() => { stepper.dispose(); });
-          const points = new GpuParticleRenderer(gl, { vertexSource: FIREWORKS_POINT_VERTEX_SHADER, fragmentSource: FIREWORKS_POINT_FRAGMENT_SHADER, blend: 'additive' }); disposers.push(() => { points.dispose(); });
-          const trails = new TrailFeedbackRenderer(gl); disposers.push(() => { trails.dispose(); });
-          return { state, stepper, points, trails };
-        } catch (error) {
-          for (const dispose of disposers.reverse()) dispose();
-          throw error;
-        }
-      }
-
-      function disposeGpuResources(resources: FireworksGpuResources): void {
-        resources.trails.dispose(); resources.points.dispose(); resources.stepper.dispose(); resources.state.dispose();
+        return gpu.createParticleSystem(`${FIREWORKS_PLUGIN_ID}.particles`, {
+          capacity: profileSize * profileSize,
+          width: profileSize,
+          height: profileSize,
+          precision: 'float',
+          simulationFragmentSource: FIREWORKS_STEP_SHADER,
+          particleVertexSource: FIREWORKS_POINT_VERTEX_SHADER,
+          particleFragmentSource: FIREWORKS_POINT_FRAGMENT_SHADER,
+          blend: 'additive',
+          trails: true,
+        });
       }
 
       function applyStyle(): void {
         const background = color3(requireStyle().background);
         renderer.setClearColor([background[0], background[1], background[2], 1]);
-        renderer.setPaletteBackdrop(undefined); renderer.setBloom({ enabled: false });
-        gpuResources.value.trails.clear();
+        renderer.setBackdrop(undefined); renderer.setBloom({ enabled: false });
+        particles.clearTrails();
       }
 
     },
