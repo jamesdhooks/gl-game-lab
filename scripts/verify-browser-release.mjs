@@ -98,8 +98,16 @@ async function verifyContextRecovery(browser, failures) {
     await page.goto(url({ experience: 'reference-arena', contextTest: '1' }), { waitUntil: 'domcontentloaded' });
     await page.locator('canvas[data-engine-state="running"]').waitFor({ state: 'visible', timeout: 60_000 });
     await page.getByRole('button', { name: 'Cycle GPU context' }).click();
-    const controls = page.locator('[data-diagnostic-status="context-passed"]');
-    await controls.waitFor({ state: 'visible', timeout: 60_000 });
+    const controls = page.getByRole('complementary', { name: 'Engine diagnostic controls' });
+    await page.waitForFunction(() => {
+      const status = document.querySelector('[aria-label="Engine diagnostic controls"]')?.getAttribute('data-diagnostic-status');
+      return status === 'context-passed' || status === 'context-failed' || status === 'context-error';
+    }, undefined, { timeout: 20_000 });
+    const status = await controls.getAttribute('data-diagnostic-status');
+    if (status !== 'context-passed') {
+      const runtimeError = await page.getByRole('alert').textContent().catch(() => undefined);
+      throw new Error(`Context cycle ended with ${status ?? 'missing status'}${runtimeError ? `: ${runtimeError}` : ''}`);
+    }
     const values = await controls.evaluate((element) => ({
       generationBefore: Number(element.dataset.contextGenerationBefore),
       generationAfter: Number(element.dataset.contextGenerationAfter),
