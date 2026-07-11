@@ -1,5 +1,12 @@
 import { createExtensionToken, type EnginePlugin } from '@hooksjam/gl-game-lab-core';
-import { EngineSchedule } from '@hooksjam/gl-game-lab-engine';
+import {
+  EngineRenderer,
+  EngineSchedule,
+  type RenderBackend,
+  type RenderBackendCapabilities,
+  type RenderBackendState,
+  type RenderViewport,
+} from '@hooksjam/gl-game-lab-engine';
 import {
   SpriteRenderer,
   buildSpriteDrawPlan,
@@ -57,7 +64,16 @@ export class SpriteRenderQueue {
   }
 }
 
-export class WebGL2Renderer {
+const WEBGL2_CAPABILITIES: RenderBackendCapabilities = Object.freeze({
+  api: 'webgl2',
+  gpuSimulation: true,
+  renderTargets: true,
+  instancing: true,
+});
+
+export class WebGL2Renderer implements RenderBackend {
+  readonly id = 'gl-game-lab.render-webgl2';
+  readonly capabilities = WEBGL2_CAPABILITIES;
   readonly device: WebGL2Device;
   readonly sprites: SpriteRenderQueue;
   readonly particles: ParticlePointRenderQueue;
@@ -70,6 +86,20 @@ export class WebGL2Renderer {
   private readonly backdrop: PaletteBackdropRenderer;
   private clearColor: readonly [number, number, number, number];
   private destroyed = false;
+
+  get state(): RenderBackendState {
+    if (this.destroyed) return 'destroyed';
+    return this.device.isContextLost ? 'context-lost' : 'ready';
+  }
+
+  get viewport(): RenderViewport {
+    const camera = this.sprites.activeCamera;
+    return Object.freeze({
+      width: camera.viewportWidth,
+      height: camera.viewportHeight,
+      pixelRatio: this.device.canvas.width / camera.viewportWidth,
+    });
+  }
 
   constructor(
     canvas: HTMLCanvasElement,
@@ -218,6 +248,7 @@ export function createWebGL2RendererPlugin(
     version: '1.0.0',
     dependencies: [{ id: 'gl-game-lab.runtime' }],
     install: (context) => {
+      context.provide(EngineRenderer, renderer);
       context.provide(WebGL2RendererService, renderer);
       context.provide(SpriteRenderQueueService, renderer.sprites);
       context.provide(ParticlePointRenderQueueService, renderer.particles);

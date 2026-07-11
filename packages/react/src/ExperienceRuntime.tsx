@@ -1,5 +1,6 @@
 import {
   useCallback,
+  useEffect,
   useMemo,
   useRef,
   useState,
@@ -57,6 +58,16 @@ export function ExperienceRuntime({
   const [tutorialIndex, setTutorialIndex] = useState(0);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const controllerRef = useRef<ExperienceRuntimeController>();
+
+  useEffect(() => {
+    controllerRef.current = undefined;
+    setModeId(defaultModeId);
+    setStyleId(defaultStyleId);
+    setSettings(initialSettings);
+    setSettingsOpen(false);
+    setTutorialOpen(false);
+    setTutorialIndex(0);
+  }, [defaultModeId, defaultStyleId, definition.id, initialSettings]);
 
   const createPlugins = useCallback(() => definition.createPlugins({
     profile,

@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest';
-import { normalizeFixedFrameCapture } from '../GameCanvas.js';
+import { describe, expect, it, vi } from 'vitest';
+import { createEngineDestroyHandle, normalizeFixedFrameCapture } from '../GameCanvas.js';
 
 describe('normalizeFixedFrameCapture', () => {
   it('provides a deterministic sixty-hertz default', () => {
@@ -20,5 +20,20 @@ describe('normalizeFixedFrameCapture', () => {
         { frameNumber: 0, event: { kind: 'pointer', phase: 'up', id: 1, x: 1, y: 1, buttons: 0 } },
       ],
     })).toThrow('ordered by frame');
+  });
+
+  it('destroys an engine exactly once and shares asynchronous failure', async () => {
+    const failure = new Error('destroy failed');
+    const destroy = vi.fn().mockRejectedValue(failure);
+    const handle = createEngineDestroyHandle({ destroy });
+
+    const first = handle.destroy();
+    const second = handle.destroy();
+
+    expect(handle.started).toBe(true);
+    expect(first).toBe(second);
+    await expect(first).rejects.toBe(failure);
+    await expect(second).rejects.toBe(failure);
+    expect(destroy).toHaveBeenCalledOnce();
   });
 });

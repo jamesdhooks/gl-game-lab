@@ -1,11 +1,12 @@
 import { useEffect, useRef, type CSSProperties } from 'react';
 import type { EnginePlugin, InputEvent } from '@hooksjam/gl-game-lab-core';
-import { ExperienceRuntimeControllerService, GameEngine } from '@hooksjam/gl-game-lab-engine';
-import { BrowserFrameLoop, WebInputAdapter } from '@hooksjam/gl-game-lab-platform-web';
 import {
-  WebGL2RendererService,
-  createWebGL2RendererPlugin,
-} from '@hooksjam/gl-game-lab-render-webgl2';
+  EngineRenderer,
+  ExperienceRuntimeControllerService,
+  GameEngine,
+} from '@hooksjam/gl-game-lab-engine';
+import { BrowserFrameLoop, WebInputAdapter } from '@hooksjam/gl-game-lab-platform-web';
+import { createWebGL2RendererPlugin } from '@hooksjam/gl-game-lab-render-webgl2';
 import { FrameProfiler, checksumRgba, type FrameProfileSummary } from '@hooksjam/gl-game-lab-tools';
 
 export interface FixedFrameCaptureOptions {
@@ -43,6 +44,22 @@ export interface GameCanvasProps {
 
 const EMPTY_ENGINE_PLUGINS: readonly EnginePlugin[] = Object.freeze([]);
 
+export interface EngineDestroyHandle {
+  readonly started: boolean;
+  destroy(): Promise<void>;
+}
+
+export function createEngineDestroyHandle(engine: Pick<GameEngine, 'destroy'>): EngineDestroyHandle {
+  let promise: Promise<void> | undefined;
+  return {
+    get started() { return promise !== undefined; },
+    destroy() {
+      promise ??= Promise.resolve().then(() => engine.destroy());
+      return promise;
+    },
+  };
+}
+
 export function createBrowserGameEngine(canvas: HTMLCanvasElement, plugins: readonly EnginePlugin[] = []): GameEngine {
   return new GameEngine({ plugins: [createWebGL2RendererPlugin(canvas), ...plugins] });
 }
@@ -69,12 +86,19 @@ export function GameCanvas({
       ? createEngine(canvas)
       : createBrowserGameEngine(canvas, createPlugins?.() ?? plugins);
     let disposed = false;
-    let initialized = false;
+    let destroyFailureReported = false;
     let loop: BrowserFrameLoop | undefined;
     let inputAdapter: WebInputAdapter | undefined;
+    const destroyHandle = createEngineDestroyHandle(engine);
+    const reportError = (error: unknown): void => {
+      canvas.dataset.engineState = 'error';
+      canvas.dataset.engineError = describeError(error);
+      if (onError) onError(error);
+      else queueMicrotask(() => { throw error; });
+    };
     const resize = (): void => {
-      if (!engine.kernel.has(WebGL2RendererService)) return;
-      const renderer = engine.kernel.get(WebGL2RendererService);
+      if (!engine.kernel.has(EngineRenderer)) return;
+      const renderer = engine.kernel.get(EngineRenderer);
       const bounds = canvas.getBoundingClientRect();
       renderer.resize(
         Math.max(1, bounds.width),
@@ -91,9 +115,8 @@ export function GameCanvas({
         canvas.dataset.engineState = 'initializing';
         delete canvas.dataset.engineError;
         await engine.initialize();
-        initialized = true;
         if (disposed) {
-          await engine.destroy();
+          await destroyHandle.destroy();
           return;
         }
         resize();
@@ -101,10 +124,9 @@ export function GameCanvas({
           input: engine.input,
           preventDefault: preventDefaultInput,
           getViewport: () => {
-            const renderer = engine.kernel.tryGet(WebGL2RendererService);
+            const renderer = engine.kernel.tryGet(EngineRenderer);
             if (renderer) {
-              const camera = renderer.sprites.activeCamera;
-              return { width: camera.viewportWidth, height: camera.viewportHeight };
+              return { width: renderer.viewport.width, height: renderer.viewport.height };
             }
             const bounds = canvas.getBoundingClientRect();
             return { width: Math.max(1, bounds.width), height: Math.max(1, bounds.height) };
@@ -112,7 +134,7 @@ export function GameCanvas({
         });
         await engine.start();
         if (disposed) {
-          await engine.destroy();
+          await destroyHandle.destroy();
           return;
         }
         if (fixedFrameCapture) {
@@ -130,7 +152,7 @@ export function GameCanvas({
             engine.frame(capture.fixedDeltaSeconds);
             profiler.record(performance.now() - startedAt);
           }
-          const renderer = engine.kernel.get(WebGL2RendererService);
+          const renderer = engine.kernel.get(EngineRenderer);
           const entityCount = engine.kernel.tryGet(ExperienceRuntimeControllerService)?.entityCount;
           const result = Object.freeze({
             ...capture,
@@ -147,22 +169,25 @@ export function GameCanvas({
           onFixedFrameCapture?.(result);
         } else {
           loop = new BrowserFrameLoop(engine, undefined, (error) => {
-            canvas.dataset.engineState = 'error';
-            canvas.dataset.engineError = describeError(error);
-            if (onError) onError(error);
-            else queueMicrotask(() => { throw error; });
+            reportError(error);
           });
           loop.start();
           canvas.dataset.engineState = 'running';
         }
         onReady?.(engine);
       } catch (error) {
-        canvas.dataset.engineState = 'error';
-        canvas.dataset.engineError = describeError(error);
-        if (onError) onError(error);
-        else queueMicrotask(() => {
-          throw error;
-        });
+        let failure = error;
+        if (destroyHandle.started) {
+          destroyFailureReported = true;
+        } else {
+          try {
+            await destroyHandle.destroy();
+          } catch (cleanupError) {
+            destroyFailureReported = true;
+            failure = new AggregateError([error, cleanupError], 'Game canvas boot and cleanup failed');
+          }
+        }
+        reportError(failure);
       }
     };
     void boot();
@@ -174,7 +199,12 @@ export function GameCanvas({
       window.removeEventListener('resize', resize);
       inputAdapter?.destroy();
       loop?.stop();
-      if (initialized) void engine.destroy();
+      void destroyHandle.destroy().catch((error) => {
+        if (!destroyFailureReported) {
+          destroyFailureReported = true;
+          reportError(error);
+        }
+      });
     };
   }, [createEngine, createPlugins, fixedFrameCapture, onError, onFixedFrameCapture, onReady, plugins, preventDefaultInput]);
 

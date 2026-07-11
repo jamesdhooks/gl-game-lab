@@ -39,7 +39,7 @@ performance, or lifecycle claims.
 | AST-02 | High | No production asset manifest, dependency graph, budgets, or hot-reload path. | 5, 8 | Open | Manifest validation, cache diagnostics, budget warnings, and development reload test. |
 | RND-01 | Critical | WebGL context restoration does not recreate owned GPU resources. | 4 | Open | Automated context-loss/restore test renders equivalent content after restoration. |
 | RND-02 | High | RenderGraph is test-only while shipping rendering uses fixed manual ordering. | 4 | Open | Shipping frame capture identifies compiled graph passes/resources and executes them. |
-| RND-03 | High | Public content imports concrete WebGL2 renderer APIs, preventing backend neutrality. | 4, 6, 7 | Open | Content compiles only against engine render contracts; WebGL2 is an injected backend. |
+| RND-03 | High | Public content imports concrete WebGL2 renderer APIs, preventing backend neutrality. | 4, 6, 7 | Active | Engine now owns the host-facing renderer contract and React uses it; content feature contracts still require migration. |
 | RND-04 | High | Sprite draw-plan construction copies arrays per sprite and is quadratic. | 4 | Verified | Builder now appends to one mutable construction batch and freezes once; a 10,000-sprite regression case verifies one batch. |
 | RND-05 | High | GPU ownership, descriptor validation, pooling, and destruction are inconsistent. | 4 | Open | Resource registry reports owners, bytes, lifetime, and zero live resources after stop. |
 | PRF-01 | High | Hot paths allocate temporary objects/arrays and upload avoidable full buffers per frame. | 4, 7, 8 | Open | Allocation/upload counters and profiles meet per-experience budgets. |
@@ -47,7 +47,7 @@ performance, or lifecycle claims.
 | PRF-03 | High | No enforceable desktop/mobile frame-time, memory, draw-call, or upload budgets exist. | 8, 9 | Open | CI benchmark envelopes plus signed browser/device release matrix. |
 | PHY-01 | Critical | Splash MPM is labelled beyond its implemented PIC/FLIP-style solver and silently clamps advertised limits. | 7 | Open | Honest naming/metadata or credible solver; validated settings match effective limits. |
 | PHY-02 | High | Physics APIs lack broad-phase/solver diagnostics and production determinism coverage. | 7, 8 | Open | Replay hashes, invariant tests, and per-stage profiler counters. |
-| WEB-01 | Critical | React teardown ignores asynchronous destroy failures and definition changes can desynchronize host/runtime state. | 5 | Open | Rerender/unmount/failure tests prove exactly-once teardown and surfaced errors. |
+| WEB-01 | Critical | React teardown ignores asynchronous destroy failures and definition changes can desynchronize host/runtime state. | 5 | Active | Exact-once async destruction and definition-state reset are implemented; DOM rerender/unmount integration coverage remains. |
 | WEB-02 | High | Input lacks action maps, gamepad, focus/visibility policy, and complete pointer capture semantics. | 5 | Open | Keyboard/pointer/touch/gamepad action tests and browser smoke matrix. |
 | WEB-03 | High | Audio, storage, worker services, and accessibility contracts are absent. | 5 | Open | Public services, lifecycle tests, and Reference Arena usage. |
 | QLT-01 | High | Large portions of TypeScript are one-line/minified and resist review and maintenance. | 2 | Verified | Formatting baseline is empty; source hygiene and all-package typecheck pass; 168 tests pass across 54 files. |

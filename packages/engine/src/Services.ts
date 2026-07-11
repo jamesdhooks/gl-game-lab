@@ -20,3 +20,31 @@ export const EngineSchedule = createExtensionToken<Schedule>('gl-game-lab.engine
 export const EngineScenes = createExtensionToken<SceneManager>('gl-game-lab.engine.scenes');
 export const EngineSchemas = createExtensionToken<ComponentSchemaRegistry>('gl-game-lab.engine.schemas');
 export const EngineSerializer = createExtensionToken<WorldSerializer>('gl-game-lab.engine.serializer');
+
+export type RenderBackendApi = 'webgl2' | 'webgpu' | 'headless';
+export type RenderBackendState = 'ready' | 'context-lost' | 'destroyed';
+
+export interface RenderViewport {
+  readonly width: number;
+  readonly height: number;
+  readonly pixelRatio: number;
+}
+
+export interface RenderBackendCapabilities {
+  readonly api: RenderBackendApi;
+  readonly gpuSimulation: boolean;
+  readonly renderTargets: boolean;
+  readonly instancing: boolean;
+}
+
+/** Host-facing renderer contract. It intentionally exposes no browser or GPU API types. */
+export interface RenderBackend {
+  readonly id: string;
+  readonly state: RenderBackendState;
+  readonly viewport: RenderViewport;
+  readonly capabilities: RenderBackendCapabilities;
+  resize(cssWidth: number, cssHeight: number, pixelRatio?: number): void;
+  readRgba(): Uint8Array;
+}
+
+export const EngineRenderer = createExtensionToken<RenderBackend>('gl-game-lab.engine.renderer');

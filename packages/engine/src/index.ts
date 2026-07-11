@@ -8,11 +8,17 @@ export {
   EngineEvents,
   EngineHierarchy,
   EngineInput,
+  EngineRenderer,
   EngineSchedule,
   EngineScenes,
   EngineSchemas,
   EngineSerializer,
   EngineWorld,
+  type RenderBackend,
+  type RenderBackendApi,
+  type RenderBackendCapabilities,
+  type RenderBackendState,
+  type RenderViewport,
 } from './Services.js';
 export {
   ExperienceRegistry,
