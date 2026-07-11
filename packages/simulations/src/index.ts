@@ -11,6 +11,7 @@ import { softBodyBlobDefinition } from './soft-body-blob/definition.js';
 import { fluidTankDefinition } from './fluid-tank/definition.js';
 import { particleFluidDefinition } from './particle-fluid/definition.js';
 import { lavaLampDefinition } from './lava-lamp/definition.js';
+import { waterTankDefinition } from './water-tank/definition.js';
 
 export { harmonicSandDefinition } from './harmonic-sand/definition.js';
 export { fireworksDefinition } from './fireworks/definition.js';
@@ -41,6 +42,11 @@ export { LAVA_LAMP_DEFAULTS, LAVA_LAMP_SETTINGS, createLavaLampConfig, lavaNumbe
 export { LAVA_LAMP_PLUGIN_ID, LavaLampControllerService, createLavaLampPlugin, type LavaLampController, type LavaLampMode } from './lava-lamp/LavaLampPlugin.js';
 export { LAVA_LAMP_STYLE_MANIFEST } from './lava-lamp/styles.js';
 export { LavaLampModel, type LavaLampTuning } from './lava-lamp/LavaLampModel.js';
+export { waterTankDefinition } from './water-tank/definition.js';
+export { WATER_TANK_DEFAULTS, WATER_TANK_SETTINGS, createWaterTankConfig, waterNumber, waterString, type WaterTankConfig } from './water-tank/config.js';
+export { WATER_TANK_PLUGIN_ID, WaterTankControllerService, createWaterTankPlugin, type WaterTankController, type WaterTankMode } from './water-tank/WaterTankPlugin.js';
+export { WATER_TANK_STYLE_MANIFEST } from './water-tank/styles.js';
+export { WaterTankModel, type WaterObstacle, type WaterTankTuning } from './water-tank/WaterTankModel.js';
 export { VASCULAR_TREE_DEFAULTS, VASCULAR_TREE_SETTINGS, createVascularTreeConfig, type VascularTreeConfig } from './alien-vascular-tree/config.js';
 export { VASCULAR_TREE_PLUGIN_ID, VascularTreeControllerService, createVascularTreePlugin, type VascularTreeController, type VascularTreeMode } from './alien-vascular-tree/VascularTreePlugin.js';
 export { VASCULAR_TREE_STYLE_MANIFEST } from './alien-vascular-tree/styles.js';
@@ -75,4 +81,4 @@ export {
 } from './harmonic-sand/HarmonicSandPlugin.js';
 export { HARMONIC_SAND_STYLE_MANIFEST } from './harmonic-sand/styles.js';
 
-export const SIMULATION_REGISTRY = new ExperienceRegistry().register(harmonicSandDefinition).register(fireworksDefinition).register(sparksDefinition).register(orbitalShrapnelDefinition).register(turingSkinDefinition).register(myceliumDefinition).register(alienVascularTreeDefinition).register(chainRainDefinition).register(softBodyBlobDefinition).register(fluidTankDefinition).register(particleFluidDefinition).register(lavaLampDefinition);
+export const SIMULATION_REGISTRY = new ExperienceRegistry().register(harmonicSandDefinition).register(fireworksDefinition).register(sparksDefinition).register(orbitalShrapnelDefinition).register(turingSkinDefinition).register(myceliumDefinition).register(alienVascularTreeDefinition).register(chainRainDefinition).register(softBodyBlobDefinition).register(fluidTankDefinition).register(particleFluidDefinition).register(lavaLampDefinition).register(waterTankDefinition);
