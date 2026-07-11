@@ -1,4 +1,10 @@
 export {
+  InstancedSegmentRenderer,
+  validateInstancedSegmentBatch,
+  type InstancedSegmentBatch,
+  type InstancedSegmentRenderOptions,
+} from './InstancedSegmentRenderer.js';
+export {
   GpuFieldState,
   type GpuFieldStateOptions,
 } from './GpuFieldState.js';
