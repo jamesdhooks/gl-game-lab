@@ -1,4 +1,4 @@
-export const ORBITAL_STEP_SHADER=`#version 300 es
+export const ORBITAL_STEP_SHADER = `#version 300 es
 precision highp float;in vec2 vUv;layout(location=0)out vec4 outPosition;layout(location=1)out vec4 outVelocity;
 uniform sampler2D uPositionState;uniform sampler2D uVelocityState;uniform ivec2 uStateSize;uniform int uCapacity;uniform float uDt;uniform float uTime;uniform float uAspect;uniform float uGravity;uniform float uDamping;uniform float uMaxSpeed;uniform float uPlanetRadius;uniform float uPlanetBounce;
 uniform int uBodyCount;uniform float uBodyStrength;uniform float uBodyRadius;uniform float uBodySpeed;
@@ -13,15 +13,12 @@ if(uPointerActive>.5){vec2 delta=uPointer-p;float distance=length(delta);if(dist
 velocity.xy+=acceleration*uDt;velocity.xy*=exp(-uDamping*uDt);float speed=length(velocity.xy);if(speed>uMaxSpeed)velocity.xy*=uMaxSpeed/speed;position.xy+=velocity.xy*uDt;
 float nextR=length(position.xy);if(nextR<uPlanetRadius){vec2 normal=normalize(position.xy+vec2(.0001));position.xy=normal*(uPlanetRadius+.003);velocity.xy=reflect(velocity.xy,normal)*uPlanetBounce;}if(abs(position.x)>uAspect*1.35||abs(position.y)>1.35){position.xy*=-.72;}}
 outPosition=position;outVelocity=velocity;}`;
-
-export const ORBITAL_POINT_VERTEX_SHADER=`#version 300 es
+export const ORBITAL_POINT_VERTEX_SHADER = `#version 300 es
 precision highp float;uniform sampler2D uPositionState;uniform sampler2D uVelocityState;uniform ivec2 uStateSize;uniform int uParticleCapacity;uniform float uAspect;uniform float uPointSize;uniform float uStreakStrength;out float vSpeed;flat out float vSeed;flat out float vAsteroid;
 void main(){int id=gl_VertexID;ivec2 cell=ivec2(id%uStateSize.x,id/uStateSize.x);vec4 p=texelFetch(uPositionState,cell,0),v=texelFetch(uVelocityState,cell,0);if(id>=uParticleCapacity||v.z<.5){gl_Position=vec4(2,2,0,1);gl_PointSize=0.0;vSpeed=0.0;vSeed=0.0;vAsteroid=0.0;return;}gl_Position=vec4(p.x/uAspect,p.y,0,1);float speed=length(v.xy);gl_PointSize=max(1.0,uPointSize*(p.z>.5?4.5:1.0)*(1.0+speed*uStreakStrength*.32));vSpeed=speed;vSeed=v.w;vAsteroid=p.z;}`;
-
-export const ORBITAL_POINT_FRAGMENT_SHADER=`#version 300 es
+export const ORBITAL_POINT_FRAGMENT_SHADER = `#version 300 es
 precision highp float;in float vSpeed;flat in float vSeed;flat in float vAsteroid;out vec4 outColor;uniform vec3 uPalette[8];uniform int uPaletteCount;uniform float uOpacity;uniform float uBrightness;float hash(float n){return fract(sin(n)*43758.5453);}void main(){vec2 p=gl_PointCoord*2.0-1.0;float d=dot(p,p);if(d>1.0)discard;int index=int(floor(hash(vSeed)*float(max(1,uPaletteCount))))%max(1,uPaletteCount);vec3 color=uPalette[index];float core=exp(-d*(vAsteroid>.5?2.2:5.0));outColor=vec4(color*core*uBrightness*(1.0+min(2.0,vSpeed)*.2),smoothstep(1.0,.1,d)*uOpacity);}`;
-
-export const ORBITAL_OVERLAY_SHADER=`#version 300 es
+export const ORBITAL_OVERLAY_SHADER = `#version 300 es
 precision highp float;in vec2 vUv;out vec4 outColor;uniform vec2 uResolution;uniform float uTime;uniform float uPlanetRadius;uniform vec3 uPlanetA;uniform vec3 uPlanetB;uniform vec3 uPlanetLight;uniform float uStars;uniform float uStarOpacity;uniform int uBodyCount;uniform float uBodyRadius;uniform float uBodySpeed;uniform float uPointerActive;uniform int uPointerMode;uniform vec2 uPointer;uniform float uPointerRadius;
 float hash(vec2 p){p=fract(p*vec2(123.34,456.21));p+=dot(p,p+45.32);return fract(p.x*p.y);}float circle(vec2 p,vec2 c,float r){return smoothstep(r,r-.004,length(p-c));}
 void main(){float aspect=uResolution.x/max(1.0,uResolution.y);vec2 p=vec2((vUv.x-.5)*2.0*aspect,(vUv.y-.5)*2.0);vec3 color=vec3(0);float alpha=0.0;if(uStars>.5){vec2 grid=floor(vUv*uResolution*.72);float star=smoothstep(.996,1.0,hash(grid));color+=vec3(.72,.82,1.0)*star;alpha=max(alpha,star*uStarOpacity);}

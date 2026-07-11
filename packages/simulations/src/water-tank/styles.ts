@@ -1,1 +1,116 @@
-import type{ExperienceStyleManifest}from'@hooksjam/gl-game-lab-engine';export const WATER_TANK_STYLE_MANIFEST:ExperienceStyleManifest=Object.freeze({defaultStyleId:'clear-lagoon',renderLayers:['particles','density','obstacles'],passes:['primitive','densityMetaball','bloom'],qualities:['raw'],styles:[s('clear-lagoon','Clear Lagoon','Bright teal water with white foam.',[0xb8f7ff,0x4dd8ff,0x0b4f8a,0xffffff],0x03141f),s('deep-pool','Deep Pool','Deep blue water with pale surface highlights.',[0x7dd3fc,0x0284c7,0x082f49,0xe0f2fe],0x020617),s('glacier-milk','Glacier Milk','Milky glacial cyan and white water.',[0xf0fdff,0xa5f3fc,0x60a5fa,0xffffff],0x07111f),s('toxic-rinse','Toxic Rinse','Green chemical rinse with mint foam.',[0xecfccb,0x22c55e,0x14532d,0xa7f3d0],0x04120a),s('violet-tide','Violet Tide','Purple water with cyan specular edges.',[0xe9d5ff,0xa855f7,0x312e81,0x67e8f9],0x08051a),s('ink-wash','Ink Wash','Grey-black liquid over a paper-white tank.',[0xe2e8f0,0x475569,0x020617,0x93c5fd],0xf8fafc),s('sunlit-creek','Sunlit Creek','Golden sunlight over clear creek water.',[0xfef9c3,0x38bdf8,0x0f766e,0xfef3c7],0x08130e),s('rose-water','Rose Water','Translucent rose water with white highlights.',[0xffe4e6,0xfb7185,0x9f1239,0xf0f9ff],0x14070b),s('storm-drain','Storm Drain','Steel-grey runoff with blue reflections.',[0xcbd5e1,0x64748b,0x111827,0x38bdf8],0x030712),s('biolume-bay','Biolume Bay','Bioluminescent green-cyan tidal water.',[0xd9f99d,0x22d3ee,0x064e3b,0xf0fdfa],0x02110f)]});export function waterColor3(color:number):readonly[number,number,number]{return[((color>>>16)&255)/255,((color>>>8)&255)/255,(color&255)/255]}export function waterColor4(color:number):readonly[number,number,number,number]{const c=waterColor3(color);return[c[0],c[1],c[2],1]}function s(id:string,name:string,description:string,palette:readonly number[],background:number){return Object.freeze({id,name,description,palette:Object.freeze(palette),background,passes:Object.freeze(['densityMetaball'])})}
+import type { ExperienceStyleManifest } from '@hooksjam/gl-game-lab-engine';
+export const WATER_TANK_STYLE_MANIFEST: ExperienceStyleManifest = Object.freeze({
+  defaultStyleId: 'clear-lagoon',
+  renderLayers: [
+    'particles',
+    'density',
+    'obstacles'
+  ],
+  passes: [
+    'primitive',
+    'densityMetaball',
+    'bloom'
+  ],
+  qualities: [
+    'raw'
+  ],
+  styles: [
+    s('clear-lagoon', 'Clear Lagoon', 'Bright teal water with white foam.', [
+      12122111,
+      5101823,
+      741258,
+      16777215
+    ], 201759),
+    s('deep-pool', 'Deep Pool', 'Deep blue water with pale surface highlights.', [
+      8246268,
+      165063,
+      536393,
+      14742270
+    ], 132631),
+    s('glacier-milk', 'Glacier Milk', 'Milky glacial cyan and white water.', [
+      15793663,
+      10875900,
+      6333946,
+      16777215
+    ], 463135),
+    s('toxic-rinse', 'Toxic Rinse', 'Green chemical rinse with mint foam.', [
+      15531211,
+      2278750,
+      1332013,
+      11006928
+    ], 266762),
+    s('violet-tide', 'Violet Tide', 'Purple water with cyan specular edges.', [
+      15324671,
+      11032055,
+      3223169,
+      6809849
+    ], 525594),
+    s('ink-wash', 'Ink Wash', 'Grey-black liquid over a paper-white tank.', [
+      14870768,
+      4674921,
+      132631,
+      9684477
+    ], 16317180),
+    s('sunlit-creek', 'Sunlit Creek', 'Golden sunlight over clear creek water.', [
+      16710083,
+      3718648,
+      1013358,
+      16708551
+    ], 529166),
+    s('rose-water', 'Rose Water', 'Translucent rose water with white highlights.', [
+      16770278,
+      16478597,
+      10424889,
+      15792639
+    ], 1312523),
+    s('storm-drain', 'Storm Drain', 'Steel-grey runoff with blue reflections.', [
+      13358561,
+      6583435,
+      1120295,
+      3718648
+    ], 198418),
+    s('biolume-bay', 'Biolume Bay', 'Bioluminescent green-cyan tidal water.', [
+      14285213,
+      2282478,
+      413243,
+      15793658
+    ], 135439)
+  ]
+});
+export function waterColor3(color: number): readonly [
+  number,
+  number,
+  number
+] {
+  return [
+    ((color >>> 16) & 255) / 255,
+    ((color >>> 8) & 255) / 255,
+    (color & 255) / 255
+  ];
+}
+export function waterColor4(color: number): readonly [
+  number,
+  number,
+  number,
+  number
+] {
+  const c = waterColor3(color);
+  return [
+    c[0],
+    c[1],
+    c[2],
+    1
+  ];
+}
+function s(id: string, name: string, description: string, palette: readonly number[], background: number) {
+  return Object.freeze({
+    id,
+    name,
+    description,
+    palette: Object.freeze(palette),
+    background,
+    passes: Object.freeze([
+      'densityMetaball'
+    ])
+  });
+}

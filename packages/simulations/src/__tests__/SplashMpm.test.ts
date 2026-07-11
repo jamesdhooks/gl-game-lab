@@ -1,1 +1,41 @@
-import{describe,expect,it}from'vitest';import{createSplashMpmConfig,SPLASH_MPM_DEFAULTS,SPLASH_MPM_SETTINGS,splashMpmDefinition,SPLASH_MPM_STYLE_MANIFEST,SplashMpmModel}from'../index.js';describe('Splash MPM',()=>{it('retains modes, styles, and attribution',()=>{expect(splashMpmDefinition.modes?.map(x=>x.id)).toEqual(['splash','pour','build']);expect(SPLASH_MPM_STYLE_MANIFEST.styles).toHaveLength(10);expect(splashMpmDefinition.attributions?.[0]?.label).toBe('Splash')});it('runs a particle-grid fluid step',()=>{const model=new SplashMpmModel(),t={maxParticles:2048,resolution:64,stiffness:86,restDensity:3.2,separation:.7,viscosity:.18,flipness:.88,gravity:920,radius:4.2};model.reset(800,600,t);model.seed(800,600,t,true);const before=model.count;model.pour(400,80,12,20);model.splash(400,300,80,17,200,0);model.step(1/60,800,600,t);expect(model.count).toBeGreaterThan(before);expect(Number.isFinite(model.world.positions[0])).toBe(true)});it('validates maintained defaults',()=>{expect(SPLASH_MPM_SETTINGS.length).toBeGreaterThan(25);expect(createSplashMpmConfig()).toEqual(SPLASH_MPM_DEFAULTS);expect(()=>createSplashMpmConfig({resolution:8})).toThrow()})});
+import { describe, expect, it } from 'vitest';
+import { createSplashMpmConfig, SPLASH_MPM_DEFAULTS, SPLASH_MPM_SETTINGS, splashMpmDefinition, SPLASH_MPM_STYLE_MANIFEST, SplashMpmModel } from '../index.js';
+describe('Splash MPM', () => {
+  it('retains modes, styles, and attribution', () => {
+    expect(splashMpmDefinition.modes?.map(x => x.id)).toEqual([
+      'splash',
+      'pour',
+      'build'
+    ]);
+    expect(SPLASH_MPM_STYLE_MANIFEST.styles).toHaveLength(10);
+    expect(splashMpmDefinition.attributions?.[0]?.label).toBe('Splash');
+  });
+  it('runs a particle-grid fluid step', () => {
+    const model = new SplashMpmModel(), t = {
+      maxParticles: 2048,
+      resolution: 64,
+      stiffness: 86,
+      restDensity: 3.2,
+      separation: 0.7,
+      viscosity: 0.18,
+      flipness: 0.88,
+      gravity: 920,
+      radius: 4.2
+    };
+    model.reset(800, 600, t);
+    model.seed(800, 600, t, true);
+    const before = model.count;
+    model.pour(400, 80, 12, 20);
+    model.splash(400, 300, 80, 17, 200, 0);
+    model.step(1 / 60, 800, 600, t);
+    expect(model.count).toBeGreaterThan(before);
+    expect(Number.isFinite(model.world.positions[0])).toBe(true);
+  });
+  it('validates maintained defaults', () => {
+    expect(SPLASH_MPM_SETTINGS.length).toBeGreaterThan(25);
+    expect(createSplashMpmConfig()).toEqual(SPLASH_MPM_DEFAULTS);
+    expect(() => createSplashMpmConfig({
+      resolution: 8
+    })).toThrow();
+  });
+});

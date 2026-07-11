@@ -1,1 +1,25 @@
-import{describe,expect,it}from'vitest';import{ExperienceRegistry}from'@hooksjam/gl-game-lab-engine';import{createParticleFluidConfig,PARTICLE_FLUID_DEFAULTS,PARTICLE_FLUID_STYLE_MANIFEST,particleFluidDefinition}from'../index.js';describe('Particle Fluid',()=>{it('registers ten materially distinct styles and attribution',()=>{const definition=new ExperienceRegistry().register(particleFluidDefinition).get('particle-fluid');expect(PARTICLE_FLUID_STYLE_MANIFEST.styles).toHaveLength(10);expect(new Set(PARTICLE_FLUID_STYLE_MANIFEST.styles.map(style=>style.background)).size).toBeGreaterThan(7);expect(definition.attributions?.[0]?.author).toBe('Haxiomic')});it('preserves GPU particle and flow settings',()=>{expect(createParticleFluidConfig()).toEqual(PARTICLE_FLUID_DEFAULTS);expect(createParticleFluidConfig({maxParticles:4194304}).maxParticles).toBe(4194304)});it('validates containment solver settings',()=>{expect(()=>createParticleFluidConfig({forceRadius:.5})).toThrow('outside its supported range');expect(()=>createParticleFluidConfig({renderStyle:'ultra'})).toThrow('Unknown Particle Fluid')})});
+import { describe, expect, it } from 'vitest';
+import { ExperienceRegistry } from '@hooksjam/gl-game-lab-engine';
+import { createParticleFluidConfig, PARTICLE_FLUID_DEFAULTS, PARTICLE_FLUID_STYLE_MANIFEST, particleFluidDefinition } from '../index.js';
+describe('Particle Fluid', () => {
+  it('registers ten materially distinct styles and attribution', () => {
+    const definition = new ExperienceRegistry().register(particleFluidDefinition).get('particle-fluid');
+    expect(PARTICLE_FLUID_STYLE_MANIFEST.styles).toHaveLength(10);
+    expect(new Set(PARTICLE_FLUID_STYLE_MANIFEST.styles.map(style => style.background)).size).toBeGreaterThan(7);
+    expect(definition.attributions?.[0]?.author).toBe('Haxiomic');
+  });
+  it('preserves GPU particle and flow settings', () => {
+    expect(createParticleFluidConfig()).toEqual(PARTICLE_FLUID_DEFAULTS);
+    expect(createParticleFluidConfig({
+      maxParticles: 4194304
+    }).maxParticles).toBe(4194304);
+  });
+  it('validates containment solver settings', () => {
+    expect(() => createParticleFluidConfig({
+      forceRadius: 0.5
+    })).toThrow('outside its supported range');
+    expect(() => createParticleFluidConfig({
+      renderStyle: 'ultra'
+    })).toThrow('Unknown Particle Fluid');
+  });
+});

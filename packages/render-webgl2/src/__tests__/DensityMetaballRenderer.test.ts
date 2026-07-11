@@ -1,1 +1,20 @@
-import{describe,expect,it}from'vitest';import{validateDensityMetaballBatch}from'../DensityMetaballRenderer.js';describe('DensityMetaballRenderer',()=>{it('accepts renderer-ready density data',()=>{expect(()=>validateDensityMetaballBatch({count:2,positions:new Float32Array(4),radii:new Float32Array(2),temperatures:new Float32Array(2)})).not.toThrow()});it('rejects incomplete thermal data',()=>{expect(()=>validateDensityMetaballBatch({count:2,positions:new Float32Array(4),radii:new Float32Array(2),temperatures:new Float32Array(1)})).toThrow('temperatures')})});
+import { describe, expect, it } from 'vitest';
+import { validateDensityMetaballBatch } from '../DensityMetaballRenderer.js';
+describe('DensityMetaballRenderer', () => {
+  it('accepts renderer-ready density data', () => {
+    expect(() => validateDensityMetaballBatch({
+      count: 2,
+      positions: new Float32Array(4),
+      radii: new Float32Array(2),
+      temperatures: new Float32Array(2)
+    })).not.toThrow();
+  });
+  it('rejects incomplete thermal data', () => {
+    expect(() => validateDensityMetaballBatch({
+      count: 2,
+      positions: new Float32Array(4),
+      radii: new Float32Array(2),
+      temperatures: new Float32Array(1)
+    })).toThrow('temperatures');
+  });
+});

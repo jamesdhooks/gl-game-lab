@@ -1,1 +1,93 @@
-import type{ExperienceDefinition}from'@hooksjam/gl-game-lab-engine';import{createLavaLampConfig,LAVA_LAMP_DEFAULTS,LAVA_LAMP_SETTINGS}from'./config.js';import{createLavaLampPlugin}from'./LavaLampPlugin.js';import{LAVA_LAMP_STYLE_MANIFEST}from'./styles.js';export const lavaLampDefinition:ExperienceDefinition={id:'lava-lamp',kind:'simulation',name:'Lava Lamp',short:'Warm wax blobs rise and drift like a lava lamp.',long:'Add or remove wax blobs and watch them rise, drift, and fall.',icon:'◖',tags:['simulation','metaball','thermal','gpu-surface'],paletteHint:'plasma',capabilities:{interactive:true,reset:true,demo:true,tutorial:true,settings:true,qualityModes:['raw']},configDefaults:{...LAVA_LAMP_DEFAULTS},modes:[{id:'add',label:'Add',icon:'+',description:'Add wax and lift nearby blobs.'},{id:'remove',label:'Remove',icon:'-',description:'Remove wax from the brush.'}],settings:LAVA_LAMP_SETTINGS,styleManifest:LAVA_LAMP_STYLE_MANIFEST,attributions:[{label:'WebGL Lava Lamp',href:'https://github.com/brybrant/lava-lamp',author:'Matt Bryant',license:'GPL-3.0'}],tutorialPages:[{icon:'+',title:'Add Warm Wax',body:'Tap or drag near the heater to add wax, heat nearby blobs, and lift them.'},{icon:'-',title:'Remove Wax',body:'Switch to Remove and brush away nearby wax.'},{icon:'◖',title:'Thermal Cycle',body:'Wax heats at the bottom, rises, cools at the top, and falls through a slow coherent convection field.'}],physics:{renderer:'webgl2-density-metaballs-and-raymarch',engine:'dense-thermal-metaball-particles',portability:'reusable-core',supportedShapes:['circle','metaball'],reusableFor:['thermal buoyancy toys','screen-space liquid surfaces','density metaballs'],caveats:['Thermal wax particles remain CPU-side while the visible connected surface and far-depth layer are GPU-rendered.']},createPlugins:(options={})=>[createLavaLampPlugin(createLavaLampConfig(options.settings),options)]};
+import type { ExperienceDefinition } from '@hooksjam/gl-game-lab-engine';
+import { createLavaLampConfig, LAVA_LAMP_DEFAULTS, LAVA_LAMP_SETTINGS } from './config.js';
+import { createLavaLampPlugin } from './LavaLampPlugin.js';
+import { LAVA_LAMP_STYLE_MANIFEST } from './styles.js';
+export const lavaLampDefinition: ExperienceDefinition = {
+  id: 'lava-lamp',
+  kind: 'simulation',
+  name: 'Lava Lamp',
+  short: 'Warm wax blobs rise and drift like a lava lamp.',
+  long: 'Add or remove wax blobs and watch them rise, drift, and fall.',
+  icon: '\u25D6',
+  tags: [
+    'simulation',
+    'metaball',
+    'thermal',
+    'gpu-surface'
+  ],
+  paletteHint: 'plasma',
+  capabilities: {
+    interactive: true,
+    reset: true,
+    demo: true,
+    tutorial: true,
+    settings: true,
+    qualityModes: [
+      'raw'
+    ]
+  },
+  configDefaults: {
+    ...LAVA_LAMP_DEFAULTS
+  },
+  modes: [
+    {
+      id: 'add',
+      label: 'Add',
+      icon: '+',
+      description: 'Add wax and lift nearby blobs.'
+    },
+    {
+      id: 'remove',
+      label: 'Remove',
+      icon: '-',
+      description: 'Remove wax from the brush.'
+    }
+  ],
+  settings: LAVA_LAMP_SETTINGS,
+  styleManifest: LAVA_LAMP_STYLE_MANIFEST,
+  attributions: [
+    {
+      label: 'WebGL Lava Lamp',
+      href: 'https://github.com/brybrant/lava-lamp',
+      author: 'Matt Bryant',
+      license: 'GPL-3.0'
+    }
+  ],
+  tutorialPages: [
+    {
+      icon: '+',
+      title: 'Add Warm Wax',
+      body: 'Tap or drag near the heater to add wax, heat nearby blobs, and lift them.'
+    },
+    {
+      icon: '-',
+      title: 'Remove Wax',
+      body: 'Switch to Remove and brush away nearby wax.'
+    },
+    {
+      icon: '\u25D6',
+      title: 'Thermal Cycle',
+      body: 'Wax heats at the bottom, rises, cools at the top, and falls through a slow coherent convection field.'
+    }
+  ],
+  physics: {
+    renderer: 'webgl2-density-metaballs-and-raymarch',
+    engine: 'dense-thermal-metaball-particles',
+    portability: 'reusable-core',
+    supportedShapes: [
+      'circle',
+      'metaball'
+    ],
+    reusableFor: [
+      'thermal buoyancy toys',
+      'screen-space liquid surfaces',
+      'density metaballs'
+    ],
+    caveats: [
+      'Thermal wax particles remain CPU-side while the visible connected surface and far-depth layer are GPU-rendered.'
+    ]
+  },
+  createPlugins: (options = {}) => [
+    createLavaLampPlugin(createLavaLampConfig(options.settings), options)
+  ]
+};

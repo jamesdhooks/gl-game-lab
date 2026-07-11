@@ -1,1 +1,29 @@
-import{describe,expect,it}from'vitest';import{ExperienceRegistry}from'@hooksjam/gl-game-lab-engine';import{createOrbitalShrapnelConfig,ORBITAL_SHRAPNEL_DEFAULTS,ORBITAL_SHRAPNEL_STYLE_MANIFEST,orbitalShrapnelDefinition}from'../index.js';describe('Space Debris',()=>{it('registers all orbital tools and maintained styles',()=>{const registry=new ExperienceRegistry().register(orbitalShrapnelDefinition);expect(registry.get('orbital-shrapnel').modes?.map(mode=>mode.id)).toEqual(['add','interact','well','asteroid']);expect(ORBITAL_SHRAPNEL_STYLE_MANIFEST.styles).toHaveLength(10);expect(orbitalShrapnelDefinition.tutorialPages).toHaveLength(5)});it('preserves orbital defaults and bounds',()=>{expect(createOrbitalShrapnelConfig()).toEqual(ORBITAL_SHRAPNEL_DEFAULTS);expect(createOrbitalShrapnelConfig({rawParticleTextureSize:'256',secondaryBodyCount:5})).toMatchObject({rawParticleTextureSize:'256',secondaryBodyCount:5});expect(()=>createOrbitalShrapnelConfig({gravity:100})).toThrow('outside its supported range')})});
+import { describe, expect, it } from 'vitest';
+import { ExperienceRegistry } from '@hooksjam/gl-game-lab-engine';
+import { createOrbitalShrapnelConfig, ORBITAL_SHRAPNEL_DEFAULTS, ORBITAL_SHRAPNEL_STYLE_MANIFEST, orbitalShrapnelDefinition } from '../index.js';
+describe('Space Debris', () => {
+  it('registers all orbital tools and maintained styles', () => {
+    const registry = new ExperienceRegistry().register(orbitalShrapnelDefinition);
+    expect(registry.get('orbital-shrapnel').modes?.map(mode => mode.id)).toEqual([
+      'add',
+      'interact',
+      'well',
+      'asteroid'
+    ]);
+    expect(ORBITAL_SHRAPNEL_STYLE_MANIFEST.styles).toHaveLength(10);
+    expect(orbitalShrapnelDefinition.tutorialPages).toHaveLength(5);
+  });
+  it('preserves orbital defaults and bounds', () => {
+    expect(createOrbitalShrapnelConfig()).toEqual(ORBITAL_SHRAPNEL_DEFAULTS);
+    expect(createOrbitalShrapnelConfig({
+      rawParticleTextureSize: '256',
+      secondaryBodyCount: 5
+    })).toMatchObject({
+      rawParticleTextureSize: '256',
+      secondaryBodyCount: 5
+    });
+    expect(() => createOrbitalShrapnelConfig({
+      gravity: 100
+    })).toThrow('outside its supported range');
+  });
+});

@@ -1,1 +1,46 @@
-import{describe,expect,it}from'vitest';import{ExperienceRegistry}from'@hooksjam/gl-game-lab-engine';import{createWaterTankConfig,WATER_TANK_DEFAULTS,WATER_TANK_STYLE_MANIFEST,WaterTankModel,waterTankDefinition}from'../index.js';describe('Water Tank',()=>{it('registers pour, splash, build, ten styles, and attribution',()=>{const definition=new ExperienceRegistry().register(waterTankDefinition).get('water-tank');expect(definition.modes?.map(mode=>mode.id)).toEqual(['pour','splash','build']);expect(WATER_TANK_STYLE_MANIFEST.styles).toHaveLength(10);expect(definition.attributions?.[0]?.author).toBe('Eric Arnebäck')});it('pours particles and packs reusable obstacles',()=>{const model=new WaterTankModel(),config=createWaterTankConfig(),tuning={maxParticles:Number(config.maxParticles),particleRadius:Number(config.particleRadius),gravity:Number(config.gravity),viscosity:Number(config.viscosity),viscositySigma:Number(config.viscositySigma),viscosityBeta:Number(config.viscosityBeta),supportRadiusScale:Number(config.supportRadiusScale),restDensity:Number(config.restDensity),stiffness:Number(config.stiffness),nearStiffness:Number(config.nearStiffness),neighborPairBudget:Number(config.neighborPairBudget),surfaceTension:Number(config.surfaceTension),collisionBounce:Number(config.collisionBounce),maxFluidSpeed:Number(config.maxFluidSpeed),substeps:Number(config.substeps)};model.reset(800,600,tuning,42);expect(model.pour(400,50,64,20)).toBe(64);model.addCircle(200,300,18);model.addSegment(300,300,500,340,18);expect(model.packPegs().count).toBe(1);expect(model.packSegments().count).toBe(1)});it('preserves maintained settings and pair-budget bounds',()=>{expect(createWaterTankConfig()).toEqual(WATER_TANK_DEFAULTS);expect(()=>createWaterTankConfig({neighborPairBudget:100})).toThrow('outside its supported range')})});
+import { describe, expect, it } from 'vitest';
+import { ExperienceRegistry } from '@hooksjam/gl-game-lab-engine';
+import { createWaterTankConfig, WATER_TANK_DEFAULTS, WATER_TANK_STYLE_MANIFEST, WaterTankModel, waterTankDefinition } from '../index.js';
+describe('Water Tank', () => {
+  it('registers pour, splash, build, ten styles, and attribution', () => {
+    const definition = new ExperienceRegistry().register(waterTankDefinition).get('water-tank');
+    expect(definition.modes?.map(mode => mode.id)).toEqual([
+      'pour',
+      'splash',
+      'build'
+    ]);
+    expect(WATER_TANK_STYLE_MANIFEST.styles).toHaveLength(10);
+    expect(definition.attributions?.[0]?.author).toBe('Eric Arneb\u00E4ck');
+  });
+  it('pours particles and packs reusable obstacles', () => {
+    const model = new WaterTankModel(), config = createWaterTankConfig(), tuning = {
+      maxParticles: Number(config.maxParticles),
+      particleRadius: Number(config.particleRadius),
+      gravity: Number(config.gravity),
+      viscosity: Number(config.viscosity),
+      viscositySigma: Number(config.viscositySigma),
+      viscosityBeta: Number(config.viscosityBeta),
+      supportRadiusScale: Number(config.supportRadiusScale),
+      restDensity: Number(config.restDensity),
+      stiffness: Number(config.stiffness),
+      nearStiffness: Number(config.nearStiffness),
+      neighborPairBudget: Number(config.neighborPairBudget),
+      surfaceTension: Number(config.surfaceTension),
+      collisionBounce: Number(config.collisionBounce),
+      maxFluidSpeed: Number(config.maxFluidSpeed),
+      substeps: Number(config.substeps)
+    };
+    model.reset(800, 600, tuning, 42);
+    expect(model.pour(400, 50, 64, 20)).toBe(64);
+    model.addCircle(200, 300, 18);
+    model.addSegment(300, 300, 500, 340, 18);
+    expect(model.packPegs().count).toBe(1);
+    expect(model.packSegments().count).toBe(1);
+  });
+  it('preserves maintained settings and pair-budget bounds', () => {
+    expect(createWaterTankConfig()).toEqual(WATER_TANK_DEFAULTS);
+    expect(() => createWaterTankConfig({
+      neighborPairBudget: 100
+    })).toThrow('outside its supported range');
+  });
+});

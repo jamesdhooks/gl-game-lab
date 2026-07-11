@@ -1,4 +1,116 @@
-import type{ExperienceStyleManifest}from'@hooksjam/gl-game-lab-engine';
-export const ORBITAL_SHRAPNEL_STYLE_MANIFEST:ExperienceStyleManifest=Object.freeze({defaultStyleId:'realistic',renderLayers:['particles','trails','glow','debug'],passes:['trailFeedback','paletteMap','edgeGlow','bloom','shockwave','chromaticAberration','distortion'],qualities:['raw'],styles:[
-s('realistic','Realistic','Natural Earth shading with restrained orbital debris.',[132364,992064,2977699,13228260,16777215],132364),s('ice-ring','Ice Ring','Cold blue debris and pale dust trails over a deep orbital void.',[133143,1389663,3783423,12186879,16777215],67347),s('solar-debris','Solar Debris','Amber-hot asteroid shards shedding ember trails around a radiant core.',[1443588,6166278,16739096,16765286,16777183],1181188),s('black-hole-lens','Black Hole Lens','Violet and acid-green fragments bending into a high-contrast gravity lens.',[131334,1641279,8072447,3538845,16318450],131334),s('ink-paper','Ink on Paper','Black inky orbital trails bleeding across a warm white paper field.',[16249576,3156000,657414,0,7035724],16052194),s('radioactive-aurora','Radioactive Aurora','Toxic green, cyan, and yellow particles with electric aurora trails.',[201226,1507178,10354432,2881791,16777077],198663),s('blood-moon','Blood Moon','Deep crimson debris, hot rose trails, and burnt-orange orbital glow.',[590082,3999506,12848949,16738877,16765345],590082),s('kuiper-dust','Kuiper Dust','Dim amber dust and cold blue orbital ice.',[9684477,16708551,16096779,6583435],132631),s('ion-storm','Ion Storm','Electric cyan and violet debris in a charged plasma field.',[2282478,9133302,15772668,16777215],328986),s('rust-belt','Rust Belt','Oxidized copper fragments and dusty red orbital trails.',[8138002,15357964,16498468,1357990],591107)]});
-export function orbitalColor3(color:number):readonly[number,number,number]{return[((color>>>16)&255)/255,((color>>>8)&255)/255,(color&255)/255]}function s(id:string,name:string,description:string,palette:readonly number[],background:number){return Object.freeze({id,name,description,palette:Object.freeze(palette),background,passes:Object.freeze(['trailFeedback','paletteMap','bloom'])})}
+import type { ExperienceStyleManifest } from '@hooksjam/gl-game-lab-engine';
+export const ORBITAL_SHRAPNEL_STYLE_MANIFEST: ExperienceStyleManifest = Object.freeze({
+  defaultStyleId: 'realistic',
+  renderLayers: [
+    'particles',
+    'trails',
+    'glow',
+    'debug'
+  ],
+  passes: [
+    'trailFeedback',
+    'paletteMap',
+    'edgeGlow',
+    'bloom',
+    'shockwave',
+    'chromaticAberration',
+    'distortion'
+  ],
+  qualities: [
+    'raw'
+  ],
+  styles: [
+    s('realistic', 'Realistic', 'Natural Earth shading with restrained orbital debris.', [
+      132364,
+      992064,
+      2977699,
+      13228260,
+      16777215
+    ], 132364),
+    s('ice-ring', 'Ice Ring', 'Cold blue debris and pale dust trails over a deep orbital void.', [
+      133143,
+      1389663,
+      3783423,
+      12186879,
+      16777215
+    ], 67347),
+    s('solar-debris', 'Solar Debris', 'Amber-hot asteroid shards shedding ember trails around a radiant core.', [
+      1443588,
+      6166278,
+      16739096,
+      16765286,
+      16777183
+    ], 1181188),
+    s('black-hole-lens', 'Black Hole Lens', 'Violet and acid-green fragments bending into a high-contrast gravity lens.', [
+      131334,
+      1641279,
+      8072447,
+      3538845,
+      16318450
+    ], 131334),
+    s('ink-paper', 'Ink on Paper', 'Black inky orbital trails bleeding across a warm white paper field.', [
+      16249576,
+      3156000,
+      657414,
+      0,
+      7035724
+    ], 16052194),
+    s('radioactive-aurora', 'Radioactive Aurora', 'Toxic green, cyan, and yellow particles with electric aurora trails.', [
+      201226,
+      1507178,
+      10354432,
+      2881791,
+      16777077
+    ], 198663),
+    s('blood-moon', 'Blood Moon', 'Deep crimson debris, hot rose trails, and burnt-orange orbital glow.', [
+      590082,
+      3999506,
+      12848949,
+      16738877,
+      16765345
+    ], 590082),
+    s('kuiper-dust', 'Kuiper Dust', 'Dim amber dust and cold blue orbital ice.', [
+      9684477,
+      16708551,
+      16096779,
+      6583435
+    ], 132631),
+    s('ion-storm', 'Ion Storm', 'Electric cyan and violet debris in a charged plasma field.', [
+      2282478,
+      9133302,
+      15772668,
+      16777215
+    ], 328986),
+    s('rust-belt', 'Rust Belt', 'Oxidized copper fragments and dusty red orbital trails.', [
+      8138002,
+      15357964,
+      16498468,
+      1357990
+    ], 591107)
+  ]
+});
+export function orbitalColor3(color: number): readonly [
+  number,
+  number,
+  number
+] {
+  return [
+    ((color >>> 16) & 255) / 255,
+    ((color >>> 8) & 255) / 255,
+    (color & 255) / 255
+  ];
+}
+function s(id: string, name: string, description: string, palette: readonly number[], background: number) {
+  return Object.freeze({
+    id,
+    name,
+    description,
+    palette: Object.freeze(palette),
+    background,
+    passes: Object.freeze([
+      'trailFeedback',
+      'paletteMap',
+      'bloom'
+    ])
+  });
+}

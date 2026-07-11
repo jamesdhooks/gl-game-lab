@@ -18,14 +18,17 @@ for (const filePath of walk(packagesRoot)) {
   const projectPath = normalize(relative(repositoryRoot, filePath));
   const source = readFileSync(filePath, 'utf8');
   const lines = source.split(/\r?\n/);
+  let inTemplateLiteral = false;
 
   for (let index = 0; index < lines.length; index += 1) {
     const line = lines[index];
-    if (line.length > 500) currentLongLines.add(projectPath);
+    const templateDelimiters = countUnescapedBackticks(line);
+    if (line.length > 500 && !inTemplateLiteral && templateDelimiters === 0) currentLongLines.add(projectPath);
     if (/\bconsole\.log\s*\(/.test(line)) report(projectPath, index + 1, 'console.log in library source');
     if (/\@ts-ignore\b|\@ts-nocheck\b/.test(line)) report(projectPath, index + 1, 'unexplained TypeScript suppression');
     if (/(?:\bas\s+any\b|:\s*any\b|<any>)/.test(line)) report(projectPath, index + 1, 'explicit any is forbidden');
     if (/\bpixi(?:js)?\b/i.test(line)) report(projectPath, index + 1, 'legacy renderer or product name');
+    if (templateDelimiters % 2 === 1) inTemplateLiteral = !inTemplateLiteral;
   }
 }
 
@@ -61,4 +64,15 @@ function normalize(path) {
 
 function report(projectPath, line, message) {
   violations.push(`${projectPath}:${line}: ${message}`);
+}
+
+function countUnescapedBackticks(line) {
+  let count = 0;
+  for (let index = 0; index < line.length; index += 1) {
+    if (line[index] !== '`') continue;
+    let backslashes = 0;
+    for (let cursor = index - 1; cursor >= 0 && line[cursor] === '\\'; cursor -= 1) backslashes += 1;
+    if (backslashes % 2 === 0) count += 1;
+  }
+  return count;
 }

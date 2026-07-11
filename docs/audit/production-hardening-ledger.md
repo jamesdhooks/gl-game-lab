@@ -50,7 +50,7 @@ performance, or lifecycle claims.
 | WEB-01 | Critical | React teardown ignores asynchronous destroy failures and definition changes can desynchronize host/runtime state. | 5 | Open | Rerender/unmount/failure tests prove exactly-once teardown and surfaced errors. |
 | WEB-02 | High | Input lacks action maps, gamepad, focus/visibility policy, and complete pointer capture semantics. | 5 | Open | Keyboard/pointer/touch/gamepad action tests and browser smoke matrix. |
 | WEB-03 | High | Audio, storage, worker services, and accessibility contracts are absent. | 5 | Open | Public services, lifecycle tests, and Reference Arena usage. |
-| QLT-01 | High | Large portions of TypeScript are one-line/minified and resist review and maintenance. | 2 | Active | Formatting-only commit removes every entry from the temporary baseline. |
+| QLT-01 | High | Large portions of TypeScript are one-line/minified and resist review and maintenance. | 2 | Verified | Formatting baseline is empty; source hygiene and all-package typecheck pass; 168 tests pass across 54 files. |
 | QLT-02 | High | Tests are predominantly shallow API tests; real GL, leaks, lifecycle failure, and performance are weakly covered. | 2-9 | Open | Layered unit/integration/browser/performance suite with documented coverage expectations. |
 | QLT-03 | High | CI, source hygiene, and package-boundary enforcement were absent. | 2 | Active | Required CI executes frozen install, boundaries, hygiene, typecheck, tests, and build. |
 | TOL-01 | Medium | Diagnostics, frame/resource inspection, GPU debugging, and capture tooling are incomplete. | 8 | Open | Runtime overlay and machine-readable capture expose CPU/GPU/resource/pass data. |

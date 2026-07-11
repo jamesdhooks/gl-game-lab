@@ -1,1 +1,113 @@
-import type{ExperienceStyle,ExperienceStyleManifest}from'@hooksjam/gl-game-lab-engine';export const SPLASH_MPM_STYLE_MANIFEST:ExperienceStyleManifest={defaultStyleId:'clear-splash',renderLayers:['particles','density','obstacles'],passes:['primitive','densityMetaball','bloom'],qualities:['raw'],styles:[s('clear-splash','Clear Splash',[0x03141f,0x008fd8,0xcdf7ff,0xffffff],0x020812),s('moon-pool','Moon Pool',[0x07111f,0x5b7cfa,0xdbeafe,0x67e8f9],0x010314),s('green-glass','Green Glass',[0x03120a,0x14b86a,0xd9f99d,0xf0fdfa],0x020806),s('rose-fountain','Rose Fountain',[0x18050b,0xfb7185,0xffe4e6,0xffffff],0x080206),s('ink-depth','Ink Depth',[0xf8fafc,0x334155,0xdbeafe,0x0ea5e9],0xf8fafc),s('storm-surge','Storm Surge',[0x020617,0x475569,0xe2e8f0,0x38bdf8],0x010309),s('amber-fizz','Amber Fizz',[0x1c0f05,0xf59e0b,0xffedd5,0xffffff],0x070301),s('violet-current','Violet Current',[0x130722,0x8b5cf6,0xf0abfc,0xffffff],0x05020c),s('arctic-glow','Arctic Glow',[0xecfeff,0x06b6d4,0xa7f3d0,0xffffff],0xeefcff),s('toxic-lagoon','Toxic Lagoon',[0x061307,0x84cc16,0x22d3ee,0xfef08a],0x020702)]};function s(id:string,name:string,palette:readonly number[],background:number):ExperienceStyle{return{id,name,description:`${name} particle-grid water treatment.`,palette,background,passes:['densityMetaball']}}export function splashRgb(n:number):readonly[number,number,number]{return[((n>>16)&255)/255,((n>>8)&255)/255,(n&255)/255]}export function splashRgba(n:number):readonly[number,number,number,number]{return[...splashRgb(n),1]}
+import type { ExperienceStyle, ExperienceStyleManifest } from '@hooksjam/gl-game-lab-engine';
+export const SPLASH_MPM_STYLE_MANIFEST: ExperienceStyleManifest = {
+  defaultStyleId: 'clear-splash',
+  renderLayers: [
+    'particles',
+    'density',
+    'obstacles'
+  ],
+  passes: [
+    'primitive',
+    'densityMetaball',
+    'bloom'
+  ],
+  qualities: [
+    'raw'
+  ],
+  styles: [
+    s('clear-splash', 'Clear Splash', [
+      201759,
+      36824,
+      13498367,
+      16777215
+    ], 133138),
+    s('moon-pool', 'Moon Pool', [
+      463135,
+      5995770,
+      14412542,
+      6809849
+    ], 66324),
+    s('green-glass', 'Green Glass', [
+      201226,
+      1357930,
+      14285213,
+      15793658
+    ], 133126),
+    s('rose-fountain', 'Rose Fountain', [
+      1574155,
+      16478597,
+      16770278,
+      16777215
+    ], 524806),
+    s('ink-depth', 'Ink Depth', [
+      16317180,
+      3359061,
+      14412542,
+      959977
+    ], 16317180),
+    s('storm-surge', 'Storm Surge', [
+      132631,
+      4674921,
+      14870768,
+      3718648
+    ], 66313),
+    s('amber-fizz', 'Amber Fizz', [
+      1838853,
+      16096779,
+      16772565,
+      16777215
+    ], 459521),
+    s('violet-current', 'Violet Current', [
+      1247010,
+      9133302,
+      15772668,
+      16777215
+    ], 328204),
+    s('arctic-glow', 'Arctic Glow', [
+      15531775,
+      440020,
+      11006928,
+      16777215
+    ], 15662335),
+    s('toxic-lagoon', 'Toxic Lagoon', [
+      398087,
+      8702998,
+      2282478,
+      16707722
+    ], 132866)
+  ]
+};
+function s(id: string, name: string, palette: readonly number[], background: number): ExperienceStyle {
+  return {
+    id,
+    name,
+    description: `${name} particle-grid water treatment.`,
+    palette,
+    background,
+    passes: [
+      'densityMetaball'
+    ]
+  };
+}
+export function splashRgb(n: number): readonly [
+  number,
+  number,
+  number
+] {
+  return [
+    ((n >> 16) & 255) / 255,
+    ((n >> 8) & 255) / 255,
+    (n & 255) / 255
+  ];
+}
+export function splashRgba(n: number): readonly [
+  number,
+  number,
+  number,
+  number
+] {
+  return [
+    ...splashRgb(n),
+    1
+  ];
+}

@@ -1,4 +1,47 @@
-import{createGpuDoubleRenderTarget,type GpuDoubleRenderTarget,type GpuTexturePrecision}from'./GpuRenderTarget.js';
-export interface GpuFieldStateOptions{readonly width:number;readonly height:number;readonly precision?:GpuTexturePrecision;readonly filter?:'nearest'|'linear'}
-export class GpuFieldState{readonly width:number;readonly height:number;readonly targets:GpuDoubleRenderTarget;private disposed=false;constructor(readonly gl:WebGL2RenderingContext,options:GpuFieldStateOptions){this.width=dimension(options.width,'GPU field width');this.height=dimension(options.height,'GPU field height');this.targets=createGpuDoubleRenderTarget(gl,{width:this.width,height:this.height,precision:options.precision??'half-float',filter:options.filter??'linear'});this.targets.clear()}clear():void{this.assertUsable();this.targets.clear()}swap():void{this.assertUsable();this.targets.swap()}dispose():void{if(this.disposed)return;this.disposed=true;this.targets.dispose()}private assertUsable():void{if(this.disposed)throw new Error('GPU field state has been disposed')}}
-function dimension(value:number,label:string):number{if(!Number.isSafeInteger(value)||value<1)throw new Error(`${label} must be a positive integer`);return value}
+import { createGpuDoubleRenderTarget, type GpuDoubleRenderTarget, type GpuTexturePrecision } from './GpuRenderTarget.js';
+export interface GpuFieldStateOptions {
+  readonly width: number;
+  readonly height: number;
+  readonly precision?: GpuTexturePrecision;
+  readonly filter?: 'nearest' | 'linear';
+}
+export class GpuFieldState {
+  readonly width: number;
+  readonly height: number;
+  readonly targets: GpuDoubleRenderTarget;
+  private disposed = false;
+  constructor(readonly gl: WebGL2RenderingContext, options: GpuFieldStateOptions) {
+    this.width = dimension(options.width, 'GPU field width');
+    this.height = dimension(options.height, 'GPU field height');
+    this.targets = createGpuDoubleRenderTarget(gl, {
+      width: this.width,
+      height: this.height,
+      precision: options.precision ?? 'half-float',
+      filter: options.filter ?? 'linear'
+    });
+    this.targets.clear();
+  }
+  clear(): void {
+    this.assertUsable();
+    this.targets.clear();
+  }
+  swap(): void {
+    this.assertUsable();
+    this.targets.swap();
+  }
+  dispose(): void {
+    if (this.disposed)
+      return;
+    this.disposed = true;
+    this.targets.dispose();
+  }
+  private assertUsable(): void {
+    if (this.disposed)
+      throw new Error('GPU field state has been disposed');
+  }
+}
+function dimension(value: number, label: string): number {
+  if (!Number.isSafeInteger(value) || value < 1)
+    throw new Error(`${label} must be a positive integer`);
+  return value;
+}

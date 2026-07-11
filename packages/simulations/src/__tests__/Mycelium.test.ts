@@ -1,1 +1,28 @@
-import{describe,expect,it}from'vitest';import{ExperienceRegistry}from'@hooksjam/gl-game-lab-engine';import{createMyceliumConfig,MYCELIUM_DEFAULTS,MYCELIUM_SETTINGS,MYCELIUM_STYLE_MANIFEST,myceliumDefinition}from'../index.js';describe('Mycelium',()=>{it('registers its cellular field contract',()=>{const registry=new ExperienceRegistry().register(myceliumDefinition);expect(registry.get('mycelium').modes?.map(mode=>mode.id)).toEqual(['paint']);expect(MYCELIUM_STYLE_MANIFEST.styles).toHaveLength(10);expect(MYCELIUM_SETTINGS).toHaveLength(17)});it('preserves growth defaults and topology controls',()=>{expect(createMyceliumConfig()).toEqual(MYCELIUM_DEFAULTS);expect(createMyceliumConfig({topology:'square',renderStyle:'bloom',resolution:512})).toMatchObject({topology:'square',renderStyle:'bloom',resolution:512});expect(()=>createMyceliumConfig({growthRate:20})).toThrow('outside its supported range')})});
+import { describe, expect, it } from 'vitest';
+import { ExperienceRegistry } from '@hooksjam/gl-game-lab-engine';
+import { createMyceliumConfig, MYCELIUM_DEFAULTS, MYCELIUM_SETTINGS, MYCELIUM_STYLE_MANIFEST, myceliumDefinition } from '../index.js';
+describe('Mycelium', () => {
+  it('registers its cellular field contract', () => {
+    const registry = new ExperienceRegistry().register(myceliumDefinition);
+    expect(registry.get('mycelium').modes?.map(mode => mode.id)).toEqual([
+      'paint'
+    ]);
+    expect(MYCELIUM_STYLE_MANIFEST.styles).toHaveLength(10);
+    expect(MYCELIUM_SETTINGS).toHaveLength(17);
+  });
+  it('preserves growth defaults and topology controls', () => {
+    expect(createMyceliumConfig()).toEqual(MYCELIUM_DEFAULTS);
+    expect(createMyceliumConfig({
+      topology: 'square',
+      renderStyle: 'bloom',
+      resolution: 512
+    })).toMatchObject({
+      topology: 'square',
+      renderStyle: 'bloom',
+      resolution: 512
+    });
+    expect(() => createMyceliumConfig({
+      growthRate: 20
+    })).toThrow('outside its supported range');
+  });
+});
