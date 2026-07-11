@@ -29,7 +29,7 @@ import {
 describe('Ball Pit experience', () => {
   it('preserves the frozen identity, modes, settings, and defaults', () => {
     expect(GAME_REGISTRY.get('ball-pit')).toBe(ballPitDefinition);
-    expect(ballPitDefinition.kind).toBe('simulation');
+    expect(ballPitDefinition.kind).toBe('game');
     expect(ballPitDefinition.modes?.map(({ id }) => id)).toEqual(['single', 'stream', 'interact', 'explosion']);
     expect(ballPitDefinition.settings).toHaveLength(17);
     expect(BALL_PIT_SETTINGS.map((setting) => [
