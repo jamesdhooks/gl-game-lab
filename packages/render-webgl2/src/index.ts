@@ -1,4 +1,10 @@
 export {
+  TrailFeedbackRenderer,
+  normalizeTrailFeedbackOptions,
+  type NormalizedTrailFeedbackOptions,
+  type TrailFeedbackOptions,
+} from './TrailFeedbackRenderer.js';
+export {
   GpuParticleRenderer,
   type GpuParticleRenderDestination,
   type GpuParticleRendererOptions,
