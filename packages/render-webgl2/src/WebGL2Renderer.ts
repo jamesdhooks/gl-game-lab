@@ -31,10 +31,9 @@ import {
   SpriteRenderer,
   buildSpriteDrawPlan,
   createSpriteCamera2D,
-  type SpriteTexture,
   type SpriteDrawPlan,
 } from './SpriteRenderer.js';
-import { WebGL2Device, type WebGL2DeviceOptions, type WebGLTextureResource } from './WebGL2Device.js';
+import { WebGL2Device, type WebGL2DeviceOptions } from './WebGL2Device.js';
 import { ParticlePointRenderer, ParticlePointRenderQueue, type ParticlePointDrawPlan } from './ParticlePointRenderer.js';
 import {
   BloomPostProcess,
@@ -59,6 +58,7 @@ import { WebGLGpu2DService } from './WebGLGpu2DService.js';
 import { SpriteRenderQueue } from './SpriteRenderQueue.js';
 import { WebGLFluidField2D } from './WebGLFluidField2D.js';
 import { metaballUploadBytes, segmentUploadBytes, triangleMeshUploadBytes } from './UploadAccounting.js';
+import { ManagedRender2DResources } from './ManagedRender2DResources.js';
 
 export interface WebGL2RendererOptions {
   readonly device?: WebGL2DeviceOptions;
@@ -73,12 +73,6 @@ const WEBGL2_CAPABILITIES: RenderBackendCapabilities = Object.freeze({
   instancing: true,
 });
 
-interface ManagedTexture2D {
-  readonly handle: Texture2DHandle;
-  readonly resource: WebGLTextureResource;
-  readonly spriteTexture: SpriteTexture;
-}
-
 export interface ContextCycleDiagnostics {
   readonly strategy: 'driver' | 'registry';
   readonly generationBefore: number;
@@ -87,11 +81,6 @@ export interface ContextCycleDiagnostics {
   readonly resourcesAfter: number;
   readonly bytesBefore: number;
   readonly bytesAfter: number;
-}
-
-interface ManagedBitmapFont2D {
-  readonly handle: BitmapFont2DHandle;
-  readonly texture: Texture2DHandle;
 }
 
 export class WebGL2Renderer implements RenderBackend, Render2DService {
@@ -121,8 +110,7 @@ export class WebGL2Renderer implements RenderBackend, Render2DService {
   private pixelRatio = 1;
   private readonly unregisterContextResource: () => void;
   private readonly unregisterGpuTimer: () => void;
-  private readonly textures2D = new Map<string, ManagedTexture2D>();
-  private readonly fonts2D = new Map<string, ManagedBitmapFont2D>();
+  private readonly resources2D: ManagedRender2DResources;
   private readonly fluidFields = new Set<WebGLFluidField2D>();
   private fluidFieldId = 0;
   private pendingBufferUploadBytes = 0;
@@ -156,6 +144,11 @@ export class WebGL2Renderer implements RenderBackend, Render2DService {
     this.logicalWidth = width;
     this.logicalHeight = height;
     this.sprites = new SpriteRenderQueue(width, height);
+    this.resources2D = new ManagedRender2DResources(
+      this.device,
+      this.sprites,
+      (bytes) => { this.pendingTextureUploadBytes += bytes; },
+    );
     this.particles = new ParticlePointRenderQueue();
     this.effects = new FullscreenEffectRenderQueue();
     this.gpuPasses = new GpuRenderPassQueue();
@@ -331,99 +324,39 @@ export class WebGL2Renderer implements RenderBackend, Render2DService {
 
   createRgbaTexture(id: string, width: number, height: number, pixels: Uint8Array): Texture2DHandle {
     this.assertUsable();
-    const normalizedId = id.trim();
-    if (normalizedId.length === 0) throw new Error('2D texture id cannot be empty');
-    if (this.textures2D.has(normalizedId)) throw new Error(`2D texture id is already registered: ${normalizedId}`);
-    const resource = this.device.createTextureFromRgbaPixels(pixels, { width, height });
-    this.pendingTextureUploadBytes += pixels.byteLength;
-    const handle = Object.freeze({ id: normalizedId, width, height });
-    const spriteTexture: SpriteTexture = {
-      id: normalizedId,
-      get texture() { return resource.texture; },
-    };
-    this.textures2D.set(normalizedId, { handle, resource, spriteTexture });
-    return handle;
+    return this.resources2D.createTexture(id, width, height, pixels);
   }
 
   destroyTexture(texture: Texture2DHandle): void {
-    const managed = this.textures2D.get(texture.id);
-    if (!managed || managed.handle !== texture) return;
-    managed.resource.dispose();
-    this.textures2D.delete(texture.id);
+    this.resources2D.destroyTexture(texture);
   }
 
-  hasTexture(id: string): boolean { return this.textures2D.has(id); }
+  hasTexture(id: string): boolean { return this.resources2D.hasTexture(id); }
 
   texture(id: string): Texture2DHandle {
-    const texture = this.textures2D.get(id)?.handle;
-    if (!texture) throw new Error(`2D texture is not registered: ${id}`);
-    return texture;
+    return this.resources2D.texture(id);
   }
 
   createBitmapFont(id: string, characters: string, columns: number, glyphWidth: number, glyphHeight: number, pixels: Uint8Array): BitmapFont2DHandle {
-    const normalizedId = id.trim();
-    if (normalizedId.length === 0) throw new Error('Bitmap font id cannot be empty');
-    if (this.fonts2D.has(normalizedId)) throw new Error(`Bitmap font id is already registered: ${normalizedId}`);
-    if (new Set(characters).size !== characters.length || characters.length === 0) throw new Error('Bitmap font characters must be unique and non-empty');
-    if (!Number.isSafeInteger(columns) || columns < 1 || !Number.isSafeInteger(glyphWidth) || glyphWidth < 1 || !Number.isSafeInteger(glyphHeight) || glyphHeight < 1) {
-      throw new Error('Bitmap font grid dimensions must be positive integers');
-    }
-    const rows = Math.ceil(characters.length / columns);
-    const texture = this.createRgbaTexture(`${normalizedId}.atlas`, columns * glyphWidth, rows * glyphHeight, pixels);
-    const handle = Object.freeze({ id: normalizedId, characters, columns, glyphWidth, glyphHeight, lineHeight: glyphHeight });
-    this.fonts2D.set(normalizedId, { handle, texture });
-    return handle;
+    return this.resources2D.createFont(id, characters, columns, glyphWidth, glyphHeight, pixels);
   }
 
   destroyBitmapFont(font: BitmapFont2DHandle): void {
-    const managed = this.fonts2D.get(font.id);
-    if (!managed || managed.handle !== font) return;
-    this.destroyTexture(managed.texture);
-    this.fonts2D.delete(font.id);
+    this.resources2D.destroyFont(font);
   }
 
-  hasBitmapFont(id: string): boolean { return this.fonts2D.has(id); }
+  hasBitmapFont(id: string): boolean { return this.resources2D.hasFont(id); }
 
   bitmapFont(id: string): BitmapFont2DHandle {
-    const font = this.fonts2D.get(id)?.handle;
-    if (!font) throw new Error(`Bitmap font is not registered: ${id}`);
-    return font;
+    return this.resources2D.font(id);
   }
 
   submit(sprite: Sprite2DDraw): void {
-    const texture = this.textures2D.get(sprite.texture.id);
-    if (!texture || texture.handle !== sprite.texture) {
-      throw new Error(`2D texture handle is not owned by this renderer: ${sprite.texture.id}`);
-    }
-    this.sprites.submit({ ...sprite, texture: texture.spriteTexture });
+    this.resources2D.submit(sprite);
   }
 
   submitText(draw: Text2DDraw): void {
-    const managed = this.fonts2D.get(draw.font.id);
-    if (!managed || managed.handle !== draw.font) throw new Error(`Bitmap font handle is not owned by this renderer: ${draw.font.id}`);
-    const rows = Math.ceil(draw.font.characters.length / draw.font.columns);
-    const scale = draw.size / draw.font.glyphHeight;
-    const advance = draw.font.glyphWidth * scale;
-    draw.text.split('\n').forEach((line, lineIndex) => {
-      const offset = draw.align === 'center' ? -line.length * advance * 0.5 : draw.align === 'right' ? -line.length * advance : 0;
-      [...line.toUpperCase()].forEach((character, glyphIndex) => {
-        const index = Math.max(0, draw.font.characters.indexOf(character) >= 0 ? draw.font.characters.indexOf(character) : draw.font.characters.indexOf('?'));
-        const column = index % draw.font.columns;
-        const row = Math.floor(index / draw.font.columns);
-        this.submit({
-          texture: managed.texture,
-          x: draw.x + offset + glyphIndex * advance,
-          y: draw.y + lineIndex * draw.font.lineHeight * scale,
-          width: advance,
-          height: draw.font.glyphHeight * scale,
-          anchorX: 0,
-          anchorY: 0,
-          ...(draw.color ? { tint: draw.color } : {}),
-          uv: [column / draw.font.columns, row / rows, (column + 1) / draw.font.columns, (row + 1) / rows],
-          ...(draw.zIndex === undefined ? {} : { zIndex: draw.zIndex }),
-        });
-      });
-    });
+    this.resources2D.submitText(draw);
   }
 
   submitParticles(batch: ParticleBatch2D): void {
@@ -552,10 +485,7 @@ export class WebGL2Renderer implements RenderBackend, Render2DService {
     this.gpu2D.destroy();
     for (const field of [...this.fluidFields]) field.dispose();
     this.fluidFields.clear();
-    for (const font of [...this.fonts2D.values()]) this.destroyBitmapFont(font.handle);
-    this.fonts2D.clear();
-    for (const texture of this.textures2D.values()) texture.resource.dispose();
-    this.textures2D.clear();
+    this.resources2D.destroy();
     this.effectRenderer.destroy();
     this.segmentRenderer.dispose();
     this.meshRenderer.dispose();
