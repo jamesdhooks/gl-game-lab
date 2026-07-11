@@ -98,4 +98,37 @@ describe('World', () => {
 
     expect(() => world.insert(entity, Duplicate, 1)).toThrow('already registered');
   });
+
+  it('validates spawn entries before allocating an entity', () => {
+    const world = new World();
+
+    expect(() => world.spawn([
+      { type: Position, value: { x: 1, y: 2 } },
+      { type: Position, value: { x: 3, y: 4 } },
+    ])).toThrow('more than once');
+    expect(world.entityCount).toBe(0);
+
+    const entity = world.spawn();
+    expect(entity.index).toBe(0);
+  });
+
+  it('finishes despawning when listeners fail and rejects reentrant despawn', () => {
+    const world = new World();
+    const entity = world.spawn([{ type: Label, value: 'target' }]);
+    const calls: string[] = [];
+    world.onBeforeDespawn((currentWorld, currentEntity) => {
+      calls.push('reentrant');
+      currentWorld.despawn(currentEntity);
+    });
+    world.onBeforeDespawn(() => {
+      calls.push('failing');
+      throw new Error('listener failed');
+    });
+    world.onBeforeDespawn(() => { calls.push('final'); });
+
+    expect(() => world.despawn(entity)).toThrow(AggregateError);
+    expect(calls).toEqual(['reentrant', 'failing', 'final']);
+    expect(world.isAlive(entity)).toBe(false);
+    expect(world.entityCount).toBe(0);
+  });
 });

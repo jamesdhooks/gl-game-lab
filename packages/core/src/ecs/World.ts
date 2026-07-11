@@ -38,6 +38,7 @@ export class World {
   private queryDepth = 0;
   private structuralLockDepth = 0;
   private livingCount = 0;
+  private readonly despawningIndices = new Set<number>();
   private readonly beforeDespawnListeners = new Set<(world: World, entity: Entity) => void>();
 
   get entityCount(): number {
@@ -46,6 +47,7 @@ export class World {
 
   spawn(entries: readonly ComponentEntry<unknown>[] = []): Entity {
     this.assertStructurallyMutable();
+    this.validateSpawnEntries(entries);
     const recycledIndex = this.freeIndices.pop();
     const index = recycledIndex ?? this.generations.length;
     if (recycledIndex === undefined) this.generations.push(0);
@@ -59,12 +61,36 @@ export class World {
   despawn(entity: Entity): void {
     this.assertStructurallyMutable();
     this.assertAlive(entity);
-    for (const listener of this.beforeDespawnListeners) listener(this, entity);
-    for (const storage of this.storages.values()) storage.values.delete(entity.index);
-    this.alive[entity.index] = false;
-    this.generations[entity.index] = entity.generation + 1;
-    this.freeIndices.push(entity.index);
-    this.livingCount -= 1;
+    if (this.despawningIndices.has(entity.index)) {
+      throw new WorldMutationError(`Entity is already being despawned: ${formatEntity(entity)}`);
+    }
+    const nextGeneration = entity.generation + 1;
+    if (!Number.isSafeInteger(nextGeneration)) {
+      throw new Error(`Entity generation overflow: ${formatEntity(entity)}`);
+    }
+
+    const listenerFailures: unknown[] = [];
+    this.despawningIndices.add(entity.index);
+    try {
+      for (const listener of this.beforeDespawnListeners) {
+        try {
+          listener(this, entity);
+        } catch (error) {
+          listenerFailures.push(error);
+        }
+      }
+      for (const storage of this.storages.values()) storage.values.delete(entity.index);
+      this.alive[entity.index] = false;
+      this.generations[entity.index] = nextGeneration;
+      this.freeIndices.push(entity.index);
+      this.livingCount -= 1;
+    } finally {
+      this.despawningIndices.delete(entity.index);
+    }
+    if (listenerFailures.length === 1) throw listenerFailures[0];
+    if (listenerFailures.length > 1) {
+      throw new AggregateError(listenerFailures, `Entity ${formatEntity(entity)} despawn listeners failed`);
+    }
   }
 
   isAlive(entity: Entity): boolean {
@@ -167,6 +193,22 @@ export class World {
 
   private insertUnknown(entity: Entity, type: ComponentType<unknown>, value: unknown): void {
     this.storage(type).set(entity.index, value);
+  }
+
+  private validateSpawnEntries(entries: readonly ComponentEntry<unknown>[]): void {
+    const entryTypes = new Map<string, ComponentType<unknown>>();
+    for (const entry of entries) {
+      const duplicate = entryTypes.get(entry.type.id);
+      if (duplicate) {
+        const reason = duplicate === entry.type ? 'more than once' : 'with conflicting type tokens';
+        throw new Error(`Spawn entries contain component ${entry.type.id} ${reason}`);
+      }
+      const registered = this.storages.get(entry.type.id);
+      if (registered && registered.type !== entry.type) {
+        throw new Error(`Component type id is already registered by another token: ${entry.type.id}`);
+      }
+      entryTypes.set(entry.type.id, entry.type);
+    }
   }
 
   private entityAt(index: number): Entity {

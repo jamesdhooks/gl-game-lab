@@ -90,7 +90,7 @@ export {
   type SystemContext,
   type SystemDefinition,
 } from './kernel/Schedule.js';
-export { ScheduleRunner } from './kernel/ScheduleRunner.js';
+export { ScheduleRunner, type ScheduleRunnerState } from './kernel/ScheduleRunner.js';
 export {
   createEventToken,
   EventBus,

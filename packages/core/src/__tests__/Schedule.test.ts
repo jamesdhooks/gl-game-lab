@@ -102,4 +102,37 @@ describe('Schedule', () => {
     runner.runFrame(0);
     expect(order).toEqual(['update', 'gameplay']);
   });
+
+  it('records terminal failure states for startup, frame, and shutdown errors', () => {
+    const startup = new Schedule();
+    startup.addSystem({
+      id: 'broken.startup', stage: 'startup', run: () => { throw new Error('startup failed'); },
+    });
+    const startupRunner = new ScheduleRunner(startup, new World());
+    expect(() => startupRunner.start()).toThrow('startup failed');
+    expect(startupRunner.state).toBe('failed');
+    expect(() => startupRunner.start()).toThrow('cannot start from failed');
+    startupRunner.stop();
+    expect(startupRunner.state).toBe('stopped');
+
+    const frame = new Schedule();
+    frame.addSystem({
+      id: 'broken.frame', stage: 'update', run: () => { throw new Error('frame failed'); },
+    });
+    const frameRunner = new ScheduleRunner(frame, new World());
+    frameRunner.start();
+    expect(() => frameRunner.runFrame(1 / 60)).toThrow('frame failed');
+    expect(frameRunner.state).toBe('failed');
+    frameRunner.stop();
+    expect(frameRunner.state).toBe('stopped');
+
+    const shutdown = new Schedule();
+    shutdown.addSystem({
+      id: 'broken.shutdown', stage: 'shutdown', run: () => { throw new Error('shutdown failed'); },
+    });
+    const shutdownRunner = new ScheduleRunner(shutdown, new World());
+    shutdownRunner.start();
+    expect(() => shutdownRunner.stop()).toThrow('shutdown failed');
+    expect(shutdownRunner.state).toBe('failed');
+  });
 });
