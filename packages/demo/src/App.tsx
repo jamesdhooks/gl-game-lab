@@ -26,6 +26,7 @@ export function App(): JSX.Element {
   const experienceId = query.get('experience');
   const showDiagnostics = query.get('diagnostics') === '1';
   const contextTest = query.get('contextTest') === '1';
+  const contextStrategy = query.get('contextStrategy') === 'registry' ? 'registry' : 'driver';
   const lifecycleTest = query.get('lifecycleTest') === '1';
   const inputTest = query.get('inputTest') === '1';
   useEffect(() => {
@@ -70,7 +71,10 @@ export function App(): JSX.Element {
     if (!engine) return;
     setDiagnosticStatus('context-cycling');
     try {
-      const result = await engine.kernel.get(WebGL2RendererService).cycleContextForDiagnostics();
+      const renderer = engine.kernel.get(WebGL2RendererService);
+      const result = contextStrategy === 'registry'
+        ? renderer.rebuildContextResourcesForDiagnostics()
+        : await renderer.cycleContextForDiagnostics();
       setContextResult(result);
       const stable = result.generationAfter > result.generationBefore
         && result.resourcesAfter === result.resourcesBefore
@@ -142,6 +146,7 @@ export function App(): JSX.Element {
           data-diagnostic-status={diagnosticStatus}
           data-ready-count={readyCountRef.current}
           data-context-generation-before={contextResult?.generationBefore}
+          data-context-strategy={contextResult?.strategy}
           data-context-generation-after={contextResult?.generationAfter}
           data-context-resources-before={contextResult?.resourcesBefore}
           data-context-resources-after={contextResult?.resourcesAfter}

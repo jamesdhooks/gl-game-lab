@@ -42,7 +42,7 @@ async function verifyBrowser(browserName, browserType) {
     const functionalBrowser = await browserType.launch({ headless: true });
     const functional = await verifyFunctional(functionalBrowser, failures)
       .finally(async () => { await functionalBrowser.close(); });
-    const contextBrowser = await browserType.launch({ headless: process.env.GL_GAME_LAB_HEADED !== '1' });
+    const contextBrowser = await browserType.launch({ headless: true });
     const context = await verifyContextRecovery(contextBrowser, failures)
       .finally(async () => { await contextBrowser.close(); });
     return Object.freeze({ browser: browserName, functional, context, failures, passed: failures.length === 0 });
@@ -96,7 +96,8 @@ async function verifyContextRecovery(browser, failures) {
   const pageErrors = [];
   page.on('pageerror', (error) => { pageErrors.push(error.message); });
   try {
-    await page.goto(url({ experience: 'reference-arena', contextTest: '1' }), { waitUntil: 'domcontentloaded' });
+    const contextStrategy = process.env.GL_GAME_LAB_CONTEXT_STRATEGY ?? 'driver';
+    await page.goto(url({ experience: 'reference-arena', contextTest: '1', contextStrategy }), { waitUntil: 'domcontentloaded' });
     await page.locator('canvas[data-engine-state="running"]').waitFor({ state: 'visible', timeout: 60_000 });
     await page.getByRole('button', { name: 'Cycle GPU context' }).click();
     const controls = page.locator('[aria-label="Engine diagnostic controls"]');
@@ -110,6 +111,7 @@ async function verifyContextRecovery(browser, failures) {
       throw new Error(`Context cycle ended with ${status ?? 'missing status'}${runtimeError ? `: ${runtimeError}` : ''}`);
     }
     const values = await controls.evaluate((element) => ({
+      strategy: element.dataset.contextStrategy,
       generationBefore: Number(element.dataset.contextGenerationBefore),
       generationAfter: Number(element.dataset.contextGenerationAfter),
       resourcesBefore: Number(element.dataset.contextResourcesBefore),
@@ -117,6 +119,7 @@ async function verifyContextRecovery(browser, failures) {
       bytesBefore: Number(element.dataset.contextBytesBefore),
       bytesAfter: Number(element.dataset.contextBytesAfter),
     }));
+    if (values.strategy !== contextStrategy) failures.push(`Expected ${contextStrategy} context strategy, received ${values.strategy ?? 'missing'}`);
     if (!(values.generationAfter > values.generationBefore)) failures.push('Context generation did not advance');
     if (values.resourcesAfter !== values.resourcesBefore) failures.push('Context resource count changed after recovery');
     if (values.bytesAfter !== values.bytesBefore) failures.push('Context resource bytes changed after recovery');
