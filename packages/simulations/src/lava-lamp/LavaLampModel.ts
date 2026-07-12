@@ -31,15 +31,25 @@ export class LavaLampModel {
     this.elapsed = 0;
     this.configure(tuning);
     const count = Math.min(tuning.maxParticles, Math.max(0, Math.floor(initial)));
+    const clusterCount = Math.max(4, Math.min(12, Math.round(Math.sqrt(count) * 0.9)));
     for (let i = 0; i < count; i++) {
-      const x = tuning.blobRadius * 1.4 + randomHash(i + seed) * Math.max(1, width - tuning.blobRadius * 2.8), y = height * (0.42 + randomHash(i * 3 + seed) * 0.48), temperature = 0.18 + randomHash(i * 7 + seed) * 0.64;
+      const cluster = i % clusterCount;
+      const centerX = tuning.blobRadius * 2 + randomHash(cluster * 101 + seed) * Math.max(1, width - tuning.blobRadius * 4);
+      const centerY = height * (0.58 + randomHash(cluster * 109 + seed) * 0.34);
+      const angle = randomHash(i * 17 + seed) * Math.PI * 2;
+      const spread = Math.sqrt(randomHash(i * 31 + seed)) * tuning.blobRadius * 1.55;
+      const x = centerX + Math.cos(angle) * spread, y = centerY + Math.sin(angle) * spread * 0.82;
+      const temperature = Math.min(0.72, 0.18 + ((centerY / Math.max(1, height) - 0.58) / 0.34) * 0.3 + randomHash(cluster * 7 + seed) * 0.13 + (cluster === 0 ? 0.24 : 0));
       this.add(x, y, tuning, temperature, (randomHash(i * 11 + seed) - 0.5) * 25);
     }
   }
   configure(tuning: LavaLampTuning) {
     this.world.configure({
       maxParticles: Math.max(1, Math.min(1024, Math.floor(tuning.maxParticles))),
-      radius: tuning.blobRadius,
+      // The source simulation treats blobRadius as a metaball kernel, not a
+      // hard-circle collision radius. A smaller collision core lets wax merge
+      // into coherent packets without packing the entire lamp solid.
+      radius: tuning.blobRadius * 0.34,
       radiusVariation: 0.28,
       gravity: 0,
       solverIterations: 3,

@@ -166,8 +166,8 @@ export function createWaterTankPlugin(initial: WaterTankConfig = WATER_TANK_DEFA
             id: 'water-tank.surface', count: model.count, positions: model.world.positions,
             radii: model.world.radii, temperatures: model.foam, worldWidth: width, worldHeight: height,
             fieldScale: Math.max(0.2, Math.min(1, waterNumber(config, 'fluidGridResolution') * waterNumber(config, 'liquidFieldScale') / Math.max(1, renderer.viewport.width))),
-            particleRadiusScale: waterNumber(config, 'liquidSplatDensity') * waterNumber(config, 'liquidParticleRadius'),
-            threshold: waterNumber(config, 'liquidSurfaceThreshold'),
+            particleRadiusScale: waterNumber(config, 'liquidSplatDensity') * waterNumber(config, 'liquidParticleRadius') * 1.35,
+            threshold: waterNumber(config, 'liquidSurfaceThreshold') * 0.68,
             edgeSoftness: waterNumber(config, 'liquidEdgeSoftness') * (2 - waterNumber(config, 'liquidEdgeTightness')),
             edgeTightness: waterNumber(config, 'liquidEdgeTightness'),
             palette, background: waterColor3(style.background),
@@ -249,7 +249,8 @@ export function createWaterTankPlugin(initial: WaterTankConfig = WATER_TANK_DEFA
           maxParticles: Math.min(1024, next.maxParticles)
         } : next);
         model.seedObstacles(width, height, Math.floor(waterNumber(config, 'obstacleRamps')), Math.floor(waterNumber(config, 'obstaclePegs')), waterNumber(config, 'buildRadius'));
-        model.pour(width * 0.5, height * 0.12, Math.min(preview ? 220 : 360, Math.floor(next.maxParticles * 0.18)), width * 0.22, 0, 150);
+        const initialCount = Math.min(preview ? 900 : Math.floor(next.maxParticles * 0.54), next.maxParticles);
+        model.seedReservoir(width, height, initialCount, next.particleRadius);
         spawnAccumulator = 0;
         elapsed = 0;
         paths.clear();

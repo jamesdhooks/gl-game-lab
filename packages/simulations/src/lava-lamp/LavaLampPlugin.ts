@@ -14,6 +14,7 @@ export const LAVA_LAMP_PLUGIN_ID = 'gl-game-lab.simulations.lava-lamp';
 export function createLavaLampPlugin(initial: LavaLampConfig = LAVA_LAMP_DEFAULTS, launch: ExperienceLaunchOptions = {}): EnginePlugin {
   let config = initial, mode: LavaLampMode = launch.modeId === 'remove' ? 'remove' : 'add', styleId = validStyle(launch.styleId) ?? LAVA_LAMP_STYLE_MANIFEST.defaultStyleId, width = 1, height = 1, elapsed = 0, pendingReset = true, lastAutoAdd = 0, randomState = (launch.seed ?? 260706) >>> 0, cleanup = (): void => undefined;
   const model = new LavaLampModel();
+  const visualRadii = new Float32Array(1024);
   return {
     id: LAVA_LAMP_PLUGIN_ID,
     version: '1.0.0',
@@ -103,12 +104,13 @@ export function createLavaLampPlugin(initial: LavaLampConfig = LAVA_LAMP_DEFAULT
         stage: 'renderExtract',
         run: () => {
           const renderStyle = lavaString(config, 'renderStyle'), style = requireStyle(), palette3 = style.palette.slice(0, 4).map(lavaColor3);
+          for (let i = 0; i < model.count; i++) visualRadii[i] = lavaNumber(config, 'blobRadius') * (0.82 + ((model.world.radii[i] ?? 1) / Math.max(1, lavaNumber(config, 'blobRadius') * 0.34) - 1) * 0.35);
           if (renderStyle === 'basic') {
             renderer.submitParticles({
               id: 'lava-lamp-basic',
               count: model.count,
               positions: model.world.positions,
-              radii: model.world.radii,
+              radii: visualRadii,
               colorSeeds: model.world.colorSeeds,
               palette: style.palette.slice(0, 4).map(lavaColor4),
               blend: 'alpha',
@@ -120,12 +122,12 @@ export function createLavaLampPlugin(initial: LavaLampConfig = LAVA_LAMP_DEFAULT
                 id: 'lava-lamp.density-surface',
                 count: model.count,
                 positions: model.world.positions,
-                radii: model.world.radii,
+                radii: visualRadii,
                 temperatures: model.temperatures,
                 worldWidth: width,
                 worldHeight: height,
                 fieldScale: Math.min(1, lavaNumber(config, 'liquidFieldScale') * lavaNumber(config, 'enhancedQuality')),
-                particleRadiusScale: lavaNumber(config, 'liquidParticleRadius') * lavaNumber(config, 'liquidExpansion') * lavaNumber(config, 'liquidSplatDensity'),
+                particleRadiusScale: lavaNumber(config, 'liquidParticleRadius') * lavaNumber(config, 'liquidExpansion') * lavaNumber(config, 'liquidSplatDensity') * 0.32,
                 threshold: lavaNumber(config, 'liquidSurfaceThreshold'),
                 edgeSoftness: lavaNumber(config, 'liquidEdgeSoftness') * (2 - lavaNumber(config, 'liquidEdgeTightness')),
                 edgeTightness: lavaNumber(config, 'liquidEdgeTightness'),

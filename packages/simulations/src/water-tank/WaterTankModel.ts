@@ -76,6 +76,26 @@ export class WaterTankModel {
     }
     return made;
   }
+  seedReservoir(width: number, height: number, count: number, particleRadius: number) {
+    const spacingX = particleRadius * 2.15, spacingY = particleRadius * 2.05;
+    const columns = Math.max(8, Math.floor(width * 0.84 / spacingX));
+    const rows = Math.max(4, Math.ceil(count / columns));
+    let made = 0;
+    for (let row = 0; row < rows && made < count; row++) {
+      for (let column = 0; column < columns && made < count; column++) {
+        const jitterX = (randomHash(made * 13 + 17) - 0.5) * particleRadius * 0.7;
+        const jitterY = (randomHash(made * 23 + 29) - 0.5) * particleRadius * 0.4;
+        const index = this.world.addCircle(width * 0.08 + column * spacingX + jitterX, height * 0.92 - row * spacingY + jitterY, {
+          velocityX: 0,
+          velocityY: 0,
+          colorSeed: row / Math.max(1, rows)
+        });
+        if (index < 0) return made;
+        made++;
+      }
+    }
+    return made;
+  }
   splash(x: number, y: number, radius: number, strength: number, vx: number, vy: number) {
     const radius2 = radius * radius;
     for (let i = 0; i < this.world.count; i++) {
