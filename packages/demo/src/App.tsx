@@ -48,6 +48,9 @@ function DemoGallery(): JSX.Element {
   const [active, setActive] = useState<ExperienceDefinition>();
   const [filter, setFilter] = useState<FilterKind>('all');
   const [dark, setDark] = useState(true);
+  const [previewFpsVisible, setPreviewFpsVisible] = useState(() => {
+    try { return localStorage.getItem('gl-game-lab:previewFps') === 'true'; } catch { return false; }
+  });
   const [pickerOpen, setPickerOpen] = useState(false);
   const [pickerFilter, setPickerFilter] = useState<FilterKind>('all');
   const [pickerSide, setPickerSide] = useState<'bottom' | 'left' | 'right'>('bottom');
@@ -73,6 +76,10 @@ function DemoGallery(): JSX.Element {
     });
     return () => { mounted = false; };
   }, []);
+
+  useEffect(() => {
+    try { localStorage.setItem('gl-game-lab:previewFps', String(previewFpsVisible)); } catch { /* Storage may be unavailable. */ }
+  }, [previewFpsVisible]);
 
   const filtered = useMemo(() => filter === 'all' ? catalog : catalog.filter((definition) => definition.kind === filter), [catalog, filter]);
   const pickerItems = useMemo(() => pickerFilter === 'all' ? catalog : catalog.filter((definition) => definition.kind === pickerFilter), [catalog, pickerFilter]);
@@ -173,12 +180,13 @@ function DemoGallery(): JSX.Element {
                     ))}
                   </div>
                 </div>
-                <div className="mb-8 flex justify-center">
+                <div className="mb-8 flex flex-col items-center justify-center gap-3">
                   <button type="button" onClick={startDemo} className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-violet-500 via-sky-400 to-cyan-400 px-4 py-2 text-sm font-bold text-white shadow-md shadow-sky-500/20 transition-transform hover:scale-[1.02] active:scale-[0.98]"><Play size={14} />Demo mode</button>
+                  <button type="button" onClick={() => { setPreviewFpsVisible((visible) => !visible); }} className={`rounded-xl px-3 py-1.5 text-xs font-black uppercase tracking-widest transition-colors ${previewFpsVisible ? 'bg-cyan-200 text-slate-950 shadow-md shadow-cyan-400/20' : 'bg-slate-100 text-slate-500 hover:bg-slate-200 dark:bg-white/[0.07] dark:text-white/45 dark:hover:bg-white/[0.12]'}`}>Preview FPS {previewFpsVisible ? 'On' : 'Off'}</button>
                 </div>
                 {catalog.length === 0 ? <p className="py-24 text-center text-slate-400" role="status">Loading GLGameLab experiences…</p> : (
                   <div className="grid grid-cols-2 gap-x-6 gap-y-10 sm:grid-cols-3 lg:grid-cols-4">
-                    {filtered.map((definition, index) => <ExperienceCard key={definition.id} definition={definition} index={index} onSelect={selectExperience} />)}
+                    {filtered.map((definition, index) => <ExperienceCard key={definition.id} definition={definition} index={index} onSelect={selectExperience} showPreviewFps={previewFpsVisible} hideKindBadge={filter === 'simulation'} />)}
                   </div>
                 )}
               </main>
@@ -218,7 +226,7 @@ function DemoGallery(): JSX.Element {
                   {pickerBottom ? (
                     portraitMobile ? (
                       <div ref={scrollerRef} className="flex items-center gap-2 overflow-x-scroll px-2 py-2 snap-x snap-mandatory" style={{ scrollbarWidth: 'none' }}>
-                        {pickerItems.map((definition, index) => <div key={definition.id} className="shrink-0 snap-start py-0.5"><CarouselTile definition={definition} index={index} active={definition.id === active.id} onSelect={selectExperience} size={88} /></div>)}
+                        {pickerItems.map((definition, index) => <div key={definition.id} className="shrink-0 snap-start py-0.5"><CarouselTile definition={definition} index={index} active={definition.id === active.id} onSelect={selectExperience} size={88} showPreviewFps={previewFpsVisible} /></div>)}
                       </div>
                     ) : (
                       <div className="flex h-[132px] items-stretch">
@@ -227,7 +235,7 @@ function DemoGallery(): JSX.Element {
                         </div>
                         <button type="button" aria-label="Previous" onClick={() => { move(-1); }} className="flex shrink-0 items-center justify-center px-1.5 text-white/25 transition-colors hover:text-white/60"><ChevronLeft size={15} /></button>
                         <div ref={scrollerRef} className="flex flex-1 items-center gap-2 overflow-x-auto px-1" style={{ scrollbarWidth: 'none' }}>
-                          {pickerItems.map((definition, index) => <CarouselTile key={definition.id} definition={definition} index={index} active={definition.id === active.id} onSelect={selectExperience} size={80} />)}
+                          {pickerItems.map((definition, index) => <CarouselTile key={definition.id} definition={definition} index={index} active={definition.id === active.id} onSelect={selectExperience} size={80} showPreviewFps={previewFpsVisible} />)}
                         </div>
                         <button type="button" aria-label="Next" onClick={() => { move(1); }} className="flex shrink-0 items-center justify-center px-1.5 text-white/25 transition-colors hover:text-white/60"><ChevronRight size={15} /></button>
                       </div>
@@ -239,7 +247,7 @@ function DemoGallery(): JSX.Element {
                       </div>
                       <button type="button" aria-label="Previous" onClick={() => { move(-1); }} className="py-1 text-white/25 transition-colors hover:text-white/60"><ChevronUp className="mx-auto" size={15} /></button>
                       <div ref={scrollerRef} className="flex flex-1 flex-col items-center gap-2 overflow-y-auto px-2 py-1" style={{ scrollbarWidth: 'none' }}>
-                        {pickerItems.map((definition, index) => <CarouselTile key={definition.id} definition={definition} index={index} active={definition.id === active.id} onSelect={selectExperience} size={74} labelRight />)}
+                        {pickerItems.map((definition, index) => <CarouselTile key={definition.id} definition={definition} index={index} active={definition.id === active.id} onSelect={selectExperience} size={74} labelRight showPreviewFps={previewFpsVisible} />)}
                       </div>
                       <button type="button" aria-label="Next" onClick={() => { move(1); }} className="py-1 text-white/25 transition-colors hover:text-white/60"><ChevronDown className="mx-auto" size={15} /></button>
                     </div>
@@ -258,16 +266,18 @@ interface ExperienceCardProps {
   readonly definition: ExperienceDefinition;
   readonly index: number;
   readonly onSelect: (definition: ExperienceDefinition) => void;
+  readonly showPreviewFps?: boolean;
+  readonly hideKindBadge?: boolean;
 }
 
-function ExperienceCard({ definition, index, onSelect }: ExperienceCardProps): JSX.Element {
+function ExperienceCard({ definition, index, onSelect, showPreviewFps = false, hideKindBadge = false }: ExperienceCardProps): JSX.Element {
   const badge = definition.kind === 'game' ? 'bg-blue-100 text-blue-600 dark:bg-blue-500/15 dark:text-blue-300' : 'bg-violet-100 text-violet-600 dark:bg-violet-500/15 dark:text-violet-300';
   const needsDemoQa = definition.capabilities.demo === true && !hasPassedDemoQa(definition.id);
   return (
     <button type="button" data-demo-experience-card={definition.id} onClick={() => { onSelect(definition); }} className="group cursor-pointer select-none text-left">
       <div className="pointer-events-none relative aspect-square w-full overflow-hidden rounded-2xl bg-slate-100 transition-transform duration-200 group-hover:scale-[1.03] dark:bg-[#0d0d1e]">
-        <PreviewTile definition={definition} index={index} />
-        <span className={`absolute bottom-2 left-2 rounded-full px-2 py-0.5 text-[10px] font-semibold capitalize ${badge}`}>{definition.kind}</span>
+        <PreviewTile definition={definition} index={index} showFps={showPreviewFps} />
+        {!hideKindBadge && <span className={`absolute bottom-2 left-2 rounded-full px-2 py-0.5 text-[10px] font-semibold capitalize ${badge}`}>{definition.kind}</span>}
         {needsDemoQa && <span className="absolute right-2 top-2 inline-flex items-center gap-1 rounded-md bg-amber-300/95 px-1.5 py-1 text-[9px] font-bold uppercase leading-none text-amber-950"><AlertTriangle size={10} strokeWidth={2.5} />Needs QA</span>}
       </div>
       <p className="mt-3 text-center text-sm font-semibold leading-tight text-slate-800 dark:text-slate-200">{definition.name}</p>
@@ -275,7 +285,7 @@ function ExperienceCard({ definition, index, onSelect }: ExperienceCardProps): J
   );
 }
 
-function PreviewTile({ definition, index }: { readonly definition: ExperienceDefinition; readonly index: number }): JSX.Element {
+function PreviewTile({ definition, index, showFps = false }: { readonly definition: ExperienceDefinition; readonly index: number; readonly showFps?: boolean }): JSX.Element {
   const rootRef = useRef<HTMLDivElement>(null);
   const [visible, setVisible] = useState(false);
   const [ready, setReady] = useState(false);
@@ -294,7 +304,7 @@ function PreviewTile({ definition, index }: { readonly definition: ExperienceDef
   }, [index, visible]);
   return (
     <div ref={rootRef} className="h-full w-full">
-      {ready ? <GameCanvas createPlugins={createPlugins} ariaLabel={`${definition.name} preview`} className="h-full w-full touch-none" /> : <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-indigo-500 via-violet-500 to-pink-500 text-6xl text-white">{definition.icon}</div>}
+      {ready ? <GameCanvas createPlugins={createPlugins} ariaLabel={`${definition.name} preview`} className="h-full w-full touch-none" showDiagnostics={showFps} /> : <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-indigo-500 via-violet-500 to-pink-500 text-6xl text-white">{definition.icon}</div>}
       <div className="pointer-events-none absolute inset-0 rounded-2xl bg-gradient-to-br from-white/10 via-transparent to-black/20 shadow-[inset_0_1px_0_rgba(255,255,255,.28)]" />
     </div>
   );
@@ -307,6 +317,7 @@ function CarouselTile({
   onSelect,
   size,
   labelRight = false,
+  showPreviewFps = false,
 }: ExperienceCardProps & { readonly active: boolean; readonly size: number; readonly labelRight?: boolean }): JSX.Element {
   return (
     <div className={`flex shrink-0 cursor-pointer items-center gap-1.5 transition-all duration-150 ${labelRight ? 'w-full flex-row' : 'flex-col'}`}>
@@ -317,7 +328,7 @@ function CarouselTile({
         style={{ width: size, height: size }}
         aria-label={`Play ${definition.name}`}
       >
-        <PreviewTile definition={definition} index={index} />
+        <PreviewTile definition={definition} index={index} showFps={showPreviewFps} />
       </button>
       <span className={`truncate text-[9px] font-medium leading-tight text-white/50 ${labelRight ? 'min-w-0 flex-1 text-left' : 'text-center'}`} style={labelRight ? undefined : { maxWidth: size }}>{definition.name}</span>
     </div>
