@@ -174,7 +174,11 @@ export function createSparksPlugin(initial: SparksConfig = SPARKS_DEFAULTS, laun
               const trailDestination = particles.beginTrails(destination.width, destination.height, fade);
               const palette = paletteData();
               particles.render(trailDestination, (g, u) => {
-                g.uniform2f(u('uCanvasSize'), destination.width, destination.height);
+                // Particle state is expressed in the renderer's logical CSS-pixel
+                // world. The destination is DPR-scaled and must only control the
+                // raster viewport, otherwise DPR 2 compresses the simulation into
+                // the upper-left quarter and separates rail visuals from collision.
+                g.uniform2f(u('uCanvasSize'), renderer.viewport.width, renderer.viewport.height);
                 g.uniform1f(u('uPrimarySize'), sparksNumber(config, 'primarySparkSize'));
                 g.uniform1f(u('uCoreSize'), sparksNumber(config, 'coreSparkSize'));
                 g.uniform1f(u('uBounceSize'), sparksNumber(config, 'bounceSparkSize'));

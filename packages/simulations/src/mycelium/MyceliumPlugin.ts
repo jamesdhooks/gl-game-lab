@@ -16,7 +16,7 @@ export interface MyceliumController extends ExperienceRuntimeController {
 export const MyceliumControllerService = createExtensionToken<MyceliumController>('gl-game-lab.simulations.mycelium.controller');
 export const MYCELIUM_PLUGIN_ID = 'gl-game-lab.simulations.mycelium';
 export function createMyceliumPlugin(initial: MyceliumConfig = MYCELIUM_DEFAULTS, launch: ExperienceLaunchOptions = {}): EnginePlugin {
-  let config = initial, styleId = validStyle(launch.styleId) ?? MYCELIUM_STYLE_MANIFEST.defaultStyleId, pendingDt = 0, elapsed = 0, randomState = seedValue(launch.seed), rebuild = false, needsSeed = true, cleanup = (): void => undefined;
+  let config = initial, styleId = validStyle(launch.styleId) ?? MYCELIUM_STYLE_MANIFEST.defaultStyleId, pendingDt = 0, elapsed = 0, randomState = seedValue(launch.seed), rebuild = false, needsSeed = true, fieldViewportWidth = 0, fieldViewportHeight = 0, cleanup = (): void => undefined;
   const splats: Splat[] = [];
   return {
     id: MYCELIUM_PLUGIN_ID,
@@ -79,6 +79,9 @@ export function createMyceliumPlugin(initial: MyceliumConfig = MYCELIUM_DEFAULTS
         stage: 'update',
         run: ({ time }) => {
           const dt = Math.min(0.05, time.deltaSeconds) * myceliumNumber(config, 'timeScale');
+          const viewportWidth = Math.max(1, renderer.viewport.width);
+          const viewportHeight = Math.max(1, renderer.viewport.height);
+          if (Math.abs(viewportWidth / viewportHeight - fieldViewportWidth / Math.max(1, fieldViewportHeight)) > 0.01) rebuild = true;
           pendingDt += dt;
           elapsed += dt;
           for (const event of input.snapshot.events)
@@ -168,7 +171,11 @@ export function createMyceliumPlugin(initial: MyceliumConfig = MYCELIUM_DEFAULTS
         }
       });
       function createField(): GpuFieldSystem2D {
-        const requested = myceliumNumber(config, 'resolution'), resolution = launch.profile === 'preview' ? Math.min(256, requested) : requested, aspect = renderer.viewport.height / Math.max(1, renderer.viewport.width);
+        fieldViewportWidth = Math.max(1, renderer.viewport.width);
+        fieldViewportHeight = Math.max(1, renderer.viewport.height);
+        const requested = myceliumNumber(config, 'resolution'), resolution = launch.profile === 'preview' ? Math.min(256, requested) : requested;
+        const triangleRowScale = myceliumString(config, 'topology') === 'triangle' ? 1 / Math.sqrt(3) : 1;
+        const aspect = fieldViewportHeight / fieldViewportWidth * triangleRowScale;
         return gpu.createFieldSystem(`${MYCELIUM_PLUGIN_ID}.field`, {
           width: Math.round(resolution),
           height: Math.max(1, Math.round(resolution * aspect)),

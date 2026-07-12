@@ -98,7 +98,7 @@ export function createFireworksPlugin(initial: FireworksConfig = FIREWORKS_DEFAU
             const trailDestination = particles.beginTrails(destination.width, destination.height, config.trailFade);
             const palette = paletteData();
             particles.render(trailDestination, (contextGl, uniform) => {
-              contextGl.uniform2f(uniform('uCanvasSize'), destination.width, destination.height);
+              contextGl.uniform2f(uniform('uCanvasSize'), renderer.viewport.width, renderer.viewport.height);
               contextGl.uniform1f(uniform('uParticleSize'), config.particleSize * Math.max(1, destination.width / Math.max(1, renderer.viewport.width)));
               contextGl.uniform1f(uniform('uSizeVariability'), config.sparkSizeVariability);
               contextGl.uniform1f(uniform('uCrackle'), config.crackleIntensity);

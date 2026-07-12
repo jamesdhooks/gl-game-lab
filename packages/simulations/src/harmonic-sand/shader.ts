@@ -49,6 +49,47 @@ vec3 palette(float value) {
   return mix(low, high, smoothstep(0.28, 0.78, value));
 }
 
+vec3 bandedPalette(float value) {
+  if (value < 0.25) return uPaletteA;
+  if (value < 0.50) return uPaletteB;
+  if (value < 0.75) return uPaletteC;
+  return uPaletteD;
+}
+
+vec2 fieldGridSize() {
+  float columns = max(1.0, uFieldResolution);
+  float rows = max(1.0, columns * uResolution.y / max(1.0, uResolution.x));
+  return vec2(columns, rows);
+}
+
+vec4 fieldPixel(vec2 sampleUv, vec2 aspect, bool smoothPalette, float gamma, float maxAlpha) {
+  vec2 point = vec2((sampleUv.x - 0.5) * 2.0 * aspect.x, (0.5 - sampleUv.y) * 2.0);
+  float value = pow(clamp(abs(waveField(point)), 0.0, 1.0), gamma);
+  return vec4(smoothPalette ? palette(value) : bandedPalette(value), value * maxAlpha);
+}
+
+vec4 nearestField(vec2 uv, vec2 aspect, float gamma, float maxAlpha) {
+  vec2 gridSize = fieldGridSize();
+  vec2 cell = floor(clamp(uv, vec2(0.0), vec2(0.999999)) * gridSize);
+  return fieldPixel((cell + 0.5) / gridSize, aspect, false, gamma, maxAlpha);
+}
+
+vec4 linearField(vec2 uv, vec2 aspect, float gamma, float maxAlpha) {
+  vec2 gridSize = fieldGridSize();
+  vec2 texel = clamp(uv, vec2(0.0), vec2(0.999999)) * gridSize - 0.5;
+  vec2 base = floor(texel);
+  vec2 blend = smoothstep(vec2(0.0), vec2(1.0), fract(texel));
+  vec2 uv00 = (clamp(base, vec2(0.0), gridSize - 1.0) + 0.5) / gridSize;
+  vec2 uv10 = (clamp(base + vec2(1.0, 0.0), vec2(0.0), gridSize - 1.0) + 0.5) / gridSize;
+  vec2 uv01 = (clamp(base + vec2(0.0, 1.0), vec2(0.0), gridSize - 1.0) + 0.5) / gridSize;
+  vec2 uv11 = (clamp(base + vec2(1.0), vec2(0.0), gridSize - 1.0) + 0.5) / gridSize;
+  vec4 c00 = fieldPixel(uv00, aspect, true, gamma, maxAlpha);
+  vec4 c10 = fieldPixel(uv10, aspect, true, gamma, maxAlpha);
+  vec4 c01 = fieldPixel(uv01, aspect, true, gamma, maxAlpha);
+  vec4 c11 = fieldPixel(uv11, aspect, true, gamma, maxAlpha);
+  return mix(mix(c00, c10, blend.x), mix(c01, c11, blend.x), blend.y);
+}
+
 float sourceMarker(vec2 p) {
   float marker = 0.0;
   for (int i = 0; i < MAX_EMITTERS; i++) {
@@ -67,9 +108,11 @@ void main() {
   vec3 sand = palette(harmonic);
 
   if (uRenderMode < 2) {
-    float value = pow(clamp(abs(field), 0.0, 1.0), uRenderMode == 0 ? 0.65 : 0.45);
-    float alpha = value * (uRenderMode == 0 ? 0.78 : 0.88);
-    vec3 color = mix(uBackground, sand, alpha);
+    bool enhanced = uRenderMode == 1;
+    vec4 sampled = enhanced
+      ? linearField(vUv, aspect, 0.45, 224.0 / 255.0)
+      : nearestField(vUv, aspect, 0.65, 200.0 / 255.0);
+    vec3 color = mix(uBackground, sampled.rgb, sampled.a);
     color = mix(color, uPaletteD, sourceMarker(p) * 0.8);
     fragColor = vec4(color, 1.0);
     return;
