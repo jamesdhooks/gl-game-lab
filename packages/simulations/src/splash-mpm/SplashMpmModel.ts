@@ -25,6 +25,10 @@ export class SplashPicFlipModel {
   private vy = new Float32Array(1);
   private oldVx = new Float32Array(1);
   private oldVy = new Float32Array(1);
+  private pressure = new Float32Array(1);
+  private nextVx = new Float32Array(1);
+  private nextVy = new Float32Array(1);
+  private readonly affine = new Float32Array(SPLASH_PIC_FLIP_CAPACITY * 4);
   private columns = 1;
   private rows = 1;
   private cell = 1;
@@ -109,38 +113,82 @@ export class SplashPicFlipModel {
     this.mass.fill(0);
     this.vx.fill(0);
     this.vy.fill(0);
+    const support = Math.max(0.65, Math.min(6, t.radius / this.cell));
+    const supportCells = Math.ceil(support) + 1;
     for (let i = 0; i < this.count; i++) {
-      const o = i * 2, x = (this.world.positions[o] ?? 0) / this.cell, y = (this.world.positions[o + 1] ?? 0) / this.cell, cx = Math.max(0, Math.min(this.columns - 1, Math.floor(x))), cy = Math.max(0, Math.min(this.rows - 1, Math.floor(y))), c = cy * this.columns + cx;
-      this.mass[c] = (this.mass[c] ?? 0) + 1;
-      this.vx[c] = (this.vx[c] ?? 0) + (this.world.velocities[o] ?? 0);
-      this.vy[c] = (this.vy[c] ?? 0) + (this.world.velocities[o + 1] ?? 0);
+      const o = i * 2, ao = i * 4, gx = (this.world.positions[o] ?? 0) / this.cell, gy = (this.world.positions[o + 1] ?? 0) / this.cell;
+      let weightSum = 0;
+      for (let yy = Math.floor(gy - supportCells); yy <= Math.ceil(gy + supportCells); yy++)
+        for (let xx = Math.floor(gx - supportCells); xx <= Math.ceil(gx + supportCells); xx++) {
+          const distance = Math.hypot(xx - gx, yy - gy) / support;
+          if (distance >= 1.85) continue;
+          const core = Math.max(0, 1 - distance * distance);
+          weightSum += core * core * (0.56 + core * 0.44);
+        }
+      if (weightSum <= 0.000001) continue;
+      const invWeight = Math.max(1.05, Math.min(42, 1.05 + support * support * 0.88)) / weightSum;
+      for (let yy = Math.floor(gy - supportCells); yy <= Math.ceil(gy + supportCells); yy++)
+        for (let xx = Math.floor(gx - supportCells); xx <= Math.ceil(gx + supportCells); xx++) {
+          const dx = xx - gx, dy = yy - gy, distance = Math.hypot(dx, dy) / support;
+          if (distance >= 1.85) continue;
+          const core = Math.max(0, 1 - distance * distance), weight = core * core * (0.56 + core * 0.44) * invWeight, c = this.gridIndex(xx, yy);
+          const affineX = (this.affine[ao] ?? 0) * dx + (this.affine[ao + 1] ?? 0) * dy;
+          const affineY = (this.affine[ao + 2] ?? 0) * dx + (this.affine[ao + 3] ?? 0) * dy;
+          this.mass[c] = (this.mass[c] ?? 0) + weight;
+          this.vx[c] = (this.vx[c] ?? 0) + ((this.world.velocities[o] ?? 0) + affineX) * weight;
+          this.vy[c] = (this.vy[c] ?? 0) + ((this.world.velocities[o + 1] ?? 0) + affineY) * weight;
+        }
     }
     for (let c = 0; c < this.mass.length; c++) {
       const m = this.mass[c] ?? 0;
       if (m <= 0)
         continue;
       this.vx[c] = (this.vx[c] ?? 0) / m;
-      this.vy[c] = (this.vy[c] ?? 0) / m + t.gravity * dt;
-      const pressure = Math.max(0, m - t.restDensity) * t.stiffness;
-      if (c % this.columns > 0)
-        this.vx[c] = (this.vx[c] ?? 0) + ((this.mass[c - 1] ?? 0) - m) * pressure * dt * 0.015;
-      if (c >= this.columns)
-        this.vy[c] = (this.vy[c] ?? 0) + ((this.mass[c - this.columns] ?? 0) - m) * pressure * dt * 0.015;
-      this.vx[c] = (this.vx[c] ?? 0) * (1 - t.viscosity * 0.08);
-      this.vy[c] = (this.vy[c] ?? 0) * (1 - t.viscosity * 0.08);
+      this.vy[c] = (this.vy[c] ?? 0) / m;
+      this.oldVx[c] = this.vx[c] ?? 0;
+      this.oldVy[c] = this.vy[c] ?? 0;
     }
+    const restDensity = t.restDensity * Math.max(0.62, Math.min(1.05, 1.08 - support * 0.035));
+    for (let c = 0; c < this.mass.length; c++) {
+      const ratio = (this.mass[c] ?? 0) / Math.max(0.001, restDensity);
+      this.pressure[c] = Math.max(0, ratio - 1) * t.stiffness + Math.max(0, ratio - 0.28) * t.stiffness * t.separation * 0.34;
+    }
+    for (let y = 0; y < this.rows; y++) for (let x = 0; x < this.columns; x++) {
+      const c = y * this.columns + x;
+      if ((this.mass[c] ?? 0) <= 0.000001) continue;
+      const gradX = ((this.pressure[this.gridIndex(x + 1, y)] ?? 0) - (this.pressure[this.gridIndex(x - 1, y)] ?? 0)) / Math.max(1, this.cell * 2);
+      const gradY = ((this.pressure[this.gridIndex(x, y + 1)] ?? 0) - (this.pressure[this.gridIndex(x, y - 1)] ?? 0)) / Math.max(1, this.cell * 2);
+      this.vx[c] = (this.vx[c] ?? 0) - gradX * dt * this.cell * 18;
+      this.vy[c] = (this.vy[c] ?? 0) + t.gravity * dt - gradY * dt * this.cell * 18;
+    }
+    const viscosityBlend = Math.max(0, Math.min(0.85, t.viscosity * dt * 14));
+    for (let y = 0; y < this.rows; y++) for (let x = 0; x < this.columns; x++) {
+      const c = y * this.columns + x;
+      const avgX = ((this.vx[this.gridIndex(x - 1, y)] ?? 0) + (this.vx[this.gridIndex(x + 1, y)] ?? 0) + (this.vx[this.gridIndex(x, y - 1)] ?? 0) + (this.vx[this.gridIndex(x, y + 1)] ?? 0)) * 0.25;
+      const avgY = ((this.vy[this.gridIndex(x - 1, y)] ?? 0) + (this.vy[this.gridIndex(x + 1, y)] ?? 0) + (this.vy[this.gridIndex(x, y - 1)] ?? 0) + (this.vy[this.gridIndex(x, y + 1)] ?? 0)) * 0.25;
+      this.nextVx[c] = (this.vx[c] ?? 0) + (avgX - (this.vx[c] ?? 0)) * viscosityBlend;
+      this.nextVy[c] = (this.vy[c] ?? 0) + (avgY - (this.vy[c] ?? 0)) * viscosityBlend;
+    }
+    [this.vx, this.nextVx] = [this.nextVx, this.vx];
+    [this.vy, this.nextVy] = [this.nextVy, this.vy];
     for (let i = 0; i < this.count; i++) {
-      const o = i * 2, c = this.cellIndex(this.world.positions[o] ?? 0, this.world.positions[o + 1] ?? 0), picX = this.vx[c] ?? 0, picY = this.vy[c] ?? 0, deltaX = picX - (this.oldVx[c] ?? picX), deltaY = picY - (this.oldVy[c] ?? picY), flip = Math.max(0, Math.min(1, t.flipness));
+      const o = i * 2, ao = i * 4, px = this.world.positions[o] ?? 0, py = this.world.positions[o + 1] ?? 0, picX = this.sample(this.vx, px, py), picY = this.sample(this.vy, px, py), prevX = this.sample(this.oldVx, px, py), prevY = this.sample(this.oldVy, px, py), flip = Math.max(0, Math.min(1, t.flipness));
+      const deltaX = picX - prevX, deltaY = picY - prevY;
       this.world.velocities[o] = picX * (1 - flip) + ((this.world.velocities[o] ?? 0) + deltaX) * flip;
       this.world.velocities[o + 1] = picY * (1 - flip) + ((this.world.velocities[o + 1] ?? 0) + deltaY) * flip;
       this.world.positions[o] = (this.world.positions[o] ?? 0) + (this.world.velocities[o] ?? 0) * dt;
       this.world.positions[o + 1] = (this.world.positions[o + 1] ?? 0) + (this.world.velocities[o + 1] ?? 0) * dt;
       this.bound(i, width, height);
       this.collide(i);
-      this.foam[i] = Math.min(1, Math.hypot(this.world.velocities[o] ?? 0, this.world.velocities[o + 1] ?? 0) / 1200);
+      const eps = Math.max(1, this.cell), x = this.world.positions[o] ?? 0, y = this.world.positions[o + 1] ?? 0;
+      this.affine[ao] = (this.sample(this.vx, x + eps, y) - this.sample(this.vx, x - eps, y)) * 0.5;
+      this.affine[ao + 1] = (this.sample(this.vx, x, y + eps) - this.sample(this.vx, x, y - eps)) * 0.5;
+      this.affine[ao + 2] = (this.sample(this.vy, x + eps, y) - this.sample(this.vy, x - eps, y)) * 0.5;
+      this.affine[ao + 3] = (this.sample(this.vy, x, y + eps) - this.sample(this.vy, x, y - eps)) * 0.5;
+      const localMass = this.sample(this.mass, x, y), above = this.sample(this.mass, x, y - eps), gradient = Math.abs(this.sample(this.mass, x + eps, y) - this.sample(this.mass, x - eps, y)) + Math.abs(this.sample(this.mass, x, y + eps) - above);
+      const surface = Math.max(0, Math.min(1, (localMass - above) * 1.4)), turbulence = Math.max(0, Math.min(1, Math.hypot(this.world.velocities[o] ?? 0, this.world.velocities[o + 1] ?? 0) / 900));
+      this.foam[i] = Math.max(0, Math.min(1, (this.foam[i] ?? 0) * Math.pow(0.996, dt * 60) + surface * Math.min(1, gradient) * turbulence * 0.028));
     }
-    this.oldVx.set(this.vx);
-    this.oldVy.set(this.vy);
   }
   get count() {
     return this.world.count;
@@ -193,10 +241,19 @@ export class SplashPicFlipModel {
       this.vy = new Float32Array(n);
       this.oldVx = new Float32Array(n);
       this.oldVy = new Float32Array(n);
+      this.pressure = new Float32Array(n);
+      this.nextVx = new Float32Array(n);
+      this.nextVy = new Float32Array(n);
     }
   }
-  private cellIndex(x: number, y: number) {
-    return Math.max(0, Math.min(this.mass.length - 1, Math.floor(y / this.cell) * this.columns + Math.max(0, Math.min(this.columns - 1, Math.floor(x / this.cell)))));
+  private gridIndex(x: number, y: number) {
+    return Math.max(0, Math.min(this.rows - 1, y)) * this.columns + Math.max(0, Math.min(this.columns - 1, x));
+  }
+  private sample(values: Float32Array, x: number, y: number) {
+    const gx = x / this.cell, gy = y / this.cell, x0 = Math.floor(gx), y0 = Math.floor(gy), tx = gx - x0, ty = gy - y0;
+    const a = (values[this.gridIndex(x0, y0)] ?? 0) * (1 - tx) + (values[this.gridIndex(x0 + 1, y0)] ?? 0) * tx;
+    const b = (values[this.gridIndex(x0, y0 + 1)] ?? 0) * (1 - tx) + (values[this.gridIndex(x0 + 1, y0 + 1)] ?? 0) * tx;
+    return a * (1 - ty) + b * ty;
   }
   private bound(i: number, w: number, h: number) {
     const o = i * 2, r = this.world.radii[i] ?? 2;
