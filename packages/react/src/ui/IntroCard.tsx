@@ -26,17 +26,14 @@ interface IntroCardProps {
   short: string;
   hints?: IntroHint[];
   attributions?: IntroAttribution[];
-  /** When false the card stays until the user taps. Defaults to true. */
-  autoDismiss?: boolean;
   onDismiss: () => void;
 }
 
-export function IntroCard({ icon, name, short, hints = [], attributions = [], autoDismiss = true, onDismiss }: IntroCardProps) {
+export function IntroCard({ icon, name, short, hints = [], attributions = [], onDismiss }: IntroCardProps) {
   useEffect(() => {
-    if (!autoDismiss) return;
     const id = setTimeout(onDismiss, 6000);
     return () => clearTimeout(id);
-  }, [onDismiss, autoDismiss]);
+  }, [onDismiss]);
 
   return (
     <motion.div
@@ -74,14 +71,29 @@ export function IntroCard({ icon, name, short, hints = [], attributions = [], au
         {attributions.length > 0 && (
           <div className="mt-4 border-t border-white/10 pt-3">
             <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-white/35">Inspired by / adapted from</p>
-            <p className="mb-1.5 max-w-[24rem] text-[10px] leading-snug text-white/35">GLGameLab adapts reference ideas with original creative choices, controls, rendering, and engine integration.</p>
+            <p className="mb-1.5 max-w-[24rem] text-[10px] leading-snug text-white/35">
+              GLGameLab adapts reference ideas with original creative choices, controls, rendering, and engine integration.
+            </p>
             <div className="grid grid-cols-1 gap-1">
-              {attributions.map((attribution) => <a key={`${attribution.label}:${attribution.href}`} href={attribution.href} target="_blank" rel="noopener noreferrer" className="text-xs leading-snug text-cyan-100/70 underline decoration-cyan-100/25 underline-offset-2 transition-colors hover:text-cyan-50" onClick={(event) => { event.stopPropagation(); }}>{attribution.label}{attribution.author ? ` by ${attribution.author}` : ''}{attribution.license ? ` (${attribution.license})` : ''}</a>)}
+              {attributions.map((attribution) => (
+                <a
+                  key={`${attribution.label}:${attribution.href}`}
+                  href={attribution.href}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-xs leading-snug text-cyan-100/70 underline decoration-cyan-100/25 underline-offset-2 transition-colors hover:text-cyan-50"
+                  onClick={(event) => event.stopPropagation()}
+                >
+                  {attribution.label}
+                  {attribution.author ? ` by ${attribution.author}` : ''}
+                  {attribution.license ? ` (${attribution.license})` : ''}
+                </a>
+              ))}
             </div>
           </div>
         )}
 
-        <p className="mt-4 text-center text-[11px] text-white/25">{autoDismiss ? 'Tap anywhere to dismiss' : 'Tap to close'}</p>
+        <p className="mt-4 text-center text-[11px] text-white/25">Tap anywhere to dismiss</p>
       </div>
     </motion.div>
   );

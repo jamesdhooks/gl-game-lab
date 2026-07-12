@@ -4,11 +4,11 @@ import {
   useMemo,
   useRef,
   useState,
-  type ChangeEvent,
+  type CSSProperties,
   type PointerEvent as ReactPointerEvent,
 } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { Eye, EyeOff, HelpCircle, Play, Settings as SettingsIcon, X } from 'lucide-react';
+import { Dices, Eye, EyeOff, HelpCircle, MousePointer2, Paintbrush, Palette, Play, Settings as SettingsIcon, X } from 'lucide-react';
 import {
   ExperienceRuntimeControllerService,
   type ExperienceDefinition,
@@ -16,6 +16,7 @@ import {
   type ExperienceRuntimeController,
   type ExperienceSetting,
   type ExperienceSettingValue,
+  type SelectSetting,
 } from '@hooksjam/gl-game-lab-engine';
 import type { GameEngine } from '@hooksjam/gl-game-lab-engine';
 import { GameCanvas } from './GameCanvas.js';
@@ -24,9 +25,8 @@ import { HUD } from './ui/HUD.js';
 import { IntroCard, type IntroHint } from './ui/IntroCard.js';
 import { ModeToggle } from './ui/ModeToggle.js';
 import { OverflowMenu } from './ui/OverflowMenu.js';
-import { SettingsDrawer } from './ui/SettingsDrawer.js';
+import { SettingsDrawer, type SettingsDefaultsSaveRequest } from './ui/SettingsDrawer.js';
 import { SimControlPanel } from './ui/SimControlPanel.js';
-import { StylePicker as LegacyStylePicker } from './ui/StylePicker.js';
 import { TopbarSelect } from './ui/TopbarSelect.js';
 import { ViewportProvider, useViewportContext } from './ViewportProvider.js';
 
@@ -78,12 +78,13 @@ export interface ExperienceRuntimeProps {
   readonly maxPixels?: number;
   readonly onDemoAdvance?: () => void;
   readonly onDemoExit?: () => void;
+  readonly onSaveDefaults?: (request: SettingsDefaultsSaveRequest) => Promise<void> | void;
 }
 
 export function ExperienceRuntime({
   ...props
 }: ExperienceRuntimeProps): JSX.Element {
-  if (props.presentation === 'immersive') {
+  if (props.presentation === 'immersive' || props.showChrome !== false) {
     return <ViewportProvider><ImmersiveExperienceRuntime {...props} /></ViewportProvider>;
   }
   return <EmbeddedExperienceRuntime {...props} />;
@@ -96,52 +97,17 @@ function EmbeddedExperienceRuntime({
   canvasClassName,
   initialModeId,
   initialStyleId,
-  showChrome = true,
   onReady,
   onError,
   seed,
   fixedFrameCapture,
   onFixedFrameCapture,
   showDiagnostics = false,
-  presentation = 'embedded',
-  onQuit,
-  showIntroCard = presentation === 'immersive',
   maxPixels,
 }: ExperienceRuntimeProps): JSX.Element {
   const defaultModeId = initialModeId ?? definition.modes?.[0]?.id ?? 'default';
   const defaultStyleId = initialStyleId ?? definition.styleManifest?.defaultStyleId ?? 'default';
   const initialSettings = useMemo(() => settingDefaults(definition), [definition]);
-  const [modeId, setModeId] = useState(defaultModeId);
-  const [styleId, setStyleId] = useState(defaultStyleId);
-  const [settings, setSettings] = useState<Readonly<Record<string, ExperienceSettingValue>>>(initialSettings);
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  const [tutorialOpen, setTutorialOpen] = useState(false);
-  const [tutorialIndex, setTutorialIndex] = useState(0);
-  const [showAdvanced, setShowAdvanced] = useState(false);
-  const [introOpen, setIntroOpen] = useState(showIntroCard);
-  const [styleMenuOpen, setStyleMenuOpen] = useState(false);
-  const controllerRef = useRef<ExperienceRuntimeController>();
-  const onReadyRef = useRef(onReady);
-  onReadyRef.current = onReady;
-
-  useEffect(() => {
-    controllerRef.current = undefined;
-    setModeId(defaultModeId);
-    setStyleId(defaultStyleId);
-    setSettings(initialSettings);
-    setSettingsOpen(false);
-    setTutorialOpen(false);
-    setTutorialIndex(0);
-    setIntroOpen(showIntroCard);
-    setStyleMenuOpen(false);
-  }, [defaultModeId, defaultStyleId, definition.id, initialSettings, showIntroCard]);
-
-  useEffect(() => {
-    if (!introOpen || !showIntroCard) return;
-    const timeout = globalThis.setTimeout(() => { setIntroOpen(false); }, 6_000);
-    return () => { globalThis.clearTimeout(timeout); };
-  }, [introOpen, showIntroCard]);
-
   const createPlugins = useCallback(() => definition.createPlugins({
     profile,
     modeId: defaultModeId,
@@ -149,207 +115,30 @@ function EmbeddedExperienceRuntime({
     settings: initialSettings,
     ...(seed !== undefined ? { seed } : {}),
   }), [defaultModeId, defaultStyleId, definition, initialSettings, profile, seed]);
-
   const handleReady = useCallback((engine: GameEngine): void => {
-    const controller = engine.kernel.tryGet(ExperienceRuntimeControllerService);
-    controllerRef.current = controller;
-    onReadyRef.current?.(engine, controller);
-  }, []);
-
-  const changeMode = (nextModeId: string): void => {
-    controllerRef.current?.setMode(nextModeId);
-    setModeId(nextModeId);
-  };
-  const changeStyle = (nextStyleId: string): void => {
-    controllerRef.current?.setStyle(nextStyleId);
-    setStyleId(nextStyleId);
-  };
-  const changeSetting = (setting: ExperienceSetting, value: ExperienceSettingValue): void => {
-    controllerRef.current?.setSetting(setting.key, value);
-    setSettings((current) => ({ ...current, [setting.key]: value }));
-  };
-  const reset = (): void => {
-    controllerRef.current?.reset();
-  };
-
-  const visibleSettings = (definition.settings ?? []).filter((setting) => (
-    (presentation === 'immersive' || showAdvanced || setting.advanced !== true)
-    && (!setting.visibleModes || setting.visibleModes.includes(modeId))
-    && (!setting.visibleRenderStyles || setting.visibleRenderStyles.includes(String(settings.renderStyle ?? '')))
-  ));
-  const tutorialPages = definition.tutorialPages ?? [];
-  const tutorialPage = tutorialPages[tutorialIndex];
+    onReady?.(engine, engine.kernel.tryGet(ExperienceRuntimeControllerService));
+  }, [onReady]);
 
   return (
     <section
-      className={classNames('gl-experience-runtime', presentation === 'immersive' ? 'gl-experience-runtime-immersive' : undefined, className)}
+      className={classNames('relative h-full w-full overflow-hidden', className)}
       data-experience-id={definition.id}
       data-experience-profile={profile}
     >
-      {showChrome && (
-        <header className="gl-experience-toolbar" aria-label={`${definition.name} controls`}>
-          {presentation === 'immersive' && onQuit && (
-            <button type="button" className="gl-experience-quit" aria-label="Quit" onClick={onQuit}>
-              <span aria-hidden="true">×</span><span>Quit</span>
-            </button>
-          )}
-          {(definition.modes?.length ?? 0) > 0 && (
-            <div className="gl-experience-modes" role="group" aria-label="Interaction mode">
-              {definition.modes?.map((mode) => (
-                <button
-                  key={mode.id}
-                  type="button"
-                  className="gl-experience-mode"
-                  aria-pressed={modeId === mode.id}
-                  title={mode.description}
-                  onClick={() => { changeMode(mode.id); }}
-                >
-                  <span aria-hidden="true">{mode.icon}</span>
-                  {mode.label}
-                </button>
-              ))}
-            </div>
-          )}
-          <div className="gl-experience-actions">
-            {(definition.styleManifest?.styles.length ?? 0) > 0 && (
-              <StylePicker
-                styles={definition.styleManifest?.styles ?? []}
-                value={styleId}
-                open={styleMenuOpen}
-                onToggle={() => { setStyleMenuOpen((open) => !open); }}
-                onChange={(nextStyleId) => { changeStyle(nextStyleId); setStyleMenuOpen(false); }}
-              />
-            )}
-            {definition.capabilities.settings && (
-              <button type="button" className="gl-experience-action-control" aria-label="Settings" aria-pressed={settingsOpen} onClick={() => { setSettingsOpen((open) => !open); }}>
-                <span aria-hidden="true">⚙</span><span className="gl-experience-action-label">Settings</span>
-              </button>
-            )}
-            {definition.capabilities.tutorial && tutorialPages.length > 0 && (
-              <button type="button" className="gl-experience-action-control" aria-label="How to play" onClick={() => { setTutorialIndex(0); setTutorialOpen(true); }}>
-                <span aria-hidden="true">?</span><span className="gl-experience-action-label">How to play</span>
-              </button>
-            )}
-            {definition.capabilities.reset && <button type="button" className="gl-experience-action-control" aria-label="Reset" onClick={reset}><span aria-hidden="true">↻</span><span className="gl-experience-action-label">Reset</span></button>}
-          </div>
-        </header>
-      )}
-
-      <div className="gl-experience-stage">
-        <GameCanvas
-          createPlugins={createPlugins}
-          ariaLabel={`${definition.name} game canvas`}
-          onReady={handleReady}
-          showDiagnostics={showDiagnostics}
-          {...(maxPixels === undefined ? {} : { maxPixels })}
-          {...(fixedFrameCapture ? { fixedFrameCapture } : {})}
-          {...(onFixedFrameCapture ? { onFixedFrameCapture } : {})}
-          {...(canvasClassName ? { className: canvasClassName } : {})}
-          {...(onError ? { onError } : {})}
-        />
-      </div>
-
-      {showChrome && introOpen && (
-        <button type="button" className="gl-experience-intro-card" onClick={() => { setIntroOpen(false); }}>
-          <span className="gl-experience-intro-icon" aria-hidden="true">{definition.icon}</span>
-          <span className="gl-experience-intro-copy">
-            <strong>{definition.name}</strong>
-            <span>{definition.long}</span>
-            {(definition.modes?.length ?? 0) > 0 && (
-              <span className="gl-experience-intro-hints">
-                {definition.modes?.map((mode) => (
-                  <span key={mode.id}><b>{mode.label}</b>{mode.description ?? definition.short}</span>
-                ))}
-              </span>
-            )}
-            <small>Tap anywhere to dismiss</small>
-          </span>
-        </button>
-      )}
-
-      {showChrome && (definition.attributions?.length ?? 0) > 0 && (
-        <footer className="gl-experience-attributions" aria-label={`${definition.name} attributions`}>
-          Inspired by {definition.attributions?.map((attribution, index) => (
-            <span key={attribution.href}>
-              {index > 0 ? ', ' : ''}<a href={attribution.href} target="_blank" rel="noreferrer">{attribution.label}</a>
-              {attribution.author ? ` by ${attribution.author}` : ''}{attribution.license ? ` (${attribution.license})` : ''}
-            </span>
-          ))}
-        </footer>
-      )}
-
-      {showChrome && settingsOpen && (
-        <aside className="gl-experience-settings" aria-label={`${definition.name} settings`}>
-          <div className="gl-experience-panel-heading">
-            <h2>Settings</h2>
-            <button type="button" aria-label="Close settings" onClick={() => { setSettingsOpen(false); }}>×</button>
-          </div>
-          {presentation !== 'immersive' && (definition.settings?.some((setting) => setting.advanced) ?? false) && (
-            <label className="gl-experience-advanced-toggle">
-              <input
-                type="checkbox"
-                checked={showAdvanced}
-                onChange={(event) => { setShowAdvanced(event.currentTarget.checked); }}
-              />
-              Advanced
-            </label>
-          )}
-          <div className="gl-experience-setting-list">
-            {visibleSettings.map((setting) => (
-              <SettingControl
-                key={setting.key}
-                setting={setting}
-                value={settings[setting.key] ?? setting.default}
-                onChange={(value) => { changeSetting(setting, value); }}
-              />
-            ))}
-          </div>
-        </aside>
-      )}
-
-      {showChrome && tutorialOpen && tutorialPage && (
-        <div className="gl-experience-tutorial-backdrop" role="presentation">
-          <section className="gl-experience-tutorial" role="dialog" aria-modal="true" aria-label={`${definition.name} tutorial`}>
-            <div className="gl-experience-tutorial-icon" aria-hidden="true">{tutorialPage.icon}</div>
-            <h2>{tutorialPage.title}</h2>
-            <p>{tutorialPage.body}</p>
-            <div className="gl-experience-tutorial-progress" aria-label={`Page ${tutorialIndex + 1} of ${tutorialPages.length}`}>
-              {tutorialPages.map((page, index) => <span key={page.title} data-active={index === tutorialIndex} />)}
-            </div>
-            <div className="gl-experience-tutorial-actions">
-              <button
-                type="button"
-                disabled={tutorialIndex === 0}
-                onClick={() => { setTutorialIndex((index) => Math.max(0, index - 1)); }}
-              >
-                Back
-              </button>
-              {tutorialIndex < tutorialPages.length - 1 ? (
-                <button type="button" onClick={() => { setTutorialIndex((index) => index + 1); }}>Next</button>
-              ) : (
-                <button type="button" onClick={() => { setTutorialOpen(false); }}>Play</button>
-              )}
-            </div>
-          </section>
-        </div>
-      )}
+      <GameCanvas
+        createPlugins={createPlugins}
+        ariaLabel={`${definition.name} game canvas`}
+        onReady={handleReady}
+        showDiagnostics={showDiagnostics}
+        {...(maxPixels === undefined ? {} : { maxPixels })}
+        {...(fixedFrameCapture ? { fixedFrameCapture } : {})}
+        {...(onFixedFrameCapture ? { onFixedFrameCapture } : {})}
+        className={canvasClassName ?? 'h-full w-full touch-none'}
+        {...(onError ? { onError } : {})}
+      />
     </section>
   );
 }
-
-const RUNTIME_PERF_CSS = `
-.gl-game-lab-runtime-shell [class*="backdrop-blur"] {
-  -webkit-backdrop-filter: none !important;
-  backdrop-filter: none !important;
-}
-.gl-game-lab-runtime-shell [class*="shadow"] { box-shadow: none !important; }
-.gl-game-lab-runtime-shell [class*="drop-shadow"] { filter: none !important; }
-.gl-game-lab-runtime-shell [class*="transition"] {
-  transition-property: none !important;
-  transition-duration: 0ms !important;
-}
-`;
-
 function ImmersiveExperienceRuntime({
   definition,
   profile = 'play',
@@ -369,6 +158,7 @@ function ImmersiveExperienceRuntime({
   maxPixels,
   onDemoAdvance,
   onDemoExit,
+  onSaveDefaults,
 }: ExperienceRuntimeProps): JSX.Element {
   const { isMobile, isLandscape } = useViewportContext();
   const mobilePortrait = isMobile && !isLandscape;
@@ -383,7 +173,6 @@ function ImmersiveExperienceRuntime({
   const [settingsSidebarWidth, setSettingsSidebarWidth] = useState(DEFAULT_SETTINGS_SIDEBAR_WIDTH);
   const [isCompactTopbar, setIsCompactTopbar] = useState(false);
   const [infoCardVisible, setInfoCardVisible] = useState(showIntroCard);
-  const [infoAutoDismiss, setInfoAutoDismiss] = useState(true);
   const [uiHidden, setUiHidden] = useState(false);
   const [isDemo, setIsDemo] = useState(profile === 'demo');
   const [demoHintVisible, setDemoHintVisible] = useState(profile === 'demo');
@@ -391,6 +180,8 @@ function ImmersiveExperienceRuntime({
   const [runtimeKey, setRuntimeKey] = useState(0);
   const [localMaxPixels, setLocalMaxPixels] = useState(maxPixels);
   const [qualityMode, setQualityMode] = useState(definition.capabilities.qualityModes?.[0] ?? 'raw');
+  const [imageUrlEditorOpen, setImageUrlEditorOpen] = useState(false);
+  const [imageUrlDraft, setImageUrlDraft] = useState('');
   const controllerRef = useRef<ExperienceRuntimeController>();
   const engineRef = useRef<GameEngine>();
   const sceneStageRef = useRef<HTMLDivElement>(null);
@@ -406,11 +197,12 @@ function ImmersiveExperienceRuntime({
     setSettings(initialSettings);
     setSettingsOpen(readStoredBoolean(SETTINGS_OPEN_STORAGE_KEY, false));
     setInfoCardVisible(showIntroCard && profile !== 'demo');
-    setInfoAutoDismiss(true);
     setUiHidden(profile === 'demo');
     setIsDemo(profile === 'demo');
     setActiveProfile(profile);
     setQualityMode(definition.capabilities.qualityModes?.[0] ?? 'raw');
+    setImageUrlEditorOpen(false);
+    setImageUrlDraft('');
   }, [defaultModeId, defaultStyleId, definition.capabilities.qualityModes, definition.id, initialSettings, profile, showIntroCard]);
 
   useEffect(() => {
@@ -458,32 +250,129 @@ function ImmersiveExperienceRuntime({
     controllerRef.current?.setSetting(setting.key, value);
     setSettings((current) => ({ ...current, [setting.key]: value }));
   }, []);
+  const settingsStore = useMemo(() => ({
+    get: (key: string): unknown => settings[key],
+    set: (key: string, value: ExperienceSettingValue): void => {
+      const field = (definition.settings ?? []).find((setting) => setting.key === key);
+      if (field) changeSetting(field, value);
+    },
+    reset: (keys: readonly string[]): void => {
+      for (const key of keys) {
+        const field = (definition.settings ?? []).find((setting) => setting.key === key);
+        if (field) changeSetting(field, initialSettings[key] ?? field.default);
+      }
+    },
+  }), [changeSetting, definition.settings, initialSettings, settings]);
+  const saveDefaults = useCallback(async (request: SettingsDefaultsSaveRequest): Promise<void> => {
+    if (onSaveDefaults) {
+      await onSaveDefaults(request);
+      return;
+    }
+    const key = `gl-game-lab:scene-defaults:${definition.id}`;
+    let current: Record<string, unknown> = {};
+    try {
+      const stored = localStorage.getItem(key);
+      if (stored) current = JSON.parse(stored) as Record<string, unknown>;
+      localStorage.setItem(key, JSON.stringify({ ...current, ...request.values }));
+    } catch {
+      throw new Error('Unable to save scene defaults');
+    }
+  }, [definition.id, onSaveDefaults]);
 
+  const renderStyleField = useMemo<SelectSetting | undefined>(
+    () => (definition.settings ?? []).find(
+      (setting): setting is SelectSetting => setting.key === 'renderStyle' && setting.type === 'select',
+    ),
+    [definition.settings],
+  );
+  const renderStyleId = String(settings.renderStyle ?? renderStyleField?.default ?? '');
+  const renderStyleModes = useMemo(
+    () => renderStyleField?.options.map((option) => ({ id: option.value, label: option.label })) ?? [],
+    [renderStyleField],
+  );
+  const hasRenderStylePicker = renderStyleModes.length > 1;
+  const injectPaletteField = useMemo<SelectSetting | undefined>(
+    () => definition.id === 'fluid-tank'
+      ? (definition.settings ?? []).find(
+        (setting): setting is SelectSetting => setting.key === 'injectPalette' && setting.type === 'select',
+      )
+      : undefined,
+    [definition.id, definition.settings],
+  );
   const visibleSettings = useMemo(() => (definition.settings ?? []).filter((setting) => (
-    (!setting.visibleModes || setting.visibleModes.includes(modeId))
-    && (!setting.visibleRenderStyles || setting.visibleRenderStyles.includes(String(settings.renderStyle ?? '')))
-  )), [definition.settings, modeId, settings.renderStyle]);
-  const topControlFields = useMemo(() => visibleSettings.filter((setting) => (
-    setting.advanced !== true && (setting.type === 'number' || setting.type === 'select')
-  )), [visibleSettings]);
+    setting.key !== 'renderStyle'
+    && !(definition.id === 'fluid-tank' && setting.key === 'injectPalette')
+    && (!setting.visibleModes || setting.visibleModes.includes(modeId))
+    && (!setting.visibleRenderStyles || setting.visibleRenderStyles.includes(renderStyleId))
+  )), [definition.id, definition.settings, modeId, renderStyleId]);
   const hasModes = (definition.modes?.length ?? 0) > 1;
   const styleOptions = useMemo(() => (definition.styleManifest?.styles ?? []).map((style) => ({ id: style.id, label: style.name, chipColors: [...style.palette] })), [definition.styleManifest]);
+
+  const changeRenderStyle = useCallback((nextRenderStyle: string): void => {
+    if (renderStyleField) changeSetting(renderStyleField, nextRenderStyle);
+  }, [changeSetting, renderStyleField]);
+  const paletteControl = definition.styleManifest ? (
+    <TopbarSelect label="Palette" options={styleOptions} value={styleId} onChange={changeStyle} hideLabel icon={Palette} />
+  ) : null;
+  const renderStyleControl = hasRenderStylePicker ? (
+    definition.id === 'fluid-tank' ? (
+      <TopbarSelect label="Texture" options={renderStyleModes} value={renderStyleId} onChange={changeRenderStyle} />
+    ) : isCompactTopbar && !mobilePortrait ? (
+      <TopbarSelect label="Style" options={renderStyleModes} value={renderStyleId} onChange={changeRenderStyle} hideLabel icon={Paintbrush} />
+    ) : (
+      <ModeToggle modes={renderStyleModes} value={renderStyleId} onChange={changeRenderStyle} />
+    )
+  ) : null;
+  const inputModeControl = hasModes ? (
+    isCompactTopbar && !mobilePortrait ? (
+      <TopbarSelect label="Input" options={definition.modes ?? []} value={modeId} onChange={changeMode} hideLabel icon={MousePointer2} />
+    ) : (
+      <ModeToggle modes={definition.modes ?? []} value={modeId} onChange={changeMode} />
+    )
+  ) : null;
+  const injectPaletteId = String(settings.injectPalette ?? injectPaletteField?.default ?? 'style');
+  const injectPaletteControl = injectPaletteField ? (
+    <TopbarSelect
+      label="Inject"
+      value={injectPaletteId}
+      options={injectPaletteField.options.map((option) => ({
+        id: option.value,
+        label: option.label,
+        chipStyle: fluidInjectChipStyle(option.value),
+      }))}
+      onChange={(value) => { changeSetting(injectPaletteField, value); }}
+    />
+  ) : null;
+  const imageUrlField = (definition.settings ?? []).find((setting) => setting.key === 'initImageUrl' && setting.type === 'string');
+  const imageUrlValue = String(settings.initImageUrl ?? '');
+  const imageSourceButton = definition.id === 'fluid-tank' && renderStyleId === 'image' && imageUrlField ? (
+    <button
+      type="button"
+      onClick={() => { setImageUrlDraft(imageUrlValue); setImageUrlEditorOpen(true); }}
+      className={`flex h-8 items-center gap-1.5 rounded-xl px-2.5 text-[10px] font-bold uppercase tracking-widest transition-colors ${imageUrlValue.trim() ? 'bg-emerald-300/18 text-emerald-50 hover:bg-emerald-300/26' : 'bg-white/10 text-white/55 hover:bg-white/16 hover:text-white/85'}`}
+      aria-label="Set fluid image URL"
+      title={imageUrlValue.trim() ? 'Image URL set' : 'Using random public image'}
+    >
+      <span>Image URL</span>
+      <span className="rounded-full bg-black/25 px-1.5 py-0.5 text-[9px]">{imageUrlValue.trim() ? 'Set' : 'Random'}</span>
+    </button>
+  ) : null;
 
   const introHints = useMemo(() => {
     const hints: IntroHint[] = (definition.modes ?? [])
       .slice(0, 3)
       .filter((mode) => Boolean(mode.description))
       .map((mode) => ({ label: mode.label, action: mode.description ?? definition.short }));
-    if (topControlFields.some((setting) => setting.type === 'number')) {
-      hints.push({ label: 'Sliders', action: 'adjust physics and visual settings at the top' });
-    }
     return hints;
-  }, [definition.modes, definition.short, topControlFields]);
+  }, [definition.modes, definition.short]);
 
-  const controlsHeaderSlot = mobilePortrait && (definition.styleManifest || hasModes) ? (
+  const controlsHeaderSlot = mobilePortrait && (definition.styleManifest || hasRenderStylePicker || hasModes) ? (
     <>
-      {definition.styleManifest && <TopbarSelect label="Palette" options={styleOptions} value={styleId} onChange={changeStyle} hideLabel />}
-      {hasModes && <ModeToggle modes={definition.modes ?? []} value={modeId} onChange={changeMode} />}
+      {paletteControl}
+      {renderStyleControl}
+      {imageSourceButton}
+      {injectPaletteControl}
+      {inputModeControl}
     </>
   ) : undefined;
 
@@ -518,8 +407,26 @@ function ImmersiveExperienceRuntime({
     window.addEventListener('pointercancel', finish);
   };
   const openInfo = (): void => {
-    setInfoAutoDismiss(false);
     setInfoCardVisible(true);
+  };
+  const randomizeScene = (): void => {
+    for (const setting of definition.settings ?? []) {
+      if (setting.type === 'number') {
+        const spread = Math.max(setting.step, Math.abs(setting.default) * 0.35);
+        const next = Math.max(setting.min, Math.min(setting.max, setting.default + (Math.random() * 2 - 1) * spread));
+        const snapped = setting.numericScale === 'powerOfTwo'
+          ? 2 ** Math.round(Math.log2(Math.max(1, next)))
+          : Math.round(next / setting.step) * setting.step;
+        changeSetting(setting, Math.max(setting.min, Math.min(setting.max, snapped)));
+      } else if (setting.type === 'select' && setting.options.length > 1) {
+        const option = setting.options[Math.floor(Math.random() * setting.options.length)];
+        if (option) changeSetting(setting, option.value);
+      }
+    }
+    const styles = definition.styleManifest?.styles.filter((style) => style.id !== '__random__') ?? [];
+    const style = styles[Math.floor(Math.random() * styles.length)];
+    if (style) changeStyle(style.id);
+    controllerRef.current?.reset();
   };
   const showDemoHint = (): void => {
     setDemoHintVisible(true);
@@ -550,7 +457,6 @@ function ImmersiveExperienceRuntime({
       data-experience-id={definition.id}
       data-experience-profile={activeProfile}
     >
-      <style>{RUNTIME_PERF_CSS}</style>
       <div ref={sceneStageRef} className="relative h-full min-w-0 flex-1 overflow-hidden">
         <GameCanvas
           key={runtimeKey}
@@ -576,7 +482,6 @@ function ImmersiveExperienceRuntime({
                 short={definition.short}
                 hints={introHints}
                 attributions={definition.attributions ? [...definition.attributions] : []}
-                autoDismiss={infoAutoDismiss}
                 onDismiss={() => { setInfoCardVisible(false); }}
               />
             )}
@@ -584,17 +489,20 @@ function ImmersiveExperienceRuntime({
 
           <HUD
             {...(onQuit ? { onQuit } : {})}
-            controls={(definition.styleManifest && !mobilePortrait) || (hasModes && !mobilePortrait) ? (
+            controls={!mobilePortrait && (definition.styleManifest || hasRenderStylePicker || hasModes) ? (
               <div className="flex items-center gap-1.5">
-                {definition.styleManifest && <TopbarSelect label="Palette" options={styleOptions} value={styleId} onChange={changeStyle} hideLabel />}
-                {hasModes && <ModeToggle modes={definition.modes ?? []} value={modeId} onChange={changeMode} />}
+                {paletteControl}
+                {renderStyleControl}
+                {imageSourceButton}
+                {injectPaletteControl}
+                {inputModeControl}
               </div>
             ) : undefined}
           />
 
           <OverflowMenu compact={isCompactTopbar} items={[
             {
-              key: 'engine-configuration', label: 'Engine configuration', hidden: (definition.capabilities.qualityModes?.length ?? 0) === 0,
+              key: 'engine-configuration', label: 'Engine configuration', hidden: (definition.capabilities.qualityModes?.length ?? 0) <= 1,
               node: <QualityModeSelector modes={definition.capabilities.qualityModes ?? []} value={qualityMode} onChange={(next) => { setQualityMode(next); engineRef.current?.quality.setTier(next === 'basic' ? 'mobile' : 'desktop'); }} />,
             },
             {
@@ -604,6 +512,10 @@ function ImmersiveExperienceRuntime({
             {
               key: 'settings', label: 'Settings', closeOnActivate: true,
               node: <motion.button type="button" whileTap={{ scale: 0.9 }} onClick={openSettings} aria-label="Settings" className="flex h-8 w-8 items-center justify-center rounded-xl bg-black/30 text-white/70 backdrop-blur-md transition-colors hover:bg-black/50 hover:text-white"><SettingsIcon size={15} /></motion.button>,
+            },
+            {
+              key: 'randomize', label: 'Randomize', hidden: definition.kind !== 'simulation',
+              node: <motion.button type="button" whileTap={{ scale: 0.9 }} onClick={randomizeScene} aria-label="Randomize settings" title="Randomize settings" className="flex h-8 w-8 items-center justify-center rounded-xl bg-black/30 text-white/70 backdrop-blur-md transition-colors hover:bg-black/50 hover:text-white"><Dices size={15} /></motion.button>,
             },
             {
               key: 'hide-ui', label: 'Hide UI',
@@ -623,19 +535,70 @@ function ImmersiveExperienceRuntime({
             <SettingsDrawer
               open={settingsOpen}
               onClose={closeSettings}
-              values={settings}
+              settings={settingsStore}
               fields={visibleSettings}
-              onChange={changeSetting}
               {...(localMaxPixels === undefined ? {} : { maxPixels: localMaxPixels })}
               onMaxPixelsChange={setLocalMaxPixels}
+              onSaveDefaults={saveDefaults}
               ariaLabel={`${definition.name} settings`}
               pinned={settingsPinned && !mobilePortrait}
               onPinnedChange={changeSettingsPinned}
             />
           )}
 
-          {(topControlFields.length > 0 || controlsHeaderSlot) && (
-            <SimControlPanel values={settings} fields={topControlFields} onChange={changeSetting} headerSlot={controlsHeaderSlot} />
+          <AnimatePresence>
+            {imageUrlEditorOpen && imageUrlField && (
+              <motion.div
+                className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/72 p-4"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                onMouseDown={(event) => { if (event.target === event.currentTarget) setImageUrlEditorOpen(false); }}
+              >
+                <motion.div
+                  role="dialog"
+                  aria-modal="true"
+                  aria-label="Fluid image URL"
+                  className="w-full max-w-xl rounded-2xl bg-zinc-950 p-4 shadow-2xl ring-1 ring-white/15"
+                  initial={{ opacity: 0, y: 10, scale: 0.98 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: 10, scale: 0.98 }}
+                  transition={{ duration: 0.14 }}
+                >
+                  <div className="mb-3 flex items-center justify-between gap-3">
+                    <div>
+                      <h4 className="text-sm font-bold text-white">Fluid image URL</h4>
+                      <p className="mt-1 text-xs text-white/45">Paste a direct image URL. Leave blank to use a random public image.</p>
+                    </div>
+                    <button type="button" onClick={() => setImageUrlEditorOpen(false)} className="rounded-lg p-2 text-white/45 hover:bg-white/10 hover:text-white" aria-label="Close URL editor"><X size={16} /></button>
+                  </div>
+                  <textarea
+                    autoFocus
+                    value={imageUrlDraft}
+                    onChange={(event) => setImageUrlDraft(event.target.value)}
+                    onKeyDown={(event) => {
+                      if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
+                        changeSetting(imageUrlField, imageUrlDraft.trim());
+                        controllerRef.current?.reset();
+                        setImageUrlEditorOpen(false);
+                      }
+                      if (event.key === 'Escape') setImageUrlEditorOpen(false);
+                    }}
+                    placeholder="https://example.com/image.png"
+                    className="min-h-28 w-full resize-y rounded-xl bg-white/10 px-3 py-2 text-sm text-white ring-1 ring-white/15 placeholder:text-white/30 focus:outline-none focus:ring-cyan-200/50"
+                  />
+                  <div className="mt-3 flex justify-end gap-2">
+                    <button type="button" onClick={() => setImageUrlDraft('')} className="rounded-xl px-3 py-2 text-sm text-white/60 hover:bg-white/10 hover:text-white">Clear</button>
+                    <button type="button" onClick={() => setImageUrlEditorOpen(false)} className="rounded-xl px-3 py-2 text-sm text-white/60 hover:bg-white/10 hover:text-white">Cancel</button>
+                    <button type="button" onClick={() => { changeSetting(imageUrlField, imageUrlDraft.trim()); controllerRef.current?.reset(); setImageUrlEditorOpen(false); }} className="rounded-xl bg-cyan-200 px-3 py-2 text-sm font-bold text-black hover:bg-cyan-100">Apply URL</button>
+                  </div>
+                </motion.div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          {controlsHeaderSlot && (
+            <SimControlPanel values={settings} fields={[]} onChange={changeSetting} headerSlot={controlsHeaderSlot} />
           )}
         </div>
       )}
@@ -670,11 +633,11 @@ function ImmersiveExperienceRuntime({
           <SettingsDrawer
             open={settingsOpen}
             onClose={closeSettings}
-            values={settings}
+            settings={settingsStore}
             fields={visibleSettings}
-            onChange={changeSetting}
             {...(localMaxPixels === undefined ? {} : { maxPixels: localMaxPixels })}
             onMaxPixelsChange={setLocalMaxPixels}
+            onSaveDefaults={saveDefaults}
             ariaLabel={`${definition.name} settings`}
             pinned
             docked
@@ -703,118 +666,16 @@ function QualityModeSelector({ modes, value, onChange }: { readonly modes: reado
   );
 }
 
-interface SettingControlProps {
-  readonly setting: ExperienceSetting;
-  readonly value: ExperienceSettingValue;
-  readonly onChange: (value: ExperienceSettingValue) => void;
-}
-
-function SettingControl({ setting, value, onChange }: SettingControlProps): JSX.Element {
-  if (setting.type === 'boolean') {
-    return (
-      <div className="gl-experience-setting gl-experience-setting-boolean">
-        <SettingLabel setting={setting} />
-        <button type="button" className="gl-experience-switch" role="switch" aria-checked={value === true} onClick={() => { onChange(value !== true); }}>
-          <span />
-        </button>
-      </div>
-    );
-  }
-  if (setting.type === 'select') {
-    return (
-      <label className="gl-experience-setting">
-        <SettingLabel setting={setting} />
-        <select value={String(value)} onChange={(event) => { onChange(event.currentTarget.value); }}>
-          {setting.options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-        </select>
-      </label>
-    );
-  }
-  if (setting.type === 'string') {
-    return (
-      <label className="gl-experience-setting">
-        <SettingLabel setting={setting} />
-        <input type="url" value={String(value)} placeholder={setting.placeholder} onChange={(event) => { onChange(event.currentTarget.value); }} />
-      </label>
-    );
-  }
-  const handleNumber = (event: ChangeEvent<HTMLInputElement>): void => {
-    const raw = Number(event.currentTarget.value);
-    const next = setting.numericScale === 'powerOfTwo' ? 2 ** Math.round(raw) : raw;
-    if (Number.isFinite(next)) onChange(next);
-  };
-  const powerOfTwo = setting.numericScale === 'powerOfTwo';
-  const sliderValue = powerOfTwo ? Math.round(Math.log2(Math.max(1, Number(value)))) : Number(value);
-  return (
-    <label className="gl-experience-setting">
-      <SettingLabel setting={setting} />
-      <span className="gl-experience-number-control">
-        <input
-          type="range"
-          min={powerOfTwo ? Math.ceil(Math.log2(setting.min)) : setting.min}
-          max={powerOfTwo ? Math.floor(Math.log2(setting.max)) : setting.max}
-          step={powerOfTwo ? 1 : setting.step}
-          value={sliderValue}
-          data-numeric-scale={setting.numericScale ?? 'linear'}
-          aria-valuetext={powerOfTwo ? formatSettingNumber(Number(value), 1) : undefined}
-          onChange={handleNumber}
-        />
-        <output>{formatSettingNumber(Number(value), setting.step)}</output>
-      </span>
-    </label>
-  );
-}
-
-interface StylePickerProps {
-  readonly styles: NonNullable<ExperienceDefinition['styleManifest']>['styles'];
-  readonly value: string;
-  readonly open: boolean;
-  readonly onToggle: () => void;
-  readonly onChange: (styleId: string) => void;
-}
-
-function StylePicker({ styles, value, open, onToggle, onChange }: StylePickerProps): JSX.Element {
-  const current = styles.find((style) => style.id === value) ?? styles[0];
-  const cycle = (): void => {
-    const currentIndex = Math.max(0, styles.findIndex((style) => style.id === current?.id));
-    const next = styles[(currentIndex + 1) % styles.length];
-    if (next) onChange(next.id);
-  };
-  return (
-    <div className="gl-experience-style-picker">
-      <button type="button" className="gl-experience-style-trigger" aria-label="Visual style" aria-expanded={open} onClick={onToggle}>
-        {current && <PaletteSwatch palette={current.palette} />}
-        <span>{current?.name ?? 'Style'}</span><span aria-hidden="true">⌄</span>
-      </button>
-      <button type="button" className="gl-experience-style-cycle" aria-label="Next style" onClick={cycle}>›</button>
-      {open && (
-        <div className="gl-experience-style-menu" role="menu" aria-label="Visual styles">
-          {styles.map((style) => (
-            <button key={style.id} type="button" role="menuitemradio" aria-checked={style.id === value} onClick={() => { onChange(style.id); }}>
-              <PaletteSwatch palette={style.palette} /><span>{style.name}</span><span aria-hidden="true">{style.id === value ? '✓' : ''}</span>
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function PaletteSwatch({ palette }: { readonly palette: readonly number[] }): JSX.Element {
-  return (
-    <span className="gl-experience-palette-swatch" aria-hidden="true">
-      {palette.slice(0, 4).map((color) => <i key={color} style={{ backgroundColor: `#${color.toString(16).padStart(6, '0')}` }} />)}
-    </span>
-  );
-}
-
-function SettingLabel({ setting }: { readonly setting: ExperienceSetting }): JSX.Element {
-  return (
-    <span className="gl-experience-setting-label">
-      <strong>{setting.label}</strong>
-      {setting.description && <small>{setting.description}</small>}
-    </span>
-  );
+function fluidInjectChipStyle(value: string): CSSProperties {
+  if (value === 'cyan') return { background: 'rgb(26, 255, 233)' };
+  if (value === 'magenta') return { background: 'rgb(255, 31, 223)' };
+  if (value === 'amber') return { background: 'rgb(255, 157, 21)' };
+  if (value === 'green') return { background: 'rgb(31, 255, 59)' };
+  if (value === 'blue') return { background: 'rgb(41, 92, 255)' };
+  if (value === 'red') return { background: 'rgb(255, 51, 51)' };
+  if (value === 'white') return { background: 'rgb(255, 255, 255)' };
+  if (value === 'rainbow') return { background: 'linear-gradient(90deg, #ff3157, #ffd43b, #36ff74, #3da5ff, #c35cff)' };
+  return { background: 'linear-gradient(135deg, #22d3ee, #8b5cf6, #f472b6)' };
 }
 
 function settingDefaults(definition: ExperienceDefinition): Readonly<Record<string, ExperienceSettingValue>> {
@@ -822,6 +683,18 @@ function settingDefaults(definition: ExperienceDefinition): Readonly<Record<stri
   for (const setting of definition.settings ?? []) values[setting.key] = setting.default;
   for (const [key, value] of Object.entries(definition.configDefaults ?? {})) {
     if (typeof value === 'number' || typeof value === 'boolean' || typeof value === 'string') values[key] = value;
+  }
+  try {
+    const stored = localStorage.getItem(`gl-game-lab:scene-defaults:${definition.id}`);
+    if (stored) {
+      const parsed = JSON.parse(stored) as Record<string, unknown>;
+      for (const setting of definition.settings ?? []) {
+        const value = parsed[setting.key];
+        if (typeof value === 'number' || typeof value === 'boolean' || typeof value === 'string') values[setting.key] = value;
+      }
+    }
+  } catch {
+    // Storage can be unavailable in private or sandboxed contexts.
   }
   return Object.freeze(values);
 }

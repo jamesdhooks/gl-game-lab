@@ -2,7 +2,7 @@
  * packages/react/src/ui/BottomSheet.tsx
  *
  * Mobile-first sheet that slides up from the bottom.
- * Used by OverflowMenu, SettingsDrawer, StylePicker on mobile.
+ * Used by OverflowMenu and SettingsDrawer on mobile.
  *
  * Props:
  *   open      — controlled visibility
@@ -21,7 +21,6 @@ export interface BottomSheetProps {
   title?: string;
   children: React.ReactNode;
 }
-
 export function BottomSheet({ open, onClose, title, children }: BottomSheetProps) {
   const { safeArea } = useViewportContext();
 
@@ -62,7 +61,7 @@ export function BottomSheet({ open, onClose, title, children }: BottomSheetProps
             onDragEnd={(_e, info) => {
               if (info.velocity.y > 300 || info.offset.y > 120) onClose();
             }}
-            className="fixed bottom-0 left-0 right-0 z-[81] flex max-h-[80dvh] flex-col rounded-t-2xl bg-black/90 ring-1 ring-white/10 shadow-2xl"
+            className="fixed bottom-0 left-0 right-0 z-[81] flex max-h-[80dvh] flex-col rounded-t-2xl bg-zinc-950 ring-1 ring-white/10 shadow-2xl"
             style={{ paddingBottom: safeArea.bottom || undefined }}
           >
             {/* Drag handle */}
