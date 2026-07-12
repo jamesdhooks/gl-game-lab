@@ -151,20 +151,16 @@ export function createSoftBodyBlobPlugin(initial: SoftBodyBlobConfig = SOFT_BODY
           const style = requireStyle(), palette3 = style.palette.slice(0, 4).map(blobColor3), palette4 = style.palette.slice(0, 4).map(color => blobColor4(color)), renderStyle = blobString(config, 'renderStyle');
           if (renderStyle !== 'basic') {
             const packed = model.packMesh();
-            if (renderStyle === 'ultra') renderer.submitTriangleMesh({
-              id: 'soft-body-blob.mesh-glow', ...packed, worldWidth: width, worldHeight: height,
-              palette: palette3, opacity: 0.18, blend: 'additive'
-            });
-            renderer.submitTriangleMesh({
+            if (renderStyle === 'enhanced') renderer.submitTriangleMesh({
               id: 'soft-body-blob.mesh', ...packed, worldWidth: width, worldHeight: height,
-              palette: palette3, opacity: renderStyle === 'ultra' ? blobNumber(config, 'opacity') * 0.78 : 0.72, blend: 'alpha'
+              palette: palette3, opacity: 0.72, blend: 'alpha'
             });
           }
           renderer.submitSegments({
             id: 'soft-body-blob.outlines', ...model.packOutlines(), worldWidth: width, worldHeight: height,
-            palette: palette3, radiusScale: renderStyle === 'basic' ? 0.72 : 1, opacity: 0.9, blend: 'alpha'
+            palette: palette3, radiusScale: renderStyle === 'basic' ? 0.72 : 0.42, opacity: renderStyle === 'ultra' ? 0.18 : 0.9, blend: 'alpha'
           });
-          const visual = model.packVisualPoints(renderStyle === 'basic' ? blobNumber(config, 'liquidFillDensity') : 0), scale = renderStyle === 'ultra' ? blobNumber(config, 'liquidParticleRadius') : renderStyle === 'enhanced' ? 0.72 : 1, radii = new Float32Array(visual.count);
+          const visual = model.packVisualPoints(renderStyle === 'ultra' ? blobNumber(config, 'liquidFillDensity') : 0), scale = renderStyle === 'ultra' ? blobNumber(config, 'liquidParticleRadius') : renderStyle === 'enhanced' ? 0.72 : 1, radii = new Float32Array(visual.count);
           for (let i = 0; i < visual.count; i++)
             radii[i] = (visual.radii[i] ?? 1) * scale;
           if (renderStyle === 'ultra') {
@@ -192,7 +188,7 @@ export function createSoftBodyBlobPlugin(initial: SoftBodyBlobConfig = SOFT_BODY
               opacity: 0.22
             });
           }
-          renderer.submitParticles({
+          if (renderStyle !== 'ultra') renderer.submitParticles({
             id: 'soft-body-blob-points',
             count: visual.count,
             positions: visual.positions,
@@ -200,7 +196,7 @@ export function createSoftBodyBlobPlugin(initial: SoftBodyBlobConfig = SOFT_BODY
             colorSeeds: visual.seeds,
             palette: palette4,
             blend: 'alpha',
-            opacity: renderStyle === 'ultra' ? 0.58 : 1
+            opacity: 1
           });
         }
       });

@@ -54,10 +54,6 @@ export class SoftBodyModel {
       this.world.addDistanceConstraint(indices[i] ?? 0, indices[(i + 2) % indices.length] ?? 0, {
         stiffness: 0.16
       });
-      if (i % 3 === 0)
-        this.world.addDistanceConstraint(indices[i] ?? 0, indices[(i + Math.floor(indices.length / 2)) % indices.length] ?? 0, {
-          stiffness: 0.035
-        });
     }
     const body: SoftBody = {
       indices: Object.freeze(indices),
@@ -80,8 +76,9 @@ export class SoftBodyModel {
   }
   step(dt: number, tuning: SoftBodyTuning) {
     this.world.step(dt);
-    for (const body of this.bodies)
-      this.solveArea(body, dt, tuning);
+    for (let pass = 0; pass < 3; pass += 1)
+      for (const body of this.bodies)
+        this.solveArea(body, dt / 3, tuning);
   }
   configure(options: Parameters<ConstrainedCircleParticleWorld2D['configure']>[0]) {
     this.world.configure(options);
@@ -149,17 +146,24 @@ export class SoftBodyModel {
     readonly radii: Float32Array;
     readonly seeds: Float32Array;
   } {
-    const fillers = Math.max(0, Math.floor(fillDensity * 3)), capacity = this.world.count + this.bodies.length * fillers * 8, positions = new Float32Array(capacity * 2), radii = new Float32Array(capacity), seeds = new Float32Array(capacity);
+    const ringCounts = this.bodies.map(body => Math.max(0, Math.round(Math.sqrt(body.indices.length) * fillDensity)));
+    const fillerCapacity = this.bodies.reduce((sum, body, bodyIndex) => {
+      const rings = ringCounts[bodyIndex] ?? 0;
+      for (let ring = 0; ring < rings; ring += 1) sum += Math.max(1, Math.round(body.indices.length * ((ring + 1) / (rings + 1))));
+      return sum;
+    }, 0);
+    const capacity = this.world.count + fillerCapacity, positions = new Float32Array(capacity * 2), radii = new Float32Array(capacity), seeds = new Float32Array(capacity);
     positions.set(this.world.positions.subarray(0, this.world.count * 2));
     radii.set(this.world.radii.subarray(0, this.world.count));
     seeds.set(this.world.colorSeeds.subarray(0, this.world.count));
     let count = this.world.count;
-    for (const body of this.bodies) {
+    for (const [bodyIndex, body] of this.bodies.entries()) {
       const center = this.center(body), first = body.indices[0] ?? 0, baseRadius = Math.max(2, this.world.radii[first] ?? 3);
-      for (let ring = 0; ring < fillers; ring += 1) {
-        const radiusFraction = (ring + 1) / (fillers + 1);
-        for (let i = 0; i < 8; i += 1) {
-          const edge = body.indices[Math.floor(i / 8 * body.indices.length)] ?? first, x = this.world.positions[edge * 2] ?? center.x, y = this.world.positions[edge * 2 + 1] ?? center.y;
+      const rings = ringCounts[bodyIndex] ?? 0;
+      for (let ring = 0; ring < rings; ring += 1) {
+        const radiusFraction = (ring + 1) / (rings + 1), ringPoints = Math.max(1, Math.round(body.indices.length * radiusFraction));
+        for (let i = 0; i < ringPoints; i += 1) {
+          const edge = body.indices[Math.floor(i / ringPoints * body.indices.length)] ?? first, x = this.world.positions[edge * 2] ?? center.x, y = this.world.positions[edge * 2 + 1] ?? center.y;
           positions[count * 2] = center.x + (x - center.x) * radiusFraction;
           positions[count * 2 + 1] = center.y + (y - center.y) * radiusFraction;
           radii[count] = baseRadius * 1.5;

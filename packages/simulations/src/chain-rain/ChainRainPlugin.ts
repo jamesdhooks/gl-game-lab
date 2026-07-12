@@ -145,33 +145,35 @@ export function createChainRainPlugin(initial: ChainRainConfig = CHAIN_RAIN_DEFA
           const packed = world.packSegments();
           if (renderStyle !== 'basic') renderer.submitSegments({
             id: 'chain-rain.links-glow', ...packed, worldWidth: width, worldHeight: height, palette: palette3,
-            radiusScale: renderStyle === 'ultra' ? skin * 2.15 : skin * 1.5,
-            opacity: renderStyle === 'ultra' ? 0.2 : 0.16, blend: 'additive'
+            radiusScale: renderStyle === 'ultra' ? skin * 0.85 : skin * 0.55,
+            opacity: renderStyle === 'ultra' ? 0.12 : 0.1, blend: 'additive'
           });
           renderer.submitSegments({
             id: 'chain-rain.links', ...packed, worldWidth: width, worldHeight: height, palette: palette3,
-            radiusScale: renderStyle === 'basic' ? 0.72 : skin, opacity: 0.96, blend: 'alpha'
+            radiusScale: renderStyle === 'basic' ? 0.72 : skin * 0.34, opacity: renderStyle === 'basic' ? 0.96 : 0.36, blend: 'alpha'
           });
           const radiusScale = renderStyle === 'ultra' ? chainNumber(config, 'liquidParticleRadius') : renderStyle === 'enhanced' ? skin : 1;
           for (let i = 0; i < world.count; i += 1) {
             renderRadii[i] = (world.radii[i] ?? 1) * radiusScale;
             renderSeeds[i] = (world.colorSeeds[i] ?? i) % 1;
           }
-          if (renderStyle === 'ultra') {
+          if (renderStyle !== 'basic') {
             renderer.submitMetaballs({
               id: 'chain-rain-liquid-surface', count: world.count, positions: world.positions,
               radii: renderRadii, temperatures: renderSeeds, worldWidth: width, worldHeight: height,
-              fieldScale: chainNumber(config, 'liquidFieldScale'),
-              particleRadiusScale: chainNumber(config, 'liquidSplatDensity'),
-              threshold: chainNumber(config, 'liquidSurfaceThreshold'),
-              edgeSoftness: chainNumber(config, 'liquidEdgeSoftness'), edgeTightness: chainNumber(config, 'liquidEdgeTightness'),
+              fieldScale: renderStyle === 'ultra' ? chainNumber(config, 'liquidFieldScale') : 0.78,
+              particleRadiusScale: renderStyle === 'ultra' ? chainNumber(config, 'liquidSplatDensity') : 2.2,
+              threshold: renderStyle === 'ultra' ? chainNumber(config, 'liquidSurfaceThreshold') : 0.08,
+              edgeSoftness: renderStyle === 'ultra' ? chainNumber(config, 'liquidEdgeSoftness') : 0.18, edgeTightness: renderStyle === 'ultra' ? chainNumber(config, 'liquidEdgeTightness') : 0.82,
               palette: palette3, background: chainColor3(style.background), thermalContrast: 1,
-              thermalStrength: chainNumber(config, 'liquidThermalStrength'), refraction: chainNumber(config, 'liquidRefraction'),
-              gloss: chainNumber(config, 'liquidGloss'), rimLighting: chainNumber(config, 'liquidRimLighting'),
-              foamStrength: chainNumber(config, 'liquidFoamStrength'), bloomStrength: chainNumber(config, 'liquidBloomStrength'),
-              heatShimmer: chainNumber(config, 'liquidHeatShimmer'), depthDiffusion: chainNumber(config, 'liquidDepthDiffusion'),
-              opacity: chainNumber(config, 'opacity'), time: elapsed, renderStyle: 'ultra'
+              thermalStrength: renderStyle === 'ultra' ? chainNumber(config, 'liquidThermalStrength') : 0.34, refraction: renderStyle === 'ultra' ? chainNumber(config, 'liquidRefraction') : 0.12,
+              gloss: renderStyle === 'ultra' ? chainNumber(config, 'liquidGloss') : 0.42, rimLighting: renderStyle === 'ultra' ? chainNumber(config, 'liquidRimLighting') : 0.28,
+              foamStrength: renderStyle === 'ultra' ? chainNumber(config, 'liquidFoamStrength') : 0, bloomStrength: renderStyle === 'ultra' ? chainNumber(config, 'liquidBloomStrength') : 0,
+              heatShimmer: renderStyle === 'ultra' ? chainNumber(config, 'liquidHeatShimmer') : 0, depthDiffusion: renderStyle === 'ultra' ? chainNumber(config, 'liquidDepthDiffusion') : 0,
+              opacity: chainNumber(config, 'opacity'), time: elapsed, renderStyle: renderStyle === 'ultra' ? 'ultra' : 'enhanced'
             });
+          }
+          if (renderStyle === 'ultra') {
             renderer.submitParticles({
               id: 'chain-rain-density',
               count: world.count,
@@ -183,7 +185,7 @@ export function createChainRainPlugin(initial: ChainRainConfig = CHAIN_RAIN_DEFA
               opacity: Math.min(0.3, chainNumber(config, 'opacity') * 0.25)
             });
           }
-          renderer.submitParticles({
+          if (renderStyle === 'basic') renderer.submitParticles({
             id: 'chain-rain-nodes',
             count: world.count,
             positions: world.positions,
@@ -191,7 +193,7 @@ export function createChainRainPlugin(initial: ChainRainConfig = CHAIN_RAIN_DEFA
             colorSeeds: renderSeeds,
             palette: palette4,
             blend: 'alpha',
-            opacity: renderStyle === 'ultra' ? Math.min(1, chainNumber(config, 'opacity')) : 1
+            opacity: 1
           });
         }
       });
