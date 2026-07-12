@@ -12,6 +12,11 @@ import { MobileCertificationRunner } from './MobileCertificationRunner.js';
 
 type FilterKind = 'all' | 'game' | 'simulation';
 
+interface PendingLaunch {
+  readonly definition: ExperienceDefinition;
+  readonly demo: boolean;
+}
+
 const KIND_LABELS: Readonly<Record<FilterKind, string>> = Object.freeze({
   all: 'All',
   game: 'Games',
@@ -56,6 +61,7 @@ function DemoGallery(): JSX.Element {
   const [pickerDocked, setPickerDocked] = useState(false);
   const [demoMode, setDemoMode] = useState(false);
   const [demoIndex, setDemoIndex] = useState(0);
+  const [pendingLaunch, setPendingLaunch] = useState<PendingLaunch>();
   const scrollerRef = useRef<HTMLDivElement>(null);
   const portraitMobile = isMobile && !isLandscape;
   const effectivePickerSide = portraitMobile ? 'bottom' : pickerSide;
@@ -84,13 +90,30 @@ function DemoGallery(): JSX.Element {
   const pickerItems = useMemo(() => pickerFilter === 'all' ? catalog : catalog.filter((definition) => definition.kind === pickerFilter), [catalog, pickerFilter]);
   const activeIndex = active ? pickerItems.findIndex((definition) => definition.id === active.id) : -1;
 
+  useEffect(() => {
+    if (!pendingLaunch) return;
+    let secondFrame: number | undefined;
+    const firstFrame = window.requestAnimationFrame(() => {
+      secondFrame = window.requestAnimationFrame(() => {
+        setDemoMode(pendingLaunch.demo);
+        setActive(pendingLaunch.definition);
+        setPendingLaunch(undefined);
+      });
+    });
+    return () => {
+      window.cancelAnimationFrame(firstFrame);
+      if (secondFrame !== undefined) window.cancelAnimationFrame(secondFrame);
+    };
+  }, [pendingLaunch]);
+
   const selectExperience = useCallback((definition: ExperienceDefinition): void => {
     setDemoMode(false);
-    setActive(definition);
+    if (active) setActive(definition);
+    else setPendingLaunch({ definition, demo: false });
     const url = new URL(window.location.href);
     url.searchParams.set('experience', definition.id);
     window.history.replaceState(null, '', url);
-  }, []);
+  }, [active]);
 
   const quit = useCallback((): void => {
     setActive(undefined);
@@ -104,8 +127,7 @@ function DemoGallery(): JSX.Element {
   const startDemo = useCallback((): void => {
     if (catalog.length === 0) return;
     setDemoIndex(0);
-    setDemoMode(true);
-    setActive(catalog[0]);
+    setPendingLaunch({ definition: catalog[0]!, demo: true });
   }, [catalog]);
   const advanceDemo = useCallback((): void => {
     if (catalog.length === 0) return;
@@ -185,7 +207,7 @@ function DemoGallery(): JSX.Element {
                 </div>
                 {catalog.length === 0 ? <p className="py-24 text-center text-slate-400" role="status">Loading GLGameLab experiences…</p> : (
                   <div className="grid grid-cols-2 gap-x-6 gap-y-10 sm:grid-cols-3 lg:grid-cols-4">
-                    {filtered.map((definition, index) => <ExperienceCard key={definition.id} definition={definition} index={index} onSelect={selectExperience} showPreviewFps={previewFpsVisible} hideKindBadge={filter === 'simulation'} />)}
+                    {filtered.map((definition, index) => <ExperienceCard key={definition.id} definition={definition} index={index} onSelect={selectExperience} showPreviewFps={previewFpsVisible} previewsEnabled={!pendingLaunch} hideKindBadge={filter === 'simulation'} />)}
                   </div>
                 )}
               </main>
@@ -266,15 +288,16 @@ interface ExperienceCardProps {
   readonly index: number;
   readonly onSelect: (definition: ExperienceDefinition) => void;
   readonly showPreviewFps?: boolean;
+  readonly previewsEnabled?: boolean;
   readonly hideKindBadge?: boolean;
 }
 
-function ExperienceCard({ definition, index, onSelect, showPreviewFps = false, hideKindBadge = false }: ExperienceCardProps): JSX.Element {
+function ExperienceCard({ definition, index, onSelect, showPreviewFps = false, previewsEnabled = true, hideKindBadge = false }: ExperienceCardProps): JSX.Element {
   const badge = definition.kind === 'game' ? 'bg-blue-100 text-blue-600 dark:bg-blue-500/15 dark:text-blue-300' : 'bg-violet-100 text-violet-600 dark:bg-violet-500/15 dark:text-violet-300';
   return (
     <button type="button" data-demo-experience-card={definition.id} onClick={() => { onSelect(definition); }} className="group cursor-pointer select-none text-left">
       <div className="pointer-events-none relative aspect-square w-full overflow-hidden rounded-2xl bg-slate-100 transition-transform duration-200 group-hover:scale-[1.03] dark:bg-[#0d0d1e]">
-        <PreviewTile definition={definition} index={index} showFps={showPreviewFps} />
+        <PreviewTile definition={definition} index={index} showFps={showPreviewFps} enabled={previewsEnabled} />
         {!hideKindBadge && <span className={`absolute bottom-2 left-2 rounded-full px-2 py-0.5 text-[10px] font-semibold capitalize ${badge}`}>{definition.kind}</span>}
       </div>
       <p className="mt-3 text-center text-sm font-semibold leading-tight text-slate-800 dark:text-slate-200">{definition.name}</p>
@@ -282,7 +305,7 @@ function ExperienceCard({ definition, index, onSelect, showPreviewFps = false, h
   );
 }
 
-function PreviewTile({ definition, index, showFps = false }: { readonly definition: ExperienceDefinition; readonly index: number; readonly showFps?: boolean }): JSX.Element {
+function PreviewTile({ definition, index, showFps = false, enabled = true }: { readonly definition: ExperienceDefinition; readonly index: number; readonly showFps?: boolean; readonly enabled?: boolean }): JSX.Element {
   const rootRef = useRef<HTMLDivElement>(null);
   const [visible, setVisible] = useState(false);
   const [ready, setReady] = useState(false);
@@ -295,10 +318,10 @@ function PreviewTile({ definition, index, showFps = false }: { readonly definiti
     return () => { observer.disconnect(); };
   }, []);
   useEffect(() => {
-    if (!visible) { setReady(false); return; }
+    if (!visible || !enabled) { setReady(false); return; }
     const timeout = window.setTimeout(() => { setReady(true); }, index * 300);
     return () => { window.clearTimeout(timeout); };
-  }, [index, visible]);
+  }, [enabled, index, visible]);
   return (
     <div ref={rootRef} className="h-full w-full">
       {ready ? <GameCanvas createPlugins={createPlugins} ariaLabel={`${definition.name} preview`} className="h-full w-full touch-none" showDiagnostics={showFps} /> : <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-indigo-500 via-violet-500 to-pink-500 text-6xl text-white">{definition.icon}</div>}

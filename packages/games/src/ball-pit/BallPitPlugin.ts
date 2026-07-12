@@ -25,7 +25,7 @@ import {
 import { BALL_PIT_STYLE_MANIFEST, rgbHexToRgba } from './styles.js';
 
 const BALL_PIT_MODES: readonly BallPitMode[] = ['single', 'stream', 'interact', 'explosion'];
-const MAX_PICKED_PARTICLES = BALL_PIT_DEFAULTS.maxParticles;
+const MAX_PICKED_PARTICLES = 262_144;
 const renderPalettes = new Map(BALL_PIT_STYLE_MANIFEST.styles.map((style) => [
   style.id,
   Object.freeze(style.palette.map(rgbHexToRgba)),

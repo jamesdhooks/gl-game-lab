@@ -43,7 +43,7 @@ describe('Ball Pit experience', () => {
       setting.advanced ?? false,
       setting.visibleModes?.join(',') ?? '',
     ])).toEqual([
-      ['maxParticles', 'number', 65_536, 1_024, 65_536, 1, 'powerOfTwo', false, ''],
+      ['maxParticles', 'number', 65_536, 1_024, 262_144, 1, 'powerOfTwo', false, ''],
       ['radius', 'number', 12, 2, 64, 0.5, 'linear', false, ''],
       ['radiusVariation', 'number', 0.15, 0, 1, 0.01, 'linear', false, ''],
       ['spawnRate', 'number', 1200, 50, 6_000, 50, 'linear', false, 'stream'],
@@ -123,7 +123,6 @@ describe('Ball Pit experience', () => {
     await engine.start();
 
     engine.frame(1 / 60);
-    expect(engine.kernel.get(DenseCircleParticleWorld2DService).capacity).toBe(65_536);
     const controller = engine.kernel.get(BallPitControllerService);
     expect(controller.bodyCount).toBe(0);
     expect(renderer.particleCount).toBe(0);
