@@ -89,7 +89,7 @@ export function createParticleFluidPlugin(initial: ParticleFluidConfig = PARTICL
           const nextAspect = viewportAspect();
           if (Math.abs(nextAspect - aspect) > 0.04)
             rebuildField = true;
-          if ((launch.profile === 'preview' || launch.profile === 'demo') && !pointerActive && Math.floor((elapsed - dt) * 2.4) !== Math.floor(elapsed * 2.4)) {
+          if ((launch.profile === 'preview' || launch.profile === 'demo') && !pointerActive && dt > 0) {
             const angle = elapsed * 0.91, x = 0.5 + Math.cos(angle * 0.73) * 0.28, y = 0.5 + Math.sin(angle) * 0.3;
             pointerX = x;
             pointerY = y;
@@ -97,8 +97,8 @@ export function createParticleFluidPlugin(initial: ParticleFluidConfig = PARTICL
               x,
               y,
               radius: particleFluidNumber(config, 'forceRadius') * 2.3,
-              velocityX: -Math.sin(angle) * 1.4,
-              velocityY: Math.cos(angle) * 1.4,
+              velocityX: Math.cos(angle * 1.7) * 0.32,
+              velocityY: Math.sin(angle * 1.35) * 0.29,
               dye: [
                 0,
                 0,
@@ -209,8 +209,8 @@ export function createParticleFluidPlugin(initial: ParticleFluidConfig = PARTICL
         }), positions = new Float32Array(next.width * next.height * 4), velocities = new Float32Array(positions.length);
         for (let i = 0; i < next.capacity; i++) {
           const o = i * 4, grid = Math.ceil(Math.sqrt(next.capacity)), column = i % grid, row = Math.floor(i / grid);
-          positions[o] = 0.055 + (column + 0.25 + random() * 0.5) / grid * 0.89;
-          positions[o + 1] = 0.055 + (row + 0.25 + random() * 0.5) / grid * 0.89;
+          positions[o] = (column + 0.5) / grid;
+          positions[o + 1] = (row + 0.5) / grid;
           positions[o + 2] = 0;
           positions[o + 3] = random() * 10000;
           velocities[o] = (random() - 0.5) * 0.015;
