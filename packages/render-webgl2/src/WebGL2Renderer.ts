@@ -31,10 +31,9 @@ import {
   SpriteRenderer,
   buildSpriteDrawPlan,
   createSpriteCamera2D,
-  type SpriteDrawPlan,
 } from './SpriteRenderer.js';
 import { WebGL2Device, type WebGL2DeviceOptions } from './WebGL2Device.js';
-import { ParticlePointRenderer, ParticlePointRenderQueue, type ParticlePointDrawPlan } from './ParticlePointRenderer.js';
+import { ParticlePointRenderer, ParticlePointRenderQueue } from './ParticlePointRenderer.js';
 import {
   BloomPostProcess,
   normalizeBloomOptions,
@@ -59,6 +58,7 @@ import { SpriteRenderQueue } from './SpriteRenderQueue.js';
 import { WebGLFluidField2D } from './WebGLFluidField2D.js';
 import { metaballUploadBytes, segmentUploadBytes, triangleMeshUploadBytes } from './UploadAccounting.js';
 import { ManagedRender2DResources } from './ManagedRender2DResources.js';
+import { WebGL2FrameOrchestrator } from './WebGL2FrameOrchestrator.js';
 
 export interface WebGL2RendererOptions {
   readonly device?: WebGL2DeviceOptions;
@@ -116,8 +116,7 @@ export class WebGL2Renderer implements RenderBackend, Render2DService {
   private pendingBufferUploadBytes = 0;
   private pendingTextureUploadBytes = 0;
   private pendingGpuDrawCalls = 0;
-  private renderedSpritePlan: SpriteDrawPlan | undefined;
-  private renderedParticlePlan: ParticlePointDrawPlan | undefined;
+  private readonly frameOrchestrator: WebGL2FrameOrchestrator;
   private lastFrameDiagnostics: RendererDiagnostics | undefined;
   private destroyed = false;
 
@@ -164,7 +163,7 @@ export class WebGL2Renderer implements RenderBackend, Render2DService {
     this.bloom = new BloomPostProcess(this.device, this.bloomOptions);
     this.backdrop = new PaletteBackdropRenderer(this.device);
     this.clearColor = options.clearColor ?? [0, 0, 0, 0];
-    this.framePipeline = new FrameRenderPipeline({
+    this.frameOrchestrator = new WebGL2FrameOrchestrator({
       clear: ({ target }) => {
         if (target) this.bloom.clearScene(this.clearColor);
         else this.device.clear(...this.clearColor);
@@ -180,16 +179,29 @@ export class WebGL2Renderer implements RenderBackend, Render2DService {
       effects: ({ target }) => { this.effectRenderer.render(this.effects.snapshot(), target); },
       particles: ({ target }) => {
         const plan = this.particles.buildPlan();
-        this.renderedParticlePlan = plan;
         this.particleRenderer.render(plan, this.sprites.activeCamera, target);
+        return plan;
       },
       sprites: ({ target }) => {
         const plan = this.sprites.buildPlan();
-        this.renderedSpritePlan = plan;
         this.spriteRenderer.render(plan, this.sprites.activeCamera, target);
+        return plan;
       },
       composite: ({ composite }) => { if (composite) this.bloom.composite(); },
+    }, {
+      backendId: this.id,
+      timer: this.gpuTimer,
+      beginGpuFrame: () => { this.gpu2D.beginFrameDiagnostics(); },
+      gpuDiagnostics: () => this.gpu2D.diagnostics(),
+      deviceDiagnostics: () => this.device.diagnostics(),
+      fallbackSpritePlan: () => buildSpriteDrawPlan([], this.sprites.activeCamera),
+      fallbackParticlePlan: () => this.particles.buildPlan(),
+      effectCount: () => this.effects.count,
+      gpuPassCount: () => this.gpuPasses.count,
+      bloomPassCount: () => this.bloom.stats.passes,
+      consumeTransientAllocationBytes: () => this.spriteRenderer.consumeAllocatedBytes(),
     });
+    this.framePipeline = this.frameOrchestrator.pipeline;
     this.unregisterContextResource = this.device.registerContextResource({
       id: 'gl-game-lab.render-webgl2.pipeline',
       priority: 100,
@@ -442,39 +454,23 @@ export class WebGL2Renderer implements RenderBackend, Render2DService {
   render(): void {
     this.assertUsable();
     if (this.state === 'context-lost') return;
-    this.renderedSpritePlan = undefined;
-    this.renderedParticlePlan = undefined;
-    this.gpu2D.beginFrameDiagnostics();
     const scene = this.bloom.sceneTarget;
     const target = scene ? { resource: scene } : undefined;
-    this.gpuTimer.begin();
     try {
-      this.framePipeline.execute({ ...(target ? { target } : {}), composite: scene !== undefined });
+      this.lastFrameDiagnostics = this.frameOrchestrator.execute(
+        { ...(target ? { target } : {}), composite: scene !== undefined },
+        {
+          bufferUploadBytes: this.pendingBufferUploadBytes,
+          textureUploadBytes: this.pendingTextureUploadBytes,
+          gpuDrawCalls: this.pendingGpuDrawCalls,
+          backdropEnabled: this.backdropOptions !== undefined,
+        },
+      );
     } finally {
-      this.gpuTimer.end();
+      this.pendingBufferUploadBytes = 0;
+      this.pendingTextureUploadBytes = 0;
+      this.pendingGpuDrawCalls = 0;
     }
-    const sprites = this.renderedSpritePlan ?? buildSpriteDrawPlan([], this.sprites.activeCamera);
-    const particles = this.renderedParticlePlan ?? this.particles.buildPlan();
-    const gpu = this.gpu2D.diagnostics();
-    const device = this.device.diagnostics();
-    const bloom = this.bloom.stats;
-    const rawGpuPasses = Math.max(0, this.gpuPasses.count - gpu.submissions);
-    this.lastFrameDiagnostics = Object.freeze({
-      backend: this.id,
-      drawCalls: sprites.batches.length + particles.drawCalls + this.effects.count + gpu.drawCalls + this.pendingGpuDrawCalls + rawGpuPasses + (this.backdropOptions ? 1 : 0) + bloom.passes,
-      points: particles.particleCount + gpu.points,
-      triangles: sprites.spriteCount * 2 + this.effects.count + rawGpuPasses + (this.backdropOptions ? 1 : 0) + bloom.passes,
-      bufferUploadBytes: this.pendingBufferUploadBytes + sprites.spriteCount * 15 * Float32Array.BYTES_PER_ELEMENT + particles.particleCount * 4 * Float32Array.BYTES_PER_ELEMENT + gpu.uploadBytes,
-      textureUploadBytes: this.pendingTextureUploadBytes,
-      transientAllocationBytes: this.spriteRenderer.consumeAllocatedBytes(),
-      gpuResourceCount: device.textureCount + device.ownedContextResourceCount,
-      gpuResourceBytes: device.estimatedGpuBytes,
-      renderPasses: this.framePipeline.snapshot().passes,
-      ...(this.gpuTimer.latestMs === undefined ? {} : { gpuMs: this.gpuTimer.latestMs }),
-    });
-    this.pendingBufferUploadBytes = 0;
-    this.pendingTextureUploadBytes = 0;
-    this.pendingGpuDrawCalls = 0;
   }
 
   destroy(): void {
