@@ -39,19 +39,29 @@ function normalizeSceneDefaults(payload: unknown): SceneDefaultsMap {
 
 function applySceneDefaults(definition: ExperienceDefinition, defaults: Readonly<Record<string, SceneDefaultValue>> | undefined): ExperienceDefinition {
   if (!defaults) return definition;
+  const sanitizedDefaults: Record<string, SceneDefaultValue> = {};
   const settings = definition.settings?.map((setting) => {
     const value = defaults[setting.key];
     if (value === undefined) return setting;
     if (setting.type === 'number') {
       const numeric = typeof value === 'number' && Number.isFinite(value) ? value : setting.default;
-      return { ...setting, default: Math.max(setting.min, Math.min(setting.max, numeric)) };
+      const sanitized = Math.max(setting.min, Math.min(setting.max, numeric));
+      sanitizedDefaults[setting.key] = sanitized;
+      return { ...setting, default: sanitized };
     }
-    if (setting.type === 'boolean') return { ...setting, default: typeof value === 'boolean' ? value : setting.default };
+    if (setting.type === 'boolean') {
+      const sanitized = typeof value === 'boolean' ? value : setting.default;
+      sanitizedDefaults[setting.key] = sanitized;
+      return { ...setting, default: sanitized };
+    }
     if (setting.type === 'select') {
       const selected = typeof value === 'string' && setting.options.some((option) => option.value === value) ? value : setting.default;
+      sanitizedDefaults[setting.key] = selected;
       return { ...setting, default: selected };
     }
-    return { ...setting, default: typeof value === 'string' ? value : setting.default };
+    const sanitized = typeof value === 'string' ? value : setting.default;
+    sanitizedDefaults[setting.key] = sanitized;
+    return { ...setting, default: sanitized };
   });
   const savedStyle = defaults.style;
   const styleManifest = typeof savedStyle === 'string' && definition.styleManifest?.styles.some((style) => style.id === savedStyle)
@@ -60,7 +70,7 @@ function applySceneDefaults(definition: ExperienceDefinition, defaults: Readonly
   return {
     ...definition,
     ...(settings ? { settings } : {}),
-    configDefaults: { ...definition.configDefaults, ...defaults } as Readonly<Record<string, ExperienceSettingValue>>,
+    configDefaults: { ...definition.configDefaults, ...sanitizedDefaults } as Readonly<Record<string, ExperienceSettingValue>>,
     ...(styleManifest ? { styleManifest } : {}),
   };
 }

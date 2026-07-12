@@ -169,10 +169,17 @@ export function createWaterTankPlugin(initial: WaterTankConfig = WATER_TANK_DEFA
             particleRadiusScale: waterNumber(config, 'liquidSplatDensity') * waterNumber(config, 'liquidParticleRadius'),
             threshold: waterNumber(config, 'liquidSurfaceThreshold'),
             edgeSoftness: waterNumber(config, 'liquidEdgeSoftness') * (2 - waterNumber(config, 'liquidEdgeTightness')),
+            edgeTightness: waterNumber(config, 'liquidEdgeTightness'),
             palette, background: waterColor3(style.background),
             thermalContrast: renderStyle === 'ultra' ? 1 + waterNumber(config, 'liquidFoamStrength') * 0.25 : 0.65,
             refraction: waterNumber(config, 'liquidRefraction'), gloss: waterNumber(config, 'liquidGloss'),
             rimLighting: renderStyle === 'ultra' ? waterNumber(config, 'liquidFoamStrength') * 0.28 : 0.28,
+            foamStrength: renderStyle === 'ultra' ? waterNumber(config, 'liquidFoamStrength') : 0,
+            thermalStrength: renderStyle === 'ultra' ? 1 : 0.48,
+            bloomStrength: renderStyle === 'ultra' ? waterNumber(config, 'liquidBloomStrength') : 0,
+            heatShimmer: renderStyle === 'ultra' ? waterNumber(config, 'liquidHeatShimmer') : 0,
+            depthDiffusion: renderStyle === 'ultra' ? waterNumber(config, 'liquidDepthDiffusion') : 0,
+            renderStyle: renderStyle === 'ultra' ? 'ultra' : 'enhanced',
             opacity: Math.min(1, waterNumber(config, 'opacity') + waterNumber(config, 'metaballBlend') * 0.24),
             time: elapsed, backgroundDepth: 0
           });

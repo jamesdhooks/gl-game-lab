@@ -160,10 +160,18 @@ export function createSplashMpmPlugin(initial: SplashMpmConfig = SPLASH_MPM_DEFA
             particleRadiusScale: splashNumber(config, 'enhancedSplatSize') * splashNumber(config, 'liquidParticleRadius'),
             threshold: splashNumber(config, 'liquidSurfaceThreshold'),
             edgeSoftness: splashNumber(config, 'liquidEdgeSoftness') * (2 - splashNumber(config, 'liquidEdgeTightness')),
+            edgeTightness: splashNumber(config, 'liquidEdgeTightness'),
             palette, background: splashRgb(style.background),
             thermalContrast: renderStyle === 'ultra' ? 1 + splashNumber(config, 'liquidFoamStrength') * 0.3 : splashNumber(config, 'enhancedDepth'),
             refraction: splashNumber(config, 'liquidRefraction'), gloss: splashNumber(config, 'liquidGloss'),
-            rimLighting: splashNumber(config, 'enhancedEdge'), opacity: splashNumber(config, 'opacity'),
+            rimLighting: splashNumber(config, 'enhancedEdge'),
+            foamStrength: renderStyle === 'ultra' ? splashNumber(config, 'liquidFoamStrength') : 0,
+            thermalStrength: renderStyle === 'ultra' ? 1 : 0.42,
+            bloomStrength: renderStyle === 'ultra' ? splashNumber(config, 'liquidBloomStrength') : 0,
+            heatShimmer: renderStyle === 'ultra' ? splashNumber(config, 'liquidHeatShimmer') : 0,
+            depthDiffusion: renderStyle === 'ultra' ? splashNumber(config, 'liquidDepthDiffusion') : 0,
+            renderStyle: renderStyle === 'ultra' ? 'ultra' : 'enhanced',
+            opacity: splashNumber(config, 'opacity'),
             time, backgroundDepth: 0
           });
           renderer.submitSegments({

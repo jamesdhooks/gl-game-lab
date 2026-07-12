@@ -155,9 +155,23 @@ export function createChainRainPlugin(initial: ChainRainConfig = CHAIN_RAIN_DEFA
           const radiusScale = renderStyle === 'ultra' ? chainNumber(config, 'liquidParticleRadius') : renderStyle === 'enhanced' ? skin : 1;
           for (let i = 0; i < world.count; i += 1) {
             renderRadii[i] = (world.radii[i] ?? 1) * radiusScale;
-            renderSeeds[i] = world.colorSeeds[i] ?? i;
+            renderSeeds[i] = (world.colorSeeds[i] ?? i) % 1;
           }
-          if (renderStyle === 'ultra')
+          if (renderStyle === 'ultra') {
+            renderer.submitMetaballs({
+              id: 'chain-rain-liquid-surface', count: world.count, positions: world.positions,
+              radii: renderRadii, temperatures: renderSeeds, worldWidth: width, worldHeight: height,
+              fieldScale: chainNumber(config, 'liquidFieldScale'),
+              particleRadiusScale: chainNumber(config, 'liquidSplatDensity'),
+              threshold: chainNumber(config, 'liquidSurfaceThreshold'),
+              edgeSoftness: chainNumber(config, 'liquidEdgeSoftness'), edgeTightness: chainNumber(config, 'liquidEdgeTightness'),
+              palette: palette3, background: chainColor3(style.background), thermalContrast: 1,
+              thermalStrength: chainNumber(config, 'liquidThermalStrength'), refraction: chainNumber(config, 'liquidRefraction'),
+              gloss: chainNumber(config, 'liquidGloss'), rimLighting: chainNumber(config, 'liquidRimLighting'),
+              foamStrength: chainNumber(config, 'liquidFoamStrength'), bloomStrength: chainNumber(config, 'liquidBloomStrength'),
+              heatShimmer: chainNumber(config, 'liquidHeatShimmer'), depthDiffusion: chainNumber(config, 'liquidDepthDiffusion'),
+              opacity: chainNumber(config, 'opacity'), time: elapsed, renderStyle: 'ultra'
+            });
             renderer.submitParticles({
               id: 'chain-rain-density',
               count: world.count,
@@ -168,6 +182,7 @@ export function createChainRainPlugin(initial: ChainRainConfig = CHAIN_RAIN_DEFA
               blend: 'additive',
               opacity: Math.min(0.3, chainNumber(config, 'opacity') * 0.25)
             });
+          }
           renderer.submitParticles({
             id: 'chain-rain-nodes',
             count: world.count,

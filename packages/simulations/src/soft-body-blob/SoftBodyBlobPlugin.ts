@@ -167,7 +167,20 @@ export function createSoftBodyBlobPlugin(initial: SoftBodyBlobConfig = SOFT_BODY
           const visual = model.packVisualPoints(renderStyle === 'basic' ? blobNumber(config, 'liquidFillDensity') : 0), scale = renderStyle === 'ultra' ? blobNumber(config, 'liquidParticleRadius') : renderStyle === 'enhanced' ? 0.72 : 1, radii = new Float32Array(visual.count);
           for (let i = 0; i < visual.count; i++)
             radii[i] = (visual.radii[i] ?? 1) * scale;
-          if (renderStyle === 'ultra')
+          if (renderStyle === 'ultra') {
+            renderer.submitMetaballs({
+              id: 'soft-body-blob-liquid-surface', count: visual.count, positions: visual.positions,
+              radii, temperatures: visual.seeds, worldWidth: width, worldHeight: height,
+              fieldScale: blobNumber(config, 'liquidFieldScale'), particleRadiusScale: blobNumber(config, 'liquidSplatDensity'),
+              threshold: blobNumber(config, 'liquidSurfaceThreshold'), edgeSoftness: blobNumber(config, 'liquidEdgeSoftness'),
+              edgeTightness: blobNumber(config, 'liquidEdgeTightness'), palette: palette3, background: blobColor3(style.background),
+              thermalContrast: 1, thermalStrength: blobNumber(config, 'liquidThermalStrength'),
+              refraction: blobNumber(config, 'liquidRefraction'), gloss: blobNumber(config, 'liquidGloss'),
+              rimLighting: blobNumber(config, 'liquidRimLighting'), foamStrength: blobNumber(config, 'liquidFoamStrength'),
+              bloomStrength: blobNumber(config, 'liquidBloomStrength'), heatShimmer: blobNumber(config, 'liquidHeatShimmer'),
+              depthDiffusion: blobNumber(config, 'liquidDepthDiffusion'), opacity: blobNumber(config, 'opacity'),
+              time: elapsed, renderStyle: 'ultra'
+            });
             renderer.submitParticles({
               id: 'soft-body-blob-density',
               count: visual.count,
@@ -178,6 +191,7 @@ export function createSoftBodyBlobPlugin(initial: SoftBodyBlobConfig = SOFT_BODY
               blend: 'additive',
               opacity: 0.22
             });
+          }
           renderer.submitParticles({
             id: 'soft-body-blob-points',
             count: visual.count,
