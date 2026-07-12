@@ -52,7 +52,7 @@ export function OverflowMenu({ items }: OverflowMenuProps) {
         initial={{ opacity: 0, y: -8 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.22, ease: 'easeOut', delay: 0.04 }}
-        className="pointer-events-none absolute right-3 z-30 flex items-center gap-1.5"
+        className="pointer-events-none absolute right-3 z-[60] flex items-center gap-1.5"
         style={{ top: topOffset }}
       >
         {visible.map((item) => (
@@ -71,7 +71,7 @@ export function OverflowMenu({ items }: OverflowMenuProps) {
         initial={{ opacity: 0, y: -8 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.22, ease: 'easeOut', delay: 0.04 }}
-        className="pointer-events-none absolute right-3 z-30"
+        className="pointer-events-none absolute right-3 z-[60]"
         style={{ top: topOffset }}
       >
         <button
