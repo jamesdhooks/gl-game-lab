@@ -12,7 +12,7 @@ review and physical iOS/Android performance.
 
 - Ten workspace packages with enforced dependency boundaries and zero source
   hygiene exceptions.
-- 71 test files and 229 passing tests in the fresh workspace run, plus production
+- 72 test files and 232 passing tests in the fresh workspace run, plus production
   Chromium fixed-frame, lifecycle, and accessibility probes.
 - All 15 shipped experiences through engine-level render contracts; content has
   zero concrete WebGL renderer imports or WebGL context types.
@@ -307,6 +307,16 @@ The five criticisms most likely from another senior engine programmer are:
   three-side navigation. A preview teardown race found during browser QA now defers
   destruction until boot settles. The shell passes Chromium, Firefox, and WebKit
   and is deployed at `https://jamesdhooks.github.io/gl-game-lab/`.
+- Replaced the interim simplified toolbar with a direct port of the established
+  React/Tailwind launcher components. The original HUD, adaptive overflow sheet,
+  mode toggle, portal style picker, centered intro card, resolution/settings
+  drawer, floating top controls, hide/restore UI, demo/info actions, and mobile
+  carousel layout now call the new runtime controller underneath. Browser gates
+  assert the legacy desktop and 390×844 mobile control contracts explicitly.
+- Added a deployed physical-mobile certification route. It serially runs all 15
+  recommended profiles with explicit engine teardown, applies the existing mobile
+  budgets, exports machine-readable device/results evidence, and refuses to pass
+  desktop, alternate-iOS-browser, Android-WebView, or other unsupported reports.
 - Routed the remaining bloom, backdrop, trail, segment, triangle-mesh, and
   metaball programs through `createShaderProgram`. Required locations are cached
   and validated once; recurring palette/background allocations were removed.

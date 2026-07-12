@@ -17,8 +17,11 @@ The gate verifies:
 
 - the public demo shell exposes exactly 15 live experience cards, one game and
   fourteen simulations through the expected category filters;
-- Ball Pit opens through the immersive launcher with its intro card, complete
-  tuning drawer, tutorial, and dockable left/bottom/right experience picker;
+- Ball Pit opens through the original immersive launcher composition with its
+  centered intro card, HUD, icon controls, floating tuning panel, complete settings
+  drawer, info-card recall, and dockable left/bottom/right experience picker;
+- a 390×844 touch viewport exposes the original mobile style/mode header and
+  adaptive overflow sheet with reset, settings, hide-UI, demo, and info actions;
 - Reference Arena reaches the running state through the public runtime contract;
 - its score is present in an ARIA live region;
 - real browser touch down/up events reach the engine input snapshot;
