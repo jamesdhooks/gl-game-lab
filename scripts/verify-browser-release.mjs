@@ -90,6 +90,7 @@ async function verifyDemoShell(browser, failures) {
     await page.waitForFunction(() => document.querySelectorAll('[data-demo-experience-card]').length === 15, undefined, { timeout: 60_000 });
     const totalCards = await cards.count();
     if (totalCards !== 15) failures.push(`Expected 15 demo cards, received ${totalCards}`);
+    if (await page.getByRole('button', { name: 'Preview FPS Off', exact: true }).count() !== 1) failures.push('Latest preview FPS control is missing');
 
     await page.getByRole('button', { name: 'Games', exact: true }).click();
     const gameCards = await cards.count();
@@ -105,14 +106,21 @@ async function verifyDemoShell(browser, failures) {
     await page.locator('[data-experience-id="ball-pit"] canvas[data-engine-state="running"]').waitFor({ state: 'visible', timeout: 60_000 });
     await page.locator('.gl-experience-intro-card').waitFor({ state: 'visible', timeout: 10_000 });
     await page.locator('.gl-experience-intro-card').click();
-    for (const label of ['Quit', 'Style', 'Next style', 'Reset', 'Settings', 'Hide UI', 'Demo mode', 'Info']) {
-      if (await page.getByRole('button', { name: label, exact: true }).count() !== 1) failures.push(`Legacy launcher control is missing: ${label}`);
+    for (const label of ['Quit', 'Palette', 'Next palette', 'Reset', 'Settings', 'Hide UI', 'Demo mode', 'Info']) {
+      if (await page.getByRole('button', { name: label, exact: true }).count() !== 1) failures.push(`Launcher control is missing: ${label}`);
     }
     if (await page.getByRole('combobox', { name: 'Engine configuration' }).count() !== 1) failures.push('Legacy engine configuration control is missing');
     await page.getByRole('button', { name: 'Settings', exact: true }).click();
     await page.locator('[aria-label="Ball Pit settings"]').waitFor({ state: 'visible', timeout: 10_000 });
     const settingCount = await page.locator('[aria-label="Ball Pit settings"] [data-experience-setting]').count();
     if (settingCount < 10) failures.push(`Ball Pit settings drawer exposed only ${settingCount} controls`);
+    await page.getByRole('button', { name: 'Pin settings as sidebar' }).click();
+    await page.getByRole('button', { name: 'Undock settings sidebar' }).waitFor({ state: 'visible', timeout: 10_000 });
+    await page.getByRole('button', { name: 'Resize settings sidebar' }).waitFor({ state: 'visible', timeout: 10_000 });
+    const dockedSettingsWidth = await page.locator('[aria-label="Ball Pit settings"]').evaluate((element) => element.getBoundingClientRect().width);
+    if (dockedSettingsWidth < 320) failures.push(`Docked settings sidebar width was only ${dockedSettingsWidth}px`);
+    await page.getByRole('button', { name: 'Undock settings sidebar' }).click();
+    await page.getByRole('button', { name: 'Pin settings as sidebar' }).waitFor({ state: 'visible', timeout: 10_000 });
     await page.getByRole('button', { name: 'Close settings' }).click();
     await page.getByRole('button', { name: 'Show experience picker' }).click();
     await page.getByRole('button', { name: 'Move to left' }).click();
@@ -122,7 +130,7 @@ async function verifyDemoShell(browser, failures) {
     await page.getByRole('button', { name: 'Info', exact: true }).click();
     await page.locator('.gl-experience-intro-card').waitFor({ state: 'visible', timeout: 10_000 });
     failures.push(...pageErrors.map((message) => `Demo shell page error: ${message}`));
-    return Object.freeze({ totalCards, gameCards, simulationCards, intro: true, settings: settingCount, picker: true, info: true });
+    return Object.freeze({ totalCards, gameCards, simulationCards, intro: true, settings: settingCount, settingsDock: true, picker: true, info: true });
   } catch (error) {
     failures.push(`Demo shell failed: ${describe(error)}`);
     return undefined;
@@ -145,7 +153,7 @@ async function verifyMobileDemoShell(browser, failures) {
     for (const label of ['Engine configuration', 'Reset', 'Settings', 'Hide UI', 'Demo mode', 'How to play']) {
       if (await page.getByText(label, { exact: true }).count() < 1) failures.push(`Mobile legacy control is missing: ${label}`);
     }
-    if (await page.getByRole('button', { name: 'Style', exact: true }).count() !== 1) failures.push('Mobile style picker is missing');
+    if (await page.getByRole('button', { name: 'Palette', exact: true }).count() !== 1) failures.push('Mobile palette picker is missing');
     if (await page.getByRole('button', { name: 'Tap to drop one ball.', exact: true }).count() !== 1) failures.push('Mobile mode controls are missing');
     failures.push(...pageErrors.map((message) => `Mobile demo shell page error: ${message}`));
     return Object.freeze({ overflow: true, style: true, modes: true });
