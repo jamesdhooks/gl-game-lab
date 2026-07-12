@@ -425,10 +425,16 @@ export class WebGL2Renderer implements RenderBackend, Render2DService {
   }
 
   submitFullscreenEffect(effect: FullscreenShaderEffect2D): void {
+    const uniforms = effect.uniforms ? Object.fromEntries(Object.entries(effect.uniforms).map(([name, uniform]) => [
+      name,
+      uniform.type === 'texture'
+        ? { type: 'texture' as const, value: this.resources2D.nativeTexture(uniform.value) }
+        : uniform,
+    ])) : undefined;
     this.effects.submit({
       id: effect.id,
       fragmentSource: effect.fragmentSource,
-      ...(effect.uniforms ? { uniforms: effect.uniforms } : {}),
+      ...(uniforms ? { uniforms } : {}),
       ...(effect.blend ? { blend: effect.blend } : {}),
     });
   }

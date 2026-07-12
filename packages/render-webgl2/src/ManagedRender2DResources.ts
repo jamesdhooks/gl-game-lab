@@ -62,6 +62,12 @@ export class ManagedRender2DResources {
     return texture;
   }
 
+  nativeTexture(texture: Texture2DHandle): WebGLTexture {
+    const managed = this.textures.get(texture.id);
+    if (!managed || managed.handle !== texture) throw new Error(`2D texture handle is not owned by this renderer: ${texture.id}`);
+    return managed.resource.texture;
+  }
+
   createFont(
     id: string,
     characters: string,

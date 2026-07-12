@@ -148,7 +148,8 @@ export type ShaderUniform2D =
   | { readonly type: '2f'; readonly value: readonly [number, number] }
   | { readonly type: '3f'; readonly value: readonly [number, number, number] }
   | { readonly type: '4f'; readonly value: readonly [number, number, number, number] }
-  | { readonly type: '4fv'; readonly value: Float32Array };
+  | { readonly type: '4fv'; readonly value: Float32Array }
+  | { readonly type: 'texture'; readonly value: Texture2DHandle };
 
 export interface FullscreenShaderEffect2D {
   readonly id: string;

@@ -9,7 +9,8 @@ export type FullscreenUniform =
   | { readonly type: '3f'; readonly value: readonly [number, number, number] }
   | { readonly type: '4f'; readonly value: readonly [number, number, number, number] }
   | { readonly type: '1fv'; readonly value: Float32Array }
-  | { readonly type: '4fv'; readonly value: Float32Array };
+  | { readonly type: '4fv'; readonly value: Float32Array }
+  | { readonly type: 'texture'; readonly value: WebGLTexture };
 
 export interface FullscreenEffect {
   readonly id: string;
@@ -86,13 +87,17 @@ export class FullscreenEffectRenderer {
     const compiled = this.requireCompiled(effect);
     gl.useProgram(compiled.program);
     configureBlend(gl, effect.blend ?? 'opaque');
+    let textureUnit = 0;
     for (const [name, uniform] of Object.entries(effect.uniforms ?? {})) {
       let location = compiled.locations.get(name);
       if (!compiled.locations.has(name)) {
         location = gl.getUniformLocation(compiled.program, name);
         compiled.locations.set(name, location);
       }
-      if (location) applyUniform(gl, location, uniform);
+      if (location) {
+        applyUniform(gl, location, uniform, textureUnit);
+        if (uniform.type === 'texture') textureUnit += 1;
+      }
     }
     gl.drawArrays(gl.TRIANGLES, 0, 3);
   }
@@ -121,7 +126,7 @@ function validateEffect(effect: FullscreenEffect): void {
   if (effect.fragmentSource.trim().length === 0) throw new Error('Fullscreen fragment source cannot be empty');
 }
 
-function applyUniform(gl: WebGL2RenderingContext, location: WebGLUniformLocation, uniform: FullscreenUniform): void {
+function applyUniform(gl: WebGL2RenderingContext, location: WebGLUniformLocation, uniform: FullscreenUniform, textureUnit: number): void {
   switch (uniform.type) {
     case '1f': gl.uniform1f(location, uniform.value); break;
     case '1i': gl.uniform1i(location, uniform.value); break;
@@ -130,6 +135,11 @@ function applyUniform(gl: WebGL2RenderingContext, location: WebGLUniformLocation
     case '4f': gl.uniform4f(location, ...uniform.value); break;
     case '1fv': gl.uniform1fv(location, uniform.value); break;
     case '4fv': gl.uniform4fv(location, uniform.value); break;
+    case 'texture':
+      gl.activeTexture(gl.TEXTURE0 + textureUnit);
+      gl.bindTexture(gl.TEXTURE_2D, uniform.value);
+      gl.uniform1i(location, textureUnit);
+      break;
   }
 }
 

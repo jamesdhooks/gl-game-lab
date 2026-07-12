@@ -1,8 +1,8 @@
 import { createExtensionToken, type EnginePlugin, type PointerInputEvent } from '@hooksjam/gl-game-lab-core';
-import { EngineGpu2D, EngineInput, EngineRender2D, EngineSchedule, type ExperienceLaunchOptions, type ExperienceRuntimeController, type ExperienceSettingValue, type GpuParticleSystem2D } from '@hooksjam/gl-game-lab-engine';
+import { EngineGpu2D, EngineInput, EngineRender2D, EngineSchedule, type ExperienceLaunchOptions, type ExperienceRuntimeController, type ExperienceSettingValue, type GpuParticleSystem2D, type Texture2DHandle } from '@hooksjam/gl-game-lab-engine';
 import { registerSimulationRuntime } from '../SimulationPluginLifecycle.js';
 import { createOrbitalShrapnelConfig, ORBITAL_SHRAPNEL_DEFAULTS, orbitalBoolean, orbitalNumber, orbitalString, type OrbitalShrapnelConfig } from './config.js';
-import { ORBITAL_OVERLAY_SHADER, ORBITAL_POINT_FRAGMENT_SHADER, ORBITAL_POINT_VERTEX_SHADER, ORBITAL_STEP_SHADER } from './shaders.js';
+import { ORBITAL_OVERLAY_SHADER, ORBITAL_POINT_FRAGMENT_SHADER, ORBITAL_POINT_VERTEX_SHADER, ORBITAL_REALISTIC_OVERLAY_SHADER, ORBITAL_STEP_SHADER } from './shaders.js';
 import { orbitalColor3, ORBITAL_SHRAPNEL_STYLE_MANIFEST } from './styles.js';
 export type OrbitalShrapnelMode = 'add' | 'interact' | 'well' | 'asteroid';
 interface Spawn {
@@ -29,12 +29,15 @@ export interface OrbitalShrapnelController extends ExperienceRuntimeController {
 }
 export const OrbitalShrapnelControllerService = createExtensionToken<OrbitalShrapnelController>('gl-game-lab.simulations.orbital-shrapnel.controller');
 export const ORBITAL_SHRAPNEL_PLUGIN_ID = 'gl-game-lab.simulations.orbital-shrapnel';
+const EARTH_TEXTURE_URL = new URL('./assets/earth-natural-1024.jpg', import.meta.url).href;
+const MOON_TEXTURE_URL = new URL('./assets/moon-natural-512.jpg', import.meta.url).href;
 export function createOrbitalShrapnelPlugin(initial: OrbitalShrapnelConfig = ORBITAL_SHRAPNEL_DEFAULTS, launch: ExperienceLaunchOptions = {}): EnginePlugin {
   let config = initial, mode = validMode(launch.modeId) ?? 'add', styleId = validStyle(launch.styleId) ?? ORBITAL_SHRAPNEL_STYLE_MANIFEST.defaultStyleId, elapsed = 0, pendingDt = 0, cursor = 0, randomState = seedValue(launch.seed), rebuild = false, cleanup = (): void => undefined;
   let asteroidStart: {
     x: number;
     y: number;
   } | undefined;
+  let addEmitter: { x: number; y: number; targetX: number; targetY: number; vx: number; vy: number; active: boolean } | undefined;
   const commands: Spawn[] = [];
   const field: PointerField = {
     active: false,
@@ -54,7 +57,20 @@ export function createOrbitalShrapnelPlugin(initial: OrbitalShrapnelConfig = ORB
     install: context => {
       const renderer = context.get(EngineRender2D), gpu = context.get(EngineGpu2D), input = context.get(EngineInput);
       let particles = createParticles(), observedGeneration = particles.generation;
-      cleanup = () => { particles.dispose(); };
+      let earthTexture: Texture2DHandle | undefined, moonTexture: Texture2DHandle | undefined, disposed = false;
+      void Promise.all([
+        loadImageTexture(renderer, 'orbital.realistic.earth', EARTH_TEXTURE_URL),
+        loadImageTexture(renderer, 'orbital.realistic.moon', MOON_TEXTURE_URL),
+      ]).then(([earth, moon]) => {
+        if (disposed) { renderer.destroyTexture(earth); renderer.destroyTexture(moon); return; }
+        earthTexture = earth; moonTexture = moon;
+      }).catch(() => undefined);
+      cleanup = () => {
+        disposed = true;
+        particles.dispose();
+        if (earthTexture) renderer.destroyTexture(earthTexture);
+        if (moonTexture) renderer.destroyTexture(moonTexture);
+      };
       applyStyle();
       const controller: OrbitalShrapnelController = {
         get mode() {
@@ -84,6 +100,7 @@ export function createOrbitalShrapnelPlugin(initial: OrbitalShrapnelConfig = ORB
           mode = next;
           field.active = false;
           asteroidStart = undefined;
+          addEmitter = undefined;
         },
         setStyle: value => {
           const next = validStyle(value);
@@ -106,6 +123,7 @@ export function createOrbitalShrapnelPlugin(initial: OrbitalShrapnelConfig = ORB
         cleanup();
         commands.length = 0;
         previousPointers.clear();
+        addEmitter = undefined;
       });
       context.get(EngineSchedule).addSystem({
         id: 'gl-game-lab.simulations.orbital-shrapnel.update',
@@ -129,10 +147,17 @@ export function createOrbitalShrapnelPlugin(initial: OrbitalShrapnelConfig = ORB
             previousPointers.set(pointer.id, point);
           }
           if (mode === 'add' && input.snapshot.pointers[0]) {
-            const pointer = input.snapshot.pointers[0], point = toWorld(pointer.x, pointer.y), previous = previousPointers.get(pointer.id);
-            queueDebris(point.x, point.y, previous ? (point.x - previous.x) / Math.max(dt, 0.001) : 0, previous ? (point.y - previous.y) / Math.max(dt, 0.001) : 0);
-            previousPointers.set(pointer.id, point);
+            const pointer = input.snapshot.pointers[0], point = toWorld(pointer.x, pointer.y);
+            if (!addEmitter) addEmitter = { x: point.x, y: point.y, targetX: point.x, targetY: point.y, vx: 0, vy: 0, active: true };
+            addEmitter.targetX = point.x; addEmitter.targetY = point.y; addEmitter.active = true;
+            const previousX = addEmitter.x, previousY = addEmitter.y, follow = 1 - Math.exp(-dt * 16);
+            addEmitter.x += (addEmitter.targetX - addEmitter.x) * follow;
+            addEmitter.y += (addEmitter.targetY - addEmitter.y) * follow;
+            addEmitter.vx = (addEmitter.x - previousX) / Math.max(dt, 1 / 240);
+            addEmitter.vy = (addEmitter.y - previousY) / Math.max(dt, 1 / 240);
+            queueDebris(addEmitter.x, addEmitter.y, addEmitter.vx, addEmitter.vy);
           }
+          else if (addEmitter) addEmitter.active = false;
           if ((launch.profile === 'preview' || launch.profile === 'demo') && input.snapshot.pointers.length === 0 && Math.floor((elapsed - dt) * 2) !== Math.floor(elapsed * 2)) {
             const angle = elapsed * 0.9, aspect = aspectRatio();
             queueDebris(Math.cos(angle) * aspect * 0.62, Math.sin(angle) * 0.58, -Math.sin(angle) * 0.45, Math.cos(angle) * 0.45);
@@ -160,22 +185,24 @@ export function createOrbitalShrapnelPlugin(initial: OrbitalShrapnelConfig = ORB
               else
                 commands.splice(0, 12).forEach((spawn, index) => runStep(index === 0 ? dt : 0, spawn));
               const trailTarget = particles.beginTrails(destination.width, destination.height, orbitalNumber(config, 'trailFade')), palette = paletteData();
+              const realistic = styleId === 'realistic';
               particles.render(trailTarget, (g, u) => {
                 g.uniform1f(u('uAspect'), destination.width / Math.max(1, destination.height));
                 g.uniform1f(u('uPointSize'), orbitalNumber(config, 'debrisSize') * Math.max(1, destination.height / 720) * 2);
                 g.uniform1f(u('uStreakStrength'), orbitalNumber(config, 'streakStrength'));
-                g.uniform1f(u('uOpacity'), orbitalNumber(config, 'debrisOpacity'));
-                g.uniform1f(u('uBrightness'), orbitalNumber(config, 'bloomStrength'));
+                g.uniform1f(u('uOpacity'), orbitalNumber(config, 'debrisOpacity') * (realistic ? 0.42 : 1));
+                g.uniform1f(u('uBrightness'), orbitalNumber(config, 'bloomStrength') * (realistic ? 0.38 : 1));
                 g.uniform3fv(u('uPalette[0]'), palette.data);
                 g.uniform1i(u('uPaletteCount'), palette.count);
               });
-              particles.compositeTrails(destination, orbitalColor3(requireStyle().background), orbitalNumber(config, 'bloomStrength'));
+              particles.compositeTrails(destination, orbitalColor3(requireStyle().background), orbitalNumber(config, 'bloomStrength') * (realistic ? 0.24 : 1));
           });
           const style = requireStyle(), palette = style.palette, planetRadius = planetRadiusWorld(), pointerRadius = (mode === 'well' ? orbitalNumber(config, 'wellRadius') : orbitalNumber(config, 'interactionRadius')) / viewportHeight() * 2;
+          const realisticTextures = styleId === 'realistic' && earthTexture && moonTexture ? { earth: earthTexture, moon: moonTexture } : undefined;
           renderer.submitFullscreenEffect({
             id: 'orbital-shrapnel.planet',
             language: 'glsl-es-300',
-            fragmentSource: ORBITAL_OVERLAY_SHADER,
+            fragmentSource: realisticTextures ? ORBITAL_REALISTIC_OVERLAY_SHADER : ORBITAL_OVERLAY_SHADER,
             blend: 'alpha',
             uniforms: {
               uResolution: {
@@ -243,7 +270,11 @@ export function createOrbitalShrapnelPlugin(initial: OrbitalShrapnelConfig = ORB
               uPointerRadius: {
                 type: '1f',
                 value: pointerRadius
-              }
+              },
+              ...(realisticTextures ? {
+                uEarthTexture: { type: 'texture' as const, value: realisticTextures.earth },
+                uMoonTexture: { type: 'texture' as const, value: realisticTextures.moon },
+              } : {})
             }
           });
         }
@@ -253,7 +284,7 @@ export function createOrbitalShrapnelPlugin(initial: OrbitalShrapnelConfig = ORB
         if (event.phase === 'down') {
           previousPointers.set(event.id, point);
           if (mode === 'add')
-            queueDebris(point.x, point.y, 0, 0);
+            addEmitter = { x: point.x, y: point.y, targetX: point.x, targetY: point.y, vx: 0, vy: 0, active: true };
           if (mode === 'asteroid')
             asteroidStart = point;
         }
@@ -262,15 +293,12 @@ export function createOrbitalShrapnelPlugin(initial: OrbitalShrapnelConfig = ORB
         }
         else if (event.phase === 'up' || event.phase === 'cancel') {
           if (mode === 'asteroid' && asteroidStart) {
-            const dx = point.x - asteroidStart.x, dy = point.y - asteroidStart.y, r = Math.max(0.08, Math.hypot(asteroidStart.x, asteroidStart.y)), tangent = {
-              x: -asteroidStart.y / r,
-              y: asteroidStart.x / r
-            };
+            const dx = point.x - asteroidStart.x, dy = point.y - asteroidStart.y;
             commands.push({
               x: asteroidStart.x,
               y: asteroidStart.y,
-              vx: tangent.x * 0.8 - dx * 2.4,
-              vy: tangent.y * 0.8 - dy * 2.4,
+              vx: dx * Math.min(orbitalNumber(config, 'rawMaxSpeed') * 0.96 / Math.max(0.001, Math.hypot(dx, dy)), 3.2),
+              vy: dy * Math.min(orbitalNumber(config, 'rawMaxSpeed') * 0.96 / Math.max(0.001, Math.hypot(dx, dy)), 3.2),
               count: 1,
               radius: 0,
               jitter: 0,
@@ -279,6 +307,7 @@ export function createOrbitalShrapnelPlugin(initial: OrbitalShrapnelConfig = ORB
             });
           }
           asteroidStart = undefined;
+          if (mode === 'add' && addEmitter) addEmitter.active = false;
           previousPointers.delete(event.id);
         }
         void previous;
@@ -445,6 +474,21 @@ export function createOrbitalShrapnelPlugin(initial: OrbitalShrapnelConfig = ORB
     randomState ^= randomState << 5;
     return (randomState >>> 0) / 4294967296;
   }
+}
+async function loadImageTexture(renderer: import('@hooksjam/gl-game-lab-engine').Render2DService, id: string, source: string): Promise<Texture2DHandle> {
+  if (typeof Image === 'undefined' || typeof document === 'undefined') throw new Error('Image textures require a browser');
+  const image = new Image();
+  image.decoding = 'async';
+  image.src = source;
+  await image.decode();
+  const canvas = document.createElement('canvas');
+  canvas.width = image.naturalWidth;
+  canvas.height = image.naturalHeight;
+  const context = canvas.getContext('2d', { willReadFrequently: true });
+  if (!context) throw new Error('Unable to decode orbital texture pixels');
+  context.drawImage(image, 0, 0);
+  const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data;
+  return renderer.createRgbaTexture(id, canvas.width, canvas.height, new Uint8Array(pixels));
 }
 function validMode(value: string | undefined): OrbitalShrapnelMode | undefined {
   return value === 'add' || value === 'interact' || value === 'well' || value === 'asteroid' ? value : undefined;
