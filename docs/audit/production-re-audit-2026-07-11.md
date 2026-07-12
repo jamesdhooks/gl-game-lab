@@ -12,7 +12,7 @@ review and physical iOS/Android performance.
 
 - Ten workspace packages with enforced dependency boundaries and zero source
   hygiene exceptions.
-- 73 test files and 234 passing tests in the fresh workspace run, plus production
+- 74 test files and 236 passing tests in the fresh workspace run, plus production
   Chromium fixed-frame, lifecycle, and accessibility probes.
 - All 15 shipped experiences through engine-level render contracts; content has
   zero concrete WebGL renderer imports or WebGL context types.
@@ -164,7 +164,10 @@ WebGPU and full 3D/PBR correctly remain post-release scope.
 
 ### Medium
 
-1. Large simulation plugins duplicate controller/config/update patterns.
+1. All 14 simulations now share typed controller publication and engine-owned
+   exact-once teardown. Large plugins still keep experience-specific config/update
+   logic locally; extracting that without a concrete common algorithm would create
+   a rigid lowest-common-denominator base class.
 2. Capacity-based CPU particle renderers still scale linearly at stress settings;
    active-count upload diagnostics now expose that cost accurately.
 3. The sparse-set ECS has no chunk iteration, change detection, or parallel system
@@ -250,8 +253,10 @@ The five criticisms most likely from another senior engine programmer are:
    development hot-reload path.
 4. Expand the new stage-relative backend extension API to resource-declared custom
    render targets only when a concrete renderer plugin needs them.
-5. Extract shared simulation-plugin lifecycle; continue moving stress-scale CPU
-   particle domains to GPU-resident state when profiling justifies it.
+5. Completed: all 14 plugins use the shared simulation-runtime lifecycle for dual
+   controller publication and engine-owned rollback/teardown. Continue moving
+   stress-scale CPU particle domains to GPU-resident state only when profiling
+   justifies it.
 
 ### Low priority — nice to have
 
@@ -260,6 +265,16 @@ The five criticisms most likely from another senior engine programmer are:
 2. Build editor UI on `WorldInspector`, asset diagnostics, and scene serialization.
 
 ## Hardening Pass 2 progress
+
+- Added a composable simulation-runtime lifecycle instead of a simulation base
+  class. Every one of the 14 simulation plugins now publishes its specific and
+  generic runtime controller together and registers cleanup through engine-owned
+  resources. Partial-install rollback, reverse ownership release, asynchronous
+  teardown, and exact-once disposal therefore use the kernel contract rather than
+  ad hoc plugin `dispose` hooks. The helper and all-registry invariant tests bring
+  the fresh suite to 74 files and 236 tests. A clean isolated-port matrix reran all
+  30 desktop/mobile captures: every profile passed with no page errors, desktop
+  CPU p95 peaked at 9.31 ms and mobile-viewport CPU p95 at 7.40 ms.
 
 - Extracted `WebGL2FrameOrchestrator` from the renderer facade. It owns the seven
   shipping-pass execution boundary, closes GPU timers on stage failure, and emits
