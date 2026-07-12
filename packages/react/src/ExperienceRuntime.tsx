@@ -6,6 +6,8 @@ import {
   useState,
   type ChangeEvent,
 } from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
+import { Eye, EyeOff, HelpCircle, Play, Settings as SettingsIcon, X } from 'lucide-react';
 import {
   ExperienceRuntimeControllerService,
   type ExperienceDefinition,
@@ -17,6 +19,14 @@ import {
 import type { GameEngine } from '@hooksjam/gl-game-lab-engine';
 import { GameCanvas } from './GameCanvas.js';
 import type { FixedFrameCaptureOptions, FixedFrameCaptureResult } from './GameCanvas.js';
+import { HUD } from './ui/HUD.js';
+import { IntroCard, type IntroHint } from './ui/IntroCard.js';
+import { ModeToggle } from './ui/ModeToggle.js';
+import { OverflowMenu } from './ui/OverflowMenu.js';
+import { SettingsDrawer } from './ui/SettingsDrawer.js';
+import { SimControlPanel } from './ui/SimControlPanel.js';
+import { StylePicker as LegacyStylePicker } from './ui/StylePicker.js';
+import { ViewportProvider, useViewportContext } from './ViewportProvider.js';
 
 export interface ExperienceRuntimeProps {
   readonly definition: ExperienceDefinition;
@@ -35,9 +45,21 @@ export interface ExperienceRuntimeProps {
   readonly presentation?: 'embedded' | 'immersive';
   readonly onQuit?: () => void;
   readonly showIntroCard?: boolean;
+  readonly maxPixels?: number;
+  readonly onDemoAdvance?: () => void;
+  readonly onDemoExit?: () => void;
 }
 
 export function ExperienceRuntime({
+  ...props
+}: ExperienceRuntimeProps): JSX.Element {
+  if (props.presentation === 'immersive') {
+    return <ViewportProvider><ImmersiveExperienceRuntime {...props} /></ViewportProvider>;
+  }
+  return <EmbeddedExperienceRuntime {...props} />;
+}
+
+function EmbeddedExperienceRuntime({
   definition,
   profile = 'play',
   className,
@@ -54,6 +76,7 @@ export function ExperienceRuntime({
   presentation = 'embedded',
   onQuit,
   showIntroCard = presentation === 'immersive',
+  maxPixels,
 }: ExperienceRuntimeProps): JSX.Element {
   const defaultModeId = initialModeId ?? definition.modes?.[0]?.id ?? 'default';
   const defaultStyleId = initialStyleId ?? definition.styleManifest?.defaultStyleId ?? 'default';
@@ -188,6 +211,7 @@ export function ExperienceRuntime({
           ariaLabel={`${definition.name} game canvas`}
           onReady={handleReady}
           showDiagnostics={showDiagnostics}
+          {...(maxPixels === undefined ? {} : { maxPixels })}
           {...(fixedFrameCapture ? { fixedFrameCapture } : {})}
           {...(onFixedFrameCapture ? { onFixedFrameCapture } : {})}
           {...(canvasClassName ? { className: canvasClassName } : {})}
@@ -280,6 +304,296 @@ export function ExperienceRuntime({
         </div>
       )}
     </section>
+  );
+}
+
+const RUNTIME_PERF_CSS = `
+.gl-game-lab-runtime-shell [class*="backdrop-blur"] {
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}
+.gl-game-lab-runtime-shell [class*="shadow"] { box-shadow: none !important; }
+.gl-game-lab-runtime-shell [class*="drop-shadow"] { filter: none !important; }
+.gl-game-lab-runtime-shell [class*="transition"] {
+  transition-property: none !important;
+  transition-duration: 0ms !important;
+}
+`;
+
+function ImmersiveExperienceRuntime({
+  definition,
+  profile = 'play',
+  className,
+  canvasClassName,
+  initialModeId,
+  initialStyleId,
+  showChrome = true,
+  onReady,
+  onError,
+  seed,
+  fixedFrameCapture,
+  onFixedFrameCapture,
+  showDiagnostics = false,
+  onQuit,
+  showIntroCard = true,
+  maxPixels,
+  onDemoAdvance,
+  onDemoExit,
+}: ExperienceRuntimeProps): JSX.Element {
+  const { isMobile, isLandscape } = useViewportContext();
+  const mobilePortrait = isMobile && !isLandscape;
+  const defaultModeId = initialModeId ?? definition.modes?.[0]?.id ?? 'default';
+  const defaultStyleId = initialStyleId ?? definition.styleManifest?.defaultStyleId ?? 'default';
+  const initialSettings = useMemo(() => settingDefaults(definition), [definition]);
+  const [modeId, setModeId] = useState(defaultModeId);
+  const [styleId, setStyleId] = useState(defaultStyleId);
+  const [settings, setSettings] = useState<Readonly<Record<string, ExperienceSettingValue>>>(initialSettings);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [infoCardVisible, setInfoCardVisible] = useState(showIntroCard);
+  const [infoAutoDismiss, setInfoAutoDismiss] = useState(true);
+  const [uiHidden, setUiHidden] = useState(false);
+  const [isDemo, setIsDemo] = useState(profile === 'demo');
+  const [demoHintVisible, setDemoHintVisible] = useState(profile === 'demo');
+  const [activeProfile, setActiveProfile] = useState<ExperienceLaunchProfile>(profile);
+  const [runtimeKey, setRuntimeKey] = useState(0);
+  const [localMaxPixels, setLocalMaxPixels] = useState(maxPixels);
+  const [qualityMode, setQualityMode] = useState(definition.capabilities.qualityModes?.[0] ?? 'raw');
+  const controllerRef = useRef<ExperienceRuntimeController>();
+  const engineRef = useRef<GameEngine>();
+  const onReadyRef = useRef(onReady);
+  const demoHintTimerRef = useRef<number>();
+  onReadyRef.current = onReady;
+
+  useEffect(() => {
+    controllerRef.current = undefined;
+    engineRef.current = undefined;
+    setModeId(defaultModeId);
+    setStyleId(defaultStyleId);
+    setSettings(initialSettings);
+    setSettingsOpen(false);
+    setInfoCardVisible(showIntroCard && profile !== 'demo');
+    setInfoAutoDismiss(true);
+    setUiHidden(profile === 'demo');
+    setIsDemo(profile === 'demo');
+    setActiveProfile(profile);
+    setQualityMode(definition.capabilities.qualityModes?.[0] ?? 'raw');
+  }, [defaultModeId, defaultStyleId, definition.capabilities.qualityModes, definition.id, initialSettings, profile, showIntroCard]);
+
+  useEffect(() => () => {
+    if (demoHintTimerRef.current !== undefined) window.clearTimeout(demoHintTimerRef.current);
+  }, []);
+
+  const createPlugins = useCallback(() => definition.createPlugins({
+    profile: activeProfile,
+    modeId: defaultModeId,
+    styleId: defaultStyleId,
+    settings: initialSettings,
+    ...(seed !== undefined ? { seed } : {}),
+  }), [activeProfile, defaultModeId, defaultStyleId, definition, initialSettings, seed]);
+
+  const handleReady = useCallback((engine: GameEngine): void => {
+    engineRef.current = engine;
+    const controller = engine.kernel.tryGet(ExperienceRuntimeControllerService);
+    controllerRef.current = controller;
+    onReadyRef.current?.(engine, controller);
+  }, []);
+
+  const changeMode = useCallback((nextModeId: string): void => {
+    controllerRef.current?.setMode(nextModeId);
+    setModeId(nextModeId);
+  }, []);
+  const changeStyle = useCallback((nextStyleId: string): void => {
+    controllerRef.current?.setStyle(nextStyleId);
+    setStyleId(nextStyleId);
+  }, []);
+  const changeSetting = useCallback((setting: ExperienceSetting, value: ExperienceSettingValue): void => {
+    controllerRef.current?.setSetting(setting.key, value);
+    setSettings((current) => ({ ...current, [setting.key]: value }));
+  }, []);
+
+  const visibleSettings = useMemo(() => (definition.settings ?? []).filter((setting) => (
+    (!setting.visibleModes || setting.visibleModes.includes(modeId))
+    && (!setting.visibleRenderStyles || setting.visibleRenderStyles.includes(String(settings.renderStyle ?? '')))
+  )), [definition.settings, modeId, settings.renderStyle]);
+  const topControlFields = useMemo(() => visibleSettings.filter((setting) => (
+    setting.advanced !== true && (setting.type === 'number' || setting.type === 'select')
+  )), [visibleSettings]);
+  const hasModes = (definition.modes?.length ?? 0) > 1;
+
+  const introHints = useMemo(() => {
+    const hints: IntroHint[] = (definition.modes ?? [])
+      .slice(0, 3)
+      .filter((mode) => Boolean(mode.description))
+      .map((mode) => ({ label: mode.label, action: mode.description ?? definition.short }));
+    if (topControlFields.some((setting) => setting.type === 'number')) {
+      hints.push({ label: 'Sliders', action: 'adjust physics and visual settings at the top' });
+    }
+    return hints;
+  }, [definition.modes, definition.short, topControlFields]);
+
+  const controlsHeaderSlot = mobilePortrait && (definition.styleManifest || hasModes) ? (
+    <>
+      {definition.styleManifest && <LegacyStylePicker manifest={definition.styleManifest} value={styleId} onChange={changeStyle} />}
+      {hasModes && <ModeToggle modes={definition.modes ?? []} value={modeId} onChange={changeMode} />}
+    </>
+  ) : undefined;
+
+  const openSettings = (): void => {
+    engineRef.current?.runner.clock.setPaused(true);
+    setSettingsOpen(true);
+  };
+  const closeSettings = (): void => {
+    engineRef.current?.runner.clock.setPaused(false);
+    setSettingsOpen(false);
+  };
+  const openInfo = (): void => {
+    setInfoAutoDismiss(false);
+    setInfoCardVisible(true);
+  };
+  const showDemoHint = (): void => {
+    setDemoHintVisible(true);
+    if (demoHintTimerRef.current !== undefined) window.clearTimeout(demoHintTimerRef.current);
+    demoHintTimerRef.current = window.setTimeout(() => { setDemoHintVisible(false); }, 3_000);
+  };
+  const enterDemo = (): void => {
+    setInfoCardVisible(false);
+    setSettingsOpen(false);
+    setUiHidden(true);
+    setIsDemo(true);
+    setDemoHintVisible(true);
+    setActiveProfile('demo');
+    setRuntimeKey((value) => value + 1);
+    showDemoHint();
+  };
+  const exitDemo = (): void => {
+    setIsDemo(false);
+    setUiHidden(false);
+    setActiveProfile(profile);
+    setRuntimeKey((value) => value + 1);
+  };
+
+  return (
+    <section
+      className={classNames('gl-game-lab-runtime-shell fixed left-0 top-0 z-50 h-full w-full overflow-hidden bg-black', className)}
+      data-experience-id={definition.id}
+      data-experience-profile={activeProfile}
+    >
+      <style>{RUNTIME_PERF_CSS}</style>
+      <GameCanvas
+        key={runtimeKey}
+        createPlugins={createPlugins}
+        ariaLabel={`${definition.name} game canvas`}
+        onReady={handleReady}
+        showDiagnostics={showDiagnostics}
+        {...(fixedFrameCapture ? { fixedFrameCapture } : {})}
+        {...(onFixedFrameCapture ? { onFixedFrameCapture } : {})}
+        {...(canvasClassName ? { className: canvasClassName } : { className: 'h-full w-full touch-none' })}
+        {...(onError ? { onError } : {})}
+        {...(localMaxPixels === undefined ? {} : { maxPixels: localMaxPixels })}
+      />
+
+      {showChrome && !isDemo && (
+        <div className={uiHidden ? 'pointer-events-none opacity-0' : 'opacity-100'}>
+          <AnimatePresence>
+            {infoCardVisible && (
+              <IntroCard
+                key={`${definition.id}:${runtimeKey}`}
+                icon={definition.icon}
+                name={definition.name}
+                short={definition.short}
+                hints={introHints}
+                autoDismiss={infoAutoDismiss}
+                onDismiss={() => { setInfoCardVisible(false); }}
+              />
+            )}
+          </AnimatePresence>
+
+          <HUD
+            {...(onQuit ? { onQuit } : {})}
+            controls={(definition.styleManifest && !mobilePortrait) || (hasModes && !mobilePortrait) ? (
+              <div className="flex items-center gap-1.5">
+                {definition.styleManifest && <LegacyStylePicker manifest={definition.styleManifest} value={styleId} onChange={changeStyle} />}
+                {hasModes && <ModeToggle modes={definition.modes ?? []} value={modeId} onChange={changeMode} />}
+              </div>
+            ) : undefined}
+          />
+
+          <OverflowMenu items={[
+            {
+              key: 'engine-configuration', label: 'Engine configuration', hidden: (definition.capabilities.qualityModes?.length ?? 0) === 0,
+              node: <QualityModeSelector modes={definition.capabilities.qualityModes ?? []} value={qualityMode} onChange={(next) => { setQualityMode(next); engineRef.current?.quality.setTier(next === 'basic' ? 'mobile' : 'desktop'); }} />,
+            },
+            {
+              key: 'reset', label: 'Reset', hidden: !definition.capabilities.reset,
+              node: <button type="button" className="flex h-8 items-center rounded-xl bg-black/30 px-3 text-xs font-semibold text-white/70 backdrop-blur-md transition-colors hover:bg-black/50 hover:text-white" onClick={() => { controllerRef.current?.reset(); }}>Reset</button>,
+            },
+            {
+              key: 'settings', label: 'Settings',
+              node: <motion.button type="button" whileTap={{ scale: 0.9 }} onClick={openSettings} aria-label="Settings" className="flex h-8 w-8 items-center justify-center rounded-xl bg-black/30 text-white/70 backdrop-blur-md transition-colors hover:bg-black/50 hover:text-white"><SettingsIcon size={15} /></motion.button>,
+            },
+            {
+              key: 'hide-ui', label: 'Hide UI',
+              node: <motion.button type="button" whileTap={{ scale: 0.9 }} onClick={() => { setUiHidden(true); }} aria-label="Hide UI" className="flex h-8 w-8 items-center justify-center rounded-xl bg-black/30 text-white/40 backdrop-blur-md transition-colors hover:bg-black/50 hover:text-white/70"><EyeOff size={14} /></motion.button>,
+            },
+            {
+              key: 'demo', label: 'Demo mode', hidden: !definition.capabilities.demo,
+              node: <motion.button type="button" whileTap={{ scale: 0.9 }} onClick={enterDemo} aria-label="Demo mode" className="flex h-8 items-center gap-1.5 rounded-xl bg-black/30 px-2.5 text-white/40 backdrop-blur-md transition-colors hover:bg-black/50 hover:text-white/70"><Play size={11} /><span className="text-[10px] uppercase tracking-widest">Demo</span></motion.button>,
+            },
+            {
+              key: 'info', label: 'How to play',
+              node: <motion.button type="button" whileTap={{ scale: 0.9 }} onClick={openInfo} aria-label="Info" className="flex h-8 w-8 items-center justify-center rounded-xl bg-black/30 text-white/40 backdrop-blur-md transition-colors hover:bg-black/50 hover:text-white/70"><HelpCircle size={15} /></motion.button>,
+            },
+          ]} />
+
+          <SettingsDrawer
+            open={settingsOpen}
+            onClose={closeSettings}
+            values={settings}
+            fields={visibleSettings}
+            onChange={changeSetting}
+            {...(localMaxPixels === undefined ? {} : { maxPixels: localMaxPixels })}
+            onMaxPixelsChange={setLocalMaxPixels}
+            ariaLabel={`${definition.name} settings`}
+          />
+
+          {(topControlFields.length > 0 || controlsHeaderSlot) && (
+            <SimControlPanel values={settings} fields={topControlFields} onChange={changeSetting} headerSlot={controlsHeaderSlot} />
+          )}
+        </div>
+      )}
+
+      {showChrome && isDemo && (
+        <>
+          <button type="button" className="absolute inset-0 z-10 cursor-pointer" aria-label="Advance demo" onPointerMove={showDemoHint} onClick={() => { if (onDemoAdvance) onDemoAdvance(); else controllerRef.current?.reset(); showDemoHint(); }} />
+          <AnimatePresence>
+            {demoHintVisible && (
+              <motion.button type="button" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute right-3 top-3 z-40 flex h-8 w-8 items-center justify-center rounded-xl bg-black/30 text-white/60 backdrop-blur-md transition-colors hover:bg-black/50 hover:text-white" aria-label="Exit demo" onClick={(event) => { event.stopPropagation(); if (onDemoExit) onDemoExit(); else exitDemo(); }}><X size={14} /></motion.button>
+            )}
+          </AnimatePresence>
+        </>
+      )}
+
+      {showChrome && uiHidden && !isDemo && (
+        <motion.button type="button" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="absolute right-3 top-3 z-40 flex h-8 w-8 items-center justify-center rounded-xl bg-black/30 text-white/60 backdrop-blur-md transition-colors hover:bg-black/50 hover:text-white" aria-label="Restore UI" onClick={() => { setUiHidden(false); }}><Eye size={14} /></motion.button>
+      )}
+    </section>
+  );
+}
+
+function QualityModeSelector({ modes, value, onChange }: { readonly modes: readonly string[]; readonly value: string; readonly onChange: (value: string) => void }): JSX.Element {
+  const labels: Readonly<Record<string, string>> = {
+    basic: 'Basic 2D',
+    enhanced: 'GPU Enhanced',
+    raw: 'Raw WebGL2',
+    standard: 'Standard',
+  };
+  return (
+    <motion.label initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} transition={{ duration: 0.2, ease: 'easeOut' }} className="flex h-8 items-center gap-2 rounded-xl bg-black/30 px-2 backdrop-blur-md">
+      <span className="hidden text-[10px] font-semibold uppercase tracking-[0.22em] text-white/35 sm:inline">Engine</span>
+      <select value={value} onChange={(event) => { onChange(event.currentTarget.value); }} aria-label="Engine configuration" className="h-6 min-w-36 rounded-lg border border-white/10 bg-black/40 px-2 text-xs font-semibold text-white outline-none transition-colors hover:bg-black/55 focus:border-white/35 focus:ring-1 focus:ring-white/20">
+        {modes.map((mode) => <option key={mode} value={mode}>{labels[mode] ?? mode}</option>)}
+      </select>
+    </motion.label>
   );
 }
 

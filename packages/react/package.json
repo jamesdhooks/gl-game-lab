@@ -23,7 +23,9 @@
     "@hooksjam/gl-game-lab-engine": "workspace:*",
     "@hooksjam/gl-game-lab-platform-web": "workspace:*",
     "@hooksjam/gl-game-lab-render-webgl2": "workspace:*",
-    "@hooksjam/gl-game-lab-tools": "workspace:*"
+    "@hooksjam/gl-game-lab-tools": "workspace:*",
+    "framer-motion": "^11.18.2",
+    "lucide-react": "^0.400.0"
   },
   "peerDependencies": {
     "react": ">=18.0.0"

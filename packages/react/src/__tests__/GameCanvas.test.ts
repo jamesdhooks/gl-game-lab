@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { createEngineDestroyHandle, destroyEngineAfterBoot, normalizeFixedFrameCapture } from '../GameCanvas.js';
+import { createEngineDestroyHandle, destroyEngineAfterBoot, normalizeFixedFrameCapture, resolvePixelRatio } from '../GameCanvas.js';
 
 describe('normalizeFixedFrameCapture', () => {
   it('provides a deterministic sixty-hertz default', () => {
@@ -50,5 +50,13 @@ describe('normalizeFixedFrameCapture', () => {
     finishBoot?.();
     await cleanup;
     expect(destroy).toHaveBeenCalledOnce();
+  });
+});
+
+describe('resolvePixelRatio', () => {
+  it('preserves device ratio until the historical pixel budget requires a cap', () => {
+    expect(resolvePixelRatio(400, 300, 2)).toBe(2);
+    expect(resolvePixelRatio(400, 300, 2, 120_000)).toBe(1);
+    expect(() => resolvePixelRatio(400, 300, 2, 0)).toThrow('maxPixels');
   });
 });

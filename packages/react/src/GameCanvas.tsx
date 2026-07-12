@@ -52,6 +52,7 @@ export interface GameCanvasProps {
   readonly fixedFrameCapture?: FixedFrameCaptureOptions;
   readonly onFixedFrameCapture?: (result: FixedFrameCaptureResult) => void;
   readonly showDiagnostics?: boolean;
+  readonly maxPixels?: number;
 }
 
 const EMPTY_ENGINE_PLUGINS: readonly EnginePlugin[] = Object.freeze([]);
@@ -103,6 +104,7 @@ export function GameCanvas({
   fixedFrameCapture,
   onFixedFrameCapture,
   showDiagnostics = false,
+  maxPixels,
 }: GameCanvasProps): JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const diagnosticsRef = useRef<HTMLOutputElement | null>(null);
@@ -135,15 +137,16 @@ export function GameCanvas({
       if (!engine.kernel.has(EngineRenderer)) return;
       const renderer = engine.kernel.get(EngineRenderer);
       const bounds = canvas.getBoundingClientRect();
-      renderer.resize(
-        Math.max(1, bounds.width),
-        Math.max(1, bounds.height),
-        fixedFrameCapture ? 1 : window.devicePixelRatio || 1,
-      );
+      const width = Math.max(1, bounds.width);
+      const height = Math.max(1, bounds.height);
+      const pixelRatio = fixedFrameCapture
+        ? 1
+        : resolvePixelRatio(width, height, window.devicePixelRatio || 1, maxPixels);
+      renderer.resize(width, height, pixelRatio);
       engine.kernel.get(EngineQuality).configureViewport(
-        Math.max(1, bounds.width),
-        Math.max(1, bounds.height),
-        fixedFrameCapture ? 1 : window.devicePixelRatio || 1,
+        width,
+        height,
+        pixelRatio,
       );
     };
     const observer = typeof ResizeObserver === 'undefined' ? undefined : new ResizeObserver(resize);
@@ -266,7 +269,7 @@ export function GameCanvas({
         }
       });
     };
-  }, [createEngine, createPlugins, fixedFrameCapture, plugins, preventDefaultInput, showDiagnostics]);
+  }, [createEngine, createPlugins, fixedFrameCapture, maxPixels, plugins, preventDefaultInput, showDiagnostics]);
 
   return <Fragment>
     <canvas ref={canvasRef} className={className} style={style} aria-label={ariaLabel} data-engine-state="created" />
@@ -303,6 +306,20 @@ function describeError(error: unknown): string {
   }
   if (messages.length === 0) messages.push(String(error));
   return messages.join(': ');
+}
+
+export function resolvePixelRatio(
+  width: number,
+  height: number,
+  devicePixelRatio: number,
+  maxPixels?: number,
+): number {
+  if (![width, height, devicePixelRatio].every((value) => Number.isFinite(value) && value > 0)) {
+    throw new Error('Canvas pixel ratio inputs must be positive');
+  }
+  if (maxPixels === undefined) return devicePixelRatio;
+  if (!Number.isFinite(maxPixels) || maxPixels <= 0) throw new Error('Canvas maxPixels must be positive');
+  return Math.min(devicePixelRatio, Math.sqrt(maxPixels / (width * height)));
 }
 
 const DIAGNOSTICS_STYLE: CSSProperties = {
