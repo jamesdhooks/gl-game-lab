@@ -101,7 +101,17 @@ export function SettingsDrawer({ open, onClose, values, fields, onChange, maxPix
       )}
       <div className="flex flex-wrap content-start gap-1 px-1 pb-1">
         <button type="button" aria-pressed={sectionFilter === null} onClick={() => { setSectionFilter(null); }} className={`shrink-0 rounded-full px-2 py-1 text-[10px] font-bold uppercase tracking-[0.08em] transition-colors ${sectionFilter === null ? 'bg-white/18 text-white' : 'bg-white/[0.06] text-white/45 hover:bg-white/10 hover:text-white/75'}`}>All</button>
-        {sections.map((section) => <button key={section.label} type="button" aria-pressed={sectionFilter === section.label} onClick={() => { setSectionFilter((current) => current === section.label ? null : section.label); }} className={`shrink-0 rounded-full px-2 py-1 text-[10px] font-bold uppercase tracking-[0.08em] transition-colors ${sectionFilter === section.label ? 'bg-cyan-200/22 text-cyan-50' : 'bg-white/[0.06] text-white/45 hover:bg-white/10 hover:text-white/75'}`}>{section.label}</button>)}
+        {sections.map((section) => (
+          <button
+            key={section.label}
+            type="button"
+            aria-pressed={sectionFilter === section.label}
+            onClick={() => { setSectionFilter((current) => current === section.label ? null : section.label); }}
+            className={`shrink-0 rounded-full px-2 py-1 text-[10px] font-bold uppercase tracking-[0.08em] transition-colors ${sectionFilter === section.label ? 'bg-cyan-200/22 text-cyan-50' : 'bg-white/[0.06] text-white/45 hover:bg-white/10 hover:text-white/75'}`}
+          >
+            {section.label}
+          </button>
+        ))}
       </div>
       {visibleSections.map((section, index) => renderFieldSection(section.label, section.fields, index))}
       <section className={`rounded-lg py-1.5 ${visibleSections.length % 2 === 0 ? 'bg-white/[0.035]' : 'bg-white/[0.015]'}`}>
@@ -155,7 +165,15 @@ export function SettingsDrawer({ open, onClose, values, fields, onChange, maxPix
       {open && (
         <>
           {pinned ? (
-            <motion.aside key="sidebar" initial={docked ? { opacity: 1 } : { opacity: 0, x: 18 }} animate={docked ? { opacity: 1 } : { opacity: 1, x: 0 }} exit={docked ? { opacity: 1 } : { opacity: 0, x: 18 }} transition={{ duration: 0.16, ease: 'easeOut' }} className={docked ? 'relative z-0 flex h-full w-full flex-col bg-zinc-950 ring-1 ring-white/12' : 'absolute bottom-0 right-0 top-0 z-50 flex w-[min(28rem,max(22rem,38vw))] max-w-[calc(100vw-1.5rem)] flex-col bg-zinc-950 shadow-xl ring-1 ring-white/12'} aria-label={ariaLabel}>
+            <motion.aside
+              key="sidebar"
+              initial={docked ? { opacity: 1 } : { opacity: 0, x: 18 }}
+              animate={docked ? { opacity: 1 } : { opacity: 1, x: 0 }}
+              exit={docked ? { opacity: 1 } : { opacity: 0, x: 18 }}
+              transition={{ duration: 0.16, ease: 'easeOut' }}
+              className={docked ? 'relative z-0 flex h-full w-full flex-col bg-zinc-950 ring-1 ring-white/12' : 'absolute bottom-0 right-0 top-0 z-50 flex w-[min(28rem,max(22rem,38vw))] max-w-[calc(100vw-1.5rem)] flex-col bg-zinc-950 shadow-xl ring-1 ring-white/12'}
+              aria-label={ariaLabel}
+            >
               {header}<div className="min-h-0 flex-1 overflow-y-auto">{content}</div>
             </motion.aside>
           ) : (
@@ -224,8 +242,35 @@ function FieldDescriptionTooltip({ label, description }: { label: string; descri
     setTooltip({ left, vertical: openAbove ? window.innerHeight - rect.top + 8 : rect.bottom + 8, placement: openAbove ? 'top' : 'bottom' });
   };
   return <>
-    <button ref={triggerRef} type="button" aria-label={`About ${label}`} aria-describedby={tooltip ? tooltipId : undefined} onPointerEnter={showTooltip} onPointerLeave={() => { setTooltip(null); }} onFocus={showTooltip} onBlur={() => { setTooltip(null); }} className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-white/40 transition-colors hover:bg-white/10 hover:text-white/80 focus:outline-none focus:ring-1 focus:ring-cyan-200/50"><Info size={11} aria-hidden="true" /></button>
-    <AnimatePresence>{tooltip && <motion.div id={tooltipId} role="tooltip" initial={{ opacity: 0, y: tooltip.placement === 'top' ? 4 : -4, scale: 0.98 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: tooltip.placement === 'top' ? 4 : -4, scale: 0.98 }} transition={{ duration: 0.1 }} style={{ position: 'fixed', left: tooltip.left, ...(tooltip.placement === 'top' ? { bottom: tooltip.vertical } : { top: tooltip.vertical }), width: 256 }} className="pointer-events-none z-[10000] rounded-md border border-white/12 bg-zinc-950 px-2.5 py-2 text-[10px] leading-snug text-white/75 shadow-2xl">{description}</motion.div>}</AnimatePresence>
+    <button
+      ref={triggerRef}
+      type="button"
+      aria-label={`About ${label}`}
+      aria-describedby={tooltip ? tooltipId : undefined}
+      onPointerEnter={showTooltip}
+      onPointerLeave={() => { setTooltip(null); }}
+      onFocus={showTooltip}
+      onBlur={() => { setTooltip(null); }}
+      className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-white/40 transition-colors hover:bg-white/10 hover:text-white/80 focus:outline-none focus:ring-1 focus:ring-cyan-200/50"
+    >
+      <Info size={11} aria-hidden="true" />
+    </button>
+    <AnimatePresence>
+      {tooltip && (
+        <motion.div
+          id={tooltipId}
+          role="tooltip"
+          initial={{ opacity: 0, y: tooltip.placement === 'top' ? 4 : -4, scale: 0.98 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          exit={{ opacity: 0, y: tooltip.placement === 'top' ? 4 : -4, scale: 0.98 }}
+          transition={{ duration: 0.1 }}
+          style={{ position: 'fixed', left: tooltip.left, ...(tooltip.placement === 'top' ? { bottom: tooltip.vertical } : { top: tooltip.vertical }), width: 256 }}
+          className="pointer-events-none z-[10000] rounded-md border border-white/12 bg-zinc-950 px-2.5 py-2 text-[10px] leading-snug text-white/75 shadow-2xl"
+        >
+          {description}
+        </motion.div>
+      )}
+    </AnimatePresence>
   </>;
 }
 

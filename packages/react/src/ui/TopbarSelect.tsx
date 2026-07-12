@@ -69,7 +69,24 @@ export function TopbarSelect({ label, value, options, onChange, listMode = false
     </button>
     <div className="h-4 w-px bg-white/15" />
     <button type="button" onClick={cycleNext} aria-label={`Next ${label.toLowerCase()}`} className="flex h-8 w-7 items-center justify-center pr-0.5 text-white/40 transition-colors hover:bg-white/10 hover:text-white/80"><ChevronRight size={13} /></button>
-    {typeof document !== 'undefined' && createPortal(<AnimatePresence>{open && buttonRect && <motion.div ref={dropdownRef} initial={{ opacity: 0, y: openUpward ? 4 : -4, scale: 0.97 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: openUpward ? 4 : -4, scale: 0.97 }} transition={{ duration: 0.12 }} style={{ position: 'fixed', ...(openUpward ? { bottom: window.innerHeight - buttonRect.top + 6 } : { top: buttonRect.bottom + 6 }), left: Math.max(8, Math.min(buttonRect.left, window.innerWidth - dropdownWidth - 8)), minWidth: dropdownWidth }} className="z-[9999] overflow-hidden rounded-xl bg-black/30 p-1 backdrop-blur-md">{optionRows}</motion.div>}</AnimatePresence>, document.body)}
+    {typeof document !== 'undefined' && createPortal(
+      <AnimatePresence>
+        {open && buttonRect && (
+          <motion.div
+            ref={dropdownRef}
+            initial={{ opacity: 0, y: openUpward ? 4 : -4, scale: 0.97 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: openUpward ? 4 : -4, scale: 0.97 }}
+            transition={{ duration: 0.12 }}
+            style={{ position: 'fixed', ...(openUpward ? { bottom: window.innerHeight - buttonRect.top + 6 } : { top: buttonRect.bottom + 6 }), left: Math.max(8, Math.min(buttonRect.left, window.innerWidth - dropdownWidth - 8)), minWidth: dropdownWidth }}
+            className="z-[9999] overflow-hidden rounded-xl bg-black/30 p-1 backdrop-blur-md"
+          >
+            {optionRows}
+          </motion.div>
+        )}
+      </AnimatePresence>,
+      document.body,
+    )}
   </div>;
 }
 
