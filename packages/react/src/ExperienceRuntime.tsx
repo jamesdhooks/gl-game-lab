@@ -5,6 +5,7 @@ import {
   useRef,
   useState,
   type ChangeEvent,
+  type PointerEvent as ReactPointerEvent,
 } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Eye, EyeOff, HelpCircle, Play, Settings as SettingsIcon, X } from 'lucide-react';
@@ -26,7 +27,36 @@ import { OverflowMenu } from './ui/OverflowMenu.js';
 import { SettingsDrawer } from './ui/SettingsDrawer.js';
 import { SimControlPanel } from './ui/SimControlPanel.js';
 import { StylePicker as LegacyStylePicker } from './ui/StylePicker.js';
+import { TopbarSelect } from './ui/TopbarSelect.js';
 import { ViewportProvider, useViewportContext } from './ViewportProvider.js';
+
+const SETTINGS_OPEN_STORAGE_KEY = 'gl-game-lab:settingsOpen';
+const SETTINGS_PINNED_STORAGE_KEY = 'gl-game-lab:settingsPinned';
+const DEFAULT_SETTINGS_SIDEBAR_WIDTH = 448;
+const MIN_SETTINGS_SIDEBAR_WIDTH = 320;
+const MAX_SETTINGS_SIDEBAR_WIDTH = 720;
+const MIN_SCENE_STAGE_WIDTH = 360;
+const COMPACT_TOPBAR_STAGE_WIDTH = 760;
+
+function readStoredBoolean(key: string, fallback: boolean): boolean {
+  try {
+    const value = localStorage.getItem(key);
+    return value === null ? fallback : value === 'true';
+  } catch {
+    return fallback;
+  }
+}
+
+function writeStoredBoolean(key: string, value: boolean): void {
+  try { localStorage.setItem(key, String(value)); } catch { /* Storage may be unavailable. */ }
+}
+
+function clampSettingsSidebarWidth(width: number, viewportWidth: number): number {
+  return Math.max(
+    MIN_SETTINGS_SIDEBAR_WIDTH,
+    Math.min(MAX_SETTINGS_SIDEBAR_WIDTH, viewportWidth - MIN_SCENE_STAGE_WIDTH, width),
+  );
+}
 
 export interface ExperienceRuntimeProps {
   readonly definition: ExperienceDefinition;
@@ -348,7 +378,10 @@ function ImmersiveExperienceRuntime({
   const [modeId, setModeId] = useState(defaultModeId);
   const [styleId, setStyleId] = useState(defaultStyleId);
   const [settings, setSettings] = useState<Readonly<Record<string, ExperienceSettingValue>>>(initialSettings);
-  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(() => readStoredBoolean(SETTINGS_OPEN_STORAGE_KEY, false));
+  const [settingsPinned, setSettingsPinned] = useState(() => readStoredBoolean(SETTINGS_PINNED_STORAGE_KEY, false));
+  const [settingsSidebarWidth, setSettingsSidebarWidth] = useState(DEFAULT_SETTINGS_SIDEBAR_WIDTH);
+  const [isCompactTopbar, setIsCompactTopbar] = useState(false);
   const [infoCardVisible, setInfoCardVisible] = useState(showIntroCard);
   const [infoAutoDismiss, setInfoAutoDismiss] = useState(true);
   const [uiHidden, setUiHidden] = useState(false);
@@ -360,6 +393,7 @@ function ImmersiveExperienceRuntime({
   const [qualityMode, setQualityMode] = useState(definition.capabilities.qualityModes?.[0] ?? 'raw');
   const controllerRef = useRef<ExperienceRuntimeController>();
   const engineRef = useRef<GameEngine>();
+  const sceneStageRef = useRef<HTMLDivElement>(null);
   const onReadyRef = useRef(onReady);
   const demoHintTimerRef = useRef<number>();
   onReadyRef.current = onReady;
@@ -370,7 +404,7 @@ function ImmersiveExperienceRuntime({
     setModeId(defaultModeId);
     setStyleId(defaultStyleId);
     setSettings(initialSettings);
-    setSettingsOpen(false);
+    setSettingsOpen(readStoredBoolean(SETTINGS_OPEN_STORAGE_KEY, false));
     setInfoCardVisible(showIntroCard && profile !== 'demo');
     setInfoAutoDismiss(true);
     setUiHidden(profile === 'demo');
@@ -378,6 +412,20 @@ function ImmersiveExperienceRuntime({
     setActiveProfile(profile);
     setQualityMode(definition.capabilities.qualityModes?.[0] ?? 'raw');
   }, [defaultModeId, defaultStyleId, definition.capabilities.qualityModes, definition.id, initialSettings, profile, showIntroCard]);
+
+  useEffect(() => {
+    writeStoredBoolean(SETTINGS_OPEN_STORAGE_KEY, settingsOpen);
+  }, [settingsOpen]);
+
+  useEffect(() => {
+    const stage = sceneStageRef.current;
+    if (!stage || typeof ResizeObserver === 'undefined') return;
+    const update = (width: number): void => { setIsCompactTopbar(width <= COMPACT_TOPBAR_STAGE_WIDTH); };
+    const observer = new ResizeObserver(([entry]) => { if (entry) update(entry.contentRect.width); });
+    update(stage.clientWidth);
+    observer.observe(stage);
+    return () => { observer.disconnect(); };
+  }, []);
 
   useEffect(() => () => {
     if (demoHintTimerRef.current !== undefined) window.clearTimeout(demoHintTimerRef.current);
@@ -419,6 +467,7 @@ function ImmersiveExperienceRuntime({
     setting.advanced !== true && (setting.type === 'number' || setting.type === 'select')
   )), [visibleSettings]);
   const hasModes = (definition.modes?.length ?? 0) > 1;
+  const styleOptions = useMemo(() => (definition.styleManifest?.styles ?? []).map((style) => ({ id: style.id, label: style.name, chipColors: [...style.palette] })), [definition.styleManifest]);
 
   const introHints = useMemo(() => {
     const hints: IntroHint[] = (definition.modes ?? [])
@@ -433,18 +482,40 @@ function ImmersiveExperienceRuntime({
 
   const controlsHeaderSlot = mobilePortrait && (definition.styleManifest || hasModes) ? (
     <>
-      {definition.styleManifest && <LegacyStylePicker manifest={definition.styleManifest} value={styleId} onChange={changeStyle} />}
+      {definition.styleManifest && <TopbarSelect label="Palette" options={styleOptions} value={styleId} onChange={changeStyle} hideLabel />}
       {hasModes && <ModeToggle modes={definition.modes ?? []} value={modeId} onChange={changeMode} />}
     </>
   ) : undefined;
 
-  const openSettings = (): void => {
-    engineRef.current?.runner.clock.setPaused(true);
-    setSettingsOpen(true);
+  const openSettings = (): void => { setSettingsOpen(true); };
+  const closeSettings = (): void => { setSettingsOpen(false); };
+  const changeSettingsPinned = (pinned: boolean): void => {
+    writeStoredBoolean(SETTINGS_PINNED_STORAGE_KEY, pinned);
+    setSettingsPinned(pinned);
+    if (pinned) setSettingsOpen(true);
   };
-  const closeSettings = (): void => {
-    engineRef.current?.runner.clock.setPaused(false);
-    setSettingsOpen(false);
+  const resizeSettingsSidebar = (event: ReactPointerEvent<HTMLButtonElement>): void => {
+    event.preventDefault();
+    event.stopPropagation();
+    const startX = event.clientX;
+    const startWidth = settingsSidebarWidth;
+    const previousCursor = document.body.style.cursor;
+    const previousUserSelect = document.body.style.userSelect;
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+    const move = (next: PointerEvent): void => {
+      setSettingsSidebarWidth(clampSettingsSidebarWidth(startWidth + startX - next.clientX, window.innerWidth));
+    };
+    const finish = (): void => {
+      document.body.style.cursor = previousCursor;
+      document.body.style.userSelect = previousUserSelect;
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', finish);
+      window.removeEventListener('pointercancel', finish);
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', finish);
+    window.addEventListener('pointercancel', finish);
   };
   const openInfo = (): void => {
     setInfoAutoDismiss(false);
@@ -471,26 +542,28 @@ function ImmersiveExperienceRuntime({
     setActiveProfile(profile);
     setRuntimeKey((value) => value + 1);
   };
+  const settingsDocked = settingsOpen && settingsPinned && !mobilePortrait && !uiHidden && !isDemo;
 
   return (
     <section
-      className={classNames('gl-game-lab-runtime-shell fixed left-0 top-0 z-50 h-full w-full overflow-hidden bg-black', className)}
+      className={classNames('gl-game-lab-runtime-shell fixed left-0 top-0 z-50 flex h-full w-full overflow-hidden bg-black', className)}
       data-experience-id={definition.id}
       data-experience-profile={activeProfile}
     >
       <style>{RUNTIME_PERF_CSS}</style>
-      <GameCanvas
-        key={runtimeKey}
-        createPlugins={createPlugins}
-        ariaLabel={`${definition.name} game canvas`}
-        onReady={handleReady}
-        showDiagnostics={showDiagnostics}
-        {...(fixedFrameCapture ? { fixedFrameCapture } : {})}
-        {...(onFixedFrameCapture ? { onFixedFrameCapture } : {})}
-        {...(canvasClassName ? { className: canvasClassName } : { className: 'h-full w-full touch-none' })}
-        {...(onError ? { onError } : {})}
-        {...(localMaxPixels === undefined ? {} : { maxPixels: localMaxPixels })}
-      />
+      <div ref={sceneStageRef} className="relative h-full min-w-0 flex-1 overflow-hidden">
+        <GameCanvas
+          key={runtimeKey}
+          createPlugins={createPlugins}
+          ariaLabel={`${definition.name} game canvas`}
+          onReady={handleReady}
+          showDiagnostics={showDiagnostics}
+          {...(fixedFrameCapture ? { fixedFrameCapture } : {})}
+          {...(onFixedFrameCapture ? { onFixedFrameCapture } : {})}
+          {...(canvasClassName ? { className: canvasClassName } : { className: 'h-full w-full touch-none' })}
+          {...(onError ? { onError } : {})}
+          {...(localMaxPixels === undefined ? {} : { maxPixels: localMaxPixels })}
+        />
 
       {showChrome && !isDemo && (
         <div className={uiHidden ? 'pointer-events-none opacity-0' : 'opacity-100'}>
@@ -502,6 +575,7 @@ function ImmersiveExperienceRuntime({
                 name={definition.name}
                 short={definition.short}
                 hints={introHints}
+                attributions={definition.attributions ? [...definition.attributions] : []}
                 autoDismiss={infoAutoDismiss}
                 onDismiss={() => { setInfoCardVisible(false); }}
               />
@@ -512,13 +586,13 @@ function ImmersiveExperienceRuntime({
             {...(onQuit ? { onQuit } : {})}
             controls={(definition.styleManifest && !mobilePortrait) || (hasModes && !mobilePortrait) ? (
               <div className="flex items-center gap-1.5">
-                {definition.styleManifest && <LegacyStylePicker manifest={definition.styleManifest} value={styleId} onChange={changeStyle} />}
+                {definition.styleManifest && <TopbarSelect label="Palette" options={styleOptions} value={styleId} onChange={changeStyle} hideLabel />}
                 {hasModes && <ModeToggle modes={definition.modes ?? []} value={modeId} onChange={changeMode} />}
               </div>
             ) : undefined}
           />
 
-          <OverflowMenu items={[
+          <OverflowMenu compact={isCompactTopbar} items={[
             {
               key: 'engine-configuration', label: 'Engine configuration', hidden: (definition.capabilities.qualityModes?.length ?? 0) === 0,
               node: <QualityModeSelector modes={definition.capabilities.qualityModes ?? []} value={qualityMode} onChange={(next) => { setQualityMode(next); engineRef.current?.quality.setTier(next === 'basic' ? 'mobile' : 'desktop'); }} />,
@@ -528,7 +602,7 @@ function ImmersiveExperienceRuntime({
               node: <button type="button" className="flex h-8 items-center rounded-xl bg-black/30 px-3 text-xs font-semibold text-white/70 backdrop-blur-md transition-colors hover:bg-black/50 hover:text-white" onClick={() => { controllerRef.current?.reset(); }}>Reset</button>,
             },
             {
-              key: 'settings', label: 'Settings',
+              key: 'settings', label: 'Settings', closeOnActivate: true,
               node: <motion.button type="button" whileTap={{ scale: 0.9 }} onClick={openSettings} aria-label="Settings" className="flex h-8 w-8 items-center justify-center rounded-xl bg-black/30 text-white/70 backdrop-blur-md transition-colors hover:bg-black/50 hover:text-white"><SettingsIcon size={15} /></motion.button>,
             },
             {
@@ -545,16 +619,20 @@ function ImmersiveExperienceRuntime({
             },
           ]} />
 
-          <SettingsDrawer
-            open={settingsOpen}
-            onClose={closeSettings}
-            values={settings}
-            fields={visibleSettings}
-            onChange={changeSetting}
-            {...(localMaxPixels === undefined ? {} : { maxPixels: localMaxPixels })}
-            onMaxPixelsChange={setLocalMaxPixels}
-            ariaLabel={`${definition.name} settings`}
-          />
+          {!settingsDocked && (
+            <SettingsDrawer
+              open={settingsOpen}
+              onClose={closeSettings}
+              values={settings}
+              fields={visibleSettings}
+              onChange={changeSetting}
+              {...(localMaxPixels === undefined ? {} : { maxPixels: localMaxPixels })}
+              onMaxPixelsChange={setLocalMaxPixels}
+              ariaLabel={`${definition.name} settings`}
+              pinned={settingsPinned && !mobilePortrait}
+              onPinnedChange={changeSettingsPinned}
+            />
+          )}
 
           {(topControlFields.length > 0 || controlsHeaderSlot) && (
             <SimControlPanel values={settings} fields={topControlFields} onChange={changeSetting} headerSlot={controlsHeaderSlot} />
@@ -575,6 +653,34 @@ function ImmersiveExperienceRuntime({
 
       {showChrome && uiHidden && !isDemo && (
         <motion.button type="button" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="absolute right-3 top-3 z-40 flex h-8 w-8 items-center justify-center rounded-xl bg-black/30 text-white/60 backdrop-blur-md transition-colors hover:bg-black/50 hover:text-white" aria-label="Restore UI" onClick={() => { setUiHidden(false); }}><Eye size={14} /></motion.button>
+      )}
+      </div>
+
+      {showChrome && settingsDocked && (
+        <div className="relative h-full shrink-0" style={{ width: settingsSidebarWidth }}>
+          <button
+            type="button"
+            aria-label="Resize settings sidebar"
+            title="Resize settings sidebar"
+            onPointerDown={resizeSettingsSidebar}
+            className="absolute bottom-0 left-0 top-0 z-[60] w-3 -translate-x-1/2 cursor-col-resize touch-none"
+          >
+            <span className="absolute left-1/2 top-1/2 h-12 w-px -translate-y-1/2 rounded-full bg-white/20" />
+          </button>
+          <SettingsDrawer
+            open={settingsOpen}
+            onClose={closeSettings}
+            values={settings}
+            fields={visibleSettings}
+            onChange={changeSetting}
+            {...(localMaxPixels === undefined ? {} : { maxPixels: localMaxPixels })}
+            onMaxPixelsChange={setLocalMaxPixels}
+            ariaLabel={`${definition.name} settings`}
+            pinned
+            docked
+            onPinnedChange={changeSettingsPinned}
+          />
+        </div>
       )}
     </section>
   );

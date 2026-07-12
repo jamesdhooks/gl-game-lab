@@ -5,9 +5,9 @@
  * controls bar. Opens below the settings button with a slide-down animation.
  * Less blur, less dramatic than a full modal.
  */
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useId } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, ChevronDown, Check } from 'lucide-react';
+import { X, ChevronDown, Check, RotateCcw, PanelRight, PanelRightOpen, Info } from 'lucide-react';
 import type {
   ExperienceSetting,
   ExperienceSettingValue,
@@ -26,11 +26,15 @@ export interface SettingsDrawerProps {
   maxPixels?: number;
   onMaxPixelsChange?: (v: number | undefined) => void;
   ariaLabel?: string;
+  pinned?: boolean;
+  docked?: boolean;
+  onPinnedChange?: (pinned: boolean) => void;
 }
 
-export function SettingsDrawer({ open, onClose, values, fields, onChange, maxPixels, onMaxPixelsChange, ariaLabel }: SettingsDrawerProps) {
+export function SettingsDrawer({ open, onClose, values, fields, onChange, maxPixels, onMaxPixelsChange, ariaLabel, pinned = false, docked = false, onPinnedChange }: SettingsDrawerProps) {
   const { isMobile, isLandscape } = useViewportContext();
   const [vals, setVals] = useState<Record<string, unknown>>({});
+  const [sectionFilter, setSectionFilter] = useState<string | null>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -47,6 +51,11 @@ export function SettingsDrawer({ open, onClose, values, fields, onChange, maxPix
     setVals((prev) => ({ ...prev, [key]: value }));
   };
 
+  const resetField = (field: ExperienceSetting): void => {
+    onChange(field, field.default);
+    setVals((previous) => ({ ...previous, [field.key]: field.default }));
+  };
+
   const PIXEL_PRESETS: Array<{ label: string; sub: string; value: number | undefined }> = [
     { label: 'Off', sub: 'unlimited', value: undefined },
     { label: '360p', sub: '640×360', value: 230_400 },
@@ -54,49 +63,81 @@ export function SettingsDrawer({ open, onClose, values, fields, onChange, maxPix
     { label: '1080p', sub: '1920×1080', value: 2_073_600 },
   ];
 
-  const normalFields = fields.filter((field) => !field.advanced);
-  const advancedFields = fields.filter((field) => field.advanced);
-  const renderFieldSection = (label: string, sectionFields: readonly ExperienceSetting[]) =>
+  const sectionLabelFor = (field: ExperienceSetting): string => field.section ?? (field.advanced ? 'Advanced' : 'Experience');
+  const sections = fields.reduce<Array<{ label: string; fields: ExperienceSetting[] }>>((result, field) => {
+    const label = sectionLabelFor(field);
+    const existing = result.find((section) => section.label === label);
+    if (existing) existing.fields.push(field);
+    else result.push({ label, fields: [field] });
+    return result;
+  }, []);
+  const visibleSections = sectionFilter ? sections.filter((section) => section.label === sectionFilter) : sections;
+  const resetVisibleSettings = (): void => {
+    for (const section of visibleSections) for (const field of section.fields) resetField(field);
+    if (!sectionFilter) onMaxPixelsChange?.(undefined);
+  };
+  const renderFieldSection = (label: string, sectionFields: readonly ExperienceSetting[], index: number) =>
     sectionFields.length > 0 ? (
-      <>
-        <div className="mx-0 my-2 h-px bg-white/8" />
-        <p className="px-2 pt-1 pb-1.5 text-[10px] font-semibold uppercase tracking-widest text-white/30">{label}</p>
+      <section key={label} className={`rounded-lg py-1.5 ${index % 2 === 0 ? 'bg-white/[0.035]' : 'bg-white/[0.015]'}`}>
+        <p className="px-2 pb-1 text-[9px] font-semibold uppercase tracking-[0.18em] text-white/35">{label}</p>
         {sectionFields.map((field) => (
           <FieldRow
             key={field.key}
             field={field}
             value={vals[field.key]}
             onChange={(v) => apply(field.key, v)}
+            onReset={() => { resetField(field); }}
           />
         ))}
-      </>
+      </section>
     ) : null;
 
   const content = (
-    <div className="p-3 space-y-0.5">
-      {/* ── Common: resolution (pixel budget) ── */}
-      <p className="px-2 pt-1 pb-1.5 text-[10px] font-semibold uppercase tracking-widest text-white/30">Resolution</p>
-      <div className="grid grid-cols-4 gap-1 mb-2">
+    <div className="space-y-1.5 px-2.5 pb-2.5 pt-1.5">
+      {isMobile && !isLandscape && (
+        <div className="flex justify-end px-1 pb-1">
+          <button onClick={resetVisibleSettings} className="rounded-lg p-1.5 text-white/45 transition-colors hover:bg-white/10 hover:text-white" aria-label={sectionFilter ? `Reset ${sectionFilter} settings` : 'Reset settings'} title={sectionFilter ? `Reset ${sectionFilter}` : 'Reset all settings'}><RotateCcw size={15} /></button>
+        </div>
+      )}
+      <div className="flex flex-wrap content-start gap-1 px-1 pb-1">
+        <button type="button" aria-pressed={sectionFilter === null} onClick={() => { setSectionFilter(null); }} className={`shrink-0 rounded-full px-2 py-1 text-[10px] font-bold uppercase tracking-[0.08em] transition-colors ${sectionFilter === null ? 'bg-white/18 text-white' : 'bg-white/[0.06] text-white/45 hover:bg-white/10 hover:text-white/75'}`}>All</button>
+        {sections.map((section) => <button key={section.label} type="button" aria-pressed={sectionFilter === section.label} onClick={() => { setSectionFilter((current) => current === section.label ? null : section.label); }} className={`shrink-0 rounded-full px-2 py-1 text-[10px] font-bold uppercase tracking-[0.08em] transition-colors ${sectionFilter === section.label ? 'bg-cyan-200/22 text-cyan-50' : 'bg-white/[0.06] text-white/45 hover:bg-white/10 hover:text-white/75'}`}>{section.label}</button>)}
+      </div>
+      {visibleSections.map((section, index) => renderFieldSection(section.label, section.fields, index))}
+      <section className={`rounded-lg py-1.5 ${visibleSections.length % 2 === 0 ? 'bg-white/[0.035]' : 'bg-white/[0.015]'}`}>
+      <p className="px-2 pb-1 text-[9px] font-semibold uppercase tracking-[0.18em] text-white/35">Resolution</p>
+      <div className="grid grid-cols-4 gap-1 px-1 pb-0.5">
         {PIXEL_PRESETS.map(({ label, sub, value }) => (
           <button
             key={label}
             onClick={() => onMaxPixelsChange?.(value)}
-            className={`flex flex-col items-center py-1.5 rounded-xl transition-colors ${
+            className={`flex flex-col items-center rounded-lg px-1 py-1.5 transition-colors ${
               maxPixels === value
                 ? 'bg-white/15 text-white'
                 : 'bg-white/[0.05] text-white/40 hover:bg-white/10 hover:text-white/70'
             }`}
           >
-            <span className="text-[11px] font-bold leading-none">{label}</span>
-            <span className="text-[9px] mt-0.5 opacity-60">{sub}</span>
+            <span className="text-[10px] font-bold leading-none">{label}</span>
+            <span className="mt-0.5 text-[8px] leading-none opacity-60">{sub}</span>
           </button>
         ))}
       </div>
-
-      {/* ── Experience-specific settings ── */}
-      {renderFieldSection('Experience', normalFields)}
-      {renderFieldSection('Advanced', advancedFields)}
+      </section>
     </div>
+  );
+
+  const header = (
+    <>
+      <div className="flex items-center justify-between px-3.5 py-1.5">
+        <h3 className="text-sm font-bold text-white">Settings</h3>
+        <div className="flex items-center gap-1">
+          {onPinnedChange && <button onClick={() => { onPinnedChange(!pinned); }} className={`rounded-lg p-1 transition-colors ${pinned ? 'bg-cyan-200/14 text-cyan-100' : 'text-white/40 hover:bg-white/10 hover:text-white'}`} aria-pressed={pinned} aria-label={pinned ? 'Undock settings sidebar' : 'Pin settings as sidebar'} title={pinned ? 'Undock settings sidebar' : 'Pin settings as sidebar'}>{pinned ? <PanelRightOpen size={14} /> : <PanelRight size={14} />}</button>}
+          <button onClick={resetVisibleSettings} className="rounded-lg p-1 text-white/40 transition-colors hover:bg-white/10 hover:text-white" aria-label={sectionFilter ? `Reset ${sectionFilter} settings` : 'Reset settings'} title={sectionFilter ? `Reset ${sectionFilter}` : 'Reset all settings'}><RotateCcw size={14} /></button>
+          <button onClick={onClose} className="rounded-lg p-1 text-white/40 transition-colors hover:bg-white/10 hover:text-white" aria-label="Close settings"><X size={14} /></button>
+        </div>
+      </div>
+      <div className="mx-3.5 h-px bg-white/8" />
+    </>
   );
 
   // Mobile portrait — render as a BottomSheet
@@ -108,41 +149,20 @@ export function SettingsDrawer({ open, onClose, values, fields, onChange, maxPix
     );
   }
 
-  // Desktop / landscape — existing dropdown anchored top-right
+  // Desktop / landscape — optionally dock as a full-height scene sidebar.
   return (
     <AnimatePresence>
       {open && (
         <>
-          {/* Transparent click-catcher for outside-dismiss */}
-          <div className="absolute inset-0 z-40" onClick={onClose} />
-
-          {/* Dropdown panel — slides in from top-right */}
-          <motion.div
-            key="panel"
-            initial={{ opacity: 0, y: -8 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -8 }}
-            transition={{ duration: 0.15, ease: 'easeOut' }}
-            className="absolute right-3 top-12 z-50 w-[min(30rem,calc(100vw-1.5rem))] max-h-[76vh] overflow-y-auto rounded-2xl bg-black/80 shadow-xl backdrop-blur-md ring-1 ring-white/12"
-            aria-label={ariaLabel}
-          >
-            {/* Header */}
-            <div className="flex items-center justify-between px-4 py-3">
-              <h3 className="text-sm font-bold text-white">Settings</h3>
-              <button
-                onClick={onClose}
-                className="text-white/40 transition-colors hover:text-white"
-                aria-label="Close settings"
-              >
-                <X size={14} />
-              </button>
-            </div>
-
-            {/* Divider */}
-            <div className="mx-4 h-px bg-white/8" />
-
-            {content}
-          </motion.div>
+          {pinned ? (
+            <motion.aside key="sidebar" initial={docked ? { opacity: 1 } : { opacity: 0, x: 18 }} animate={docked ? { opacity: 1 } : { opacity: 1, x: 0 }} exit={docked ? { opacity: 1 } : { opacity: 0, x: 18 }} transition={{ duration: 0.16, ease: 'easeOut' }} className={docked ? 'relative z-0 flex h-full w-full flex-col bg-zinc-950 ring-1 ring-white/12' : 'absolute bottom-0 right-0 top-0 z-50 flex w-[min(28rem,max(22rem,38vw))] max-w-[calc(100vw-1.5rem)] flex-col bg-zinc-950 shadow-xl ring-1 ring-white/12'} aria-label={ariaLabel}>
+              {header}<div className="min-h-0 flex-1 overflow-y-auto">{content}</div>
+            </motion.aside>
+          ) : (
+            <motion.div key="panel" initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }} transition={{ duration: 0.15, ease: 'easeOut' }} className="absolute right-3 top-12 z-50 w-[min(28rem,calc(100vw-1.5rem))] max-h-[76vh] overflow-y-auto rounded-2xl bg-zinc-950 shadow-xl ring-1 ring-white/12" aria-label={ariaLabel}>
+              {header}{content}
+            </motion.div>
+          )}
         </>
       )}
     </AnimatePresence>
@@ -155,21 +175,24 @@ function FieldRow({
   field,
   value,
   onChange,
+  onReset,
 }: {
   field: ExperienceSetting;
   value: unknown;
   onChange: (v: unknown) => void;
+  onReset: () => void;
 }) {
   return (
-    <div data-experience-setting className="flex items-start justify-between gap-4 rounded-xl px-2 py-2.5">
+    <div data-experience-setting className="group flex items-start justify-between gap-3 rounded-lg px-2 py-1.5">
       <div className="min-w-0 flex-1">
-        <p className="text-sm font-semibold text-white">{field.label}</p>
-        {field.description && (
-          <p className="mt-0.5 text-xs leading-snug text-white/45">{field.description}</p>
-        )}
+        <div className="flex items-center gap-1.5">
+          <p className="min-w-0 text-xs font-semibold text-white">{field.label}</p>
+          {field.description && <FieldDescriptionTooltip label={field.label} description={field.description} />}
+          <button type="button" aria-label={`Reset ${field.label}`} onClick={onReset} className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-white/35 opacity-0 transition hover:bg-white/10 hover:text-white/85 focus:opacity-100 focus:outline-none focus:ring-1 focus:ring-cyan-200/50 group-hover:opacity-100 group-focus-within:opacity-100"><RotateCcw size={10} aria-hidden="true" /></button>
+        </div>
       </div>
 
-      <div className="shrink-0 pt-0.5">
+      <div className="shrink-0">
         {field.type === 'boolean' && (
           <ToggleSwitch value={Boolean(value)} onChange={onChange} />
         )}
@@ -187,6 +210,25 @@ function FieldRow({
   );
 }
 
+function FieldDescriptionTooltip({ label, description }: { label: string; description: string }): JSX.Element {
+  const tooltipId = useId();
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const [tooltip, setTooltip] = useState<{ left: number; vertical: number; placement: 'top' | 'bottom' } | null>(null);
+  const showTooltip = (): void => {
+    const rect = triggerRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const width = 256;
+    const margin = 12;
+    const left = Math.min(Math.max(rect.left + rect.width / 2 - width / 2, margin), window.innerWidth - margin - width);
+    const openAbove = rect.bottom > window.innerHeight * 0.72;
+    setTooltip({ left, vertical: openAbove ? window.innerHeight - rect.top + 8 : rect.bottom + 8, placement: openAbove ? 'top' : 'bottom' });
+  };
+  return <>
+    <button ref={triggerRef} type="button" aria-label={`About ${label}`} aria-describedby={tooltip ? tooltipId : undefined} onPointerEnter={showTooltip} onPointerLeave={() => { setTooltip(null); }} onFocus={showTooltip} onBlur={() => { setTooltip(null); }} className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-white/40 transition-colors hover:bg-white/10 hover:text-white/80 focus:outline-none focus:ring-1 focus:ring-cyan-200/50"><Info size={11} aria-hidden="true" /></button>
+    <AnimatePresence>{tooltip && <motion.div id={tooltipId} role="tooltip" initial={{ opacity: 0, y: tooltip.placement === 'top' ? 4 : -4, scale: 0.98 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: tooltip.placement === 'top' ? 4 : -4, scale: 0.98 }} transition={{ duration: 0.1 }} style={{ position: 'fixed', left: tooltip.left, ...(tooltip.placement === 'top' ? { bottom: tooltip.vertical } : { top: tooltip.vertical }), width: 256 }} className="pointer-events-none z-[10000] rounded-md border border-white/12 bg-zinc-950 px-2.5 py-2 text-[10px] leading-snug text-white/75 shadow-2xl">{description}</motion.div>}</AnimatePresence>
+  </>;
+}
+
 // ── Toggle switch ─────────────────────────────────────────────────────────────
 
 function ToggleSwitch({ value, onChange }: { value: boolean; onChange: (v: unknown) => void }) {
@@ -196,13 +238,13 @@ function ToggleSwitch({ value, onChange }: { value: boolean; onChange: (v: unkno
       role="switch"
       aria-checked={value}
       onClick={() => onChange(!value)}
-      className={`relative h-7 w-12 rounded-full transition-colors duration-200 ${
+      className={`relative h-6 w-10 rounded-full transition-colors duration-200 ${
         value ? 'bg-emerald-500' : 'bg-white/15'
       }`}
     >
       <motion.div
-        className="absolute top-1 h-5 w-5 rounded-full bg-white shadow-md"
-        animate={{ x: value ? 22 : 2 }}
+        className="absolute top-1 h-4 w-4 rounded-full bg-white shadow-md"
+        animate={{ x: value ? 20 : 4 }}
         transition={{ type: 'spring', stiffness: 500, damping: 30 }}
       />
     </button>
