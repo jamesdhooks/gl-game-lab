@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { AlertTriangle, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, PanelBottom, PanelLeft, PanelRight, Pin, PinOff, Play } from 'lucide-react';
+import { ChevronDown, ChevronLeft, ChevronRight, ChevronUp, PanelBottom, PanelLeft, PanelRight, Pin, PinOff, Play } from 'lucide-react';
 import { ExperienceRuntime, GameCanvas, useViewport } from '@hooksjam/gl-game-lab-react';
 import type { ExperienceDefinition, GameEngine } from '@hooksjam/gl-game-lab-engine';
 import { WebGL2RendererService, type ContextCycleDiagnostics } from '@hooksjam/gl-game-lab-render-webgl2';
@@ -8,7 +8,6 @@ import './index.css';
 import { parseDemoCaptureOptions } from './captureOptions.js';
 import { ballPitCaptureInputEvents } from './ballPitCaptureScenarios.js';
 import { loadDemoCatalog, loadDemoExperience, loadLifecycleAlternate } from './experienceLoader.js';
-import { hasPassedDemoQa } from './demoQaStatus.js';
 import { MobileCertificationRunner } from './MobileCertificationRunner.js';
 
 type FilterKind = 'all' | 'game' | 'simulation';
@@ -49,7 +48,7 @@ function DemoGallery(): JSX.Element {
   const [filter, setFilter] = useState<FilterKind>('all');
   const [dark, setDark] = useState(true);
   const [previewFpsVisible, setPreviewFpsVisible] = useState(() => {
-    try { return localStorage.getItem('gl-game-lab:previewFps') === 'true'; } catch { return false; }
+    try { return localStorage.getItem('gl-game-lab:previewFps') !== 'false'; } catch { return true; }
   });
   const [pickerOpen, setPickerOpen] = useState(false);
   const [pickerFilter, setPickerFilter] = useState<FilterKind>('all');
@@ -272,13 +271,11 @@ interface ExperienceCardProps {
 
 function ExperienceCard({ definition, index, onSelect, showPreviewFps = false, hideKindBadge = false }: ExperienceCardProps): JSX.Element {
   const badge = definition.kind === 'game' ? 'bg-blue-100 text-blue-600 dark:bg-blue-500/15 dark:text-blue-300' : 'bg-violet-100 text-violet-600 dark:bg-violet-500/15 dark:text-violet-300';
-  const needsDemoQa = definition.capabilities.demo === true && !hasPassedDemoQa(definition.id);
   return (
     <button type="button" data-demo-experience-card={definition.id} onClick={() => { onSelect(definition); }} className="group cursor-pointer select-none text-left">
       <div className="pointer-events-none relative aspect-square w-full overflow-hidden rounded-2xl bg-slate-100 transition-transform duration-200 group-hover:scale-[1.03] dark:bg-[#0d0d1e]">
         <PreviewTile definition={definition} index={index} showFps={showPreviewFps} />
         {!hideKindBadge && <span className={`absolute bottom-2 left-2 rounded-full px-2 py-0.5 text-[10px] font-semibold capitalize ${badge}`}>{definition.kind}</span>}
-        {needsDemoQa && <span className="absolute right-2 top-2 inline-flex items-center gap-1 rounded-md bg-amber-300/95 px-1.5 py-1 text-[9px] font-bold uppercase leading-none text-amber-950"><AlertTriangle size={10} strokeWidth={2.5} />Needs QA</span>}
       </div>
       <p className="mt-3 text-center text-sm font-semibold leading-tight text-slate-800 dark:text-slate-200">{definition.name}</p>
     </button>
@@ -437,17 +434,10 @@ function DiagnosticExperienceHost(): JSX.Element {
     setLifecycleAlternate((value) => !value);
   };
   if (!experience) {
-    return <main className="shell"><p role="status">Loading GLGameLab experience…</p>{runtimeError && <p className="runtime-error" role="alert">Engine error: {runtimeError}</p>}</main>;
+    return <main className="flex h-screen w-screen items-center justify-center bg-black text-white"><p role="status">Loading GLGameLab experience…</p>{runtimeError && <p className="fixed bottom-3 left-3 text-rose-300" role="alert">Engine error: {runtimeError}</p>}</main>;
   }
   return (
-    <main className={capture.enabled ? 'shell capture-shell' : 'shell'}>
-      {!capture.enabled && (
-        <section className="intro">
-          <p className="eyebrow">GPU-first experience</p>
-          <h1>{experience.name}</h1>
-          <p>{experience.long}</p>
-        </section>
-      )}
+    <main className="relative h-screen w-screen overflow-hidden bg-black">
       <ExperienceRuntime
         key={experience.id}
         definition={experience}
@@ -455,7 +445,7 @@ function DiagnosticExperienceHost(): JSX.Element {
         {...(capture.enabled ? { seed: capture.seed } : {})}
         {...(capture.enabled && capture.modeId ? { initialModeId: capture.modeId } : {})}
         {...(capture.enabled && capture.styleId ? { initialStyleId: capture.styleId } : {})}
-        showChrome={!capture.enabled}
+        showChrome={false}
         showDiagnostics={showDiagnostics}
         onReady={handleReady}
         onError={(error) => { setRuntimeError(error instanceof Error ? error.message : String(error)); }}
@@ -464,12 +454,12 @@ function DiagnosticExperienceHost(): JSX.Element {
           fixedDeltaSeconds: capture.fixedDeltaSeconds,
           inputEvents: experience.id === 'ball-pit' ? ballPitCaptureInputEvents(capture.scenarioId) : [],
         } } : {})}
-        className="surface"
-        canvasClassName="game-canvas"
+        className="h-full w-full"
+        canvasClassName="game-canvas h-full w-full touch-none"
       />
       {(contextTest || lifecycleTest || inputTest) && (
         <aside
-          className="diagnostic-controls"
+          className="fixed left-3 top-3 z-[100] flex items-center gap-2 rounded-xl bg-zinc-950/95 p-2 text-xs text-white shadow-2xl ring-1 ring-white/15"
           aria-label="Engine diagnostic controls"
           data-diagnostic-status={diagnosticStatus}
           data-diagnostic-error={runtimeError ?? undefined}
@@ -492,7 +482,7 @@ function DiagnosticExperienceHost(): JSX.Element {
           <output aria-live="polite">{diagnosticStatus}</output>
         </aside>
       )}
-      {runtimeError && <p className="runtime-error" role="alert">Engine error: {runtimeError}</p>}
+      {runtimeError && <p className="fixed bottom-3 left-3 z-[100] rounded-lg bg-black/80 px-3 py-2 text-sm text-rose-300" role="alert">Engine error: {runtimeError}</p>}
     </main>
   );
 }

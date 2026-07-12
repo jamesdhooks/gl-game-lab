@@ -90,7 +90,8 @@ async function verifyDemoShell(browser, failures) {
     await page.waitForFunction(() => document.querySelectorAll('[data-demo-experience-card]').length === 15, undefined, { timeout: 60_000 });
     const totalCards = await cards.count();
     if (totalCards !== 15) failures.push(`Expected 15 demo cards, received ${totalCards}`);
-    if (await page.getByRole('button', { name: 'Preview FPS Off', exact: true }).count() !== 1) failures.push('Latest preview FPS control is missing');
+    if (await page.getByText('Needs QA', { exact: true }).count() !== 0) failures.push('Removed QA badges returned to the gallery');
+    if (await page.getByRole('button', { name: 'Preview FPS On', exact: true }).count() !== 1) failures.push('Preview FPS control is missing');
 
     await page.getByRole('button', { name: 'Games', exact: true }).click();
     const gameCards = await cards.count();
@@ -109,7 +110,6 @@ async function verifyDemoShell(browser, failures) {
     for (const label of ['Quit', 'Palette', 'Next palette', 'Reset', 'Settings', 'Hide UI', 'Demo mode', 'Info']) {
       if (await page.getByRole('button', { name: label, exact: true }).count() !== 1) failures.push(`Launcher control is missing: ${label}`);
     }
-    if (await page.getByRole('combobox', { name: 'Engine configuration' }).count() !== 1) failures.push('Legacy engine configuration control is missing');
     await page.getByRole('button', { name: 'Settings', exact: true }).click();
     await page.locator('[aria-label="Ball Pit settings"]').waitFor({ state: 'visible', timeout: 10_000 });
     const settingCount = await page.locator('[aria-label="Ball Pit settings"] [data-experience-setting]').count();
@@ -129,6 +129,20 @@ async function verifyDemoShell(browser, failures) {
     await page.getByRole('button', { name: 'Close carousel' }).click();
     await page.getByRole('button', { name: 'Info', exact: true }).click();
     await page.locator('.gl-experience-intro-card').waitFor({ state: 'visible', timeout: 10_000 });
+    await page.locator('.gl-experience-intro-card').click();
+    await page.getByRole('button', { name: 'Quit', exact: true }).click();
+    await page.locator('[data-demo-experience-card="water-tank"]').click();
+    await page.locator('[data-experience-id="water-tank"] canvas[data-engine-state="running"]').waitFor({ state: 'visible', timeout: 60_000 });
+    await page.locator('.gl-experience-intro-card').click();
+    for (const style of ['Basic', 'Enhanced', 'Ultra']) {
+      if (await page.getByRole('button', { name: style, exact: true }).count() !== 1) failures.push(`Water Tank render style is missing: ${style}`);
+    }
+    if (await page.locator('[data-experience-setting]').count() !== 0) failures.push('Scene tuning controls leaked onto the canvas');
+    if (await page.getByRole('button', { name: 'Randomize settings', exact: true }).count() !== 1) failures.push('Simulation randomizer is missing');
+    await page.getByRole('button', { name: 'Basic', exact: true }).click();
+    await page.getByRole('button', { name: 'Settings', exact: true }).click();
+    if (await page.getByText('Enhanced Surface', { exact: true }).count() !== 0) failures.push('Enhanced-only settings remained visible in Basic mode');
+    await page.getByRole('button', { name: 'Close settings' }).click();
     failures.push(...pageErrors.map((message) => `Demo shell page error: ${message}`));
     return Object.freeze({ totalCards, gameCards, simulationCards, intro: true, settings: settingCount, settingsDock: true, picker: true, info: true });
   } catch (error) {
@@ -150,7 +164,7 @@ async function verifyMobileDemoShell(browser, failures) {
     await page.locator('.gl-experience-intro-card').click();
     await page.getByRole('button', { name: 'More controls' }).click();
     await page.getByText('Controls', { exact: true }).waitFor({ state: 'visible', timeout: 10_000 });
-    for (const label of ['Engine configuration', 'Reset', 'Settings', 'Hide UI', 'Demo mode', 'How to play']) {
+    for (const label of ['Reset', 'Settings', 'Hide UI', 'Demo mode', 'How to play']) {
       if (await page.getByText(label, { exact: true }).count() < 1) failures.push(`Mobile legacy control is missing: ${label}`);
     }
     if (await page.getByRole('button', { name: 'Palette', exact: true }).count() !== 1) failures.push('Mobile palette picker is missing');
