@@ -87,4 +87,18 @@ export {
 } from './harmonic-sand/HarmonicSandPlugin.js';
 export { HARMONIC_SAND_STYLE_MANIFEST } from './harmonic-sand/styles.js';
 
-export const SIMULATION_REGISTRY = new ExperienceRegistry().register(harmonicSandDefinition).register(fireworksDefinition).register(sparksDefinition).register(orbitalShrapnelDefinition).register(turingSkinDefinition).register(myceliumDefinition).register(alienVascularTreeDefinition).register(chainRainDefinition).register(softBodyBlobDefinition).register(fluidTankDefinition).register(particleFluidDefinition).register(lavaLampDefinition).register(waterTankDefinition).register(splashMpmDefinition);
+export const SIMULATION_REGISTRY = new ExperienceRegistry()
+  .register(chainRainDefinition)
+  .register(softBodyBlobDefinition)
+  .register(harmonicSandDefinition)
+  .register(myceliumDefinition)
+  .register(orbitalShrapnelDefinition)
+  .register(fluidTankDefinition)
+  .register(particleFluidDefinition)
+  .register(lavaLampDefinition)
+  .register(waterTankDefinition)
+  .register(splashMpmDefinition)
+  .register(fireworksDefinition)
+  .register(sparksDefinition)
+  .register(turingSkinDefinition)
+  .register(alienVascularTreeDefinition);

@@ -36,7 +36,7 @@ const DEFAULT_SETTINGS_SIDEBAR_WIDTH = 448;
 const MIN_SETTINGS_SIDEBAR_WIDTH = 320;
 const MAX_SETTINGS_SIDEBAR_WIDTH = 720;
 const MIN_SCENE_STAGE_WIDTH = 360;
-const COMPACT_TOPBAR_STAGE_WIDTH = 760;
+const COMPACT_TOPBAR_STAGE_WIDTH = 1360;
 
 function readStoredBoolean(key: string, fallback: boolean): boolean {
   try {
@@ -179,7 +179,6 @@ function ImmersiveExperienceRuntime({
   const [activeProfile, setActiveProfile] = useState<ExperienceLaunchProfile>(profile);
   const [runtimeKey, setRuntimeKey] = useState(0);
   const [localMaxPixels, setLocalMaxPixels] = useState(maxPixels);
-  const [qualityMode, setQualityMode] = useState(definition.capabilities.qualityModes?.[0] ?? 'raw');
   const [imageUrlEditorOpen, setImageUrlEditorOpen] = useState(false);
   const [imageUrlDraft, setImageUrlDraft] = useState('');
   const controllerRef = useRef<ExperienceRuntimeController>();
@@ -200,10 +199,9 @@ function ImmersiveExperienceRuntime({
     setUiHidden(profile === 'demo');
     setIsDemo(profile === 'demo');
     setActiveProfile(profile);
-    setQualityMode(definition.capabilities.qualityModes?.[0] ?? 'raw');
     setImageUrlEditorOpen(false);
     setImageUrlDraft('');
-  }, [defaultModeId, defaultStyleId, definition.capabilities.qualityModes, definition.id, initialSettings, profile, showIntroCard]);
+  }, [defaultModeId, defaultStyleId, definition.id, initialSettings, profile, showIntroCard]);
 
   useEffect(() => {
     writeStoredBoolean(SETTINGS_OPEN_STORAGE_KEY, settingsOpen);
@@ -263,22 +261,6 @@ function ImmersiveExperienceRuntime({
       }
     },
   }), [changeSetting, definition.settings, initialSettings, settings]);
-  const saveDefaults = useCallback(async (request: SettingsDefaultsSaveRequest): Promise<void> => {
-    if (onSaveDefaults) {
-      await onSaveDefaults(request);
-      return;
-    }
-    const key = `gl-game-lab:scene-defaults:${definition.id}`;
-    let current: Record<string, unknown> = {};
-    try {
-      const stored = localStorage.getItem(key);
-      if (stored) current = JSON.parse(stored) as Record<string, unknown>;
-      localStorage.setItem(key, JSON.stringify({ ...current, ...request.values }));
-    } catch {
-      throw new Error('Unable to save scene defaults');
-    }
-  }, [definition.id, onSaveDefaults]);
-
   const renderStyleField = useMemo<SelectSetting | undefined>(
     () => (definition.settings ?? []).find(
       (setting): setting is SelectSetting => setting.key === 'renderStyle' && setting.type === 'select',
@@ -291,6 +273,27 @@ function ImmersiveExperienceRuntime({
     [renderStyleField],
   );
   const hasRenderStylePicker = renderStyleModes.length > 1;
+  const saveDefaults = useCallback(async (request: SettingsDefaultsSaveRequest): Promise<void> => {
+    const values: Record<string, unknown> = { ...request.values };
+    if (request.section === null) {
+      values.style = styleId;
+      if (renderStyleField) values.renderStyle = settings.renderStyle ?? renderStyleField.default;
+    }
+    const enrichedRequest = { ...request, values };
+    if (onSaveDefaults) {
+      await onSaveDefaults(enrichedRequest);
+      return;
+    }
+    const key = `gl-game-lab:scene-defaults:${definition.id}`;
+    let current: Record<string, unknown> = {};
+    try {
+      const stored = localStorage.getItem(key);
+      if (stored) current = JSON.parse(stored) as Record<string, unknown>;
+      localStorage.setItem(key, JSON.stringify({ ...current, ...values }));
+    } catch {
+      throw new Error('Unable to save scene defaults');
+    }
+  }, [definition.id, onSaveDefaults, renderStyleField, settings.renderStyle, styleId]);
   const injectPaletteField = useMemo<SelectSetting | undefined>(
     () => definition.id === 'fluid-tank'
       ? (definition.settings ?? []).find(
@@ -502,10 +505,6 @@ function ImmersiveExperienceRuntime({
 
           <OverflowMenu compact={isCompactTopbar} items={[
             {
-              key: 'engine-configuration', label: 'Engine configuration', hidden: (definition.capabilities.qualityModes?.length ?? 0) <= 1,
-              node: <QualityModeSelector modes={definition.capabilities.qualityModes ?? []} value={qualityMode} onChange={(next) => { setQualityMode(next); engineRef.current?.quality.setTier(next === 'basic' ? 'mobile' : 'desktop'); }} />,
-            },
-            {
               key: 'reset', label: 'Reset', hidden: !definition.capabilities.reset,
               node: <button type="button" className="flex h-8 items-center rounded-xl bg-black/30 px-3 text-xs font-semibold text-white/70 backdrop-blur-md transition-colors hover:bg-black/50 hover:text-white" onClick={() => { controllerRef.current?.reset(); }}>Reset</button>,
             },
@@ -646,23 +645,6 @@ function ImmersiveExperienceRuntime({
         </div>
       )}
     </section>
-  );
-}
-
-function QualityModeSelector({ modes, value, onChange }: { readonly modes: readonly string[]; readonly value: string; readonly onChange: (value: string) => void }): JSX.Element {
-  const labels: Readonly<Record<string, string>> = {
-    basic: 'Basic 2D',
-    enhanced: 'GPU Enhanced',
-    raw: 'Raw WebGL2',
-    standard: 'Standard',
-  };
-  return (
-    <motion.label initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} transition={{ duration: 0.2, ease: 'easeOut' }} className="flex h-8 items-center gap-2 rounded-xl bg-black/30 px-2 backdrop-blur-md">
-      <span className="hidden text-[10px] font-semibold uppercase tracking-[0.22em] text-white/35 sm:inline">Engine</span>
-      <select value={value} onChange={(event) => { onChange(event.currentTarget.value); }} aria-label="Engine configuration" className="h-6 min-w-36 rounded-lg border border-white/10 bg-black/40 px-2 text-xs font-semibold text-white outline-none transition-colors hover:bg-black/55 focus:border-white/35 focus:ring-1 focus:ring-white/20">
-        {modes.map((mode) => <option key={mode} value={mode}>{labels[mode] ?? mode}</option>)}
-      </select>
-    </motion.label>
   );
 }
 

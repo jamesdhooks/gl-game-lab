@@ -20,7 +20,7 @@ export { IntroCard, type IntroHint } from './ui/IntroCard.js';
 export { ModeToggle, type ModeToggleProps } from './ui/ModeToggle.js';
 export { StylePicker, type StylePickerProps } from './ui/StylePicker.js';
 export { TopbarSelect, type TopbarSelectProps, type TopbarSelectOption } from './ui/TopbarSelect.js';
-export { SettingsDrawer, type SettingsDrawerProps } from './ui/SettingsDrawer.js';
+export { SettingsDrawer, type SettingsDrawerProps, type SettingsDefaultsSaveRequest } from './ui/SettingsDrawer.js';
 export { SimControlPanel, type SimControlPanelProps } from './ui/SimControlPanel.js';
 export { BottomSheet, type BottomSheetProps } from './ui/BottomSheet.js';
 export { OverflowMenu, type OverflowMenuProps, type OverflowItem } from './ui/OverflowMenu.js';

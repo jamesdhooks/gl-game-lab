@@ -2,8 +2,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { ChevronDown, ChevronLeft, ChevronRight, ChevronUp, PanelBottom, PanelLeft, PanelRight, Pin, PinOff, Play } from 'lucide-react';
 import { ExperienceRuntime, GameCanvas, useViewport } from '@hooksjam/gl-game-lab-react';
-import type { ExperienceDefinition, GameEngine } from '@hooksjam/gl-game-lab-engine';
+import type { ExperienceDefinition, ExperienceSettingValue, GameEngine } from '@hooksjam/gl-game-lab-engine';
 import { WebGL2RendererService, type ContextCycleDiagnostics } from '@hooksjam/gl-game-lab-render-webgl2';
+import bundledSceneDefaults from 'virtual:gl-game-lab-scene-defaults';
 import './index.css';
 import { parseDemoCaptureOptions } from './captureOptions.js';
 import { ballPitCaptureInputEvents } from './ballPitCaptureScenarios.js';
@@ -11,6 +12,62 @@ import { loadDemoCatalog, loadDemoExperience, loadLifecycleAlternate } from './e
 import { MobileCertificationRunner } from './MobileCertificationRunner.js';
 
 type FilterKind = 'all' | 'game' | 'simulation';
+type SceneDefaultValue = string | number | boolean;
+type SceneDefaultsMap = Readonly<Record<string, Readonly<Record<string, SceneDefaultValue>>>>;
+interface SettingsDefaultsSaveRequest {
+  readonly section: string | null;
+  readonly keys: readonly string[];
+  readonly values: Readonly<Record<string, unknown>>;
+}
+
+const SCENE_DEFAULTS_ENDPOINT = '/__gl-game-lab-scene-defaults';
+const INITIAL_SCENE_DEFAULTS = normalizeSceneDefaults(bundledSceneDefaults);
+
+function normalizeSceneDefaults(payload: unknown): SceneDefaultsMap {
+  if (!isRecord(payload) || !isRecord(payload.scenes)) return {};
+  const scenes: Record<string, Record<string, SceneDefaultValue>> = {};
+  for (const [id, value] of Object.entries(payload.scenes)) {
+    if (!isRecord(value)) continue;
+    const defaults: Record<string, SceneDefaultValue> = {};
+    for (const [key, setting] of Object.entries(value)) {
+      if (typeof setting === 'string' || typeof setting === 'number' || typeof setting === 'boolean') defaults[key] = setting;
+    }
+    scenes[id] = defaults;
+  }
+  return scenes;
+}
+
+function applySceneDefaults(definition: ExperienceDefinition, defaults: Readonly<Record<string, SceneDefaultValue>> | undefined): ExperienceDefinition {
+  if (!defaults) return definition;
+  const settings = definition.settings?.map((setting) => {
+    const value = defaults[setting.key];
+    if (value === undefined) return setting;
+    if (setting.type === 'number') {
+      const numeric = typeof value === 'number' && Number.isFinite(value) ? value : setting.default;
+      return { ...setting, default: Math.max(setting.min, Math.min(setting.max, numeric)) };
+    }
+    if (setting.type === 'boolean') return { ...setting, default: typeof value === 'boolean' ? value : setting.default };
+    if (setting.type === 'select') {
+      const selected = typeof value === 'string' && setting.options.some((option) => option.value === value) ? value : setting.default;
+      return { ...setting, default: selected };
+    }
+    return { ...setting, default: typeof value === 'string' ? value : setting.default };
+  });
+  const savedStyle = defaults.style;
+  const styleManifest = typeof savedStyle === 'string' && definition.styleManifest?.styles.some((style) => style.id === savedStyle)
+    ? { ...definition.styleManifest, defaultStyleId: savedStyle }
+    : definition.styleManifest;
+  return {
+    ...definition,
+    ...(settings ? { settings } : {}),
+    configDefaults: { ...definition.configDefaults, ...defaults } as Readonly<Record<string, ExperienceSettingValue>>,
+    ...(styleManifest ? { styleManifest } : {}),
+  };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
 
 interface PendingLaunch {
   readonly definition: ExperienceDefinition;
@@ -49,6 +106,7 @@ export function App(): JSX.Element {
 function DemoGallery(): JSX.Element {
   const { isMobile, isLandscape } = useViewport();
   const [catalog, setCatalog] = useState<readonly ExperienceDefinition[]>([]);
+  const [sceneDefaults, setSceneDefaults] = useState<SceneDefaultsMap>(INITIAL_SCENE_DEFAULTS);
   const [active, setActive] = useState<ExperienceDefinition>();
   const [filter, setFilter] = useState<FilterKind>('all');
   const [dark, setDark] = useState(true);
@@ -75,12 +133,40 @@ function DemoGallery(): JSX.Element {
     let mounted = true;
     void loadDemoCatalog().then((definitions) => {
       if (!mounted) return;
-      setCatalog(definitions);
+      const configured = definitions.map((definition) => applySceneDefaults(definition, INITIAL_SCENE_DEFAULTS[definition.id]));
+      setCatalog(configured);
       const requested = new URLSearchParams(window.location.search).get('experience');
-      if (requested) setActive(definitions.find((definition) => definition.id === requested) ?? definitions[0]);
+      if (requested) setActive(configured.find((definition) => definition.id === requested) ?? configured[0]);
     });
     return () => { mounted = false; };
   }, []);
+
+  const saveSceneDefaults = useCallback(async (request: SettingsDefaultsSaveRequest): Promise<void> => {
+    if (!active) return;
+    const definitionId = active.id;
+    const current = sceneDefaults[definitionId] ?? {};
+    const nextScene = request.section === null
+      ? request.values
+      : { ...current, ...request.values };
+    const clean: Record<string, SceneDefaultValue> = {};
+    for (const [key, value] of Object.entries(nextScene)) {
+      if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') clean[key] = value;
+    }
+    let nextDefaults: SceneDefaultsMap = { ...sceneDefaults, [definitionId]: clean };
+    try {
+      const response = await fetch(SCENE_DEFAULTS_ENDPOINT, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ definitionId, section: request.section, defaults: clean }),
+      });
+      if (response.ok) nextDefaults = normalizeSceneDefaults(await response.json() as unknown);
+      else throw new Error('Disk-backed scene defaults are unavailable');
+    } catch {
+      localStorage.setItem(`gl-game-lab:scene-defaults:${definitionId}`, JSON.stringify(clean));
+    }
+    setSceneDefaults(nextDefaults);
+    setCatalog((definitions) => definitions.map((definition) => applySceneDefaults(definition, nextDefaults[definition.id])));
+  }, [active, sceneDefaults]);
 
   useEffect(() => {
     try { localStorage.setItem('gl-game-lab:previewFps', String(previewFpsVisible)); } catch { /* Storage may be unavailable. */ }
@@ -173,6 +259,7 @@ function DemoGallery(): JSX.Element {
                   onQuit={quit}
                   onDemoAdvance={advanceDemo}
                   onDemoExit={quit}
+                  onSaveDefaults={saveSceneDefaults}
                   showChrome
                   className="h-full w-full"
                   canvasClassName="game-canvas"
