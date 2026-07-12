@@ -83,6 +83,13 @@ export interface ContextCycleDiagnostics {
   readonly bytesAfter: number;
 }
 
+export function shouldPresentWebGL2Frame(
+  invalidated: boolean,
+  queueCounts: readonly number[],
+): boolean {
+  return invalidated || queueCounts.some((count) => count > 0);
+}
+
 export class WebGL2Renderer implements RenderBackend, Render2DService {
   readonly id = 'gl-game-lab.render-webgl2';
   readonly capabilities = WEBGL2_CAPABILITIES;
@@ -118,6 +125,7 @@ export class WebGL2Renderer implements RenderBackend, Render2DService {
   private pendingGpuDrawCalls = 0;
   private readonly frameOrchestrator: WebGL2FrameOrchestrator;
   private lastFrameDiagnostics: RendererDiagnostics | undefined;
+  private renderInvalidated = true;
   private destroyed = false;
 
   get state(): RenderBackendState {
@@ -233,6 +241,7 @@ export class WebGL2Renderer implements RenderBackend, Render2DService {
     this.logicalHeight = cssHeight;
     this.pixelRatio = pixelRatio;
     this.sprites.setCamera(camera);
+    this.renderInvalidated = true;
   }
 
   setClearColor(color: readonly [number, number, number, number]): void {
@@ -241,6 +250,7 @@ export class WebGL2Renderer implements RenderBackend, Render2DService {
       throw new Error('Renderer clear color components must be between zero and one');
     }
     this.clearColor = [...color] as readonly [number, number, number, number];
+    this.renderInvalidated = true;
   }
 
   get activeClearColor(): readonly [number, number, number, number] {
@@ -251,6 +261,7 @@ export class WebGL2Renderer implements RenderBackend, Render2DService {
     this.assertUsable();
     this.bloomOptions = normalizeBloomOptions(options);
     if (this.state === 'ready') this.bloom.configure(this.bloomOptions);
+    this.renderInvalidated = true;
   }
 
   setPaletteBackdrop(options: PaletteBackdropOptions | undefined): void {
@@ -258,6 +269,7 @@ export class WebGL2Renderer implements RenderBackend, Render2DService {
     if (options) normalizePaletteBackdropOptions(options);
     this.backdropOptions = options;
     if (this.state === 'ready') this.backdrop.configure(options);
+    this.renderInvalidated = true;
   }
 
   get bloomConfiguration() {
@@ -454,6 +466,12 @@ export class WebGL2Renderer implements RenderBackend, Render2DService {
   render(): void {
     this.assertUsable();
     if (this.state === 'context-lost') return;
+    if (!shouldPresentWebGL2Frame(this.renderInvalidated, [
+      this.sprites.count,
+      this.particles.count,
+      this.effects.count,
+      this.gpuPasses.count,
+    ])) return;
     const scene = this.bloom.sceneTarget;
     const target = scene ? { resource: scene } : undefined;
     try {
@@ -467,6 +485,7 @@ export class WebGL2Renderer implements RenderBackend, Render2DService {
         },
       );
     } finally {
+      this.renderInvalidated = false;
       this.pendingBufferUploadBytes = 0;
       this.pendingTextureUploadBytes = 0;
       this.pendingGpuDrawCalls = 0;

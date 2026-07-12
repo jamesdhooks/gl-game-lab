@@ -149,6 +149,7 @@ export {
   WebGL2RendererService,
   WebGL2FramePipelineService,
   createWebGL2RendererPlugin,
+  shouldPresentWebGL2Frame,
   type ContextCycleDiagnostics,
   type WebGL2RendererOptions,
 } from './WebGL2Renderer.js';
