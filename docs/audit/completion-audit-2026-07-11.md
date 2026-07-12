@@ -46,7 +46,7 @@ integration/release-candidate branch until they pass.
 | Meet the reference desktop 60 FPS tier | Proven | 15 × 120-frame production Chromium captures at 1280×720; `performance-browser-matrix-2026-07-11.md` | Every recommended desktop profile passes CPU p95, draw, upload, transient-allocation, and tracked GPU-memory budgets. This is deterministic reference-hardware evidence, not a claim about every desktop GPU. |
 | Meet the reference mobile 30 FPS tier | External signoff | 15 × 120-frame 390×844 touch/viewport captures pass; executable mobile budgets; deployed `?mobileCertification=1` runner | The mobile policy and all recommended profiles pass desktop viewport emulation. The on-device route serially runs all 15 profiles, exports auditable JSON, and rejects desktop/unsupported-browser evidence. Physical iOS Safari and Android Chrome reports remain open. |
 | Provide profiling, diagnostics, validation, and development workflows | Proven | Diagnostics overlay/capture, CPU and optional disjoint GPU timing, resource/pass inspection, shader reflection/source mapping, `WorldInspector`, safe asset reload, development workflow docs | The required production-debugging floor exists. A full frame debugger, editor, importer, and material pipeline remain professional-engine roadmap items, not approved cutover gates. |
-| Enforce repository quality and CI | Proven | Fresh local boundary/hygiene/catalog/test run; 72 files and 232 tests; green `verify` plus Chromium/Firefox/WebKit PR jobs | The repository owns test discovery, strict type/build gates, package boundaries, and source hygiene. Hosted and local gates agree. |
+| Enforce repository quality and CI | Proven | Fresh local boundary/hygiene/catalog/test run; 73 files and 234 tests; green `verify` plus Chromium/Firefox/WebKit PR jobs | The repository owns test discovery, strict type/build gates, package boundaries, and source hygiene. Hosted and local gates agree. |
 | Repeat the independent ten-section audit and remediate failures | Proven | `production-re-audit-2026-07-11.md`; Hardening Pass 2 history; this completion matrix | The audit was repeated, its implementation findings were remediated, and residual release items are classified without downgrading or waiving them. |
 | WebGPU, full 3D/PBR, and production visual editor | Deferred | `DES-02`; engine architecture ADRs | These were explicitly post-release. Current boundaries avoid precluding them. |
 
@@ -57,7 +57,7 @@ Run from the release-candidate worktree on 2026-07-11:
 - `pnpm check:boundaries`: ten workspace package boundaries verified.
 - `pnpm check:hygiene`: zero tracked formatting-debt files.
 - `pnpm check:catalog`: 15 release experiences verified.
-- `pnpm test`: 72 test files and 232 tests passed (including physical restoration
+- `pnpm test`: 73 test files and 234 tests passed (including physical restoration
   state and mobile-certification evidence regressions).
 - Pull request checks: `verify`, Chromium, Firefox, and WebKit passed.
 - GitHub Pages: public, HTTPS-enforced, and built from `gh-pages` at

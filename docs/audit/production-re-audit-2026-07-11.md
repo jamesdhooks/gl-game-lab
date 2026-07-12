@@ -12,7 +12,7 @@ review and physical iOS/Android performance.
 
 - Ten workspace packages with enforced dependency boundaries and zero source
   hygiene exceptions.
-- 72 test files and 232 passing tests in the fresh workspace run, plus production
+- 73 test files and 234 passing tests in the fresh workspace run, plus production
   Chromium fixed-frame, lifecycle, and accessibility probes.
 - All 15 shipped experiences through engine-level render contracts; content has
   zero concrete WebGL renderer imports or WebGL context types.
@@ -52,12 +52,15 @@ Readability and consistency are good. Strict TypeScript, stable IDs, explicit
 ownership, and public-root package imports are enforced. Source hygiene reports no
 tracked formatting debt, `any`, `@ts-ignore`, `console.log`, TODO, or FIXME usage.
 
-Maintainability is reduced by concentration. `WebGL2Renderer.ts` was 728 lines and
-owned facade APIs, managed textures/fonts/fluids, pass orchestration, diagnostics,
-restoration, and plugin installation. Hardening remediation extracted its sprite
-queue, restorable fluid adapter, and managed texture/font/glyph owner, reducing it
-to 610 lines. Frame orchestration still shares the facade. `DenseCircleParticleWorld2D.ts` is 651 lines;
-`AssetManager.ts` is 583. Sparks and orbital-shrapnel plugins exceed 450 lines.
+Maintainability is reduced by concentration. `WebGL2Renderer.ts` began at 728 lines
+and owned facade APIs, managed textures/fonts/fluids, pass orchestration,
+diagnostics, restoration, and plugin installation. Hardening remediation extracted
+its sprite queue, restorable fluid adapter, managed texture/font/glyph owner, and
+the complete frame-execution/diagnostics coordinator. The facade is now explicit
+dependency wiring plus submission and restoration policy; its 616 lines remain a
+size signal, but frame pass state and accounting no longer live there.
+`DenseCircleParticleWorld2D.ts` is 651 lines; `AssetManager.ts` is 583. Sparks and
+orbital-shrapnel plugins exceed 450 lines.
 These are not unreadable, but they are clear extraction candidates. Hardening
 Pass 2 removed the demo's nested selector in favor of an async registry-backed
 loader with explicit game/simulation chunk boundaries.
@@ -155,9 +158,9 @@ WebGPU and full 3D/PBR correctly remain post-release scope.
    hosted Chromium, Firefox, and WebKit behavior is verified.
 2. Optional GPU timing exists but is not yet device-matrix evidence; detailed
    stalls and per-pass costs can still pass CPU budgets unnoticed.
-3. `WebGL2Renderer` still configures frame orchestration and renderer-family
-   adapters, though managed textures/fonts, fluids, queues, and glyph expansion
-   now have dedicated owners.
+3. `WebGL2Renderer` still wires renderer-family adapters and context restoration,
+   though managed textures/fonts, fluids, queues, glyph expansion, frame execution,
+   and diagnostics aggregation now have dedicated owners.
 
 ### Medium
 
@@ -238,7 +241,9 @@ The five criticisms most likely from another senior engine programmer are:
 
 ### Medium priority — should improve
 
-1. Split renderer facade, managed 2D resources, fluid adapter, and frame orchestration.
+1. Completed: split managed 2D resources, fluid adapter, queues, and frame
+   execution/diagnostics from the renderer facade. Further renderer-family/context
+   extraction should be driven by a concrete backend or plugin requirement.
 2. Exercise the new optional disjoint GPU timer on the device matrix and add
    per-pass timings where supported.
 3. Add shader compile/link source mapping, reflected uniform validation, and a
@@ -255,6 +260,13 @@ The five criticisms most likely from another senior engine programmer are:
 2. Build editor UI on `WorldInspector`, asset diagnostics, and scene serialization.
 
 ## Hardening Pass 2 progress
+
+- Extracted `WebGL2FrameOrchestrator` from the renderer facade. It owns the seven
+  shipping-pass execution boundary, closes GPU timers on stage failure, and emits
+  one immutable diagnostics snapshot from explicit metric sources. Per-frame
+  upload/draw counters now clear in a `finally` path so a failed stage cannot leak
+  stale costs into the next frame. Two focused regressions bring the fresh suite
+  to 73 files and 234 tests; the full Chromium shell/functional/context gate passes.
 
 - Implemented a non-blocking `EXT_disjoint_timer_query_webgl2` frame timer. It
   polls delayed results, discards disjoint samples, resets across context loss,
