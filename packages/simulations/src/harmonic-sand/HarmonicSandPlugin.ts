@@ -3,11 +3,11 @@ import {
   EngineInput,
   EngineRender2D,
   EngineSchedule,
-  ExperienceRuntimeControllerService,
   type ExperienceLaunchOptions,
   type ExperienceRuntimeController,
   type ExperienceSettingValue,
 } from '@hooksjam/gl-game-lab-engine';
+import { registerSimulationRuntime } from '../SimulationPluginLifecycle.js';
 import { createHarmonicSandConfig, HARMONIC_SAND_DEFAULTS, type HarmonicSandConfig } from './config.js';
 import { HARMONIC_SAND_FRAGMENT_SHADER } from './shader.js';
 import { HARMONIC_SAND_STYLE_MANIFEST, rgb } from './styles.js';
@@ -68,8 +68,9 @@ export function createHarmonicSandPlugin(
         },
         reset: () => { elapsed = 0; resetEmitters(); },
       };
-      context.provide(HarmonicSandControllerService, controller);
-      context.provide(ExperienceRuntimeControllerService, controller);
+      registerSimulationRuntime(context, HarmonicSandControllerService, controller, () => {
+        emitters.length = 0;
+      });
 
       context.get(EngineSchedule).addSystem({
         id: 'gl-game-lab.simulations.harmonic-sand.input',
@@ -143,8 +144,7 @@ export function createHarmonicSandPlugin(
           draggingIndex = undefined;
         }
       }
-    },
-    dispose: () => { emitters.length = 0; },
+    }
   };
 
   function resetEmitters(): void {

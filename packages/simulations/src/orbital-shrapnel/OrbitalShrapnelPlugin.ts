@@ -1,5 +1,6 @@
 import { createExtensionToken, type EnginePlugin, type PointerInputEvent } from '@hooksjam/gl-game-lab-core';
-import { EngineGpu2D, EngineInput, EngineRender2D, EngineSchedule, ExperienceRuntimeControllerService, type ExperienceLaunchOptions, type ExperienceRuntimeController, type ExperienceSettingValue, type GpuParticleSystem2D } from '@hooksjam/gl-game-lab-engine';
+import { EngineGpu2D, EngineInput, EngineRender2D, EngineSchedule, type ExperienceLaunchOptions, type ExperienceRuntimeController, type ExperienceSettingValue, type GpuParticleSystem2D } from '@hooksjam/gl-game-lab-engine';
+import { registerSimulationRuntime } from '../SimulationPluginLifecycle.js';
 import { createOrbitalShrapnelConfig, ORBITAL_SHRAPNEL_DEFAULTS, orbitalBoolean, orbitalNumber, orbitalString, type OrbitalShrapnelConfig } from './config.js';
 import { ORBITAL_OVERLAY_SHADER, ORBITAL_POINT_FRAGMENT_SHADER, ORBITAL_POINT_VERTEX_SHADER, ORBITAL_STEP_SHADER } from './shaders.js';
 import { orbitalColor3, ORBITAL_SHRAPNEL_STYLE_MANIFEST } from './styles.js';
@@ -101,8 +102,11 @@ export function createOrbitalShrapnelPlugin(initial: OrbitalShrapnelConfig = ORB
         },
         reset: resetSimulation
       };
-      context.provide(OrbitalShrapnelControllerService, controller);
-      context.provide(ExperienceRuntimeControllerService, controller);
+      registerSimulationRuntime(context, OrbitalShrapnelControllerService, controller, () => {
+        cleanup();
+        commands.length = 0;
+        previousPointers.clear();
+      });
       context.get(EngineSchedule).addSystem({
         id: 'gl-game-lab.simulations.orbital-shrapnel.update',
         stage: 'update',
@@ -400,11 +404,6 @@ export function createOrbitalShrapnelPlugin(initial: OrbitalShrapnelConfig = ORB
           y: 1 - y / viewportHeight() * 2
         };
       }
-    },
-    dispose: () => {
-      cleanup();
-      commands.length = 0;
-      previousPointers.clear();
     }
   };
   function queueDebris(x: number, y: number, vx: number, vy: number): void {

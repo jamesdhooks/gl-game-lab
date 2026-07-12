@@ -1,5 +1,6 @@
 import { createExtensionToken, type EnginePlugin } from '@hooksjam/gl-game-lab-core';
-import { EngineInput, EngineRender2D, EngineSchedule, ExperienceRuntimeControllerService, type ExperienceLaunchOptions, type ExperienceRuntimeController, type ExperienceSettingValue } from '@hooksjam/gl-game-lab-engine';
+import { EngineInput, EngineRender2D, EngineSchedule, type ExperienceLaunchOptions, type ExperienceRuntimeController, type ExperienceSettingValue } from '@hooksjam/gl-game-lab-engine';
+import { registerSimulationRuntime } from '../SimulationPluginLifecycle.js';
 import { blobNumber, blobString, createSoftBodyBlobConfig, SOFT_BODY_BLOB_DEFAULTS, type SoftBodyBlobConfig } from './config.js';
 import { SoftBodyModel } from './SoftBodyModel.js';
 import { blobColor3, blobColor4, SOFT_BODY_BLOB_STYLE_MANIFEST } from './styles.js';
@@ -73,8 +74,7 @@ export function createSoftBodyBlobPlugin(initial: SoftBodyBlobConfig = SOFT_BODY
           pendingReset = true;
         }
       };
-      context.provide(SoftBodyBlobControllerService, controller);
-      context.provide(ExperienceRuntimeControllerService, controller);
+      registerSimulationRuntime(context, SoftBodyBlobControllerService, controller, () => cleanup());
       context.get(EngineSchedule).addSystem({
         id: 'gl-game-lab.simulations.soft-body-blob.update',
         stage: 'update',
@@ -299,8 +299,7 @@ export function createSoftBodyBlobPlugin(initial: SoftBodyBlobConfig = SOFT_BODY
           ...config
         });
       }
-    },
-    dispose: () => cleanup()
+    }
   };
 }
 function smoothClosed(points: readonly Point[], amount: number): Point[] {

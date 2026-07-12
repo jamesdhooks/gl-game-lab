@@ -1,5 +1,6 @@
 import { createExtensionToken, type EnginePlugin, type PointerInputEvent } from '@hooksjam/gl-game-lab-core';
-import { EngineGpu2D, EngineInput, EngineRender2D, EngineSchedule, ExperienceRuntimeControllerService, type ExperienceLaunchOptions, type ExperienceRuntimeController, type ExperienceSettingValue, type FluidField2D, type FluidSplat2D, type GpuParticleSystem2D, type GpuRenderTarget2D } from '@hooksjam/gl-game-lab-engine';
+import { EngineGpu2D, EngineInput, EngineRender2D, EngineSchedule, type ExperienceLaunchOptions, type ExperienceRuntimeController, type ExperienceSettingValue, type FluidField2D, type FluidSplat2D, type GpuParticleSystem2D, type GpuRenderTarget2D } from '@hooksjam/gl-game-lab-engine';
+import { registerSimulationRuntime } from '../SimulationPluginLifecycle.js';
 import { createParticleFluidConfig, PARTICLE_FLUID_DEFAULTS, particleFluidNumber, particleFluidString, type ParticleFluidConfig } from './config.js';
 import { PARTICLE_FLUID_FRAGMENT_SHADER, PARTICLE_FLUID_STEP_SHADER, PARTICLE_FLUID_VERTEX_SHADER } from './shaders.js';
 import { particleFluidColor3, PARTICLE_FLUID_STYLE_MANIFEST } from './styles.js';
@@ -69,8 +70,11 @@ export function createParticleFluidPlugin(initial: ParticleFluidConfig = PARTICL
         },
         reset: resetSimulation
       };
-      context.provide(ParticleFluidControllerService, controller);
-      context.provide(ExperienceRuntimeControllerService, controller);
+      registerSimulationRuntime(context, ParticleFluidControllerService, controller, () => {
+        cleanup();
+        splats.length = 0;
+        previous.clear();
+      });
       context.get(EngineSchedule).addSystem({
         id: 'gl-game-lab.simulations.particle-fluid.update',
         stage: 'update',
@@ -278,11 +282,6 @@ export function createParticleFluidPlugin(initial: ParticleFluidConfig = PARTICL
           ...config
         });
       }
-    },
-    dispose: () => {
-      cleanup();
-      splats.length = 0;
-      previous.clear();
     }
   };
 }

@@ -1,5 +1,6 @@
 import { createExtensionToken, type EnginePlugin, type PointerInputEvent } from '@hooksjam/gl-game-lab-core';
-import { EngineGpu2D, EngineInput, EngineRender2D, EngineSchedule, ExperienceRuntimeControllerService, type ExperienceLaunchOptions, type ExperienceRuntimeController, type ExperienceSettingValue, type GpuParticleSystem2D } from '@hooksjam/gl-game-lab-engine';
+import { EngineGpu2D, EngineInput, EngineRender2D, EngineSchedule, type ExperienceLaunchOptions, type ExperienceRuntimeController, type ExperienceSettingValue, type GpuParticleSystem2D } from '@hooksjam/gl-game-lab-engine';
+import { registerSimulationRuntime } from '../SimulationPluginLifecycle.js';
 import { createFireworksConfig, FIREWORKS_DEFAULTS, type FireworksConfig } from './config.js';
 import { FIREWORKS_POINT_FRAGMENT_SHADER, FIREWORKS_POINT_VERTEX_SHADER, FIREWORKS_STEP_SHADER } from './shaders.js';
 import { color3, FIREWORKS_STYLE_MANIFEST } from './styles.js';
@@ -55,8 +56,12 @@ export function createFireworksPlugin(initial: FireworksConfig = FIREWORKS_DEFAU
         },
         reset: resetSimulation,
       };
-      context.provide(FireworksControllerService, controller);
-      context.provide(ExperienceRuntimeControllerService, controller);
+      registerSimulationRuntime(context, FireworksControllerService, controller, () => {
+        cleanupResources();
+        commands.length = 0;
+        shells.length = 0;
+        delayed.length = 0;
+      });
 
       context.get(EngineSchedule).addSystem({
         id: 'gl-game-lab.simulations.fireworks.update', stage: 'update',
@@ -160,8 +165,7 @@ export function createFireworksPlugin(initial: FireworksConfig = FIREWORKS_DEFAU
         particles.clearTrails();
       }
 
-    },
-    dispose: () => { cleanupResources(); commands.length = 0; shells.length = 0; delayed.length = 0; },
+    }
   };
 
   function launchShell(targetX: number, targetY: number): void {

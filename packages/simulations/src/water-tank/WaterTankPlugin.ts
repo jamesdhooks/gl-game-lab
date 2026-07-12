@@ -1,5 +1,6 @@
 import { createExtensionToken, type EnginePlugin } from '@hooksjam/gl-game-lab-core';
-import { EngineInput, EngineRender2D, EngineSchedule, ExperienceRuntimeControllerService, type ExperienceLaunchOptions, type ExperienceRuntimeController, type ExperienceSettingValue } from '@hooksjam/gl-game-lab-engine';
+import { EngineInput, EngineRender2D, EngineSchedule, type ExperienceLaunchOptions, type ExperienceRuntimeController, type ExperienceSettingValue } from '@hooksjam/gl-game-lab-engine';
+import { registerSimulationRuntime } from '../SimulationPluginLifecycle.js';
 import { createWaterTankConfig, WATER_TANK_DEFAULTS, waterNumber, waterString, type WaterTankConfig } from './config.js';
 import { WaterTankModel, type WaterTankTuning } from './WaterTankModel.js';
 import { waterColor3, waterColor4, WATER_TANK_STYLE_MANIFEST } from './styles.js';
@@ -80,8 +81,7 @@ export function createWaterTankPlugin(initial: WaterTankConfig = WATER_TANK_DEFA
           pendingReset = true;
         }
       };
-      context.provide(WaterTankControllerService, controller);
-      context.provide(ExperienceRuntimeControllerService, controller);
+      registerSimulationRuntime(context, WaterTankControllerService, controller, () => cleanup());
       context.get(EngineSchedule).addSystem({
         id: 'gl-game-lab.simulations.water-tank.update',
         stage: 'update',
@@ -305,8 +305,7 @@ export function createWaterTankPlugin(initial: WaterTankConfig = WATER_TANK_DEFA
           ...config
         });
       }
-    },
-    dispose: () => cleanup()
+    }
   };
 }
 function distance(a: Point, b: Point) {

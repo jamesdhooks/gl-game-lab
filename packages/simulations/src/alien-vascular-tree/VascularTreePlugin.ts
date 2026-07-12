@@ -1,5 +1,6 @@
 import { createExtensionToken, type EnginePlugin } from '@hooksjam/gl-game-lab-core';
-import { EngineInput, EngineRender2D, EngineSchedule, ExperienceRuntimeControllerService, type ExperienceLaunchOptions, type ExperienceRuntimeController, type ExperienceSettingValue } from '@hooksjam/gl-game-lab-engine';
+import { EngineInput, EngineRender2D, EngineSchedule, type ExperienceLaunchOptions, type ExperienceRuntimeController, type ExperienceSettingValue } from '@hooksjam/gl-game-lab-engine';
+import { registerSimulationRuntime } from '../SimulationPluginLifecycle.js';
 import { createVascularTreeConfig, VASCULAR_TREE_DEFAULTS, type VascularTreeConfig } from './config.js';
 import { VASCULAR_MARKER_SHADER } from './shaders.js';
 import { vascularColor3, VASCULAR_TREE_STYLE_MANIFEST } from './styles.js';
@@ -70,8 +71,7 @@ export function createVascularTreePlugin(initial: VascularTreeConfig = VASCULAR_
           elapsed = 0;
         }
       };
-      context.provide(VascularTreeControllerService, controller);
-      context.provide(ExperienceRuntimeControllerService, controller);
+      registerSimulationRuntime(context, VascularTreeControllerService, controller, () => cleanup());
       context.get(EngineSchedule).addSystem({
         id: 'gl-game-lab.simulations.alien-vascular-tree.update',
         stage: 'update',
@@ -186,8 +186,7 @@ export function createVascularTreePlugin(initial: VascularTreeConfig = VASCULAR_
           enabled: false
         });
       }
-    },
-    dispose: () => cleanup()
+    }
   };
   function requireStyle() {
     const style = VASCULAR_TREE_STYLE_MANIFEST.styles.find(candidate => candidate.id === styleId);

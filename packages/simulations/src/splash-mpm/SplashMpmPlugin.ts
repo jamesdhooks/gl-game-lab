@@ -1,5 +1,6 @@
 import { createExtensionToken, type EnginePlugin } from '@hooksjam/gl-game-lab-core';
-import { EngineInput, EngineRender2D, EngineSchedule, ExperienceRuntimeControllerService, type ExperienceLaunchOptions, type ExperienceRuntimeController, type ExperienceSettingValue } from '@hooksjam/gl-game-lab-engine';
+import { EngineInput, EngineRender2D, EngineSchedule, type ExperienceLaunchOptions, type ExperienceRuntimeController, type ExperienceSettingValue } from '@hooksjam/gl-game-lab-engine';
+import { registerSimulationRuntime } from '../SimulationPluginLifecycle.js';
 import { createSplashMpmConfig, SPLASH_MPM_DEFAULTS, splashNumber, splashString, type SplashMpmConfig } from './config.js';
 import { SplashPicFlipModel, type SplashMpmTuning } from './SplashMpmModel.js';
 import { splashRgb, splashRgba, SPLASH_MPM_STYLE_MANIFEST } from './styles.js';
@@ -77,8 +78,7 @@ export function createSplashMpmPlugin(initial: SplashMpmConfig = SPLASH_MPM_DEFA
           pendingReset = true;
         }
       };
-      context.provide(SplashMpmControllerService, controller);
-      context.provide(ExperienceRuntimeControllerService, controller);
+      registerSimulationRuntime(context, SplashMpmControllerService, controller, () => cleanup());
       context.get(EngineSchedule).addSystem({
         id: 'gl-game-lab.simulations.splash-mpm.update',
         stage: 'update',
@@ -269,8 +269,7 @@ export function createSplashMpmPlugin(initial: SplashMpmConfig = SPLASH_MPM_DEFA
           ...config
         });
       }
-    },
-    dispose: () => cleanup()
+    }
   };
 }
 function distance(a: Point, b: Point) {

@@ -1,5 +1,6 @@
 import { createExtensionToken, type EnginePlugin } from '@hooksjam/gl-game-lab-core';
-import { EngineGpu2D, EngineInput, EngineRender2D, EngineSchedule, ExperienceRuntimeControllerService, type ExperienceLaunchOptions, type ExperienceRuntimeController, type ExperienceSettingValue, type GpuFieldSystem2D } from '@hooksjam/gl-game-lab-engine';
+import { EngineGpu2D, EngineInput, EngineRender2D, EngineSchedule, type ExperienceLaunchOptions, type ExperienceRuntimeController, type ExperienceSettingValue, type GpuFieldSystem2D } from '@hooksjam/gl-game-lab-engine';
+import { registerSimulationRuntime } from '../SimulationPluginLifecycle.js';
 import { createMyceliumConfig, MYCELIUM_DEFAULTS, myceliumNumber, myceliumString, type MyceliumConfig } from './config.js';
 import { MYCELIUM_DISPLAY_SHADER, MYCELIUM_SEED_SHADER, MYCELIUM_SPLAT_SHADER, MYCELIUM_STEP_SHADER } from './shaders.js';
 import { myceliumColor3, MYCELIUM_STYLE_MANIFEST } from './styles.js';
@@ -69,8 +70,10 @@ export function createMyceliumPlugin(initial: MyceliumConfig = MYCELIUM_DEFAULTS
           resetCpuState();
         }
       };
-      context.provide(MyceliumControllerService, controller);
-      context.provide(ExperienceRuntimeControllerService, controller);
+      registerSimulationRuntime(context, MyceliumControllerService, controller, () => {
+        cleanup();
+        splats.length = 0;
+      });
       context.get(EngineSchedule).addSystem({
         id: 'gl-game-lab.simulations.mycelium.update',
         stage: 'update',
@@ -190,10 +193,6 @@ export function createMyceliumPlugin(initial: MyceliumConfig = MYCELIUM_DEFAULTS
           enabled: false
         });
       }
-    },
-    dispose: () => {
-      cleanup();
-      splats.length = 0;
     }
   };
   function requireStyle() {

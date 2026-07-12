@@ -1,5 +1,6 @@
 import { createExtensionToken, type EnginePlugin, type PointerInputEvent } from '@hooksjam/gl-game-lab-core';
-import { EngineGpu2D, EngineInput, EngineRender2D, EngineSchedule, ExperienceRuntimeControllerService, type ExperienceLaunchOptions, type ExperienceRuntimeController, type ExperienceSettingValue, type GpuParticleSystem2D } from '@hooksjam/gl-game-lab-engine';
+import { EngineGpu2D, EngineInput, EngineRender2D, EngineSchedule, type ExperienceLaunchOptions, type ExperienceRuntimeController, type ExperienceSettingValue, type GpuParticleSystem2D } from '@hooksjam/gl-game-lab-engine';
+import { registerSimulationRuntime } from '../SimulationPluginLifecycle.js';
 import { createSparksConfig, SPARKS_DEFAULTS, sparksNumber, sparksString, type SparksConfig } from './config.js';
 import { SPARKS_POINT_FRAGMENT_SHADER, SPARKS_POINT_VERTEX_SHADER, SPARKS_RAIL_SHADER, SPARKS_STEP_SHADER } from './shaders.js';
 import { sparksColor3, SPARKS_STYLE_MANIFEST } from './styles.js';
@@ -108,8 +109,12 @@ export function createSparksPlugin(initial: SparksConfig = SPARKS_DEFAULTS, laun
         },
         reset: resetSimulation
       };
-      context.provide(SparksControllerService, controller);
-      context.provide(ExperienceRuntimeControllerService, controller);
+      registerSimulationRuntime(context, SparksControllerService, controller, () => {
+        cleanup();
+        commands.length = 0;
+        rails.length = 0;
+        previousPointers.clear();
+      });
       context.get(EngineSchedule).addSystem({
         id: 'gl-game-lab.simulations.sparks.update',
         stage: 'update',
@@ -355,12 +360,6 @@ export function createSparksPlugin(initial: SparksConfig = SPARKS_DEFAULTS, laun
         cursor = 0;
         randomState = normalizeSeed(launch.seed);
       }
-    },
-    dispose: () => {
-      cleanup();
-      commands.length = 0;
-      rails.length = 0;
-      previousPointers.clear();
     }
   };
   function queueContact(x: number, y: number, vx: number, vy: number, burst: boolean): void {

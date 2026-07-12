@@ -1,5 +1,6 @@
 import { createExtensionToken, type EnginePlugin } from '@hooksjam/gl-game-lab-core';
-import { EngineInput, EngineRender2D, EngineSchedule, ExperienceRuntimeControllerService, type ExperienceLaunchOptions, type ExperienceRuntimeController, type ExperienceSettingValue } from '@hooksjam/gl-game-lab-engine';
+import { EngineInput, EngineRender2D, EngineSchedule, type ExperienceLaunchOptions, type ExperienceRuntimeController, type ExperienceSettingValue } from '@hooksjam/gl-game-lab-engine';
+import { registerSimulationRuntime } from '../SimulationPluginLifecycle.js';
 import { createLavaLampConfig, LAVA_LAMP_DEFAULTS, lavaNumber, lavaString, type LavaLampConfig } from './config.js';
 import { LavaLampModel, type LavaLampTuning } from './LavaLampModel.js';
 import { lavaColor3, lavaColor4, LAVA_LAMP_STYLE_MANIFEST } from './styles.js';
@@ -66,8 +67,7 @@ export function createLavaLampPlugin(initial: LavaLampConfig = LAVA_LAMP_DEFAULT
           pendingReset = true;
         }
       };
-      context.provide(LavaLampControllerService, controller);
-      context.provide(ExperienceRuntimeControllerService, controller);
+      registerSimulationRuntime(context, LavaLampControllerService, controller, () => cleanup());
       context.get(EngineSchedule).addSystem({
         id: 'gl-game-lab.simulations.lava-lamp.update',
         stage: 'update',
@@ -219,8 +219,7 @@ export function createLavaLampPlugin(initial: LavaLampConfig = LAVA_LAMP_DEFAULT
           ...config
         });
       }
-    },
-    dispose: () => cleanup()
+    }
   };
 }
 function validStyle(value: string | undefined) {

@@ -1,5 +1,6 @@
 import { createExtensionToken, type EnginePlugin, type PointerInputEvent } from '@hooksjam/gl-game-lab-core';
-import { EngineGpu2D, EngineInput, EngineRender2D, EngineSchedule, ExperienceRuntimeControllerService, type ExperienceLaunchOptions, type ExperienceRuntimeController, type ExperienceSettingValue, type GpuFieldSystem2D } from '@hooksjam/gl-game-lab-engine';
+import { EngineGpu2D, EngineInput, EngineRender2D, EngineSchedule, type ExperienceLaunchOptions, type ExperienceRuntimeController, type ExperienceSettingValue, type GpuFieldSystem2D } from '@hooksjam/gl-game-lab-engine';
+import { registerSimulationRuntime } from '../SimulationPluginLifecycle.js';
 import { createTuringSkinConfig, TURING_SKIN_DEFAULTS, type TuringSkinConfig } from './config.js';
 import { TURING_DISPLAY_SHADER, TURING_SEED_SHADER, TURING_SPLAT_SHADER, TURING_STEP_SHADER } from './shaders.js';
 import { turingColor3, TURING_SKIN_STYLE_MANIFEST } from './styles.js';
@@ -75,8 +76,10 @@ export function createTuringSkinPlugin(initial: TuringSkinConfig = TURING_SKIN_D
           resetCpuState();
         }
       };
-      context.provide(TuringSkinControllerService, controller);
-      context.provide(ExperienceRuntimeControllerService, controller);
+      registerSimulationRuntime(context, TuringSkinControllerService, controller, () => {
+        cleanup();
+        splats.length = 0;
+      });
       context.get(EngineSchedule).addSystem({
         id: 'gl-game-lab.simulations.turing-skin.update',
         stage: 'update',
@@ -187,10 +190,6 @@ export function createTuringSkinPlugin(initial: TuringSkinConfig = TURING_SKIN_D
           enabled: false
         });
       }
-    },
-    dispose: () => {
-      cleanup();
-      splats.length = 0;
     }
   };
   function requireStyle() {

@@ -1,5 +1,6 @@
 import { createExtensionToken, type EnginePlugin, type PointerInputEvent } from '@hooksjam/gl-game-lab-core';
-import { EngineInput, EngineRender2D, EngineSchedule, ExperienceRuntimeControllerService, type ExperienceLaunchOptions, type ExperienceRuntimeController, type ExperienceSettingValue, type FluidSplat2D } from '@hooksjam/gl-game-lab-engine';
+import { EngineInput, EngineRender2D, EngineSchedule, type ExperienceLaunchOptions, type ExperienceRuntimeController, type ExperienceSettingValue, type FluidSplat2D } from '@hooksjam/gl-game-lab-engine';
+import { registerSimulationRuntime } from '../SimulationPluginLifecycle.js';
 import { createFluidTankConfig, FLUID_TANK_DEFAULTS, fluidBoolean, fluidNumber, fluidString, type FluidTankConfig } from './config.js';
 import { fluidColor3, FLUID_TANK_STYLE_MANIFEST } from './styles.js';
 export type FluidTankMode = 'inject' | 'stir';
@@ -79,8 +80,13 @@ export function createFluidTankPlugin(initial: FluidTankConfig = FLUID_TANK_DEFA
           elapsed = 0;
         }
       };
-      context.provide(FluidTankControllerService, controller);
-      context.provide(ExperienceRuntimeControllerService, controller);
+      registerSimulationRuntime(context, FluidTankControllerService, controller, () => {
+        disposed = true;
+        imageRequest++;
+        cleanup();
+        splats.length = 0;
+        previous.clear();
+      });
       context.get(EngineSchedule).addSystem({
         id: 'gl-game-lab.simulations.fluid-tank.update',
         stage: 'update',
@@ -302,13 +308,6 @@ export function createFluidTankPlugin(initial: FluidTankConfig = FLUID_TANK_DEFA
           ...config
         });
       }
-    },
-    dispose: () => {
-      disposed = true;
-      imageRequest++;
-      cleanup();
-      splats.length = 0;
-      previous.clear();
     }
   };
 }
