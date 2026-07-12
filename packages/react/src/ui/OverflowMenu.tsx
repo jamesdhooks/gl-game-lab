@@ -128,7 +128,7 @@ export function OverflowMenu({ items, compact = false }: OverflowMenuProps) {
         initial={{ opacity: 0, y: -8 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.22, ease: 'easeOut', delay: 0.04 }}
-        className="pointer-events-none absolute right-3 z-30"
+        className="pointer-events-none absolute right-3 z-[60]"
         style={{ top: topOffset }}
       >
         <button
