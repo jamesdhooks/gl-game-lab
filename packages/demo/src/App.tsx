@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { AlertTriangle, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, PanelBottom, PanelLeft, PanelRight, Pin, PinOff, Play } from 'lucide-react';
-import { ExperienceRuntime, GameCanvas } from '@hooksjam/gl-game-lab-react';
+import { ExperienceRuntime, GameCanvas, useViewport } from '@hooksjam/gl-game-lab-react';
 import type { ExperienceDefinition, GameEngine } from '@hooksjam/gl-game-lab-engine';
 import { WebGL2RendererService, type ContextCycleDiagnostics } from '@hooksjam/gl-game-lab-render-webgl2';
 import './index.css';
@@ -9,6 +9,7 @@ import { parseDemoCaptureOptions } from './captureOptions.js';
 import { ballPitCaptureInputEvents } from './ballPitCaptureScenarios.js';
 import { loadDemoCatalog, loadDemoExperience, loadLifecycleAlternate } from './experienceLoader.js';
 import { hasPassedDemoQa } from './demoQaStatus.js';
+import { MobileCertificationRunner } from './MobileCertificationRunner.js';
 
 type FilterKind = 'all' | 'game' | 'simulation';
 
@@ -31,6 +32,7 @@ const LOGO_PARTICLES: ReadonlyArray<readonly [number, string, string, string, nu
 
 export function App(): JSX.Element {
   const query = new URLSearchParams(window.location.search);
+  if (query.get('mobileCertification') === '1') return <MobileCertificationRunner />;
   const capture = parseDemoCaptureOptions(window.location.search);
   const diagnosticHost = capture.enabled
     || query.get('diagnostics') === '1'
@@ -41,6 +43,7 @@ export function App(): JSX.Element {
 }
 
 function DemoGallery(): JSX.Element {
+  const { isMobile, isLandscape } = useViewport();
   const [catalog, setCatalog] = useState<readonly ExperienceDefinition[]>([]);
   const [active, setActive] = useState<ExperienceDefinition>();
   const [filter, setFilter] = useState<FilterKind>('all');
@@ -52,7 +55,7 @@ function DemoGallery(): JSX.Element {
   const [demoMode, setDemoMode] = useState(false);
   const [demoIndex, setDemoIndex] = useState(0);
   const scrollerRef = useRef<HTMLDivElement>(null);
-  const portraitMobile = usePortraitMobile();
+  const portraitMobile = isMobile && !isLandscape;
   const effectivePickerSide = portraitMobile ? 'bottom' : pickerSide;
   const pickerBottom = effectivePickerSide === 'bottom';
   const pickerLeft = effectivePickerSide === 'left';
@@ -98,18 +101,22 @@ function DemoGallery(): JSX.Element {
     setDemoMode(true);
     setActive(catalog[0]);
   }, [catalog]);
+  const advanceDemo = useCallback((): void => {
+    if (catalog.length === 0) return;
+    setDemoIndex((index) => {
+      const next = (index + 1) % catalog.length;
+      setActive(catalog[next]!);
+      return next;
+    });
+  }, [catalog]);
 
   useEffect(() => {
     if (!demoMode || catalog.length === 0) return;
     const timeout = window.setTimeout(() => {
-      setDemoIndex((index) => {
-        const next = (index + 1) % catalog.length;
-        setActive(catalog[next]!);
-        return next;
-      });
+      advanceDemo();
     }, 10_000);
     return () => { window.clearTimeout(timeout); };
-  }, [catalog, demoIndex, demoMode]);
+  }, [advanceDemo, catalog, demoIndex, demoMode]);
 
   const move = (direction: -1 | 1): void => {
     if (pickerItems.length === 0) return;
@@ -125,25 +132,28 @@ function DemoGallery(): JSX.Element {
             <motion.div
               key={active.id}
               className="absolute inset-0 overflow-hidden bg-black"
-              {...(dockedInset ? { style: dockedInset } : {})}
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               transition={{ duration: 0.2 }}
             >
-              <ExperienceRuntime
-                definition={active}
-                profile={demoMode ? 'demo' : 'play'}
-                presentation="immersive"
-                onQuit={quit}
-                showChrome
-                className="h-full w-full"
-                canvasClassName="game-canvas"
-              />
+              <div className="fixed inset-0 overflow-hidden" style={{ ...(dockedInset ?? {}), transform: 'translateZ(0)' }}>
+                <ExperienceRuntime
+                  definition={active}
+                  profile={demoMode ? 'demo' : 'play'}
+                  presentation="immersive"
+                  onQuit={quit}
+                  onDemoAdvance={advanceDemo}
+                  onDemoExit={quit}
+                  showChrome
+                  className="h-full w-full"
+                  canvasClassName="game-canvas"
+                />
+              </div>
               {demoMode && (
-                <div className="pointer-events-none fixed left-3 top-14 z-[70] flex max-w-[72vw] items-center gap-2 rounded-lg bg-black/55 px-2.5 py-2 text-white backdrop-blur-md">
-                  <span className="flex h-7 w-7 items-center justify-center rounded-md bg-gradient-to-br from-violet-400 via-sky-300 to-cyan-300 text-slate-950">{active.icon}</span>
-                  <div><div className="text-xs font-semibold">{active.name}</div><div className="text-[9px] font-semibold uppercase tracking-wide text-cyan-200">Demo mode</div></div>
+                <div className="pointer-events-none fixed left-3 top-3 z-[70] flex max-w-[72vw] items-center gap-2 rounded-lg bg-black/55 px-2.5 py-2 text-white">
+                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-gradient-to-br from-violet-400 via-sky-300 to-cyan-300 text-base leading-none text-slate-950">{active.icon}</span>
+                  <div className="min-w-0"><div className="truncate text-xs font-semibold leading-tight">{active.name}</div><div className="bg-gradient-to-r from-violet-300 via-sky-200 to-cyan-200 bg-clip-text text-[9px] font-semibold uppercase leading-tight tracking-wide text-transparent">Demo mode</div></div>
                 </div>
               )}
             </motion.div>
@@ -178,9 +188,9 @@ function DemoGallery(): JSX.Element {
           )}
         </AnimatePresence>
 
-        {active && (
+        {active && !demoMode && (
           <>
-            {!pickerOpen && <button type="button" aria-label="Show experience picker" onClick={() => { setPickerOpen(true); }} className={`fixed z-[80] flex items-center justify-center text-white/30 hover:text-white/70 ${pickerBottom ? 'bottom-1 left-1/2 h-8 w-12 -translate-x-1/2' : pickerLeft ? 'left-1 top-1/2 h-12 w-8 -translate-y-1/2' : 'right-1 top-1/2 h-12 w-8 -translate-y-1/2'}`}>{pickerBottom ? <ChevronUp size={16} /> : pickerLeft ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}</button>}
+            {!pickerOpen && <button type="button" aria-label="Show experience picker" onClick={() => { setPickerOpen(true); }} className={`fixed z-[60] flex items-center justify-center text-white/20 transition-colors hover:text-white/50 ${pickerBottom ? 'bottom-1 left-1/2 h-8 w-12 -translate-x-1/2' : pickerLeft ? 'left-1 top-1/2 h-12 w-8 -translate-y-1/2' : 'right-1 top-1/2 h-12 w-8 -translate-y-1/2'}`}>{pickerBottom ? <ChevronUp size={16} /> : pickerLeft ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}</button>}
             <AnimatePresence>
               {pickerOpen && (
                 <motion.section
@@ -189,39 +199,49 @@ function DemoGallery(): JSX.Element {
                   initial={pickerBottom ? { y: '100%' } : pickerLeft ? { x: '-100%' } : { x: '100%' }}
                   animate={pickerBottom ? { y: 0 } : { x: 0 }}
                   exit={pickerBottom ? { y: '100%' } : pickerLeft ? { x: '-100%' } : { x: '100%' }}
-                  transition={{ type: 'spring', stiffness: 400, damping: 40 }}
-                  className={`fixed z-[80] flex flex-col bg-black/90 backdrop-blur-xl ${pickerBottom ? 'bottom-0 left-0 right-0 border-t border-white/10' : pickerLeft ? 'bottom-0 left-0 top-0 w-[196px] border-r border-white/10' : 'bottom-0 right-0 top-0 w-[196px] border-l border-white/10'}`}
+                  transition={{ type: 'spring', stiffness: 400, damping: 40, mass: 0.7 }}
+                  className={`fixed z-[60] flex flex-col border-white/10 bg-black/90 backdrop-blur-xl ${pickerBottom ? 'bottom-0 left-0 right-0 border-t' : pickerLeft ? 'bottom-0 left-0 top-0 w-[196px] border-r' : 'bottom-0 right-0 top-0 w-[196px] border-l'}${portraitMobile ? ' max-h-[40vh]' : ''}`}
                 >
-                  <header className="flex shrink-0 items-center border-b border-white/[0.07] px-3 py-1.5">
-                    <span className="mr-auto text-[10px] font-semibold uppercase tracking-widest text-white/30">Experiences</span>
+                  <header className="flex shrink-0 items-center gap-1 border-b border-white/[0.07] px-3 py-1.5">
+                    {portraitMobile ? (
+                      <div className="flex flex-1 gap-1 overflow-x-auto" style={{ scrollbarWidth: 'none' }}>
+                        {(Object.keys(KIND_LABELS) as FilterKind[]).map((kind) => <button key={kind} type="button" onClick={() => { setPickerFilter(kind); }} className={`shrink-0 whitespace-nowrap rounded-md px-2 py-0.5 text-[9px] font-semibold transition-colors ${pickerFilter === kind ? 'bg-white/15 text-white' : 'text-white/30 hover:text-white/60'}`}>{KIND_LABELS[kind]}</button>)}
+                      </div>
+                    ) : <span className="mr-auto text-[10px] font-semibold uppercase tracking-widest text-white/30">Experiences</span>}
                     {!portraitMobile && (['left', 'bottom', 'right'] as const).map((side) => {
                       const Icon = side === 'left' ? PanelLeft : side === 'bottom' ? PanelBottom : PanelRight;
-                      return <button key={side} type="button" aria-label={`Move to ${side}`} onClick={() => { setPickerSide(side); }} className={`flex h-6 w-6 items-center justify-center ${pickerSide === side ? 'text-white/70' : 'text-white/20 hover:text-white/50'}`}><Icon size={12} /></button>;
+                      return <button key={side} type="button" aria-label={`Move to ${side}`} onClick={() => { setPickerSide(side); }} className={`flex h-6 w-6 items-center justify-center rounded transition-colors ${pickerSide === side ? 'text-white/70' : 'text-white/20 hover:text-white/50'}`}><Icon size={12} /></button>;
                     })}
-                    <button type="button" aria-label={pickerDocked ? 'Undock' : 'Dock'} onClick={() => { setPickerDocked((value) => !value); }} className={`flex h-6 w-6 items-center justify-center ${pickerDocked ? 'text-white/70' : 'text-white/20 hover:text-white/50'}`}>{pickerDocked ? <PinOff size={12} /> : <Pin size={12} />}</button>
-                    <button type="button" aria-label="Close carousel" onClick={() => { setPickerOpen(false); }} className="flex h-6 w-6 items-center justify-center text-white/30 hover:text-white">{pickerBottom ? <ChevronDown size={14} /> : pickerLeft ? <ChevronLeft size={14} /> : <ChevronRight size={14} />}</button>
+                    <button type="button" aria-label={pickerDocked ? 'Undock' : 'Dock'} onClick={() => { setPickerDocked((value) => !value); }} className={`flex h-6 w-6 items-center justify-center rounded transition-colors ${pickerDocked ? 'text-white/70' : 'text-white/20 hover:text-white/50'}`}>{pickerDocked ? <PinOff size={12} /> : <Pin size={12} />}</button>
+                    <button type="button" aria-label="Close carousel" onClick={() => { setPickerOpen(false); }} className="flex h-6 w-6 items-center justify-center rounded text-white/20 transition-colors hover:text-white/50">{pickerBottom ? <ChevronDown size={14} /> : pickerLeft ? <ChevronLeft size={14} /> : <ChevronRight size={14} />}</button>
                   </header>
                   {pickerBottom ? (
-                    <div className="flex h-[132px] items-center">
-                      <div className="flex h-full shrink-0 flex-col justify-center gap-0.5 border-r border-white/[0.07] px-2">
-                        {(Object.keys(KIND_LABELS) as FilterKind[]).map((kind) => <button key={kind} type="button" onClick={() => { setPickerFilter(kind); }} className={`rounded-md px-2 py-0.5 text-[9px] font-semibold ${pickerFilter === kind ? 'bg-white/15 text-white' : 'text-white/30 hover:text-white/60'}`}>{KIND_LABELS[kind]}</button>)}
+                    portraitMobile ? (
+                      <div ref={scrollerRef} className="flex items-center gap-2 overflow-x-scroll px-2 py-2 snap-x snap-mandatory" style={{ scrollbarWidth: 'none' }}>
+                        {pickerItems.map((definition, index) => <div key={definition.id} className="shrink-0 snap-start py-0.5"><CarouselTile definition={definition} index={index} active={definition.id === active.id} onSelect={selectExperience} size={88} /></div>)}
                       </div>
-                      <button type="button" aria-label="Previous" onClick={() => { move(-1); }} className="px-2 text-white/30 hover:text-white"><ChevronLeft size={16} /></button>
-                      <div ref={scrollerRef} className="flex flex-1 items-center gap-2 overflow-x-auto px-1" style={{ scrollbarWidth: 'none' }}>
-                        {pickerItems.map((definition, index) => <CarouselTile key={definition.id} definition={definition} index={index} active={definition.id === active.id} onSelect={selectExperience} />)}
+                    ) : (
+                      <div className="flex h-[132px] items-stretch">
+                        <div className="flex shrink-0 flex-col justify-center gap-0.5 border-r border-white/[0.07] px-2 py-1.5">
+                          {(Object.keys(KIND_LABELS) as FilterKind[]).map((kind) => <button key={kind} type="button" onClick={() => { setPickerFilter(kind); }} className={`whitespace-nowrap rounded-md px-2 py-0.5 text-[9px] font-semibold transition-colors ${pickerFilter === kind ? 'bg-white/15 text-white' : 'text-white/30 hover:text-white/60'}`}>{KIND_LABELS[kind]}</button>)}
+                        </div>
+                        <button type="button" aria-label="Previous" onClick={() => { move(-1); }} className="flex shrink-0 items-center justify-center px-1.5 text-white/25 transition-colors hover:text-white/60"><ChevronLeft size={15} /></button>
+                        <div ref={scrollerRef} className="flex flex-1 items-center gap-2 overflow-x-auto px-1" style={{ scrollbarWidth: 'none' }}>
+                          {pickerItems.map((definition, index) => <CarouselTile key={definition.id} definition={definition} index={index} active={definition.id === active.id} onSelect={selectExperience} size={80} />)}
+                        </div>
+                        <button type="button" aria-label="Next" onClick={() => { move(1); }} className="flex shrink-0 items-center justify-center px-1.5 text-white/25 transition-colors hover:text-white/60"><ChevronRight size={15} /></button>
                       </div>
-                      <button type="button" aria-label="Next" onClick={() => { move(1); }} className="px-2 text-white/30 hover:text-white"><ChevronRight size={16} /></button>
-                    </div>
+                    )
                   ) : (
                     <div className="flex min-h-0 flex-1 flex-col">
                       <div className="flex shrink-0 gap-1 overflow-x-auto border-b border-white/[0.07] px-2 py-1.5" style={{ scrollbarWidth: 'none' }}>
                         {(Object.keys(KIND_LABELS) as FilterKind[]).map((kind) => <button key={kind} type="button" onClick={() => { setPickerFilter(kind); }} className={`shrink-0 rounded-md px-2 py-0.5 text-[9px] font-semibold ${pickerFilter === kind ? 'bg-white/15 text-white' : 'text-white/30 hover:text-white/60'}`}>{KIND_LABELS[kind]}</button>)}
                       </div>
-                      <button type="button" aria-label="Previous" onClick={() => { move(-1); }} className="py-1 text-white/30 hover:text-white"><ChevronUp className="mx-auto" size={16} /></button>
+                      <button type="button" aria-label="Previous" onClick={() => { move(-1); }} className="py-1 text-white/25 transition-colors hover:text-white/60"><ChevronUp className="mx-auto" size={15} /></button>
                       <div ref={scrollerRef} className="flex flex-1 flex-col items-center gap-2 overflow-y-auto px-2 py-1" style={{ scrollbarWidth: 'none' }}>
-                        {pickerItems.map((definition, index) => <CarouselTile key={definition.id} definition={definition} index={index} active={definition.id === active.id} onSelect={selectExperience} horizontal />)}
+                        {pickerItems.map((definition, index) => <CarouselTile key={definition.id} definition={definition} index={index} active={definition.id === active.id} onSelect={selectExperience} size={74} labelRight />)}
                       </div>
-                      <button type="button" aria-label="Next" onClick={() => { move(1); }} className="py-1 text-white/30 hover:text-white"><ChevronDown className="mx-auto" size={16} /></button>
+                      <button type="button" aria-label="Next" onClick={() => { move(1); }} className="py-1 text-white/25 transition-colors hover:text-white/60"><ChevronDown className="mx-auto" size={15} /></button>
                     </div>
                   )}
                 </motion.section>
@@ -245,10 +265,10 @@ function ExperienceCard({ definition, index, onSelect }: ExperienceCardProps): J
   const needsDemoQa = definition.capabilities.demo === true && !hasPassedDemoQa(definition.id);
   return (
     <button type="button" data-demo-experience-card={definition.id} onClick={() => { onSelect(definition); }} className="group cursor-pointer select-none text-left">
-      <div className="relative aspect-square w-full overflow-hidden rounded-2xl bg-slate-100 transition-transform duration-200 group-hover:scale-[1.03] dark:bg-[#0d0d1e]">
+      <div className="pointer-events-none relative aspect-square w-full overflow-hidden rounded-2xl bg-slate-100 transition-transform duration-200 group-hover:scale-[1.03] dark:bg-[#0d0d1e]">
         <PreviewTile definition={definition} index={index} />
         <span className={`absolute bottom-2 left-2 rounded-full px-2 py-0.5 text-[10px] font-semibold capitalize ${badge}`}>{definition.kind}</span>
-        {needsDemoQa && <span className="absolute right-2 top-2 inline-flex items-center gap-1 rounded-md bg-amber-300/95 px-1.5 py-1 text-[9px] font-bold uppercase text-amber-950"><AlertTriangle size={10} />Needs QA</span>}
+        {needsDemoQa && <span className="absolute right-2 top-2 inline-flex items-center gap-1 rounded-md bg-amber-300/95 px-1.5 py-1 text-[9px] font-bold uppercase leading-none text-amber-950"><AlertTriangle size={10} strokeWidth={2.5} />Needs QA</span>}
       </div>
       <p className="mt-3 text-center text-sm font-semibold leading-tight text-slate-800 dark:text-slate-200">{definition.name}</p>
     </button>
@@ -263,13 +283,13 @@ function PreviewTile({ definition, index }: { readonly definition: ExperienceDef
   useEffect(() => {
     const root = rootRef.current;
     if (!root) return;
-    const observer = new IntersectionObserver(([entry]) => { setVisible(entry?.isIntersecting ?? false); }, { rootMargin: '120px', threshold: 0.01 });
+    const observer = new IntersectionObserver(([entry]) => { setVisible(entry?.isIntersecting ?? false); }, { rootMargin: '180px', threshold: 0.01 });
     observer.observe(root);
     return () => { observer.disconnect(); };
   }, []);
   useEffect(() => {
     if (!visible) { setReady(false); return; }
-    const timeout = window.setTimeout(() => { setReady(true); }, index * 120);
+    const timeout = window.setTimeout(() => { setReady(true); }, index * 300);
     return () => { window.clearTimeout(timeout); };
   }, [index, visible]);
   return (
@@ -280,19 +300,28 @@ function PreviewTile({ definition, index }: { readonly definition: ExperienceDef
   );
 }
 
-function CarouselTile({ definition, index, active, onSelect, horizontal = false }: ExperienceCardProps & { readonly active: boolean; readonly horizontal?: boolean }): JSX.Element {
-  return <button type="button" onClick={() => { onSelect(definition); }} className={`flex shrink-0 items-center gap-1.5 ${horizontal ? 'w-full flex-row' : 'w-20 flex-col'}`}><div className={`relative shrink-0 overflow-hidden rounded-2xl ${horizontal ? 'h-[74px] w-[74px]' : 'h-20 w-20'} ${active ? 'ring-2 ring-white/70' : ''}`}><PreviewTile definition={definition} index={index} /></div><span className={`truncate text-[9px] font-medium text-white/50 ${horizontal ? 'min-w-0 flex-1 text-left' : 'max-w-20 text-center'}`}>{definition.name}</span></button>;
-}
-
-function usePortraitMobile(): boolean {
-  const [matches, setMatches] = useState(() => window.matchMedia('(max-width: 720px) and (orientation: portrait)').matches);
-  useEffect(() => {
-    const query = window.matchMedia('(max-width: 720px) and (orientation: portrait)');
-    const update = (): void => { setMatches(query.matches); };
-    query.addEventListener('change', update);
-    return () => { query.removeEventListener('change', update); };
-  }, []);
-  return matches;
+function CarouselTile({
+  definition,
+  index,
+  active,
+  onSelect,
+  size,
+  labelRight = false,
+}: ExperienceCardProps & { readonly active: boolean; readonly size: number; readonly labelRight?: boolean }): JSX.Element {
+  return (
+    <div className={`flex shrink-0 cursor-pointer items-center gap-1.5 transition-all duration-150 ${labelRight ? 'w-full flex-row' : 'flex-col'}`}>
+      <button
+        type="button"
+        onClick={() => { onSelect(definition); }}
+        className={`relative flex shrink-0 overflow-hidden rounded-2xl focus:outline-none focus-visible:ring-2 focus-visible:ring-white/50 ${active ? 'ring-2 ring-white/65' : ''}`}
+        style={{ width: size, height: size }}
+        aria-label={`Play ${definition.name}`}
+      >
+        <PreviewTile definition={definition} index={index} />
+      </button>
+      <span className={`truncate text-[9px] font-medium leading-tight text-white/50 ${labelRight ? 'min-w-0 flex-1 text-left' : 'text-center'}`} style={labelRight ? undefined : { maxWidth: size }}>{definition.name}</span>
+    </div>
+  );
 }
 
 function DiagnosticExperienceHost(): JSX.Element {
