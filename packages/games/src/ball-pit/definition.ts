@@ -53,7 +53,7 @@ export const ballPitDefinition: ExperienceDefinition = {
     const effectiveConfig = ballPitConfigForProfile(config, options.profile);
     return [
       createDenseCircleParticlePlugin({
-        capacity: options.profile === 'preview' ? 256 : 262_144,
+        capacity: options.profile === 'preview' ? 256 : BALL_PIT_DEFAULTS.maxParticles,
         ...(options.seed !== undefined ? { seed: options.seed } : {}),
         settings: {
           maxParticles: effectiveConfig.maxParticles,

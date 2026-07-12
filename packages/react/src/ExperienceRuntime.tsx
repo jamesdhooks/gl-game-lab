@@ -690,13 +690,25 @@ function settingDefaults(definition: ExperienceDefinition): Readonly<Record<stri
       const parsed = JSON.parse(stored) as Record<string, unknown>;
       for (const setting of definition.settings ?? []) {
         const value = parsed[setting.key];
-        if (typeof value === 'number' || typeof value === 'boolean' || typeof value === 'string') values[setting.key] = value;
+        if (isValidStoredSettingValue(setting, value)) values[setting.key] = value;
       }
     }
   } catch {
     // Storage can be unavailable in private or sandboxed contexts.
   }
   return Object.freeze(values);
+}
+
+function isValidStoredSettingValue(setting: ExperienceSetting, value: unknown): value is ExperienceSettingValue {
+  if (setting.type === 'number') {
+    return typeof value === 'number'
+      && Number.isFinite(value)
+      && value >= setting.min
+      && value <= setting.max;
+  }
+  if (setting.type === 'boolean') return typeof value === 'boolean';
+  if (setting.type === 'select') return typeof value === 'string' && setting.options.some((option) => option.value === value);
+  return typeof value === 'string';
 }
 
 function formatSettingNumber(value: number, step: number): string {

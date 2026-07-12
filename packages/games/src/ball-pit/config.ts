@@ -45,7 +45,7 @@ export const BALL_PIT_DEFAULTS: BallPitConfig = Object.freeze({
 });
 
 export const BALL_PIT_SETTINGS: readonly ExperienceSetting[] = [
-  { ...numberSetting('maxParticles', 'Max Particles', 65_536, 1_024, 262_144, 1, 'Physics'), numericScale: 'powerOfTwo' },
+  { ...numberSetting('maxParticles', 'Max Particles', 65_536, 1_024, 65_536, 1, 'Physics'), numericScale: 'powerOfTwo' },
   numberSetting('radius', 'Radius', 12, 2, 64, 0.5, 'Physics'),
   numberSetting('radiusVariation', 'Radius Variation', 0.15, 0, 1, 0.01, 'Physics'),
   { ...numberSetting('spawnRate', 'Spawn / sec', 1200, 50, 6_000, 50, 'Input Mode'), visibleModes: ['stream'] },
