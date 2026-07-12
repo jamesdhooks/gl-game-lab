@@ -103,8 +103,8 @@ export function SimControlPanel({ values: sourceValues, fields, onChange, settin
       style={{ top: topOffset }}
     >
       {/* Header row: optional slot (style/mode) */}
-      <div className="pointer-events-auto relative z-50 flex w-full max-w-xs items-center justify-center gap-2 overflow-visible">
-        <div className="flex flex-col items-center gap-1.5 overflow-visible">
+      <div className="pointer-events-none relative z-50 flex w-full max-w-xs items-center justify-center gap-2 overflow-visible">
+        <div className="pointer-events-auto flex flex-col items-center gap-1.5 overflow-visible">
           {headerSlot}
         </div>
       </div>
