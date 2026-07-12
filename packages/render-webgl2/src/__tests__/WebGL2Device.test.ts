@@ -101,22 +101,4 @@ describe('WebGL2Device context restoration', () => {
     device.destroy();
   });
 
-  it('releases the driver context when the device is destroyed', () => {
-    const loseContext = vi.fn();
-    const gl = {
-      getExtension: (name: string) => name === 'WEBGL_lose_context' ? { loseContext } : null,
-    } as unknown as WebGL2RenderingContext;
-    const events = new EventTarget();
-    const canvas = Object.assign(events, {
-      width: 8,
-      height: 8,
-      getContext: () => gl,
-    }) as unknown as HTMLCanvasElement;
-    const device = new WebGL2Device(canvas);
-
-    device.destroy();
-    device.destroy();
-
-    expect(loseContext).toHaveBeenCalledTimes(1);
-  });
 });

@@ -295,7 +295,6 @@ export class WebGL2Device {
     this.contextResources.clear();
     this.canvas.removeEventListener('webglcontextlost', this.handleContextLost, false);
     this.canvas.removeEventListener('webglcontextrestored', this.handleContextRestored, false);
-    this.gl.getExtension('WEBGL_lose_context')?.loseContext();
   }
 
   private readonly handleContextLost = (event: Event): void => {

@@ -161,8 +161,16 @@ async function verifyDemoShell(browser, failures) {
     await page.getByRole('button', { name: 'Settings', exact: true }).click();
     if (await page.getByText('Enhanced Surface', { exact: true }).count() !== 0) failures.push('Enhanced-only settings remained visible in Basic mode');
     await page.getByRole('button', { name: 'Close settings' }).click();
+    await page.getByRole('button', { name: 'Quit', exact: true }).click();
+    await page.locator('[data-demo-experience-card="harmonic-sand"]').click();
+    await page.locator('[data-experience-id="harmonic-sand"] canvas[data-engine-state="running"]').waitFor({ state: 'visible', timeout: 60_000 });
+    await page.locator('.gl-experience-intro-card').waitFor({ state: 'visible', timeout: 10_000 });
+    await page.waitForTimeout(6_500);
+    await page.getByRole('button', { name: 'Quit', exact: true }).click();
+    await page.getByRole('heading', { name: 'GLGameLab' }).waitFor({ state: 'visible', timeout: 10_000 });
+    await page.waitForTimeout(250);
     failures.push(...pageErrors.map((message) => `Demo shell page error: ${message}`));
-    return Object.freeze({ totalCards, gameCards, simulationCards, canvas: canvasSize, intro: true, settings: settingCount, settingsDock: true, picker: true, info: true });
+    return Object.freeze({ totalCards, gameCards, simulationCards, canvas: canvasSize, intro: true, settings: settingCount, settingsDock: true, picker: true, info: true, harmonicExit: true });
   } catch (error) {
     failures.push(`Demo shell failed: ${describe(error)}`);
     return undefined;
