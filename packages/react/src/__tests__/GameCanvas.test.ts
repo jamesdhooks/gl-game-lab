@@ -54,8 +54,9 @@ describe('normalizeFixedFrameCapture', () => {
 });
 
 describe('resolvePixelRatio', () => {
-  it('preserves device ratio until the historical pixel budget requires a cap', () => {
+  it('matches the working runtime two-times DPR ceiling before applying a pixel budget', () => {
     expect(resolvePixelRatio(400, 300, 2)).toBe(2);
+    expect(resolvePixelRatio(400, 300, 3)).toBe(2);
     expect(resolvePixelRatio(400, 300, 2, 120_000)).toBe(1);
     expect(() => resolvePixelRatio(400, 300, 2, 0)).toThrow('maxPixels');
   });

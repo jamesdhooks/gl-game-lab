@@ -104,7 +104,25 @@ async function verifyDemoShell(browser, failures) {
 
     await page.getByRole('button', { name: 'All', exact: true }).click();
     await page.locator('[data-demo-experience-card="ball-pit"]').click();
-    await page.locator('[data-experience-id="ball-pit"] canvas[data-engine-state="running"]').waitFor({ state: 'visible', timeout: 60_000 });
+    const ballPitCanvas = page.locator('[data-experience-id="ball-pit"] canvas[data-engine-state="running"]');
+    await ballPitCanvas.waitFor({ state: 'visible', timeout: 60_000 });
+    const canvasSize = await ballPitCanvas.evaluate((canvas) => {
+      const bounds = canvas.getBoundingClientRect();
+      return {
+        cssWidth: bounds.width,
+        cssHeight: bounds.height,
+        backingWidth: canvas.width,
+        backingHeight: canvas.height,
+        viewportWidth: window.innerWidth,
+        viewportHeight: window.innerHeight,
+      };
+    });
+    if (canvasSize.cssWidth > canvasSize.viewportWidth + 1 || canvasSize.cssHeight > canvasSize.viewportHeight + 1) {
+      failures.push(`Game canvas escaped its viewport: ${canvasSize.cssWidth}x${canvasSize.cssHeight} CSS pixels in ${canvasSize.viewportWidth}x${canvasSize.viewportHeight}`);
+    }
+    if (canvasSize.backingWidth > canvasSize.cssWidth * 2 + 2 || canvasSize.backingHeight > canvasSize.cssHeight * 2 + 2) {
+      failures.push(`Game canvas exceeded the 2x DPR ceiling: ${canvasSize.backingWidth}x${canvasSize.backingHeight} backing pixels for ${canvasSize.cssWidth}x${canvasSize.cssHeight} CSS pixels`);
+    }
     await page.locator('.gl-experience-intro-card').waitFor({ state: 'visible', timeout: 10_000 });
     await page.locator('.gl-experience-intro-card').click();
     for (const label of ['Quit', 'Palette', 'Next palette', 'Reset', 'Settings', 'Hide UI', 'Demo mode', 'Info']) {
@@ -144,7 +162,7 @@ async function verifyDemoShell(browser, failures) {
     if (await page.getByText('Enhanced Surface', { exact: true }).count() !== 0) failures.push('Enhanced-only settings remained visible in Basic mode');
     await page.getByRole('button', { name: 'Close settings' }).click();
     failures.push(...pageErrors.map((message) => `Demo shell page error: ${message}`));
-    return Object.freeze({ totalCards, gameCards, simulationCards, intro: true, settings: settingCount, settingsDock: true, picker: true, info: true });
+    return Object.freeze({ totalCards, gameCards, simulationCards, canvas: canvasSize, intro: true, settings: settingCount, settingsDock: true, picker: true, info: true });
   } catch (error) {
     failures.push(`Demo shell failed: ${describe(error)}`);
     return undefined;

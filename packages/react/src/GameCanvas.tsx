@@ -56,6 +56,7 @@ export interface GameCanvasProps {
 }
 
 const EMPTY_ENGINE_PLUGINS: readonly EnginePlugin[] = Object.freeze([]);
+const MAX_DEVICE_PIXEL_RATIO = 2;
 
 export interface EngineDestroyHandle {
   readonly started: boolean;
@@ -272,7 +273,13 @@ export function GameCanvas({
   }, [createEngine, createPlugins, fixedFrameCapture, maxPixels, plugins, preventDefaultInput, showDiagnostics]);
 
   return <Fragment>
-    <canvas ref={canvasRef} className={className} style={style} aria-label={ariaLabel} data-engine-state="created" />
+    <canvas
+      ref={canvasRef}
+      className={className}
+      style={{ ...style, display: 'block', width: '100%', height: '100%' }}
+      aria-label={ariaLabel}
+      data-engine-state="created"
+    />
     {showDiagnostics ? <output ref={diagnosticsRef} aria-live="off" style={DIAGNOSTICS_STYLE} /> : null}
   </Fragment>;
 }
@@ -317,9 +324,10 @@ export function resolvePixelRatio(
   if (![width, height, devicePixelRatio].every((value) => Number.isFinite(value) && value > 0)) {
     throw new Error('Canvas pixel ratio inputs must be positive');
   }
-  if (maxPixels === undefined) return devicePixelRatio;
+  const cappedDeviceRatio = Math.min(devicePixelRatio, MAX_DEVICE_PIXEL_RATIO);
+  if (maxPixels === undefined) return cappedDeviceRatio;
   if (!Number.isFinite(maxPixels) || maxPixels <= 0) throw new Error('Canvas maxPixels must be positive');
-  return Math.min(devicePixelRatio, Math.sqrt(maxPixels / (width * height)));
+  return Math.min(cappedDeviceRatio, Math.sqrt(maxPixels / (width * height)));
 }
 
 const DIAGNOSTICS_STYLE: CSSProperties = {
