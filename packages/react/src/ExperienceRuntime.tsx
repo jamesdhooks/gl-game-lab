@@ -37,6 +37,16 @@ const MIN_SETTINGS_SIDEBAR_WIDTH = 320;
 const MAX_SETTINGS_SIDEBAR_WIDTH = 720;
 const MIN_SCENE_STAGE_WIDTH = 360;
 const COMPACT_TOPBAR_STAGE_WIDTH = 1360;
+const FLUID_BASIC_STYLE_ID = 'bounded-cyan';
+const FLUID_ENHANCED_STYLE_ID = 'webgl-fluid-glow';
+const FLUID_VISUAL_STYLE_MODES = [
+  { id: FLUID_BASIC_STYLE_ID, label: 'Basic' },
+  { id: FLUID_ENHANCED_STYLE_ID, label: 'Enhanced' },
+] as const;
+const FLUID_VISUAL_PRESETS: Readonly<Record<string, Readonly<Record<string, number>>>> = {
+  [FLUID_BASIC_STYLE_ID]: { shadingStrength: 0.42, bloomStrength: 0.22, bloomThreshold: 0.72, sunraysStrength: 0 },
+  [FLUID_ENHANCED_STYLE_ID]: { shadingStrength: 1, bloomStrength: 0.8, bloomThreshold: 0.6, sunraysStrength: 1 },
+};
 
 function readStoredBoolean(key: string, fallback: boolean): boolean {
   try {
@@ -314,8 +324,25 @@ function ImmersiveExperienceRuntime({
   const changeRenderStyle = useCallback((nextRenderStyle: string): void => {
     if (renderStyleField) changeSetting(renderStyleField, nextRenderStyle);
   }, [changeSetting, renderStyleField]);
+  const changeFluidVisualStyle = useCallback((nextStyleId: string): void => {
+    changeStyle(nextStyleId);
+    const preset = FLUID_VISUAL_PRESETS[nextStyleId];
+    if (!preset) return;
+    for (const [key, value] of Object.entries(preset)) {
+      const field = (definition.settings ?? []).find((setting) => setting.key === key);
+      if (field) changeSetting(field, value);
+    }
+    controllerRef.current?.reset();
+  }, [changeSetting, changeStyle, definition.settings]);
   const paletteControl = definition.styleManifest ? (
     <TopbarSelect label="Palette" options={styleOptions} value={styleId} onChange={changeStyle} hideLabel icon={Palette} />
+  ) : null;
+  const fluidVisualStyleControl = definition.id === 'fluid-tank' ? (
+    isCompactTopbar && !mobilePortrait ? (
+      <TopbarSelect label="Style" options={FLUID_VISUAL_STYLE_MODES} value={styleId === FLUID_ENHANCED_STYLE_ID ? FLUID_ENHANCED_STYLE_ID : FLUID_BASIC_STYLE_ID} onChange={changeFluidVisualStyle} hideLabel icon={Paintbrush} />
+    ) : (
+      <ModeToggle modes={FLUID_VISUAL_STYLE_MODES} value={styleId === FLUID_ENHANCED_STYLE_ID ? FLUID_ENHANCED_STYLE_ID : FLUID_BASIC_STYLE_ID} onChange={changeFluidVisualStyle} />
+    )
   ) : null;
   const renderStyleControl = hasRenderStylePicker ? (
     definition.id === 'fluid-tank' ? (
@@ -371,6 +398,7 @@ function ImmersiveExperienceRuntime({
 
   const controlsHeaderSlot = mobilePortrait && (definition.styleManifest || hasRenderStylePicker || hasModes) ? (
     <>
+      {fluidVisualStyleControl}
       {paletteControl}
       {renderStyleControl}
       {imageSourceButton}
@@ -494,6 +522,7 @@ function ImmersiveExperienceRuntime({
             {...(onQuit ? { onQuit } : {})}
             controls={!mobilePortrait && (definition.styleManifest || hasRenderStylePicker || hasModes) ? (
               <div className="flex items-center gap-1.5">
+                {fluidVisualStyleControl}
                 {paletteControl}
                 {renderStyleControl}
                 {imageSourceButton}
