@@ -220,7 +220,11 @@ export function createSplashMpmPlugin(initial: SplashMpmConfig = SPLASH_MPM_DEFA
         const t = tuning();
         model.reset(width, height, t);
         model.seed(width, height, t, launch.profile === 'preview');
-        model.addSegment(width * 0.58, height * 0.62, width * 0.86, height * 0.7, splashNumber(config, 'buildRadius'));
+        if (launch.profile === 'preview') {
+          const radius = Math.min(8, splashNumber(config, 'buildRadius'));
+          model.addCircle(width * 0.62, height * 0.44, radius);
+          model.addSegment(width * 0.18, height * 0.66, width * 0.52, height * 0.72, radius);
+        }
         accumulator = 0;
         time = 0;
         paths.clear();

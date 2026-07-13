@@ -155,12 +155,12 @@ export function createOrbitalShrapnelPlugin(initial: OrbitalShrapnelConfig = ORB
             addEmitter.y += (addEmitter.targetY - addEmitter.y) * follow;
             addEmitter.vx = (addEmitter.x - previousX) / Math.max(dt, 1 / 240);
             addEmitter.vy = (addEmitter.y - previousY) / Math.max(dt, 1 / 240);
-            queueDebris(addEmitter.x, addEmitter.y, addEmitter.vx, addEmitter.vy);
+            queueDebris(addEmitter.x, addEmitter.y, addEmitter.vx, addEmitter.vy, Math.min(renderer.viewport.width, renderer.viewport.height));
           }
           else if (addEmitter) addEmitter.active = false;
           if ((launch.profile === 'preview' || launch.profile === 'demo') && input.snapshot.pointers.length === 0 && Math.floor((elapsed - dt) * 2) !== Math.floor(elapsed * 2)) {
             const angle = elapsed * 0.9, aspect = aspectRatio();
-            queueDebris(Math.cos(angle) * aspect * 0.62, Math.sin(angle) * 0.58, -Math.sin(angle) * 0.45, Math.cos(angle) * 0.45);
+            queueDebris(Math.cos(angle) * aspect * 0.62, Math.sin(angle) * 0.58, -Math.sin(angle) * 0.45, Math.cos(angle) * 0.45, Math.min(renderer.viewport.width, renderer.viewport.height));
           }
         }
       });
@@ -435,15 +435,16 @@ export function createOrbitalShrapnelPlugin(initial: OrbitalShrapnelConfig = ORB
       }
     }
   };
-  function queueDebris(x: number, y: number, vx: number, vy: number): void {
-    const size = Number(orbitalString(config, 'rawParticleTextureSize')), capacity = size * size, count = Math.max(1, Math.round(capacity * orbitalNumber(config, 'addDebrisVolume') * 0.018));
+  function queueDebris(x: number, y: number, vx: number, vy: number, minViewportDimension: number): void {
+    const size = Number(orbitalString(config, 'rawParticleTextureSize')), capacity = size * size, count = Math.max(1, Math.round(capacity * orbitalNumber(config, 'addDebrisVolume')));
+    const inheritedLimit = orbitalNumber(config, 'addDebrisVelocity'), inheritedSpeed = Math.hypot(vx, vy), inheritedScale = inheritedSpeed > inheritedLimit && inheritedSpeed > 0 ? inheritedLimit / inheritedSpeed : 1;
     commands.push({
       x,
       y,
-      vx: vx * orbitalNumber(config, 'addDebrisVelocity'),
-      vy: vy * orbitalNumber(config, 'addDebrisVelocity'),
+      vx: vx * inheritedScale,
+      vy: vy * inheritedScale,
       count,
-      radius: orbitalNumber(config, 'addRadius') / 720 * 2,
+      radius: orbitalNumber(config, 'addRadius') / Math.max(1, minViewportDimension) * 2,
       jitter: orbitalNumber(config, 'addJitter'),
       asteroid: 0,
       seed: nextRandom() * 10000

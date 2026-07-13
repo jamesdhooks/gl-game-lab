@@ -57,7 +57,7 @@ export function createSparksPlugin(initial: SparksConfig = SPARKS_DEFAULTS, laun
       const renderer = context.get(EngineRender2D), gpu = context.get(EngineGpu2D), input = context.get(EngineInput);
       let particles = createParticles(), observedGeneration = particles.generation;
       cleanup = () => { particles.dispose(); };
-      seedRails();
+      seedRails(renderer.viewport.width, renderer.viewport.height);
       applyStyle();
       const controller: SparksController = {
         get mode() {
@@ -119,14 +119,14 @@ export function createSparksPlugin(initial: SparksConfig = SPARKS_DEFAULTS, laun
         id: 'gl-game-lab.simulations.sparks.update',
         stage: 'update',
         run: ({ time }) => {
-          const dt = Math.min(0.05, time.deltaSeconds);
+          const dt = Math.min(0.05, time.deltaSeconds) * sparksNumber(config, 'timeScale');
           elapsed += dt;
           pendingDt += dt;
           const events = input.snapshot.events.filter((event): event is PointerInputEvent => event.kind === 'pointer');
           for (const event of events)
             routePointer(event, dt);
           if (mode !== 'build' && input.snapshot.pointers.length > 0) {
-            emissionAccumulator += dt * sparksNumber(config, 'emissionRate') / 100;
+            emissionAccumulator += dt * sparksNumber(config, 'emissionRate') / 220;
             for (const pointer of input.snapshot.pointers) {
               const previous = previousPointers.get(pointer.id);
               while (emissionAccumulator >= 1) {
@@ -183,6 +183,9 @@ export function createSparksPlugin(initial: SparksConfig = SPARKS_DEFAULTS, laun
                 g.uniform1f(u('uCoreSize'), sparksNumber(config, 'coreSparkSize'));
                 g.uniform1f(u('uBounceSize'), sparksNumber(config, 'bounceSparkSize'));
                 g.uniform1f(u('uSizeVariability'), sparksNumber(config, 'primarySparkSizeVariability'));
+                g.uniform1f(u('uPrimaryLength'), sparksNumber(config, 'primarySparkLength'));
+                g.uniform1f(u('uBounceLength'), sparksNumber(config, 'bounceSparkLength'));
+                g.uniform1f(u('uLengthVariability'), sparksNumber(config, 'primarySparkLengthVariability'));
                 g.uniform1f(u('uRenderTier'), renderStyle === 'basic' ? 0 : renderStyle === 'enhanced' ? 1 : 2);
                 g.uniform1f(u('uCoreIntensity'), sparksNumber(config, 'coreSparkIntensity'));
                 g.uniform1f(u('uGlowBias'), 1.18);
@@ -357,7 +360,7 @@ export function createSparksPlugin(initial: SparksConfig = SPARKS_DEFAULTS, laun
         commands.length = 0;
         previousPointers.clear();
         rails.length = 0;
-        seedRails();
+        seedRails(renderer.viewport.width, renderer.viewport.height);
         elapsed = 0;
         pendingDt = 0;
         emissionAccumulator = 0;
@@ -399,24 +402,27 @@ export function createSparksPlugin(initial: SparksConfig = SPARKS_DEFAULTS, laun
       paletteSeed: nextRandom() * 10000
     });
   }
-  function seedRails(): void {
-    rails.push({
-      x1: 80,
-      y1: 560,
-      x2: 360,
-      y2: 500
-    }, {
-      x1: 520,
-      y1: 430,
-      x2: 820,
-      y2: 520
-    }, {
-      x1: 920,
-      y1: 590,
-      x2: 1200,
-      y2: 470
-    });
+  function seedRails(viewportWidth: number, viewportHeight: number): void {
+    const width = Math.max(1, viewportWidth);
+    const height = Math.max(1, viewportHeight);
+    const count = 4 + Math.floor(nextRandom() * 3);
+    for (let index = 0; index < count; index += 1) {
+      const centerX = randomRange(width * 0.18, width * 0.82);
+      const centerY = randomRange(height * 0.46, height * 0.82);
+      const length = randomRange(width * 0.18, width * 0.42);
+      const angle = randomRange(-0.52, 0.52);
+      const dx = Math.cos(angle) * length * 0.5;
+      const dy = Math.sin(angle) * length * 0.5;
+      rails.push({
+        x1: clamp(centerX - dx, width * 0.06, width * 0.94),
+        y1: clamp(centerY - dy, height * 0.3, height * 0.88),
+        x2: clamp(centerX + dx, width * 0.06, width * 0.94),
+        y2: clamp(centerY + dy, height * 0.3, height * 0.88)
+      });
+    }
   }
+  function randomRange(min: number, max: number): number { return min + nextRandom() * (max - min); }
+  function clamp(value: number, min: number, max: number): number { return Math.max(min, Math.min(max, value)); }
   function writeRails(includePreview = true): Float32Array {
     const values = new Float32Array(13 * 4);
     const list = includePreview && previewRail ? [

@@ -54,10 +54,13 @@ export class SplashPicFlipModel {
     });
   }
   seed(width: number, height: number, t: SplashMpmTuning, preview = false) {
-    const spacing = Math.max(t.radius * 1.55, t.separation + t.radius), cols = Math.floor(width * 0.42 / spacing), rows = Math.floor(height * 0.42 / spacing), limit = Math.min(preview ? 2200 : 9000, Math.floor(t.maxParticles * 0.42));
-    for (let y = 0; y < rows && this.count < limit; y++)
-      for (let x = 0; x < cols && this.count < limit; x++)
-        this.world.addCircle(width * 0.08 + x * spacing, height * 0.52 + y * spacing, {
+    const resolutionScale = Math.max(0.25, Math.min(1.35, 128 / Math.max(32, t.resolution))), overlap = Math.max(0.96, Math.min(1.32, 1.34 - t.radius * 0.004));
+    const spacing = Math.max(Math.max(1.4, t.radius * 0.72), Math.min(t.radius * 1.52, t.radius * overlap * resolutionScale));
+    const limit = Math.min(t.maxParticles, preview ? 8192 : t.maxParticles, Math.max(512, Math.floor(width * height * (preview ? 0.34 : 0.42) / Math.max(1, t.radius * t.radius * 0.42))));
+    const wall = Math.max(0.5, t.radius * 0.45);
+    for (let y = height * 0.22; y < height - wall && this.count < limit; y += spacing)
+      for (let x = wall; x < width - wall && this.count < limit; x += spacing)
+        this.world.addCircle(x + (hash(this.count * 31) - 0.5) * spacing * 0.34, y + (hash(this.count * 37 + 17) - 0.5) * spacing * 0.34, {
           colorSeed: this.count
         });
   }

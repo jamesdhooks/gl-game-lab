@@ -178,9 +178,15 @@ export function createFluidTankPlugin(initial: FluidTankConfig = FLUID_TANK_DEFA
         });
       }
       function createField() {
-        const base = Math.max(64, Math.min(512, Math.round(256 / fluidNumber(config, 'cellSize')))), resolution = launch.profile === 'preview' ? Math.min(128, base) : base;
+        const effectiveCell = launch.profile === 'preview' ? Math.max(1.85, fluidNumber(config, 'cellSize')) : fluidNumber(config, 'cellSize');
         aspect = renderer.viewport.height / Math.max(1, renderer.viewport.width);
-        return renderer.createFluidField('fluid-tank.field', resolution, Math.max(48, Math.round(resolution * aspect)));
+        const screenAspect = renderer.viewport.width / Math.max(1, renderer.viewport.height);
+        const dimensions = (base: number) => screenAspect >= 1
+          ? { width: Math.round(base * screenAspect), height: Math.round(base) }
+          : { width: Math.round(base), height: Math.round(base / screenAspect) };
+        const dye = dimensions(Math.max(300, Math.min(1200, Math.round(950 / effectiveCell))));
+        const simulation = dimensions(Math.max(90, Math.min(260, Math.round(220 / effectiveCell))));
+        return renderer.createFluidField('fluid-tank.field', dye.width, dye.height, { simulationWidth: simulation.width, simulationHeight: simulation.height });
       }
       function seedField() {
         const kind = fluidString(config, 'renderStyle');

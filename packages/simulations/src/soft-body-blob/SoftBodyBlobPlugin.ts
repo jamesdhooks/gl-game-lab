@@ -140,7 +140,9 @@ export function createSoftBodyBlobPlugin(initial: SoftBodyBlobConfig = SOFT_BODY
             surfaceTension: blobNumber(config, 'surfaceTension'),
             areaPressure: blobNumber(config, 'areaPressure'),
             plasticFlow: blobNumber(config, 'plasticFlow'),
-            boundaryElasticity: blobNumber(config, 'boundaryElasticity')
+            boundaryElasticity: blobNumber(config, 'boundaryElasticity'),
+            membraneDamping: blobNumber(config, 'membraneDamping'),
+            constraintPasses: blobNumber(config, 'constraintPasses')
           });
         }
       });
@@ -150,17 +152,13 @@ export function createSoftBodyBlobPlugin(initial: SoftBodyBlobConfig = SOFT_BODY
         run: () => {
           const style = requireStyle(), palette3 = style.palette.slice(0, 4).map(blobColor3), palette4 = style.palette.slice(0, 4).map(color => blobColor4(color)), renderStyle = blobString(config, 'renderStyle');
           if (renderStyle !== 'basic') {
-            const packed = model.packMesh();
+            const packed = model.packMesh(blobNumber(config, 'skinSmoothing'));
             if (renderStyle === 'enhanced') renderer.submitTriangleMesh({
               id: 'soft-body-blob.mesh', ...packed, worldWidth: width, worldHeight: height,
               palette: palette3, opacity: 0.72, blend: 'alpha'
             });
           }
-          renderer.submitSegments({
-            id: 'soft-body-blob.outlines', ...model.packOutlines(), worldWidth: width, worldHeight: height,
-            palette: palette3, radiusScale: renderStyle === 'basic' ? 0.72 : 0.42, opacity: renderStyle === 'ultra' ? 0.18 : 0.9, blend: 'alpha'
-          });
-          const visual = model.packVisualPoints(renderStyle === 'ultra' ? blobNumber(config, 'liquidFillDensity') : 0), scale = renderStyle === 'ultra' ? blobNumber(config, 'liquidParticleRadius') : renderStyle === 'enhanced' ? 0.72 : 1, radii = new Float32Array(visual.count);
+          const visual = model.packVisualPoints(renderStyle === 'enhanced' ? 0 : blobNumber(config, 'liquidFillDensity')), scale = renderStyle === 'ultra' ? 0.78 + blobNumber(config, 'liquidParticleRadius') * 0.46 : 1, radii = new Float32Array(visual.count);
           for (let i = 0; i < visual.count; i++)
             radii[i] = (visual.radii[i] ?? 1) * scale;
           if (renderStyle === 'ultra') {
@@ -177,18 +175,8 @@ export function createSoftBodyBlobPlugin(initial: SoftBodyBlobConfig = SOFT_BODY
               depthDiffusion: blobNumber(config, 'liquidDepthDiffusion'), opacity: blobNumber(config, 'opacity'),
               time: elapsed, renderStyle: 'ultra'
             });
-            renderer.submitParticles({
-              id: 'soft-body-blob-density',
-              count: visual.count,
-              positions: visual.positions,
-              radii,
-              colorSeeds: visual.seeds,
-              palette: palette4,
-              blend: 'additive',
-              opacity: 0.22
-            });
           }
-          if (renderStyle !== 'ultra') renderer.submitParticles({
+          if (renderStyle === 'basic') renderer.submitParticles({
             id: 'soft-body-blob-points',
             count: visual.count,
             positions: visual.positions,
@@ -211,9 +199,11 @@ export function createSoftBodyBlobPlugin(initial: SoftBodyBlobConfig = SOFT_BODY
       }
       function applyConfig() {
         const viscosity = blobNumber(config, 'viscosity'), squish = effectiveSquish(), surface = blobNumber(config, 'surfaceTension'), preview = launch.profile === 'preview';
+        const densityT = Math.max(0, Math.min(1, (blobNumber(config, 'nodeDensity') - 0.35) / (2.5 - 0.35)));
+        const nodeRadius = 22 + (8.5 - 22) * Math.sqrt(densityT);
         model.configure({
           maxParticles: 65536,
-          radius: 5,
+          radius: nodeRadius,
           radiusVariation: 0,
           gravity: blobNumber(config, 'gravity'),
           solverIterations: 2,

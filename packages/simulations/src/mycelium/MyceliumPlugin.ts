@@ -1,8 +1,8 @@
 import { createExtensionToken, type EnginePlugin } from '@hooksjam/gl-game-lab-core';
-import { EngineGpu2D, EngineInput, EngineRender2D, EngineSchedule, type ExperienceLaunchOptions, type ExperienceRuntimeController, type ExperienceSettingValue, type GpuFieldSystem2D } from '@hooksjam/gl-game-lab-engine';
+import { EngineGpu2D, EngineInput, EngineRender2D, EngineSchedule, type ExperienceLaunchOptions, type ExperienceRuntimeController, type ExperienceSettingValue, type GpuFieldMesh2D, type GpuFieldSystem2D, type GpuUniformEncoder2D, type GpuUniformLookup2D } from '@hooksjam/gl-game-lab-engine';
 import { registerSimulationRuntime } from '../SimulationPluginLifecycle.js';
 import { createMyceliumConfig, MYCELIUM_DEFAULTS, myceliumNumber, myceliumString, type MyceliumConfig } from './config.js';
-import { MYCELIUM_DISPLAY_SHADER, MYCELIUM_SEED_SHADER, MYCELIUM_SPLAT_SHADER, MYCELIUM_STEP_SHADER } from './shaders.js';
+import { MYCELIUM_DISPLAY_SHADER, MYCELIUM_SEED_SHADER, MYCELIUM_SPLAT_SHADER, MYCELIUM_STEP_SHADER, MYCELIUM_TRIANGLE_FRAGMENT_SHADER, MYCELIUM_TRIANGLE_VERTEX_SHADER } from './shaders.js';
 import { myceliumColor3, MYCELIUM_STYLE_MANIFEST } from './styles.js';
 interface Splat {
   x: number;
@@ -24,7 +24,7 @@ export function createMyceliumPlugin(initial: MyceliumConfig = MYCELIUM_DEFAULTS
     dependencies: [{ id: 'gl-game-lab.runtime' }],
     install: context => {
       const renderer = context.get(EngineRender2D), gpu = context.get(EngineGpu2D), input = context.get(EngineInput);
-      let field = createField(), observedGeneration = field.generation;
+      let field = createField(), triangleMesh = createTriangleMesh(field.width, field.height), observedGeneration = field.generation;
       cleanup = () => { field.dispose(); };
       applyStyle();
       const controller: MyceliumController = {
@@ -116,6 +116,7 @@ export function createMyceliumPlugin(initial: MyceliumConfig = MYCELIUM_DEFAULTS
               if (rebuild) {
                 field.dispose();
                 field = createField();
+                triangleMesh = createTriangleMesh(field.width, field.height);
                 observedGeneration = field.generation;
                 rebuild = false;
                 needsSeed = true;
@@ -158,7 +159,7 @@ export function createMyceliumPlugin(initial: MyceliumConfig = MYCELIUM_DEFAULTS
                 });
               const style = requireStyle(), palette = new Float32Array(24);
               style.palette.slice(0, 8).forEach((color, index) => palette.set(myceliumColor3(color), index * 3));
-              field.render('display', destination, (g, u) => {
+              const bindDisplay = (g: GpuUniformEncoder2D, u: GpuUniformLookup2D) => {
                 g.uniform2f(u('uGrid'), field.width, field.height);
                 g.uniform3fv(u('uPalette[0]'), palette);
                 g.uniform3fv(u('uBackground'), new Float32Array(myceliumColor3(style.background)));
@@ -166,7 +167,9 @@ export function createMyceliumPlugin(initial: MyceliumConfig = MYCELIUM_DEFAULTS
                 const visual = myceliumString(config, 'renderStyle');
                 g.uniform1i(u('uVisualStyle'), visual === 'basic' ? 0 : visual === 'enhanced' ? 1 : 2);
                 g.uniform1f(u('uFieldSpread'), myceliumNumber(config, 'fieldSpread'));
-              });
+              };
+              if (myceliumString(config, 'topology') === 'triangle') field.renderMesh('triangles', destination, triangleMesh, bindDisplay);
+              else field.render('display', destination, bindDisplay);
           });
         }
       });
@@ -181,7 +184,8 @@ export function createMyceliumPlugin(initial: MyceliumConfig = MYCELIUM_DEFAULTS
           height: Math.max(1, Math.round(resolution * aspect)),
           precision: 'half-float',
           filter: 'nearest',
-          passes: { seed: MYCELIUM_SEED_SHADER, step: MYCELIUM_STEP_SHADER, splat: MYCELIUM_SPLAT_SHADER, display: MYCELIUM_DISPLAY_SHADER }
+          passes: { seed: MYCELIUM_SEED_SHADER, step: MYCELIUM_STEP_SHADER, splat: MYCELIUM_SPLAT_SHADER, display: MYCELIUM_DISPLAY_SHADER },
+          meshPasses: { triangles: { vertexSource: MYCELIUM_TRIANGLE_VERTEX_SHADER, fragmentSource: MYCELIUM_TRIANGLE_FRAGMENT_SHADER } }
         });
       }
       function resetCpuState(): void {
@@ -219,6 +223,29 @@ export function createMyceliumPlugin(initial: MyceliumConfig = MYCELIUM_DEFAULTS
     randomState ^= randomState << 5;
     return (randomState >>> 0) / 4294967296;
   }
+}
+
+function createTriangleMesh(cols: number, rows: number): GpuFieldMesh2D {
+  const renderCols = cols + 1, cellCount = renderCols * rows, vertexCount = cellCount * 3;
+  const positions = new Float32Array(vertexCount * 2), cells = new Float32Array(vertexCount * 2), facets = new Float32Array(vertexCount);
+  const half = 2 / Math.max(1, cols), side = half * 2, cellHeight = 2 / Math.max(1, rows), scale = 1.002;
+  for (let i = 0; i < cellCount; i++) {
+    const renderColumn = i % renderCols, row = Math.floor(i / renderCols), dataRow = rows - 1 - row;
+    const bx = -1 + (renderColumn - 1) * half, top = 1 - row * cellHeight, bottom = 1 - (row + 1) * cellHeight;
+    const apexUp = (renderColumn + dataRow) % 2 === 0;
+    const points: readonly [readonly [number, number], readonly [number, number], readonly [number, number]] = apexUp
+      ? [[bx, bottom], [bx + half, top], [bx + side, bottom]]
+      : [[bx, top], [bx + side, top], [bx + half, bottom]];
+    const cx = (points[0][0] + points[1][0] + points[2][0]) / 3, cy = (points[0][1] + points[1][1] + points[2][1]) / 3;
+    const dataCol = Math.max(0, Math.min(cols - 1, renderColumn - 1));
+    for (let corner = 0; corner < 3; corner++) {
+      const vertex = i * 3 + corner, point = points[corner];
+      positions[vertex * 2] = cx + ((point?.[0] ?? cx) - cx) * scale;
+      positions[vertex * 2 + 1] = cy + ((point?.[1] ?? cy) - cy) * scale;
+      cells[vertex * 2] = dataCol; cells[vertex * 2 + 1] = dataRow; facets[vertex] = 1;
+    }
+  }
+  return { vertexCount, positions, cells, facets };
 }
 function validStyle(value: string | undefined) {
   return value && MYCELIUM_STYLE_MANIFEST.styles.some(style => style.id === value) ? value : undefined;

@@ -28,7 +28,8 @@ describe('Splash MPM', () => {
     model.pour(400, 80, 12, 20);
     model.splash(400, 300, 80, 17, 200, 0);
     model.step(1 / 60, 800, 600, t);
-    expect(model.count).toBeGreaterThan(before);
+    expect(model.count).toBeGreaterThanOrEqual(before);
+    expect(model.count).toBeLessThanOrEqual(t.maxParticles);
     expect(Number.isFinite(model.world.positions[0])).toBe(true);
   });
   it('validates maintained defaults', () => {

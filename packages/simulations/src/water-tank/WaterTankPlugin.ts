@@ -248,8 +248,10 @@ export function createWaterTankPlugin(initial: WaterTankConfig = WATER_TANK_DEFA
           ...next,
           maxParticles: Math.min(1024, next.maxParticles)
         } : next);
-        model.seedObstacles(width, height, Math.floor(waterNumber(config, 'obstacleRamps')), Math.floor(waterNumber(config, 'obstaclePegs')), waterNumber(config, 'buildRadius'));
-        const initialCount = Math.min(preview ? 900 : Math.floor(next.maxParticles * 0.54), next.maxParticles);
+        model.seedObstacles(width, height, preview ? Math.min(3, Math.floor(waterNumber(config, 'obstacleRamps'))) : Math.floor(waterNumber(config, 'obstacleRamps')), preview ? Math.min(4, Math.floor(waterNumber(config, 'obstaclePegs'))) : Math.floor(waterNumber(config, 'obstaclePegs')), waterNumber(config, 'buildRadius'));
+        const columns = Math.max(8, Math.floor(width / (next.particleRadius * 2.15)));
+        const rows = Math.max(4, Math.floor(height * (preview ? 0.28 : 0.42) / (next.particleRadius * 2.05)));
+        const initialCount = Math.min(next.maxParticles, columns * rows);
         model.seedReservoir(width, height, initialCount, next.particleRadius);
         spawnAccumulator = 0;
         elapsed = 0;

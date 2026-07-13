@@ -37,6 +37,7 @@ export const SPARKS_SETTINGS: readonly ExperienceSetting[] = Object.freeze([
 
 const modernDefaults = Object.fromEntries(SPARKS_SETTINGS.map((setting) => [setting.key, setting.default]));
 export const SPARKS_DEFAULTS: SparksConfig = Object.freeze({
+  timeScale: 1,
   ...modernDefaults,
   coreFlashRate: 3.2, coreFlashSize: 1, coreFlashVariability: .56, coreIntensity: 3.65, coreAfterglow: .38,
   particleSize: 3.6, sparkLength: 1, sparkSizeVariability: .56, sparkLifespan: 1, sparkLifespanVariability: .34,
@@ -45,6 +46,9 @@ export const SPARKS_DEFAULTS: SparksConfig = Object.freeze({
 
 export function createSparksConfig(values: Readonly<Record<string, ExperienceSettingValue>> = {}): SparksConfig {
   const result: Record<string, ExperienceSettingValue> = { ...SPARKS_DEFAULTS };
+  const timeScale = values.timeScale ?? SPARKS_DEFAULTS.timeScale;
+  if (typeof timeScale !== 'number' || !Number.isFinite(timeScale) || timeScale < 0 || timeScale > 2) throw new Error('Sparks timeScale is outside its supported range');
+  result.timeScale = timeScale;
   for (const setting of SPARKS_SETTINGS) {
     const value = values[setting.key] ?? setting.default;
     if (setting.type === 'number') {
