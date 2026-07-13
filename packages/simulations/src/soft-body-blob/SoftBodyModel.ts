@@ -213,7 +213,16 @@ export class SoftBodyModel {
       for (let i = 0; i < body.indices.length; i++) { const index = body.indices[i] as number, dx = lambda * (gradientsX[i] ?? 0), dy = lambda * (gradientsY[i] ?? 0), length = Math.hypot(dx, dy), scale = length > maxCorrection ? maxCorrection / length : 1; this.move(index, dx * scale, dy * scale); }
     }
     const surface = tuning.surfaceTension * 0.06 * passScale;
-    if (surface > 0) for (let i = 0; i < body.indices.length; i++) { const index = body.indices[i] as number, previous = body.indices[(i - 1 + body.indices.length) % body.indices.length] as number, next = body.indices[(i + 1) % body.indices.length] as number; this.move(index, ((value(this.world.positions, previous * 2) + value(this.world.positions, next * 2)) * 0.5 - value(this.world.positions, index * 2)) * surface, ((value(this.world.positions, previous * 2 + 1) + value(this.world.positions, next * 2 + 1)) * 0.5 - value(this.world.positions, index * 2 + 1)) * surface); }
+    if (surface > 0) for (let i = 0; i < body.indices.length; i++) {
+      const index = body.indices[i] as number;
+      const previous = body.indices[(i - 1 + body.indices.length) % body.indices.length] as number;
+      const next = body.indices[(i + 1) % body.indices.length] as number;
+      this.move(
+        index,
+        ((value(this.world.positions, previous * 2) + value(this.world.positions, next * 2)) * 0.5 - value(this.world.positions, index * 2)) * surface,
+        ((value(this.world.positions, previous * 2 + 1) + value(this.world.positions, next * 2 + 1)) * 0.5 - value(this.world.positions, index * 2 + 1)) * surface,
+      );
+    }
     const membrane = 0.72 * Math.pow(1 / (1 + tuning.boundaryElasticity * 0.72), 1.35) * passScale;
     for (const index of body.interiorIndices) {
       const px = value(this.world.positions, index * 2), py = value(this.world.positions, index * 2 + 1);
@@ -255,7 +264,26 @@ function boundaryCountForSize(size: number, density: number) { return Math.max(1
 function boundaryCountForPerimeter(perimeter: number, density: number) { return Math.max(12, Math.min(128, Math.round(perimeter / (nodeRadiusForDensity(density) * 1.32)))); }
 function circle(cx: number, cy: number, radius: number, count: number): Point[] { return Array.from({ length: count }, (_, i) => ({ x: cx + Math.cos(i / count * Math.PI * 2) * radius, y: cy + Math.sin(i / count * Math.PI * 2) * radius })); }
 function polylineLength(points: readonly Point[]) { let total = 0; for (let i = 0; i < points.length; i++) { const a = points[i] as Point, b = points[(i + 1) % points.length] as Point; total += Math.hypot(b.x - a.x, b.y - a.y); } return total; }
-function resampleClosed(points: readonly Point[], count: number): Point[] { const lengths: number[] = []; let total = 0; for (let i = 0; i < points.length; i++) { const a = points[i] as Point, b = points[(i + 1) % points.length] as Point; total += Math.hypot(b.x - a.x, b.y - a.y); lengths.push(total); } const result: Point[] = []; for (let sample = 0; sample < count; sample++) { const target = sample / count * total; let segment = 0; while (segment < lengths.length - 1 && (lengths[segment] ?? 0) < target) segment++; const before = segment === 0 ? 0 : lengths[segment - 1] ?? 0, length = Math.max(1e-4, (lengths[segment] ?? total) - before), t = (target - before) / length, a = points[segment] as Point, b = points[(segment + 1) % points.length] as Point; result.push({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t }); } return result; }
+function resampleClosed(points: readonly Point[], count: number): Point[] {
+  const lengths: number[] = [];
+  let total = 0;
+  for (let i = 0; i < points.length; i++) {
+    const a = points[i] as Point, b = points[(i + 1) % points.length] as Point;
+    total += Math.hypot(b.x - a.x, b.y - a.y);
+    lengths.push(total);
+  }
+  const result: Point[] = [];
+  for (let sample = 0; sample < count; sample++) {
+    const target = sample / count * total;
+    let segment = 0;
+    while (segment < lengths.length - 1 && (lengths[segment] ?? 0) < target) segment++;
+    const before = segment === 0 ? 0 : lengths[segment - 1] ?? 0;
+    const length = Math.max(1e-4, (lengths[segment] ?? total) - before);
+    const t = (target - before) / length, a = points[segment] as Point, b = points[(segment + 1) % points.length] as Point;
+    result.push({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t });
+  }
+  return result;
+}
 function area(points: readonly Point[]) { let result = 0; for (let i = 0; i < points.length; i++) { const a = points[i] as Point, b = points[(i + 1) % points.length] as Point; result += a.x * b.y - a.y * b.x; } return result * 0.5; }
 function catmull(p0: number, p1: number, p2: number, p3: number, t: number) { const t2 = t * t, t3 = t2 * t; return 0.5 * (2 * p1 + (-p0 + p2) * t + (2 * p0 - 5 * p1 + 4 * p2 - p3) * t2 + (-p0 + 3 * p1 - 3 * p2 + p3) * t3); }
 function value(array: Float32Array, index: number) { return array[index] ?? 0; }
