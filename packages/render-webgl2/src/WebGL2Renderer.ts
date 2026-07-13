@@ -439,7 +439,7 @@ export class WebGL2Renderer implements RenderBackend, Render2DService {
     });
   }
 
-  createFluidField(id: string, width: number, height: number): FluidField2D {
+  createFluidField(id: string, width: number, height: number, options = {}): FluidField2D {
     const normalized = id.trim();
     if (normalized.length === 0) throw new Error('Fluid field id cannot be empty');
     let field: WebGLFluidField2D | undefined;
@@ -448,6 +448,7 @@ export class WebGL2Renderer implements RenderBackend, Render2DService {
       `gl-game-lab.render-webgl2.fluid.${this.fluidFieldId}.${normalized}`,
       width,
       height,
+      options,
       () => { if (field) this.fluidFields.delete(field); },
       (drawCalls, uploadBytes = 0) => { this.pendingGpuDrawCalls += drawCalls; this.pendingBufferUploadBytes += uploadBytes; },
     );

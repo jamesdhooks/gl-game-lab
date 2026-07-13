@@ -49,6 +49,23 @@ describe('normalizePointerCoordinates', () => {
     adapter.destroy();
     expect(canvas.tabIndex).toBe(-1);
   });
+
+  it('cancels a captured pointer when a move arrives with no buttons held', () => {
+    const input = new InputState();
+    const document = new FakeDocument();
+    const canvas = new FakeCanvas(document);
+    const adapter = new WebInputAdapter(canvas as unknown as HTMLCanvasElement, {
+      input,
+      document: document as unknown as Document,
+      getViewport: () => ({ width: 200, height: 100 }),
+    });
+    canvas.dispatch('pointerdown', pointerEvent(7));
+    canvas.dispatch('pointermove', pointerEvent(7, 0));
+    const frame = input.advanceFrame();
+    expect(frame.pointers).toEqual([]);
+    expect(frame.events).toContainEqual(expect.objectContaining({ kind: 'pointer', phase: 'cancel', id: 7 }));
+    adapter.destroy();
+  });
 });
 
 class FakeTarget {
@@ -85,9 +102,9 @@ class FakeCanvas extends FakeTarget {
   }
 }
 
-function pointerEvent(id: number): PointerEvent {
+function pointerEvent(id: number, buttons = 1): PointerEvent {
   return {
-    pointerId: id, clientX: 100, clientY: 50, buttons: 1, pressure: 0.5, isPrimary: true,
+    pointerId: id, clientX: 100, clientY: 50, buttons, pressure: 0.5, isPrimary: true,
     preventDefault: () => undefined,
   } as PointerEvent;
 }

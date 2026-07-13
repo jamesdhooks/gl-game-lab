@@ -2,6 +2,7 @@ import type {
   Gpu2DService,
   GpuFieldSystem2D,
   GpuFieldSystem2DOptions,
+  GpuFieldMesh2D,
   GpuParticleSeed2D,
   GpuParticleSystem2D,
   GpuParticleSystem2DOptions,
@@ -14,6 +15,7 @@ import type {
 } from '@hooksjam/gl-game-lab-engine';
 import { GpuFieldPass } from './GpuFieldPass.js';
 import { GpuFieldState } from './GpuFieldState.js';
+import { GpuFieldMeshPass } from './GpuFieldMeshPass.js';
 import { GpuParticleRenderer } from './GpuParticleRenderer.js';
 import { GpuParticleState } from './GpuParticleState.js';
 import type { GpuParticleRenderDestination } from './GpuParticleRenderer.js';
@@ -26,6 +28,7 @@ import { TrailFeedbackRenderer } from './TrailFeedbackRenderer.js';
 interface FieldBundle {
   readonly state: GpuFieldState;
   readonly passes: ReadonlyMap<string, GpuFieldPass>;
+  readonly meshPasses: ReadonlyMap<string, GpuFieldMeshPass>;
 }
 
 interface ParticleBundle {
@@ -84,6 +87,14 @@ class WebGLGpuFieldSystem implements GpuFieldSystem2D {
     if (!(target instanceof WebGLGpuRenderTarget)) throw new Error('GPU target belongs to another backend');
     const bundle = this.owner.value;
     requirePass(bundle, passId).render(bundle.state, target.native, (gl, uniform) => { applyBindings(gl, uniform, uniforms); });
+    this.countDraw();
+  }
+  renderMesh(passId: string, target: GpuRenderTarget2D, mesh: GpuFieldMesh2D, uniforms: GpuUniforms2D | GpuUniformBinder2D = {}): void {
+    if (!(target instanceof WebGLGpuRenderTarget)) throw new Error('GPU target belongs to another backend');
+    const bundle = this.owner.value;
+    const pass = bundle.meshPasses.get(passId);
+    if (!pass) throw new Error(`Unknown GPU field mesh pass: ${passId}`);
+    pass.render(bundle.state, target.native, mesh, (gl, uniform) => { applyBindings(gl, uniform, uniforms); });
     this.countDraw();
   }
   dispose(): void {
@@ -278,21 +289,28 @@ function requireTrails(bundle: ParticleBundle): TrailFeedbackRenderer {
 function createBundle(gl: WebGL2RenderingContext, options: GpuFieldSystem2DOptions, label: string): FieldBundle {
   const state = new GpuFieldState(gl, options);
   const passes = new Map<string, GpuFieldPass>();
+  const meshPasses = new Map<string, GpuFieldMeshPass>();
   try {
     for (const [id, source] of Object.entries(options.passes)) {
       if (id.trim().length === 0) throw new Error('GPU field pass id cannot be empty');
       passes.set(id, new GpuFieldPass(gl, source, `${label}.${id}`));
     }
+    for (const [id, sources] of Object.entries(options.meshPasses ?? {})) {
+      if (id.trim().length === 0) throw new Error('GPU field mesh pass id cannot be empty');
+      meshPasses.set(id, new GpuFieldMeshPass(gl, sources.vertexSource, sources.fragmentSource, `${label}.${id}`));
+    }
     if (passes.size === 0) throw new Error('GPU field system requires at least one pass');
-    return { state, passes };
+    return { state, passes, meshPasses };
   } catch (error) {
     for (const pass of passes.values()) pass.dispose();
+    for (const pass of meshPasses.values()) pass.dispose();
     state.dispose();
     throw error;
   }
 }
 
 function disposeBundle(bundle: FieldBundle): void {
+  for (const pass of bundle.meshPasses.values()) pass.dispose();
   for (const pass of bundle.passes.values()) pass.dispose();
   bundle.state.dispose();
 }

@@ -66,8 +66,11 @@ export function createSpriteCamera2D(
   if (!Number.isFinite(viewportHeight) || viewportHeight <= 0) throw new Error('Camera viewport height must be positive');
   const zoom = options.zoom ?? 1;
   if (!Number.isFinite(zoom) || zoom <= 0) throw new Error('Camera zoom must be positive');
-  const centerX = options.centerX ?? 0;
-  const centerY = options.centerY ?? 0;
+  // The conventional 2D world uses a top-left origin. Centering the camera on
+  // half the viewport maps world (0, 0) to the top-left pixel while still
+  // allowing games to opt into a world-centered camera explicitly.
+  const centerX = options.centerX ?? viewportWidth * 0.5;
+  const centerY = options.centerY ?? viewportHeight * 0.5;
   if (!Number.isFinite(centerX) || !Number.isFinite(centerY)) throw new Error('Camera center must be finite');
   return Object.freeze({
     centerX,

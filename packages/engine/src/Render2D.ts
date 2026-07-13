@@ -197,6 +197,7 @@ export interface FluidField2D {
   clear(): void;
   dispose(): void;
 }
+export interface FluidFieldCreate2DOptions { readonly simulationWidth?: number; readonly simulationHeight?: number }
 
 export interface Render2DService {
   readonly viewport: { readonly width: number; readonly height: number };
@@ -215,7 +216,7 @@ export interface Render2DService {
   submitTriangleMesh(batch: TriangleMeshBatch2D): void;
   submitMetaballs(batch: MetaballBatch2D): void;
   submitFullscreenEffect(effect: FullscreenShaderEffect2D): void;
-  createFluidField(id: string, width: number, height: number): FluidField2D;
+  createFluidField(id: string, width: number, height: number, options?: FluidFieldCreate2DOptions): FluidField2D;
   submitFluidField(id: string, field: FluidField2D, display: FluidDisplay2DOptions): void;
   setCamera(camera: Camera2DState): void;
   setClearColor(color: ColorRgba): void;

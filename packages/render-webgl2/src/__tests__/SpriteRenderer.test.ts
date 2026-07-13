@@ -5,6 +5,9 @@ const FirstTexture = { id: 'first', texture: {} as WebGLTexture } satisfies Spri
 const SecondTexture = { id: 'second', texture: {} as WebGLTexture } satisfies SpriteTexture;
 
 describe('buildSpriteDrawPlan', () => {
+  it('maps the default 2D camera to a top-left world origin', () => {
+    expect(createSpriteCamera2D(100, 80)).toMatchObject({ centerX: 50, centerY: 40 });
+  });
   it('preserves z order while batching adjacent compatible sprites', () => {
     const camera = createSpriteCamera2D(100, 100);
     const plan = buildSpriteDrawPlan([

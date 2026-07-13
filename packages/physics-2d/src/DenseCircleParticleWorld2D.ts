@@ -89,6 +89,7 @@ export class DenseCircleParticleWorld2D {
   private gridRows = 1;
   private randomState: number;
   private collisionHits = 0;
+  private collisionFilter: ((left: number, right: number) => boolean) | undefined;
   private maxVelocity = 0;
   private awake = false;
   private settledFrames = 0;
@@ -313,6 +314,10 @@ export class DenseCircleParticleWorld2D {
     return this.stats();
   }
 
+  setCollisionFilter(filter: ((left: number, right: number) => boolean) | undefined): void {
+    this.collisionFilter = filter;
+  }
+
   /** Stable diagnostic hash for replay/determinism verification. */
   stateHash(): string {
     let hash = 0x811c9dc5;
@@ -411,6 +416,7 @@ export class DenseCircleParticleWorld2D {
 
   private solvePair(left: number, right: number, relaxation: number): void {
     this.pairTests += 1;
+    if (this.collisionFilter && !this.collisionFilter(left, right)) return;
     const leftOffset = left * 2;
     const rightOffset = right * 2;
     let dx = floatAt(this.positions, rightOffset) - floatAt(this.positions, leftOffset);

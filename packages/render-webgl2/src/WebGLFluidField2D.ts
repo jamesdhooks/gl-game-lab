@@ -3,6 +3,7 @@ import type {
   FluidField2D,
   FluidSplat2D,
   FluidStep2DOptions,
+  FluidFieldCreate2DOptions,
 } from '@hooksjam/gl-game-lab-engine';
 import type { GpuParticleRenderDestination } from './GpuParticleRenderer.js';
 import type { RestorableResourceOwner } from './RestorableResourceOwner.js';
@@ -23,21 +24,22 @@ export class WebGLFluidField2D implements FluidField2D {
     id: string,
     width: number,
     height: number,
+    options: FluidFieldCreate2DOptions,
     private readonly onDispose: () => void,
     private readonly recordWork: (drawCalls: number, uploadBytes?: number) => void,
   ) {
     this.owner = device.ownContextResource({
       id,
       priority: 50,
-      estimatedBytes: width * height * 8 * 8,
-      create: () => new StableFluidField2D(device.gl, { width, height }),
+      estimatedBytes: width * height * 8 * 4 + (options.simulationWidth ?? width) * (options.simulationHeight ?? height) * 8 * 4,
+      create: () => new StableFluidField2D(device.gl, { width, height, ...options }),
       dispose: (field) => { field.dispose(); },
       restored: (field) => {
         if (this.dyeRgba) field.uploadDyeRgba(this.dyeRgba);
         else if (this.lastSeed) field.seed(this.lastSeed.kind, this.lastSeed.seed);
       },
     });
-    this.velocityTexture = new WebGLGpuTexture2D(width, height, () => this.owner.value.velocity.targets.read.texture);
+    this.velocityTexture = new WebGLGpuTexture2D(options.simulationWidth ?? width, options.simulationHeight ?? height, () => this.owner.value.velocity.targets.read.texture);
     this.dyeTexture = new WebGLGpuTexture2D(width, height, () => this.owner.value.dye.targets.read.texture);
   }
 

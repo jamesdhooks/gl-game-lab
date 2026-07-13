@@ -37,6 +37,14 @@ export interface GpuFieldSystem2DOptions {
   readonly precision?: 'half-float' | 'float';
   readonly filter?: 'nearest' | 'linear';
   readonly passes: Readonly<Record<string, string>>;
+  readonly meshPasses?: Readonly<Record<string, { readonly vertexSource: string; readonly fragmentSource: string }>>;
+}
+
+export interface GpuFieldMesh2D {
+  readonly vertexCount: number;
+  readonly positions: Float32Array;
+  readonly cells: Float32Array;
+  readonly facets: Float32Array;
 }
 
 export interface GpuFieldSystem2D {
@@ -47,6 +55,7 @@ export interface GpuFieldSystem2D {
   clear(): void;
   step(passId: string, uniforms?: GpuUniforms2D | GpuUniformBinder2D): void;
   render(passId: string, target: GpuRenderTarget2D, uniforms?: GpuUniforms2D | GpuUniformBinder2D): void;
+  renderMesh(passId: string, target: GpuRenderTarget2D, mesh: GpuFieldMesh2D, uniforms?: GpuUniforms2D | GpuUniformBinder2D): void;
   dispose(): void;
 }
 
