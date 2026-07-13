@@ -1,18 +1,125 @@
 export const ORBITAL_STEP_SHADER = `#version 300 es
-precision highp float;in vec2 vUv;layout(location=0)out vec4 outPosition;layout(location=1)out vec4 outVelocity;
-uniform sampler2D uPositionState;uniform sampler2D uVelocityState;uniform ivec2 uStateSize;uniform int uCapacity;uniform float uDt;uniform float uTime;uniform float uAspect;uniform float uGravity;uniform float uDamping;uniform float uMaxSpeed;uniform float uPlanetRadius;uniform float uPlanetBounce;
-uniform int uBodyCount;uniform float uBodyStrength;uniform float uBodyRadius;uniform float uBodySpeed;
-uniform float uSpawnActive;uniform int uSpawnStart;uniform int uSpawnCount;uniform vec2 uSpawnCenter;uniform vec2 uSpawnVelocity;uniform float uSpawnRadius;uniform float uSpawnJitter;uniform float uSpawnAsteroid;uniform float uSpawnSeed;
-uniform float uPointerActive;uniform int uPointerMode;uniform vec2 uPointer;uniform vec2 uPointerVelocity;uniform float uInfluenceRadius;uniform float uInfluenceStrength;
-float hash(float n){return fract(sin(n)*43758.5453);}vec2 dir(float a){return vec2(cos(a),sin(a));}
-void main(){ivec2 cell=ivec2(gl_FragCoord.xy);int id=cell.y*uStateSize.x+cell.x;vec4 position=texelFetch(uPositionState,cell,0),velocity=texelFetch(uVelocityState,cell,0);if(id>=uCapacity){outPosition=position;outVelocity=velocity;return;}int relative=(id-uSpawnStart+uCapacity)%uCapacity;
-if(uSpawnActive>.5&&relative<uSpawnCount){float seed=uSpawnSeed+float(relative)*1.618,angle=hash(seed)*6.2831853,radius=sqrt(hash(seed+4.0))*uSpawnRadius;position.xy=uSpawnCenter+dir(angle)*radius;position.z=uSpawnAsteroid;position.w=seed;velocity.xy=uSpawnVelocity+dir(hash(seed+8.0)*6.2831853)*uSpawnJitter;velocity.z=1.0;velocity.w=seed*17.13;}
-if(velocity.z>.5){vec2 p=position.xy;float r=max(.015,length(p));vec2 acceleration=-p/(r*r*r)*uGravity*.00042;
-for(int body=0;body<8;body++){if(body>=uBodyCount)break;float orbit=mix(uPlanetRadius*2.2,uBodyRadius,float(body+1)/float(max(1,uBodyCount)));float phase=uTime*uBodySpeed*(.35+float(body)*.11)+float(body)*2.399;vec2 bp=dir(phase)*orbit;vec2 delta=bp-p;float d=max(.025,length(delta));acceleration+=delta/(d*d*d)*uBodyStrength*.00022;}
-if(uPointerActive>.5){vec2 delta=uPointer-p;float distance=length(delta);if(distance<uInfluenceRadius){float falloff=1.0-distance/max(.001,uInfluenceRadius);if(uPointerMode==1)acceleration+=(uPointerVelocity*.018+normalize(delta+vec2(.0001))*uInfluenceStrength*.16)*falloff;else if(uPointerMode==2)acceleration+=normalize(delta+vec2(.0001))*uInfluenceStrength*1.8*falloff;}}
-velocity.xy+=acceleration*uDt;velocity.xy*=exp(-uDamping*uDt);float speed=length(velocity.xy);if(speed>uMaxSpeed)velocity.xy*=uMaxSpeed/speed;position.xy+=velocity.xy*uDt;
-float nextR=length(position.xy);if(nextR<uPlanetRadius){vec2 normal=normalize(position.xy+vec2(.0001));position.xy=normal*(uPlanetRadius+.003);velocity.xy=reflect(velocity.xy,normal)*uPlanetBounce;}if(abs(position.x)>uAspect*1.35||abs(position.y)>1.35){position.xy*=-.72;}}
-outPosition=position;outVelocity=velocity;}`;
+precision highp float;
+in vec2 vUv;
+layout(location=0)out vec4 outPosition;
+layout(location=1)out vec4 outVelocity;
+uniform sampler2D uPositionState;
+uniform sampler2D uVelocityState;
+uniform ivec2 uStateSize;
+uniform int uCapacity;
+uniform float uDt;
+uniform float uTime;
+uniform float uAspect;
+uniform float uGravity;
+uniform float uDamping;
+uniform float uMaxSpeed;
+uniform float uPlanetRadius;
+uniform float uPlanetBounce;
+uniform int uBodyCount;
+uniform float uBodyStrength;
+uniform float uBodyRadius;
+uniform float uBodySpeed;
+uniform float uSpawnActive;
+uniform int uSpawnStart;
+uniform int uSpawnCount;
+uniform vec2 uSpawnCenter;
+uniform vec2 uSpawnVelocity;
+uniform float uSpawnVelocityScale;
+uniform float uSpawnRadius;
+uniform float uSpawnJitter;
+uniform float uSpawnAsteroid;
+uniform float uSpawnSeed;
+uniform float uPointerActive;
+uniform int uPointerMode;
+uniform vec2 uPointer;
+uniform vec2 uPointerVelocity;
+uniform float uInfluenceRadius;
+uniform float uInfluenceStrength;
+
+float hash(float n){return fract(sin(n)*43758.5453);}
+vec2 dir(float a){return vec2(cos(a),sin(a));}
+vec2 toDisk(vec2 p){return vec2(p.x/max(.001,uAspect),p.y);}
+vec2 fromDisk(vec2 p){return vec2(p.x*uAspect,p.y);}
+float diskLength(vec2 p){return length(toDisk(p));}
+vec2 diskNormalize(vec2 p){vec2 d=toDisk(p);return fromDisk(d/max(.0001,length(d)));}
+
+void main(){
+  ivec2 cell=ivec2(gl_FragCoord.xy);
+  int id=cell.y*uStateSize.x+cell.x;
+  vec4 position=texelFetch(uPositionState,cell,0);
+  vec4 velocity=texelFetch(uVelocityState,cell,0);
+  if(id>=uCapacity){outPosition=position;outVelocity=velocity;return;}
+  int relative=(id-uSpawnStart+uCapacity)%uCapacity;
+  if(uSpawnActive>.5&&relative<uSpawnCount){
+    float seed=uSpawnSeed+float(relative)*1.618;
+    float angle=hash(seed)*6.2831853;
+    float radius=sqrt(hash(seed+4.0))*mix(uSpawnRadius,.018,uSpawnAsteroid);
+    vec2 burst=fromDisk(dir(angle)*radius);
+    position.xy=uSpawnCenter+burst;
+    float spawnRadius=max(.035,diskLength(position.xy));
+    vec2 radial=diskNormalize(position.xy);
+    vec2 orbital=vec2(-radial.y*uAspect,radial.x/max(.001,uAspect));
+    if(length(uSpawnVelocity)>.001&&dot(uSpawnVelocity,orbital)<0.0)orbital*=-1.0;
+    float orbitalSpeed=sqrt((uGravity/(spawnRadius*spawnRadius+.075))*spawnRadius);
+    if(uSpawnAsteroid>.5){
+      velocity.xy=uSpawnVelocity+normalize(burst+vec2(.0001))*(.006+hash(seed+79.0)*.018);
+    }else{
+      vec2 inherited=uSpawnVelocity;
+      float inheritedSpeed=length(inherited);
+      if(inheritedSpeed>uSpawnVelocityScale&&inheritedSpeed>.0001)inherited*=uSpawnVelocityScale/inheritedSpeed;
+      float spread=.05+hash(seed+79.0)*.16;
+      velocity.xy=orbital*orbitalSpeed
+        +inherited*.04
+        +normalize(burst+vec2(.0001))*spread*max(.002,min(.045,uSpawnVelocityScale*.055))
+        +vec2(cos(seed*371.17+uTime*.13),sin(seed*619.73+uTime*.17))*uSpawnJitter;
+      float spawnSpeed=length(velocity.xy);
+      float stableLimit=orbitalSpeed*(1.0+max(0.0,uSpawnVelocityScale)*.22);
+      float spawnLimit=max(orbitalSpeed*1.02,min(max(uMaxSpeed,orbitalSpeed*1.12),stableLimit));
+      if(spawnSpeed>spawnLimit&&spawnSpeed>.0001)velocity.xy*=spawnLimit/spawnSpeed;
+    }
+    position.z=uSpawnAsteroid;
+    position.w=seed;
+    velocity.z=1.0;
+    velocity.w=seed*17.13;
+  }
+  if(velocity.z>.5){
+    vec2 p=position.xy;
+    float r=max(.025,diskLength(p));
+    vec2 acceleration=-diskNormalize(p)*(uGravity/(r*r+.075));
+    for(int body=0;body<8;body++){
+      if(body>=uBodyCount)break;
+      float orbit=mix(uPlanetRadius*2.2,uBodyRadius,float(body+1)/float(max(1,uBodyCount)));
+      float phase=uTime*uBodySpeed*(.35+float(body)*.11)+float(body)*2.399;
+      vec2 bp=fromDisk(dir(phase)*orbit);
+      vec2 delta=bp-p;
+      float d=max(.035,diskLength(delta));
+      acceleration+=diskNormalize(delta)*(uBodyStrength/(d*d+.06));
+    }
+    if(uPointerActive>.5){
+      vec2 delta=uPointer-p;
+      float distance=diskLength(delta);
+      if(distance<uInfluenceRadius){
+        float falloff=1.0-distance/max(.001,uInfluenceRadius);
+        if(uPointerMode==1)acceleration+=(uPointerVelocity*.018+diskNormalize(delta)*uInfluenceStrength*.16)*falloff;
+        else if(uPointerMode==2)acceleration+=diskNormalize(delta)*uInfluenceStrength*1.8*falloff;
+      }
+    }
+    velocity.xy+=acceleration*uDt;
+    velocity.xy*=exp(-uDamping*uDt);
+    float speed=length(velocity.xy);
+    if(speed>uMaxSpeed)velocity.xy*=uMaxSpeed/speed;
+    position.xy+=velocity.xy*uDt;
+    float nextR=diskLength(position.xy);
+    if(nextR<uPlanetRadius){
+      vec2 radial=diskNormalize(position.xy+vec2(.0001));
+      position.xy=radial*(uPlanetRadius+.003);
+      velocity.xy=reflect(velocity.xy,normalize(radial))*uPlanetBounce;
+    }
+    if(nextR>1.35)position.xy*=-.72;
+  }
+  outPosition=position;
+  outVelocity=velocity;
+}`;
 export const ORBITAL_POINT_VERTEX_SHADER = `#version 300 es
 precision highp float;uniform sampler2D uPositionState;uniform sampler2D uVelocityState;uniform ivec2 uStateSize;uniform int uParticleCapacity;uniform float uAspect;uniform float uPointSize;uniform float uStreakStrength;out float vSpeed;flat out float vSeed;flat out float vAsteroid;
 void main(){int id=gl_VertexID;ivec2 cell=ivec2(id%uStateSize.x,id/uStateSize.x);vec4 p=texelFetch(uPositionState,cell,0),v=texelFetch(uVelocityState,cell,0);if(id>=uParticleCapacity||v.z<.5){gl_Position=vec4(2,2,0,1);gl_PointSize=0.0;vSpeed=0.0;vSeed=0.0;vAsteroid=0.0;return;}gl_Position=vec4(p.x/uAspect,p.y,0,1);float speed=length(v.xy);gl_PointSize=max(1.0,uPointSize*(p.z>.5?4.5:1.0)*(1.0+speed*uStreakStrength*.32));vSpeed=speed;vSeed=v.w;vAsteroid=p.z;}`;

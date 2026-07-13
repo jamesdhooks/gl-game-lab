@@ -3,6 +3,7 @@ import { EngineGpu2D, EngineInput, EngineRender2D, EngineSchedule, type Experien
 import { registerSimulationRuntime } from '../SimulationPluginLifecycle.js';
 import { createOrbitalShrapnelConfig, ORBITAL_SHRAPNEL_DEFAULTS, orbitalBoolean, orbitalNumber, orbitalString, type OrbitalShrapnelConfig } from './config.js';
 import { ORBITAL_OVERLAY_SHADER, ORBITAL_POINT_FRAGMENT_SHADER, ORBITAL_POINT_VERTEX_SHADER, ORBITAL_REALISTIC_OVERLAY_SHADER, ORBITAL_STEP_SHADER } from './shaders.js';
+import { asteroidLaunchVelocity, orbitalGravityWorld, stableOrbitalVelocity } from './orbitalMotion.js';
 import { orbitalColor3, ORBITAL_SHRAPNEL_STYLE_MANIFEST } from './styles.js';
 export type OrbitalShrapnelMode = 'add' | 'interact' | 'well' | 'asteroid';
 interface Spawn {
@@ -37,6 +38,7 @@ export function createOrbitalShrapnelPlugin(initial: OrbitalShrapnelConfig = ORB
     x: number;
     y: number;
   } | undefined;
+  let activePointerId: number | undefined;
   let addEmitter: { x: number; y: number; targetX: number; targetY: number; vx: number; vy: number; active: boolean } | undefined;
   const commands: Spawn[] = [];
   const field: PointerField = {
@@ -101,6 +103,8 @@ export function createOrbitalShrapnelPlugin(initial: OrbitalShrapnelConfig = ORB
           field.active = false;
           asteroidStart = undefined;
           addEmitter = undefined;
+          activePointerId = undefined;
+          previousPointers.clear();
         },
         setStyle: value => {
           const next = validStyle(value);
@@ -124,6 +128,7 @@ export function createOrbitalShrapnelPlugin(initial: OrbitalShrapnelConfig = ORB
         commands.length = 0;
         previousPointers.clear();
         addEmitter = undefined;
+        activePointerId = undefined;
       });
       context.get(EngineSchedule).addSystem({
         id: 'gl-game-lab.simulations.orbital-shrapnel.update',
@@ -136,8 +141,11 @@ export function createOrbitalShrapnelPlugin(initial: OrbitalShrapnelConfig = ORB
           for (const event of input.snapshot.events)
             if (event.kind === 'pointer')
               routePointer(event, dt);
-          if ((mode === 'interact' || mode === 'well') && input.snapshot.pointers[0]) {
-            const pointer = input.snapshot.pointers[0], point = toWorld(pointer.x, pointer.y);
+          const heldPointer = activePointerId === undefined
+            ? undefined
+            : input.snapshot.pointers.find(pointer => pointer.id === activePointerId && pointer.buttons !== 0);
+          if ((mode === 'interact' || mode === 'well') && heldPointer) {
+            const pointer = heldPointer, point = toWorld(pointer.x, pointer.y);
             const previous = previousPointers.get(pointer.id);
             field.active = true;
             field.x = point.x;
@@ -146,8 +154,8 @@ export function createOrbitalShrapnelPlugin(initial: OrbitalShrapnelConfig = ORB
             field.vy = previous ? (point.y - previous.y) / Math.max(dt, 0.001) : 0;
             previousPointers.set(pointer.id, point);
           }
-          if (mode === 'add' && input.snapshot.pointers[0]) {
-            const pointer = input.snapshot.pointers[0], point = toWorld(pointer.x, pointer.y);
+          if (mode === 'add' && heldPointer) {
+            const pointer = heldPointer, point = toWorld(pointer.x, pointer.y);
             if (!addEmitter) addEmitter = { x: point.x, y: point.y, targetX: point.x, targetY: point.y, vx: 0, vy: 0, active: true };
             addEmitter.targetX = point.x; addEmitter.targetY = point.y; addEmitter.active = true;
             const previousX = addEmitter.x, previousY = addEmitter.y, follow = 1 - Math.exp(-dt * 16);
@@ -158,7 +166,7 @@ export function createOrbitalShrapnelPlugin(initial: OrbitalShrapnelConfig = ORB
             queueDebris(addEmitter.x, addEmitter.y, addEmitter.vx, addEmitter.vy, Math.min(renderer.viewport.width, renderer.viewport.height));
           }
           else if (addEmitter) addEmitter.active = false;
-          if ((launch.profile === 'preview' || launch.profile === 'demo') && input.snapshot.pointers.length === 0 && Math.floor((elapsed - dt) * 2) !== Math.floor(elapsed * 2)) {
+          if ((launch.profile === 'preview' || launch.profile === 'demo') && !heldPointer && Math.floor((elapsed - dt) * 2) !== Math.floor(elapsed * 2)) {
             const angle = elapsed * 0.9, aspect = aspectRatio();
             queueDebris(Math.cos(angle) * aspect * 0.62, Math.sin(angle) * 0.58, -Math.sin(angle) * 0.45, Math.cos(angle) * 0.45, Math.min(renderer.viewport.width, renderer.viewport.height));
           }
@@ -280,8 +288,10 @@ export function createOrbitalShrapnelPlugin(initial: OrbitalShrapnelConfig = ORB
         }
       });
       function routePointer(event: PointerInputEvent, dt: number): void {
-        const point = toWorld(event.x, event.y), previous = previousPointers.get(event.id);
+        const point = toWorld(event.x, event.y);
         if (event.phase === 'down') {
+          if (activePointerId !== undefined && activePointerId !== event.id) return;
+          activePointerId = event.id;
           previousPointers.set(event.id, point);
           if (mode === 'add')
             addEmitter = { x: point.x, y: point.y, targetX: point.x, targetY: point.y, vx: 0, vy: 0, active: true };
@@ -289,16 +299,36 @@ export function createOrbitalShrapnelPlugin(initial: OrbitalShrapnelConfig = ORB
             asteroidStart = point;
         }
         else if (event.phase === 'move') {
+          if (event.id !== activePointerId) return;
+          if (event.buttons === 0) {
+            releasePointer(event.id, point);
+            return;
+          }
           previousPointers.set(event.id, point);
         }
         else if (event.phase === 'up' || event.phase === 'cancel') {
+          if (event.id !== activePointerId) return;
+          releasePointer(event.id, point);
+        }
+        void dt;
+      }
+      function releasePointer(pointerId: number, point: { x: number; y: number }): void {
           if (mode === 'asteroid' && asteroidStart) {
             const dx = point.x - asteroidStart.x, dy = point.y - asteroidStart.y;
+            const velocity = asteroidLaunchVelocity(
+              point.x,
+              point.y,
+              dx,
+              dy,
+              orbitalGravityWorld(orbitalNumber(config, 'gravity')),
+              planetRadiusWorld(),
+              orbitalNumber(config, 'rawMaxSpeed'),
+            );
             commands.push({
-              x: asteroidStart.x,
-              y: asteroidStart.y,
-              vx: dx * Math.min(orbitalNumber(config, 'rawMaxSpeed') * 0.96 / Math.max(0.001, Math.hypot(dx, dy)), 3.2),
-              vy: dy * Math.min(orbitalNumber(config, 'rawMaxSpeed') * 0.96 / Math.max(0.001, Math.hypot(dx, dy)), 3.2),
+              x: point.x,
+              y: point.y,
+              vx: velocity.vx,
+              vy: velocity.vy,
               count: 1,
               radius: 0,
               jitter: 0,
@@ -308,10 +338,9 @@ export function createOrbitalShrapnelPlugin(initial: OrbitalShrapnelConfig = ORB
           }
           asteroidStart = undefined;
           if (mode === 'add' && addEmitter) addEmitter.active = false;
-          previousPointers.delete(event.id);
-        }
-        void previous;
-        void dt;
+          field.active = false;
+          previousPointers.delete(pointerId);
+          activePointerId = undefined;
       }
       function runStep(dt: number, spawn?: Spawn): void {
         const count = spawn ? Math.min(particles.capacity, spawn.count) : 0, start = cursor;
@@ -322,13 +351,13 @@ export function createOrbitalShrapnelPlugin(initial: OrbitalShrapnelConfig = ORB
           g.uniform1f(u('uDt'), dt);
           g.uniform1f(u('uTime'), elapsed);
           g.uniform1f(u('uAspect'), aspectRatio());
-          g.uniform1f(u('uGravity'), orbitalNumber(config, 'gravity'));
+          g.uniform1f(u('uGravity'), orbitalGravityWorld(orbitalNumber(config, 'gravity')));
           g.uniform1f(u('uDamping'), orbitalNumber(config, 'drag'));
           g.uniform1f(u('uMaxSpeed'), orbitalNumber(config, 'rawMaxSpeed'));
           g.uniform1f(u('uPlanetRadius'), planetRadiusWorld());
           g.uniform1f(u('uPlanetBounce'), 0.62);
           g.uniform1i(u('uBodyCount'), Math.round(orbitalNumber(config, 'secondaryBodyCount')));
-          g.uniform1f(u('uBodyStrength'), orbitalNumber(config, 'secondaryBodyStrength'));
+          g.uniform1f(u('uBodyStrength'), orbitalNumber(config, 'secondaryBodyStrength') * 0.18);
           g.uniform1f(u('uBodyRadius'), orbitalNumber(config, 'secondaryBodyRadius'));
           g.uniform1f(u('uBodySpeed'), orbitalNumber(config, 'secondaryBodySpeed'));
           g.uniform1f(u('uSpawnActive'), spawn ? 1 : 0);
@@ -336,6 +365,7 @@ export function createOrbitalShrapnelPlugin(initial: OrbitalShrapnelConfig = ORB
           g.uniform1i(u('uSpawnCount'), count);
           g.uniform2f(u('uSpawnCenter'), spawn?.x ?? 0, spawn?.y ?? 0);
           g.uniform2f(u('uSpawnVelocity'), spawn?.vx ?? 0, spawn?.vy ?? 0);
+          g.uniform1f(u('uSpawnVelocityScale'), orbitalNumber(config, 'addDebrisVelocity'));
           g.uniform1f(u('uSpawnRadius'), spawn?.radius ?? 0);
           g.uniform1f(u('uSpawnJitter'), spawn?.jitter ?? 0);
           g.uniform1f(u('uSpawnAsteroid'), spawn?.asteroid ?? 0);
@@ -366,7 +396,18 @@ export function createOrbitalShrapnelPlugin(initial: OrbitalShrapnelConfig = ORB
       function seedRing(target: GpuParticleSystem2D): void {
         const positions = new Float32Array(target.width * target.height * 4), velocities = new Float32Array(positions.length), aspect = aspectRatio();
         for (let i = 0; i < target.capacity; i++) {
-          const angle = nextRandom() * Math.PI * 2, radius = 0.18 + Math.sqrt(nextRandom()) * 0.74, x = Math.cos(angle) * radius * aspect, y = Math.sin(angle) * radius, speed = Math.min(orbitalNumber(config, 'rawMaxSpeed') * 0.82, Math.sqrt(orbitalNumber(config, 'gravity') * 0.00042 / Math.max(0.05, radius))), o = i * 4;
+          const angle = i * 2.39996323 + nextRandom() * 0.08;
+          const radius = 0.18 + Math.sqrt(nextRandom()) * 0.78;
+          const wobble = 0.92 + nextRandom() * 0.16;
+          const x = Math.cos(angle) * radius * aspect * wobble;
+          const y = Math.sin(angle) * radius;
+          const velocity = stableOrbitalVelocity(
+            Math.cos(angle) * radius * aspect,
+            y,
+            aspect,
+            orbitalGravityWorld(orbitalNumber(config, 'gravity')),
+          );
+          const o = i * 4;
           positions.set([
             x,
             y,
@@ -374,8 +415,8 @@ export function createOrbitalShrapnelPlugin(initial: OrbitalShrapnelConfig = ORB
             nextRandom() * 10000
           ], o);
           velocities.set([
-            -Math.sin(angle) * speed,
-            Math.cos(angle) * speed,
+            velocity.vx,
+            velocity.vy,
             1,
             nextRandom() * 10000
           ], o);
@@ -414,6 +455,10 @@ export function createOrbitalShrapnelPlugin(initial: OrbitalShrapnelConfig = ORB
       function resetCpuState(): void {
         commands.length = 0;
         previousPointers.clear();
+        activePointerId = undefined;
+        asteroidStart = undefined;
+        addEmitter = undefined;
+        field.active = false;
         cursor = 0;
         elapsed = 0;
         pendingDt = 0;
