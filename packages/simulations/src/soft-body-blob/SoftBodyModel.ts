@@ -125,6 +125,64 @@ export class SoftBodyModel {
     return { count, segments, styles };
   }
 
+  packBasicVisualLayers(fillDensity: number) {
+    const nodeCount = this.bodies.reduce((sum, body) => sum + body.indices.length + body.interiorIndices.length, 0);
+    let fixtureCount = 0;
+    for (let index = 0; index < this.world.count; index++) if ((this.bodyOf[index] ?? -1) < 0) fixtureCount++;
+    const nodes = pointBuffers(nodeCount), fixtures = pointBuffers(fixtureCount);
+    let nodeCursor = 0, fixtureCursor = 0;
+    const write = (target: ReturnType<typeof pointBuffers>, cursor: number, index: number, seed: number) => {
+      target.positions[cursor * 2] = value(this.world.positions, index * 2);
+      target.positions[cursor * 2 + 1] = value(this.world.positions, index * 2 + 1);
+      target.radii[cursor] = this.world.radii[index] ?? 1;
+      target.seeds[cursor] = seed;
+    };
+    for (const body of this.bodies) {
+      for (const index of body.indices) { write(nodes, nodeCursor, index, Math.max(0, body.seed - 1)); nodeCursor++; }
+      for (const index of body.interiorIndices) { write(nodes, nodeCursor, index, Math.max(0, body.seed - 1)); nodeCursor++; }
+    }
+    for (let index = 0; index < this.world.count; index++) if ((this.bodyOf[index] ?? -1) < 0) {
+      write(fixtures, fixtureCursor, index, 0);
+      fixtureCursor++;
+    }
+    const density = Math.max(0, Math.min(3, fillDensity));
+    const fillerPlans = this.bodies.map(body => {
+      const center = this.center(body), first = body.indices[0] as number, radius = this.world.radii[first] ?? 1;
+      if (density <= 0.001) return { center, radius, ringCount: 0, sampleCount: 0, count: 0 };
+      let extent = 0;
+      for (const index of body.indices) extent = Math.max(extent, Math.hypot(value(this.world.positions, index * 2) - center.x, value(this.world.positions, index * 2 + 1) - center.y));
+      const sizeScale = Math.max(1, extent / Math.max(12, Math.max(1, radius) * 3.4));
+      const ringCount = Math.max(1, Math.round((1 + density * 1.65) * Math.sqrt(sizeScale)));
+      const sampleCount = Math.max(7, Math.round((8 + density * 9) * Math.sqrt(sizeScale)));
+      return { center, radius, ringCount, sampleCount, count: 1 + sampleCount * (ringCount + 1) };
+    });
+    const fillers = pointBuffers(fillerPlans.reduce((sum, plan) => sum + plan.count, 0));
+    let fillerCursor = 0;
+    for (const [bodyIndex, body] of this.bodies.entries()) {
+      const plan = fillerPlans[bodyIndex];
+      if (!plan || plan.count === 0) continue;
+      const { center, radius, ringCount, sampleCount } = plan;
+      fillers.positions[fillerCursor * 2] = center.x; fillers.positions[fillerCursor * 2 + 1] = center.y; fillers.radii[fillerCursor] = radius; fillerCursor++;
+      for (let sample = 0; sample < sampleCount; sample++) {
+        const scaled = ((sample + (bodyIndex % 2) * 0.5) / sampleCount) * body.indices.length, local = Math.floor(scaled) % body.indices.length, nextLocal = (local + 1) % body.indices.length, t = scaled - Math.floor(scaled);
+        const a = body.indices[local] as number, b = body.indices[nextLocal] as number;
+        const edgeX = value(this.world.positions, a * 2) + (value(this.world.positions, b * 2) - value(this.world.positions, a * 2)) * t, edgeY = value(this.world.positions, a * 2 + 1) + (value(this.world.positions, b * 2 + 1) - value(this.world.positions, a * 2 + 1)) * t;
+        for (let ring = 0; ring <= ringCount; ring++) {
+          const amount = ring / Math.max(1, ringCount + 1), ease = amount * amount;
+          fillers.positions[fillerCursor * 2] = center.x + (edgeX - center.x) * ease;
+          fillers.positions[fillerCursor * 2 + 1] = center.y + (edgeY - center.y) * ease;
+          fillers.radii[fillerCursor] = radius;
+          fillerCursor++;
+        }
+      }
+    }
+    return {
+      nodes: { count: nodeCursor, ...nodes },
+      fixtures: { count: fixtureCursor, ...fixtures },
+      fillers: { count: fillerCursor, ...fillers }
+    };
+  }
+
   packVisualPoints(fillDensity: number) {
     const ringCounts = this.bodies.map(body => Math.max(0, Math.round((2 + fillDensity * 4.75) * Math.sqrt(Math.max(1, body.restRadius / Math.max(12, (this.world.radii[body.indices[0] as number] ?? 3) * 3.2))))));
     const sampleCounts = this.bodies.map((body, index) => Math.max(0, Math.round((18 + fillDensity * 34) * Math.sqrt(Math.max(1, body.restRadius / Math.max(12, (this.world.radii[body.indices[0] as number] ?? 3) * 3.2)))) * (ringCounts[index] ? 1 : 0)));
@@ -185,6 +243,10 @@ export class SoftBodyModel {
     dx = x - value(this.world.positions, o); dy = y - value(this.world.positions, o + 1); this.world.positions[o] = x; this.world.positions[o + 1] = y; this.world.particles.previousPositions[o] = value(this.world.particles.previousPositions, o) + dx; this.world.particles.previousPositions[o + 1] = value(this.world.particles.previousPositions, o + 1) + dy;
   }
   private center(body: SoftBody) { const all = [...body.indices, ...body.interiorIndices]; let x = 0, y = 0; for (const index of all) { x += value(this.world.positions, index * 2); y += value(this.world.positions, index * 2 + 1); } return { x: x / Math.max(1, all.length), y: y / Math.max(1, all.length) }; }
+}
+
+function pointBuffers(count: number) {
+  return { positions: new Float32Array(count * 2), radii: new Float32Array(count), seeds: new Float32Array(count) };
 }
 
 interface Point { readonly x: number; readonly y: number }

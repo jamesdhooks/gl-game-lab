@@ -68,6 +68,7 @@ export interface ParticleBatch2D {
   readonly palette: readonly ColorRgba[];
   readonly blend?: BlendMode2D;
   readonly opacity?: number;
+  readonly paletteMode?: 'hashed' | 'indexed';
 }
 
 export interface Bloom2DOptions {
@@ -168,6 +169,12 @@ export interface FluidSplat2D {
   readonly velocityY: number;
   readonly dye: readonly [number, number, number];
   readonly amount: number;
+  readonly previousX?: number;
+  readonly previousY?: number;
+  readonly taper?: number;
+  readonly aspectRatio?: number;
+  readonly strength?: number;
+  readonly velocityMode?: 'add' | 'target';
 }
 
 export interface FluidStep2DOptions {
@@ -178,6 +185,7 @@ export interface FluidStep2DOptions {
   readonly dyeDissipation: number;
   readonly pressureIterations: number;
   readonly ambient?: boolean;
+  readonly velocitySplatsBeforeProjection?: boolean;
 }
 
 export interface FluidDisplay2DOptions {

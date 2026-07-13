@@ -13,7 +13,13 @@ describe('StableFluidField2D contracts', () => {
         0,
         0.5
       ],
-      amount: 1
+      amount: 1,
+      previousX: 0.42,
+      previousY: 0.48,
+      taper: 0.6,
+      aspectRatio: 16 / 9,
+      strength: 1.55,
+      velocityMode: 'target'
     };
     expect(splat.dye).toHaveLength(3);
   });
@@ -24,7 +30,8 @@ describe('StableFluidField2D contracts', () => {
       curl: 30,
       velocityDissipation: 0.2,
       dyeDissipation: 1,
-      pressureIterations: 24
+      pressureIterations: 24,
+      velocitySplatsBeforeProjection: true
     };
     expect(options.pressureIterations).toBe(24);
   });

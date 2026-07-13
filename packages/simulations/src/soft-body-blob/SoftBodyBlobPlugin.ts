@@ -159,10 +159,9 @@ export function createSoftBodyBlobPlugin(initial: SoftBodyBlobConfig = SOFT_BODY
               palette: palette3, opacity: 0.72, blend: 'alpha'
             });
           }
-          const visual = model.packVisualPoints(renderStyle === 'enhanced' ? 0 : blobNumber(config, 'liquidFillDensity')), scale = renderStyle === 'ultra' ? 0.78 + blobNumber(config, 'liquidParticleRadius') * 0.46 : 1, radii = new Float32Array(visual.count);
-          for (let i = 0; i < visual.count; i++)
-            radii[i] = (visual.radii[i] ?? 1) * scale;
           if (renderStyle === 'ultra') {
+            const visual = model.packVisualPoints(blobNumber(config, 'liquidFillDensity')), scale = 0.78 + blobNumber(config, 'liquidParticleRadius') * 0.46, radii = new Float32Array(visual.count);
+            for (let i = 0; i < visual.count; i++) radii[i] = (visual.radii[i] ?? 1) * scale;
             renderer.submitMetaballs({
               id: 'soft-body-blob-liquid-surface', count: visual.count, positions: visual.positions,
               radii, temperatures: visual.seeds, worldWidth: width, worldHeight: height,
@@ -177,16 +176,12 @@ export function createSoftBodyBlobPlugin(initial: SoftBodyBlobConfig = SOFT_BODY
               time: elapsed, renderStyle: 'ultra'
             });
           }
-          if (renderStyle === 'basic') renderer.submitParticles({
-            id: 'soft-body-blob-points',
-            count: visual.count,
-            positions: visual.positions,
-            radii,
-            colorSeeds: visual.seeds,
-            palette: palette4,
-            blend: 'alpha',
-            opacity: 1
-          });
+          if (renderStyle === 'basic') {
+            const layers = model.packBasicVisualLayers(blobNumber(config, 'liquidFillDensity'));
+            if (layers.nodes.count > 0) renderer.submitParticles({ id: 'soft-body-blob-nodes', count: layers.nodes.count, positions: layers.nodes.positions, radii: layers.nodes.radii, colorSeeds: layers.nodes.seeds, palette: palette4, paletteMode: 'indexed', blend: 'alpha', opacity: 0.76 });
+            if (layers.fixtures.count > 0) renderer.submitParticles({ id: 'soft-body-blob-fixtures', count: layers.fixtures.count, positions: layers.fixtures.positions, radii: layers.fixtures.radii, colorSeeds: layers.fixtures.seeds, palette: [[0.58, 0.58, 0.58, 1]], paletteMode: 'indexed', blend: 'alpha', opacity: 0.76 });
+            if (layers.fillers.count > 0) renderer.submitParticles({ id: 'soft-body-blob-fillers', count: layers.fillers.count, positions: layers.fillers.positions, radii: layers.fillers.radii, colorSeeds: layers.fillers.seeds, palette: [[1, 1, 1, 1]], paletteMode: 'indexed', blend: 'alpha', opacity: 0.18 });
+          }
           const preview = packDrawPathPreview(paths.values(), mode === 'build' ? 'endpoints' : 'closed');
           if (preview.count > 0) renderer.submitSegments({
             id: 'soft-body-blob.draw-preview', ...preview, worldWidth: width, worldHeight: height,

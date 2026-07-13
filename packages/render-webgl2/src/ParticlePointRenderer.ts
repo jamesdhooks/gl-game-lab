@@ -13,6 +13,7 @@ export interface ParticlePointBatch {
   readonly palette: readonly (readonly [number, number, number, number])[];
   readonly blend?: BlendMode;
   readonly opacity?: number;
+  readonly paletteMode?: 'hashed' | 'indexed';
 }
 
 export interface ParticlePointDrawPlan {
@@ -69,6 +70,7 @@ export class ParticlePointRenderer {
   private readonly opacityLocation: WebGLUniformLocation;
   private readonly paletteLocation: WebGLUniformLocation;
   private readonly paletteCountLocation: WebGLUniformLocation;
+  private readonly paletteModeLocation: WebGLUniformLocation;
   private readonly paletteData = new Float32Array(MAX_PARTICLE_PALETTE_COLORS * 4);
   private disposed = false;
 
@@ -85,6 +87,7 @@ export class ParticlePointRenderer {
     this.opacityLocation = requireShaderUniform(this.gl, this.program, 'u_opacity', 'particle point renderer');
     this.paletteLocation = requireShaderUniform(this.gl, this.program, 'u_palette[0]', 'particle point renderer');
     this.paletteCountLocation = requireShaderUniform(this.gl, this.program, 'u_paletteCount', 'particle point renderer');
+    this.paletteModeLocation = requireShaderUniform(this.gl, this.program, 'u_paletteMode', 'particle point renderer');
     this.configureGeometry();
   }
 
@@ -143,6 +146,7 @@ export class ParticlePointRenderer {
     batch.palette.forEach((color, index) => { this.paletteData.set(color, index * 4); });
     gl.uniform4fv(this.paletteLocation, this.paletteData);
     gl.uniform1i(this.paletteCountLocation, batch.palette.length);
+    gl.uniform1i(this.paletteModeLocation, batch.paletteMode === 'indexed' ? 1 : 0);
     gl.uniform1f(this.opacityLocation, batch.opacity ?? 1);
     configureBlend(gl, batch.blend ?? 'alpha');
     gl.drawArrays(gl.POINTS, 0, batch.count);
@@ -209,6 +213,7 @@ precision highp float;
 const int MAX_PALETTE = ${MAX_PARTICLE_PALETTE_COLORS};
 uniform vec4 u_palette[MAX_PALETTE];
 uniform int u_paletteCount;
+uniform int u_paletteMode;
 uniform float u_opacity;
 flat in float v_colorSeed;
 out vec4 outColor;
@@ -222,7 +227,9 @@ void main() {
   vec2 centered = gl_PointCoord * 2.0 - 1.0;
   float distance2 = dot(centered, centered);
   if (distance2 > 1.0) discard;
-  int paletteIndex = int(hashId(int(abs(v_colorSeed) + 0.5)) % uint(max(1, u_paletteCount)));
+  int directIndex = int(abs(v_colorSeed) + 0.5) % max(1, u_paletteCount);
+  int hashedIndex = int(hashId(int(abs(v_colorSeed) + 0.5)) % uint(max(1, u_paletteCount)));
+  int paletteIndex = u_paletteMode == 1 ? directIndex : hashedIndex;
   vec4 color = u_palette[paletteIndex];
   float edge = smoothstep(1.0, 0.86, distance2);
   float z = sqrt(max(0.0, 1.0 - distance2 * 0.45));

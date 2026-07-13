@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { ExperienceRegistry } from '@hooksjam/gl-game-lab-engine';
 import { createParticleFluidConfig, PARTICLE_FLUID_DEFAULTS, PARTICLE_FLUID_STYLE_MANIFEST, particleFluidDefinition } from '../index.js';
+import { PARTICLE_FLUID_FRAGMENT_SHADER, PARTICLE_FLUID_VERTEX_SHADER } from '../particle-fluid/shaders.js';
 describe('Particle Fluid', () => {
   it('registers ten materially distinct styles and attribution', () => {
     const definition = new ExperienceRegistry().register(particleFluidDefinition).get('particle-fluid');
@@ -21,5 +22,11 @@ describe('Particle Fluid', () => {
     expect(() => createParticleFluidConfig({
       renderStyle: 'ultra'
     })).toThrow('Unknown Particle Fluid');
+  });
+  it('keeps the source speed gradient and persistent segment pulse in the GPU shader', () => {
+    expect(PARTICLE_FLUID_VERTEX_SHADER).toContain('distanceToSegment');
+    expect(PARTICLE_FLUID_VERTEX_SHADER).toContain('uPulseSegment');
+    expect(PARTICLE_FLUID_VERTEX_SHADER).toContain('mix(uSlowColor,uFastColor,x)');
+    expect(PARTICLE_FLUID_FRAGMENT_SHADER).not.toContain('gl_PointCoord');
   });
 });

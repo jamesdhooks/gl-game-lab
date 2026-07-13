@@ -13,6 +13,12 @@ export interface FluidSplat2D {
     number
   ];
   readonly amount: number;
+  readonly previousX?: number;
+  readonly previousY?: number;
+  readonly taper?: number;
+  readonly aspectRatio?: number;
+  readonly strength?: number;
+  readonly velocityMode?: 'add' | 'target';
 }
 export interface StableFluidStepOptions {
   readonly deltaSeconds: number;
@@ -22,6 +28,7 @@ export interface StableFluidStepOptions {
   readonly dyeDissipation: number;
   readonly pressureIterations: number;
   readonly ambient?: boolean;
+  readonly velocitySplatsBeforeProjection?: boolean;
 }
 export interface StableFluidDisplayOptions {
   readonly palette: readonly (readonly [
@@ -133,6 +140,8 @@ export class StableFluidField2D {
       g.uniform1f(u('uCurl'), options.curl);
       g.uniform1f(u('uAmbient'), options.ambient ? 1 : 0);
     });
+    if (options.velocitySplatsBeforeProjection)
+      for (const splat of splats) this.applySplat(this.velocity, splat, [splat.velocityX, splat.velocityY, 0, 0], splat.velocityMode === 'target');
     this.divergencePass.step(this.divergence, (g, u) => {
       this.velocity.targets.read.attach(1);
       g.uniform1i(u('uVelocity'), 1);
@@ -158,18 +167,15 @@ export class StableFluidField2D {
       g.uniform1f(u('uDecay'), Math.max(0, 1 - options.dyeDissipation * dt));
     });
     for (const splat of splats) {
-      this.applySplat(this.velocity, splat, [
-        splat.velocityX,
-        splat.velocityY,
-        0,
-        0
-      ]);
+      if (!options.velocitySplatsBeforeProjection) this.applySplat(this.velocity, splat, [
+        splat.velocityX, splat.velocityY, 0, 0
+      ], splat.velocityMode === 'target');
       this.applySplat(this.dye, splat, [
         splat.dye[0] * splat.amount,
         splat.dye[1] * splat.amount,
         splat.dye[2] * splat.amount,
         splat.amount
-      ]);
+      ], false);
     }
   }
   render(destination: GpuParticleRenderDestination, options: StableFluidDisplayOptions) {
@@ -216,11 +222,17 @@ export class StableFluidField2D {
     number,
     number,
     number
-  ]) {
+  ], target: boolean) {
     this.splatPass.step(state, (g, u) => {
       g.uniform2f(u('uPoint'), splat.x, splat.y);
       g.uniform1f(u('uRadius'), splat.radius);
       g.uniform4f(u('uValue'), value[0], value[1], value[2], value[3]);
+      g.uniform2f(u('uPrevious'), splat.previousX ?? splat.x, splat.previousY ?? splat.y);
+      g.uniform1f(u('uSegment'), splat.previousX === undefined || splat.previousY === undefined ? 0 : 1);
+      g.uniform1f(u('uTaper'), splat.taper ?? 0);
+      g.uniform1f(u('uAspect'), splat.aspectRatio ?? 1);
+      g.uniform1f(u('uStrength'), splat.strength ?? 1);
+      g.uniform1f(u('uTargetBlend'), target ? 1 : 0);
     });
   }
   private assert() {
@@ -234,6 +246,6 @@ const DYE = HEAD + `uniform sampler2D uVelocity;uniform float uDt,uDecay;void ma
 const DIVERGENCE = HEAD + `uniform sampler2D uVelocity;uniform vec2 uTexel;void main(){float l=texture(uVelocity,vUv-vec2(uTexel.x,0)).x,r=texture(uVelocity,vUv+vec2(uTexel.x,0)).x,b=texture(uVelocity,vUv-vec2(0,uTexel.y)).y,t=texture(uVelocity,vUv+vec2(0,uTexel.y)).y;outColor=vec4(.5*(r-l+t-b),0,0,1);}`;
 const PRESSURE = HEAD + `uniform sampler2D uDivergence;uniform vec2 uTexel;void main(){float l=texture(uFieldState,vUv-vec2(uTexel.x,0)).x,r=texture(uFieldState,vUv+vec2(uTexel.x,0)).x,b=texture(uFieldState,vUv-vec2(0,uTexel.y)).x,t=texture(uFieldState,vUv+vec2(0,uTexel.y)).x,d=texture(uDivergence,vUv).x;outColor=vec4((l+r+b+t-d)*.25,0,0,1);}`;
 const GRADIENT = HEAD + `uniform sampler2D uPressure;uniform vec2 uTexel;void main(){float l=texture(uPressure,vUv-vec2(uTexel.x,0)).x,r=texture(uPressure,vUv+vec2(uTexel.x,0)).x,b=texture(uPressure,vUv-vec2(0,uTexel.y)).x,t=texture(uPressure,vUv+vec2(0,uTexel.y)).x;vec2 v=texture(uFieldState,vUv).xy-vec2(r-l,t-b)*.5;outColor=vec4(v,0,1);}`;
-const SPLAT = HEAD + `uniform vec2 uPoint;uniform float uRadius;uniform vec4 uValue;void main(){vec4 base=texture(uFieldState,vUv);vec2 d=vUv-uPoint;float influence=exp(-dot(d,d)/max(1e-6,uRadius*uRadius));outColor=base+uValue*influence;}`;
+const SPLAT = HEAD + `uniform vec2 uPoint,uPrevious;uniform float uRadius,uSegment,uTaper,uAspect,uStrength,uTargetBlend;uniform vec4 uValue;vec2 segmentDistance(vec2 p,vec2 a,vec2 b){vec2 ab=b-a;float lengthSquared=max(1e-8,dot(ab,ab));float fraction=dot(p-a,ab)/lengthSquared;vec2 closest=a+ab*clamp(fraction,0.0,1.0);vec2 delta=p-closest;delta.x*=uAspect;return vec2(length(delta),fraction);}void main(){vec4 base=texture(uFieldState,vUv);vec2 pointDelta=vUv-uPoint;pointDelta.x*=uAspect;float pointInfluence=exp(-dot(pointDelta,pointDelta)/max(1e-6,uRadius*uRadius));vec2 distanceAndFraction=segmentDistance(vUv,uPoint,uPrevious);float projected=1.0-clamp(distanceAndFraction.y,0.0,1.0)*uTaper;float segmentInfluence=exp(-distanceAndFraction.x/max(1e-6,uRadius))*projected*projected;float influence=mix(pointInfluence,segmentInfluence,uSegment)*uStrength;vec4 added=base+uValue*influence;vec4 targeted=base+(uValue-base)*influence;outColor=mix(added,targeted,uTargetBlend);}`;
 const SEED = HEAD + `uniform int uKind;uniform float uSeed;float h(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7))+uSeed)*43758.5453);}void main(){vec2 p=vUv-.5;float cloud=exp(-dot(p,p)*4.0)*(.5+.5*sin(vUv.x*18.0+sin(vUv.y*13.0+uSeed)));float cells=pow(h(floor(vUv*10.0)),2.0);float random=h(floor(vUv*uFieldSize));float v=uKind==0?cloud:uKind==1?cells:random*.65;outColor=vec4(v,h(vUv+3.1)*v,h(vUv+7.7)*v,v);}`;
 const DISPLAY = HEAD + `uniform vec3 uPalette[4],uBackground;uniform int uPaletteCount;uniform vec2 uTexel;uniform float uShading,uSunrays,uExposure;vec3 paletteColor(float t){float scaled=clamp(t,0.0,.999)*float(max(1,uPaletteCount-1)),local=fract(scaled);int index=int(floor(scaled));vec3 a=uPalette[0],b=uPalette[0];for(int i=0;i<4;i++){if(i==index)a=uPalette[i];if(i==min(index+1,uPaletteCount-1))b=uPalette[i];}return mix(a,b,smoothstep(0.0,1.0,local));}void main(){vec3 dye=max(vec3(0),texture(uFieldState,vUv).rgb);float density=max(dye.r,max(dye.g,dye.b));float l=length(texture(uFieldState,vUv-vec2(uTexel.x,0)).rgb),r=length(texture(uFieldState,vUv+vec2(uTexel.x,0)).rgb),b=length(texture(uFieldState,vUv-vec2(0,uTexel.y)).rgb),t=length(texture(uFieldState,vUv+vec2(0,uTexel.y)).rgb);vec3 normal=normalize(vec3((r-l)*1.8,(t-b)*1.8,.08));float diffuse=.52+.48*dot(normal,normalize(vec3(-.35,-.52,.78)));vec3 color=dye*mix(1.0,clamp(diffuse,.62,1.38),clamp(uShading,0.0,1.0));vec3 glow=texture(uFieldState,vUv+vec2(2,0)*uTexel).rgb+texture(uFieldState,vUv-vec2(2,0)*uTexel).rgb+texture(uFieldState,vUv+vec2(0,2)*uTexel).rgb+texture(uFieldState,vUv-vec2(0,2)*uTexel).rgb;color+=glow*.075;vec2 ray=(vec2(.5)-vUv)/8.0;float rays=0.0;for(int i=0;i<8;i++)rays+=length(texture(uFieldState,vUv+ray*float(i)).rgb);color+=paletteColor(clamp(density*.35,0.0,1.0))*rays*.0125*uSunrays;color*=1.0+smoothstep(.006,.13,density)*.22;color=1.0-exp(-color*uExposure*(1.16+density*.22));color=pow(max(color,vec3(0)),vec3(.82));float edge=min(min(vUv.x,1.0-vUv.x),min(vUv.y,1.0-vUv.y)),wall=smoothstep(0.0,.035,edge),vignette=smoothstep(.92,.20,distance(vUv,vec2(.5)));color*=.78+.22*wall;color*=.82+.18*vignette;float alpha=smoothstep(.0015,.075,density);outColor=vec4(mix(uBackground,color,alpha),1);}`;
