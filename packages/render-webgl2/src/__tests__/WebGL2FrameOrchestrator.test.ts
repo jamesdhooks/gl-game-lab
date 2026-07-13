@@ -15,7 +15,7 @@ function createMetrics(overrides: Partial<WebGL2FrameMetricSources> = {}): WebGL
     backendId: 'test-backend',
     timer: { latestMs: 2.5, begin: vi.fn(), end: vi.fn() },
     beginGpuFrame: vi.fn(),
-    gpuDiagnostics: () => ({ drawCalls: 5, points: 6, uploadBytes: 13, submissions: 1 }),
+    gpuDiagnostics: () => ({ drawCalls: 5, points: 6, triangles: 7, uploadBytes: 13, submissions: 1 }),
     deviceDiagnostics: () => ({
       textureCount: 3,
       contextResourceCount: 4,
@@ -69,7 +69,7 @@ describe('WebGL2FrameOrchestrator', () => {
       backend: 'test-backend',
       drawCalls: 22,
       points: 16,
-      triangles: 14,
+      triangles: 21,
       bufferUploadBytes: 364,
       textureUploadBytes: 17,
       transientAllocationBytes: 19,

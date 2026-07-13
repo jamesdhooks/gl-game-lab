@@ -13,6 +13,8 @@ export class GpuFieldMeshPass {
   private readonly cellBuffer: WebGLBuffer;
   private readonly facetBuffer: WebGLBuffer;
   private readonly uniforms = new Map<string, WebGLUniformLocation | null>();
+  private uploadedMesh: GpuFieldMesh2D | undefined;
+  private uploadedRevision: number | undefined;
   private disposed = false;
 
   constructor(private readonly gl: WebGL2RenderingContext, vertexSource: string, fragmentSource: string, label: string) {
@@ -33,9 +35,13 @@ export class GpuFieldMeshPass {
     if (!Number.isSafeInteger(mesh.vertexCount) || mesh.vertexCount < 0 || mesh.vertexCount % 3 !== 0) throw new Error('GPU field mesh vertex count must be a non-negative multiple of three');
     if (mesh.positions.length < mesh.vertexCount * 2 || mesh.cells.length < mesh.vertexCount * 2 || mesh.facets.length < mesh.vertexCount) throw new Error('GPU field mesh buffers do not cover the active vertices');
     const gl = this.gl;
-    this.upload(this.positionBuffer, mesh.positions.subarray(0, mesh.vertexCount * 2));
-    this.upload(this.cellBuffer, mesh.cells.subarray(0, mesh.vertexCount * 2));
-    this.upload(this.facetBuffer, mesh.facets.subarray(0, mesh.vertexCount));
+    if (fieldMeshRequiresUpload(this.uploadedMesh, this.uploadedRevision, mesh)) {
+      this.upload(this.positionBuffer, mesh.positions.subarray(0, mesh.vertexCount * 2));
+      this.upload(this.cellBuffer, mesh.cells.subarray(0, mesh.vertexCount * 2));
+      this.upload(this.facetBuffer, mesh.facets.subarray(0, mesh.vertexCount));
+      this.uploadedMesh = mesh;
+      this.uploadedRevision = mesh.revision;
+    }
     gl.bindFramebuffer(gl.FRAMEBUFFER, destination.framebuffer ?? null);
     gl.viewport(0, 0, destination.width, destination.height);
     gl.disable(gl.BLEND);
@@ -60,6 +66,8 @@ export class GpuFieldMeshPass {
     this.gl.deleteBuffer(this.facetBuffer);
     this.gl.deleteVertexArray(this.vao);
     this.gl.deleteProgram(this.program);
+    this.uploadedMesh = undefined;
+    this.uploadedRevision = undefined;
   }
 
   private bindAttribute(buffer: WebGLBuffer, index: number, size: number): void {
@@ -69,12 +77,20 @@ export class GpuFieldMeshPass {
   }
   private upload(buffer: WebGLBuffer, data: Float32Array): void {
     this.gl.bindBuffer(this.gl.ARRAY_BUFFER, buffer);
-    this.gl.bufferData(this.gl.ARRAY_BUFFER, data, this.gl.DYNAMIC_DRAW);
+    this.gl.bufferData(this.gl.ARRAY_BUFFER, data, this.gl.STATIC_DRAW);
   }
   private uniform(name: string): WebGLUniformLocation | null {
     if (!this.uniforms.has(name)) this.uniforms.set(name, this.gl.getUniformLocation(this.program, name));
     return this.uniforms.get(name) ?? null;
   }
+}
+
+export function fieldMeshRequiresUpload(
+  uploadedMesh: GpuFieldMesh2D | undefined,
+  uploadedRevision: number | undefined,
+  mesh: GpuFieldMesh2D,
+): boolean {
+  return uploadedMesh !== mesh || uploadedRevision !== mesh.revision;
 }
 
 function required<T>(value: T | null, message: string): T {

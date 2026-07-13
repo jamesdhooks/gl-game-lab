@@ -21,6 +21,7 @@ import {
 import type { GameEngine } from '@hooksjam/gl-game-lab-engine';
 import { GameCanvas } from './GameCanvas.js';
 import type { FixedFrameCaptureOptions, FixedFrameCaptureResult } from './GameCanvas.js';
+import { DebugPanel } from './ui/DebugPanel.js';
 import { HUD } from './ui/HUD.js';
 import { IntroCard, type IntroHint } from './ui/IntroCard.js';
 import { ModeToggle } from './ui/ModeToggle.js';
@@ -193,6 +194,7 @@ function ImmersiveExperienceRuntime({
   const [imageUrlDraft, setImageUrlDraft] = useState('');
   const controllerRef = useRef<ExperienceRuntimeController>();
   const engineRef = useRef<GameEngine>();
+  const [engineInstance, setEngineInstance] = useState<GameEngine>();
   const sceneStageRef = useRef<HTMLDivElement>(null);
   const onReadyRef = useRef(onReady);
   const demoHintTimerRef = useRef<number>();
@@ -201,6 +203,7 @@ function ImmersiveExperienceRuntime({
   useEffect(() => {
     controllerRef.current = undefined;
     engineRef.current = undefined;
+    setEngineInstance(undefined);
     setModeId(defaultModeId);
     setStyleId(defaultStyleId);
     setSettings(initialSettings);
@@ -241,6 +244,7 @@ function ImmersiveExperienceRuntime({
 
   const handleReady = useCallback((engine: GameEngine): void => {
     engineRef.current = engine;
+    setEngineInstance(engine);
     const controller = engine.kernel.tryGet(ExperienceRuntimeControllerService);
     controllerRef.current = controller;
     onReadyRef.current?.(engine, controller);
@@ -531,6 +535,10 @@ function ImmersiveExperienceRuntime({
               </div>
             ) : undefined}
           />
+
+          <div className="absolute bottom-3 right-3 z-40">
+            <DebugPanel engine={engineInstance} />
+          </div>
 
           <OverflowMenu compact={isCompactTopbar} items={[
             {

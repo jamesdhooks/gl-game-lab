@@ -66,6 +66,26 @@ describe('normalizePointerCoordinates', () => {
     expect(frame.events).toContainEqual(expect.objectContaining({ kind: 'pointer', phase: 'cancel', id: 7 }));
     adapter.destroy();
   });
+
+  it('ignores hover moves after the pointer has been released', () => {
+    const input = new InputState();
+    const document = new FakeDocument();
+    const canvas = new FakeCanvas(document);
+    const adapter = new WebInputAdapter(canvas as unknown as HTMLCanvasElement, {
+      input,
+      document: document as unknown as Document,
+      getViewport: () => ({ width: 200, height: 100 }),
+    });
+    canvas.dispatch('pointerdown', pointerEvent(9));
+    canvas.dispatch('pointerup', pointerEvent(9, 0));
+    input.advanceFrame();
+    canvas.dispatch('pointermove', pointerEvent(9, 0));
+
+    const frame = input.advanceFrame();
+    expect(frame.pointers).toEqual([]);
+    expect(frame.events).toEqual([]);
+    adapter.destroy();
+  });
 });
 
 class FakeTarget {

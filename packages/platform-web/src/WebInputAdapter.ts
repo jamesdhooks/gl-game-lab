@@ -98,7 +98,8 @@ export class WebInputAdapter {
   };
 
   private readonly onPointerMove = (event: PointerEvent): void => {
-    if (this.pointers.has(event.pointerId) && event.buttons === 0) {
+    if (!this.pointers.has(event.pointerId)) return;
+    if (event.buttons === 0) {
       this.ingestPointer(event, 'cancel');
       this.releasePointer(event.pointerId);
       return;

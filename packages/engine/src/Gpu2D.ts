@@ -45,6 +45,8 @@ export interface GpuFieldMesh2D {
   readonly positions: Float32Array;
   readonly cells: Float32Array;
   readonly facets: Float32Array;
+  /** Increment when mutating an existing mesh's buffers in place. Static meshes may omit it. */
+  readonly revision?: number;
 }
 
 export interface GpuFieldSystem2D {

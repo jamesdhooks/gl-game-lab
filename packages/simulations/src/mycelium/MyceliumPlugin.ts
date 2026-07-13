@@ -10,14 +10,22 @@ interface Splat {
   radius: number;
   strain: number;
 }
+const TRIANGLE_MESH_MAX_CELLS = 900_000;
+const EMPTY_TRIANGLE_MESH: GpuFieldMesh2D = Object.freeze({
+  vertexCount: 0,
+  positions: new Float32Array(0),
+  cells: new Float32Array(0),
+  facets: new Float32Array(0),
+});
 export interface MyceliumController extends ExperienceRuntimeController {
   readonly fieldResolution: number;
 }
 export const MyceliumControllerService = createExtensionToken<MyceliumController>('gl-game-lab.simulations.mycelium.controller');
 export const MYCELIUM_PLUGIN_ID = 'gl-game-lab.simulations.mycelium';
 export function createMyceliumPlugin(initial: MyceliumConfig = MYCELIUM_DEFAULTS, launch: ExperienceLaunchOptions = {}): EnginePlugin {
-  let config = initial, styleId = validStyle(launch.styleId) ?? MYCELIUM_STYLE_MANIFEST.defaultStyleId, pendingDt = 0, elapsed = 0, randomState = seedValue(launch.seed), rebuild = false, needsSeed = true, fieldViewportWidth = 0, fieldViewportHeight = 0, cleanup = (): void => undefined;
+  let config = initial, styleId = validStyle(launch.styleId) ?? MYCELIUM_STYLE_MANIFEST.defaultStyleId, pendingDt = 0, elapsed = 0, randomState = seedValue(launch.seed), rebuild = false, needsSeed = true, fieldViewportWidth = 0, fieldViewportHeight = 0, paintPointerId: number | undefined, paintPointer: { x: number; y: number } | undefined, cleanup = (): void => undefined;
   const splats: Splat[] = [];
+  const paletteData = new Float32Array(24), backgroundData = new Float32Array(3);
   return {
     id: MYCELIUM_PLUGIN_ID,
     version: '1.0.0',
@@ -84,16 +92,28 @@ export function createMyceliumPlugin(initial: MyceliumConfig = MYCELIUM_DEFAULTS
           if (Math.abs(viewportWidth / viewportHeight - fieldViewportWidth / Math.max(1, fieldViewportHeight)) > 0.01) rebuild = true;
           pendingDt += dt;
           elapsed += dt;
-          for (const event of input.snapshot.events)
-            if (event.kind === 'pointer' && (event.phase === 'down' || event.phase === 'move')) {
-              const width = Math.max(1, renderer.viewport.width), height = Math.max(1, renderer.viewport.height);
-              splats.push({
-                x: Math.max(0, Math.min(1, event.x / width)),
-                y: Math.max(0, Math.min(1, 1 - event.y / height)),
-                radius: myceliumNumber(config, 'brushRadius') * (event.phase === 'down' ? 1.5 : 1),
-                strain: nextRandom()
-              });
+          for (const event of input.snapshot.events) {
+            if (event.kind !== 'pointer') continue;
+            if (event.phase === 'down') {
+              paintPointerId = event.id;
+              paintPointer = normalizePaintPoint(event.x, event.y);
+              queuePaintSplat(paintPointer, false);
+            } else if (event.phase === 'move' && event.id === paintPointerId && event.buttons !== 0) {
+              paintPointer = normalizePaintPoint(event.x, event.y);
+              queuePaintSplat(paintPointer, true);
+            } else if ((event.phase === 'up' || event.phase === 'cancel') && event.id === paintPointerId) {
+              paintPointerId = undefined;
+              paintPointer = undefined;
             }
+          }
+          const heldPointer = paintPointerId === undefined ? undefined : input.snapshot.pointers.find(pointer => pointer.id === paintPointerId && pointer.buttons !== 0);
+          if (heldPointer) {
+            paintPointer = normalizePaintPoint(heldPointer.x, heldPointer.y);
+            queuePaintSplat(paintPointer, true);
+          } else if (paintPointerId !== undefined) {
+            paintPointerId = undefined;
+            paintPointer = undefined;
+          }
           if ((launch.profile === 'preview' || launch.profile === 'demo') && input.snapshot.pointers.length === 0 && Math.floor((elapsed - dt) * 1.2) !== Math.floor(elapsed * 1.2))
             splats.push({
               x: 0.12 + nextRandom() * 0.76,
@@ -133,7 +153,7 @@ export function createMyceliumPlugin(initial: MyceliumConfig = MYCELIUM_DEFAULTS
               const dt = pendingDt;
               pendingDt = 0;
               if (dt > 0) {
-                const steps = Math.max(1, Math.min(launch.profile === 'preview' ? 3 : 7, Math.ceil(dt * 90)));
+                const steps = Math.max(1, Math.min(launch.profile === 'preview' ? 2 : 8, Math.ceil(dt * 72)));
                 for (let index = 0; index < steps; index++)
                   field.step('step', (g, u) => {
                     g.uniform2f(u('uTexel'), 1 / field.width, 1 / field.height);
@@ -157,18 +177,16 @@ export function createMyceliumPlugin(initial: MyceliumConfig = MYCELIUM_DEFAULTS
                   g.uniform1f(u('uRadius'), splat.radius);
                   g.uniform1f(u('uStrain'), splat.strain);
                 });
-              const style = requireStyle(), palette = new Float32Array(24);
-              style.palette.slice(0, 8).forEach((color, index) => palette.set(myceliumColor3(color), index * 3));
               const bindDisplay = (g: GpuUniformEncoder2D, u: GpuUniformLookup2D) => {
                 g.uniform2f(u('uGrid'), field.width, field.height);
-                g.uniform3fv(u('uPalette[0]'), palette);
-                g.uniform3fv(u('uBackground'), new Float32Array(myceliumColor3(style.background)));
+                g.uniform3fv(u('uPalette[0]'), paletteData);
+                g.uniform3fv(u('uBackground'), backgroundData);
                 g.uniform1i(u('uVariant'), myceliumString(config, 'topology') === 'triangle' ? 0 : 1);
                 const visual = myceliumString(config, 'renderStyle');
                 g.uniform1i(u('uVisualStyle'), visual === 'basic' ? 0 : visual === 'enhanced' ? 1 : 2);
                 g.uniform1f(u('uFieldSpread'), myceliumNumber(config, 'fieldSpread'));
               };
-              if (myceliumString(config, 'topology') === 'triangle') field.renderMesh('triangles', destination, triangleMesh, bindDisplay);
+              if (myceliumString(config, 'topology') === 'triangle' && triangleMesh.vertexCount > 0) field.renderMesh('triangles', destination, triangleMesh, bindDisplay);
               else field.render('display', destination, bindDisplay);
           });
         }
@@ -181,7 +199,7 @@ export function createMyceliumPlugin(initial: MyceliumConfig = MYCELIUM_DEFAULTS
         const aspect = fieldViewportHeight / fieldViewportWidth * triangleRowScale;
         return gpu.createFieldSystem(`${MYCELIUM_PLUGIN_ID}.field`, {
           width: Math.round(resolution),
-          height: Math.max(1, Math.round(resolution * aspect)),
+          height: Math.max(24, Math.round(resolution * Math.max(0.35, aspect))),
           precision: 'half-float',
           filter: 'nearest',
           passes: { seed: MYCELIUM_SEED_SHADER, step: MYCELIUM_STEP_SHADER, splat: MYCELIUM_SPLAT_SHADER, display: MYCELIUM_DISPLAY_SHADER },
@@ -189,10 +207,12 @@ export function createMyceliumPlugin(initial: MyceliumConfig = MYCELIUM_DEFAULTS
         });
       }
       function resetCpuState(): void {
-        splats.length = 0; needsSeed = true; pendingDt = 0; elapsed = 0;
+        splats.length = 0; needsSeed = true; pendingDt = 0; elapsed = 0; paintPointerId = undefined; paintPointer = undefined;
       }
       function applyStyle() {
-        const background = myceliumColor3(requireStyle().background);
+        const style = requireStyle(), background = myceliumColor3(style.background);
+        style.palette.slice(0, 8).forEach((color, index) => paletteData.set(myceliumColor3(color), index * 3));
+        backgroundData.set(background);
         renderer.setClearColor([
           background[0],
           background[1],
@@ -202,6 +222,21 @@ export function createMyceliumPlugin(initial: MyceliumConfig = MYCELIUM_DEFAULTS
         renderer.setBackdrop(undefined);
         renderer.setBloom({
           enabled: false
+        });
+      }
+      function normalizePaintPoint(x: number, y: number): { x: number; y: number } {
+        const width = Math.max(1, renderer.viewport.width), height = Math.max(1, renderer.viewport.height);
+        return {
+          x: Math.max(0, Math.min(1, x / width)),
+          y: Math.max(0, Math.min(1, 1 - y / height)),
+        };
+      }
+      function queuePaintSplat(point: { x: number; y: number }, drag: boolean): void {
+        splats.push({
+          x: point.x,
+          y: point.y,
+          radius: myceliumNumber(config, 'brushRadius') * (drag ? 1.35 : 1),
+          strain: nextRandom(),
         });
       }
     }
@@ -227,6 +262,7 @@ export function createMyceliumPlugin(initial: MyceliumConfig = MYCELIUM_DEFAULTS
 
 function createTriangleMesh(cols: number, rows: number): GpuFieldMesh2D {
   const renderCols = cols + 1, cellCount = renderCols * rows, vertexCount = cellCount * 3;
+  if (cellCount > TRIANGLE_MESH_MAX_CELLS) return EMPTY_TRIANGLE_MESH;
   const positions = new Float32Array(vertexCount * 2), cells = new Float32Array(vertexCount * 2), facets = new Float32Array(vertexCount);
   const half = 2 / Math.max(1, cols), side = half * 2, cellHeight = 2 / Math.max(1, rows), scale = 1.002;
   for (let i = 0; i < cellCount; i++) {

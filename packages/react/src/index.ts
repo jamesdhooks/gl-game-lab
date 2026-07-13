@@ -23,4 +23,5 @@ export { TopbarSelect, type TopbarSelectProps, type TopbarSelectOption } from '.
 export { SettingsDrawer, type SettingsDrawerProps, type SettingsDefaultsSaveRequest } from './ui/SettingsDrawer.js';
 export { SimControlPanel, type SimControlPanelProps } from './ui/SimControlPanel.js';
 export { BottomSheet, type BottomSheetProps } from './ui/BottomSheet.js';
+export { DebugPanel, type DebugPanelProps } from './ui/DebugPanel.js';
 export { OverflowMenu, type OverflowMenuProps, type OverflowItem } from './ui/OverflowMenu.js';

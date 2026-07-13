@@ -62,7 +62,7 @@ class WebGLGpuFieldSystem implements GpuFieldSystem2D {
     id: string,
     options: GpuFieldSystem2DOptions,
     private readonly onDispose: () => void,
-    private readonly countDraw: (points?: number) => void,
+    private readonly countDraw: (points?: number, triangles?: number) => void,
   ) {
     this.owner = device.ownContextResource({
       id,
@@ -95,7 +95,7 @@ class WebGLGpuFieldSystem implements GpuFieldSystem2D {
     const pass = bundle.meshPasses.get(passId);
     if (!pass) throw new Error(`Unknown GPU field mesh pass: ${passId}`);
     pass.render(bundle.state, target.native, mesh, (gl, uniform) => { applyBindings(gl, uniform, uniforms); });
-    this.countDraw();
+    this.countDraw(0, mesh.vertexCount / 3);
   }
   dispose(): void {
     if (this.disposed) return;
@@ -116,7 +116,7 @@ class WebGLGpuParticleSystem implements GpuParticleSystem2D {
     id: string,
     options: GpuParticleSystem2DOptions,
     private readonly onDispose: () => void,
-    private readonly countDraw: (points?: number) => void,
+    private readonly countDraw: (points?: number, triangles?: number) => void,
     private readonly countUpload: (bytes: number) => void,
   ) {
     this.owner = device.ownContextResource({
@@ -186,6 +186,7 @@ export class WebGLGpu2DService implements Gpu2DService {
   private particleId = 0;
   private frameDrawCalls = 0;
   private framePoints = 0;
+  private frameTriangles = 0;
   private pendingUploadBytes = 0;
   private pendingSubmissions = 0;
 
@@ -200,7 +201,7 @@ export class WebGLGpu2DService implements Gpu2DService {
       `gl-game-lab.render-webgl2.field.${this.fieldId}.${normalized}`,
       options,
       () => { if (field) this.fields.delete(field); },
-      () => { this.frameDrawCalls += 1; },
+      (points = 0, triangles = 0) => { this.frameDrawCalls += 1; this.framePoints += points; this.frameTriangles += triangles; },
     );
     this.fieldId += 1;
     this.fields.add(field);
@@ -216,7 +217,7 @@ export class WebGLGpu2DService implements Gpu2DService {
       `gl-game-lab.render-webgl2.particles.${this.particleId}.${normalized}`,
       options,
       () => { if (particles) this.particles.delete(particles); },
-      (points = 0) => { this.frameDrawCalls += 1; this.framePoints += points; },
+      (points = 0, triangles = 0) => { this.frameDrawCalls += 1; this.framePoints += points; this.frameTriangles += triangles; },
       (bytes) => { this.pendingUploadBytes += bytes; },
     );
     this.particleId += 1;
@@ -233,9 +234,9 @@ export class WebGLGpu2DService implements Gpu2DService {
     this.queue.submit(pass);
   }
 
-  beginFrameDiagnostics(): void { this.frameDrawCalls = 0; this.framePoints = 0; }
-  diagnostics(): { readonly drawCalls: number; readonly points: number; readonly uploadBytes: number; readonly submissions: number } {
-    const snapshot = Object.freeze({ drawCalls: this.frameDrawCalls, points: this.framePoints, uploadBytes: this.pendingUploadBytes, submissions: this.pendingSubmissions });
+  beginFrameDiagnostics(): void { this.frameDrawCalls = 0; this.framePoints = 0; this.frameTriangles = 0; }
+  diagnostics(): { readonly drawCalls: number; readonly points: number; readonly triangles: number; readonly uploadBytes: number; readonly submissions: number } {
+    const snapshot = Object.freeze({ drawCalls: this.frameDrawCalls, points: this.framePoints, triangles: this.frameTriangles, uploadBytes: this.pendingUploadBytes, submissions: this.pendingSubmissions });
     this.pendingUploadBytes = 0;
     this.pendingSubmissions = 0;
     return snapshot;

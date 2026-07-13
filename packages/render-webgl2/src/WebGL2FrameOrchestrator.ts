@@ -11,6 +11,7 @@ import type { WebGL2DeviceDiagnostics } from './WebGL2Device.js';
 interface GpuFrameDiagnostics {
   readonly drawCalls: number;
   readonly points: number;
+  readonly triangles: number;
   readonly uploadBytes: number;
   readonly submissions: number;
 }
@@ -97,7 +98,7 @@ export class WebGL2FrameOrchestrator {
       drawCalls: sprites.batches.length + particles.drawCalls + this.metrics.effectCount()
         + gpu.drawCalls + counters.gpuDrawCalls + rawGpuPasses + backdropPasses + bloomPasses,
       points: particles.particleCount + gpu.points,
-      triangles: sprites.spriteCount * 2 + this.metrics.effectCount() + rawGpuPasses
+      triangles: sprites.spriteCount * 2 + gpu.triangles + this.metrics.effectCount() + rawGpuPasses
         + backdropPasses + bloomPasses,
       bufferUploadBytes: counters.bufferUploadBytes
         + sprites.spriteCount * 15 * Float32Array.BYTES_PER_ELEMENT
