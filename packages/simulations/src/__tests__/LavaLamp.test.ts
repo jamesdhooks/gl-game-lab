@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { ExperienceRegistry } from '@hooksjam/gl-game-lab-engine';
-import { createLavaLampConfig, LAVA_LAMP_DEFAULTS, LAVA_LAMP_STYLE_MANIFEST, LavaLampModel, lavaLampDefinition, type LavaLampTuning } from '../index.js';
+import { createLavaLampConfig, LAVA_LAMP_DEFAULTS, LAVA_LAMP_SETTINGS, LAVA_LAMP_STYLE_MANIFEST, LavaLampModel, lavaLampDefinition, type LavaLampTuning } from '../index.js';
 describe('Lava Lamp', () => {
   it('registers add/remove, Ultra, ten styles, and attribution', () => {
     const definition = new ExperienceRegistry().register(lavaLampDefinition).get('lava-lamp');
@@ -37,6 +37,17 @@ describe('Lava Lamp', () => {
     expect(() => createLavaLampConfig({
       turbulence: 5
     })).toThrow('outside its supported range');
+  });
+  it('preserves the rebuild enhanced ranges while allowing a larger surface radius', () => {
+    const numeric = (key: string) => {
+      const setting = LAVA_LAMP_SETTINGS.find(candidate => candidate.key === key);
+      if (!setting || setting.type !== 'number') throw new Error(`Missing numeric Lava Lamp setting: ${key}`);
+      return setting;
+    };
+    expect(numeric('liquidFieldScale')).toMatchObject({ min: 0.45, max: 1 });
+    expect(numeric('liquidSurfaceThreshold')).toMatchObject({ min: 0.04, max: 0.42 });
+    expect(numeric('liquidEdgeSoftness')).toMatchObject({ min: 0, max: 2 });
+    expect(numeric('liquidParticleRadius')).toMatchObject({ min: 0.35, max: 7.5 });
   });
 });
 function tuningFrom(config: ReturnType<typeof createLavaLampConfig>): LavaLampTuning {

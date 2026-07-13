@@ -1,6 +1,7 @@
 import { createExtensionToken, type EnginePlugin } from '@hooksjam/gl-game-lab-core';
 import { EngineInput, EngineRender2D, EngineSchedule, type ExperienceLaunchOptions, type ExperienceRuntimeController, type ExperienceSettingValue } from '@hooksjam/gl-game-lab-engine';
 import { registerSimulationRuntime } from '../SimulationPluginLifecycle.js';
+import { createBuildFixture, packBuildPreview } from '../BuildFixtures.js';
 import { createSplashMpmConfig, SPLASH_MPM_DEFAULTS, splashNumber, splashString, type SplashMpmConfig } from './config.js';
 import { SplashPicFlipModel, type SplashMpmTuning } from './SplashMpmModel.js';
 import { splashRgb, splashRgba, SPLASH_MPM_STYLE_MANIFEST } from './styles.js';
@@ -214,6 +215,11 @@ export function createSplashMpmPlugin(initial: SplashMpmConfig = SPLASH_MPM_DEFA
             blend: 'alpha',
             opacity: 0.95
           });
+          const preview = packBuildPreview(paths.values(), splashNumber(config, 'buildRadius'));
+          if (mode === 'build' && preview.count > 0) renderer.submitSegments({
+            id: 'splash-mpm.build-preview', ...preview, worldWidth: width, worldHeight: height,
+            palette: [[0.78, 0.82, 0.86]], opacity: 0.82, blend: 'alpha'
+          });
         }
       });
       function reset() {
@@ -231,13 +237,10 @@ export function createSplashMpmPlugin(initial: SplashMpmConfig = SPLASH_MPM_DEFA
         previous.clear();
       }
       function commit(path: readonly Point[]) {
-        const a = path[0], b = path[path.length - 1], r = splashNumber(config, 'buildRadius');
-        if (!a || !b)
-          return;
-        if (path.length < 3 || distance(a, b) < r * 0.7)
-          model.addCircle(a.x, a.y, r);
-        else
-          model.addSegment(a.x, a.y, b.x, b.y, r);
+        const fixture = createBuildFixture(path, splashNumber(config, 'buildRadius'));
+        if (!fixture) return;
+        if (fixture.ax === fixture.bx && fixture.ay === fixture.by) model.addCircle(fixture.ax, fixture.ay, fixture.radius);
+        else model.addSegment(fixture.ax, fixture.ay, fixture.bx, fixture.by, fixture.radius);
       }
       function tuning(): SplashMpmTuning {
         return {

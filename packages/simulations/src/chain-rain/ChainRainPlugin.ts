@@ -2,6 +2,7 @@ import { createExtensionToken, type EnginePlugin } from '@hooksjam/gl-game-lab-c
 import { EngineInput, EngineRender2D, EngineSchedule, type ExperienceLaunchOptions, type ExperienceRuntimeController, type ExperienceSettingValue } from '@hooksjam/gl-game-lab-engine';
 import { registerSimulationRuntime } from '../SimulationPluginLifecycle.js';
 import { packDrawPathPreview } from '../DrawPathPreview.js';
+import { createBuildFixture, packBuildFixtures, packBuildPreview, sampleBuildFixture, type BuildFixture2D } from '../BuildFixtures.js';
 import { ConstrainedCircleParticleWorld2D } from '@hooksjam/gl-game-lab-physics-2d';
 import { CHAIN_RAIN_DEFAULTS, chainNumber, chainString, createChainRainConfig, type ChainRainConfig } from './config.js';
 import { chainColor3, chainColor4, CHAIN_RAIN_STYLE_MANIFEST } from './styles.js';
@@ -19,7 +20,7 @@ type Point = {
 interface ChainBody { readonly indices: number[]; readonly fixture: boolean; readonly seed: number }
 export function createChainRainPlugin(initial: ChainRainConfig = CHAIN_RAIN_DEFAULTS, launch: ExperienceLaunchOptions = {}): EnginePlugin {
   let config = initial, mode: ChainRainMode = launch.modeId === 'build' || launch.modeId === 'interact' ? launch.modeId : 'draw', styleId = validStyle(launch.styleId) ?? CHAIN_RAIN_STYLE_MANIFEST.defaultStyleId, pendingReset = true, width = 1, height = 1, elapsed = 0, nextDemo = 0, randomState = (launch.seed ?? 1369948382) >>> 0, cleanup = (): void => undefined;
-  const world = new ConstrainedCircleParticleWorld2D(131072, 262144, {}, randomState), paths = new Map<number, Point[]>(), picked = new Int32Array(2048), pickedCount = new Map<number, number>(), bodies: ChainBody[] = [];
+  const world = new ConstrainedCircleParticleWorld2D(131072, 262144, {}, randomState), paths = new Map<number, Point[]>(), picked = new Int32Array(2048), pickedCount = new Map<number, number>(), bodies: ChainBody[] = [], buildFixtures: BuildFixture2D[] = [];
   return {
     id: CHAIN_RAIN_PLUGIN_ID,
     version: '1.0.0',
@@ -145,14 +146,11 @@ export function createChainRainPlugin(initial: ChainRainConfig = CHAIN_RAIN_DEFA
         run: () => {
           const style = requireStyle(), palette3 = style.palette.slice(0, 4).map(chainColor3), palette4 = style.palette.slice(0, 4).map(color => chainColor4(color, 1)), renderStyle = chainString(config, 'renderStyle'), skin = chainNumber(config, 'skinWidth');
           if (renderStyle === 'enhanced') {
-            const dynamicBodies = bodies.filter(body => !body.fixture), fixtureBodies = bodies.filter(body => body.fixture);
-            const fixtureMesh = packChainSkin(fixtureBodies, world, skin), bodyMesh = packChainSkin(dynamicBodies, world, skin);
-            if (fixtureMesh.vertexCount > 0) renderer.submitTriangleMesh({ id: 'chain-rain.fixture-skin', ...fixtureMesh, worldWidth: width, worldHeight: height, palette: [[0.58, 0.58, 0.58]], opacity: 1, blend: 'opaque', shading: 'flat' });
+            const dynamicBodies = bodies.filter(body => !body.fixture), bodyMesh = packChainSkin(dynamicBodies, world, skin);
             if (bodyMesh.vertexCount > 0) renderer.submitTriangleMesh({ id: 'chain-rain.skin', ...bodyMesh, worldWidth: width, worldHeight: height, palette: palette3, opacity: 1, blend: 'opaque', shading: 'flat' });
             const highlightWidth = chainNumber(config, 'skinHighlightWidth'), highlightOpacity = chainNumber(config, 'skinHighlightOpacity');
             if (highlightWidth > 0 && highlightOpacity > 0) {
-              const strength = chainNumber(config, 'skinHighlightStrength'), highlightableFixtures = fixtureBodies.filter(body => body.indices.length > 1), highlightableBodies = dynamicBodies.filter(body => body.indices.length > 1), fixtureHighlight = packChainSkin(highlightableFixtures, world, highlightWidth), bodyHighlight = packChainSkin(highlightableBodies, world, highlightWidth);
-              if (fixtureHighlight.vertexCount > 0) renderer.submitTriangleMesh({ id: 'chain-rain.fixture-highlight', ...fixtureHighlight, worldWidth: width, worldHeight: height, palette: [brightenColor([0.58, 0.58, 0.58], strength)], opacity: highlightOpacity, blend: 'alpha', shading: 'flat' });
+              const strength = chainNumber(config, 'skinHighlightStrength'), highlightableBodies = dynamicBodies.filter(body => body.indices.length > 1), bodyHighlight = packChainSkin(highlightableBodies, world, highlightWidth);
               if (bodyHighlight.vertexCount > 0) renderer.submitTriangleMesh({ id: 'chain-rain.skin-highlight', ...bodyHighlight, worldWidth: width, worldHeight: height, palette: palette3.map(color => brightenColor(color, strength)), opacity: highlightOpacity, blend: 'alpha', shading: 'flat' });
             }
           } else if (renderStyle === 'ultra') {
@@ -171,19 +169,18 @@ export function createChainRainPlugin(initial: ChainRainConfig = CHAIN_RAIN_DEFA
               heatShimmer: chainNumber(config, 'liquidHeatShimmer'), depthDiffusion: chainNumber(config, 'liquidDepthDiffusion'),
               opacity: chainNumber(config, 'opacity'), time: elapsed, renderStyle: 'ultra'
             });
-            const fixtures = packChainParticles(bodies.filter(body => body.fixture), world, 1.08);
-            if (fixtures.count > 0) renderer.submitParticles({ id: 'chain-rain.fixtures', ...fixtures, palette: [[0.58, 0.58, 0.58, 1]], blend: 'alpha', opacity: 1 });
-          } else renderer.submitParticles({
-            id: 'chain-rain-nodes',
-            count: world.count,
-            positions: world.positions,
-            radii: world.radii,
-            colorSeeds: world.colorSeeds,
-            palette: palette4,
-            blend: 'alpha',
-            opacity: 1
+          } else {
+            const nodes = packChainParticles(bodies.filter(body => !body.fixture), world, 1);
+            renderer.submitParticles({ id: 'chain-rain-nodes', ...nodes, palette: palette4, blend: 'alpha', opacity: 1 });
+          }
+          const fixtures = packBuildFixtures(buildFixtures);
+          if (fixtures.count > 0) renderer.submitSegments({
+            id: 'chain-rain.build-fixtures', ...fixtures, worldWidth: width, worldHeight: height,
+            palette: [[0.58, 0.58, 0.58]], opacity: 1, blend: 'alpha'
           });
-          const preview = packDrawPathPreview(paths.values(), mode === 'build' ? 'endpoints' : 'open');
+          const preview = mode === 'build'
+            ? packBuildPreview(paths.values(), chainNumber(config, 'nodeRadius') * 2.25)
+            : packDrawPathPreview(paths.values(), 'open');
           if (preview.count > 0) renderer.submitSegments({
             id: 'chain-rain.draw-preview', ...preview, worldWidth: width, worldHeight: height,
             palette: [mode === 'build' ? [0.58, 0.58, 0.58] : [0.45, 0.92, 1]], opacity: 0.86, blend: 'alpha'
@@ -193,6 +190,7 @@ export function createChainRainPlugin(initial: ChainRainConfig = CHAIN_RAIN_DEFA
       function reset() {
         world.clear(randomState);
         bodies.length = 0;
+        buildFixtures.length = 0;
         world.setBounds(width, height);
         paths.clear();
         pickedCount.clear();
@@ -287,9 +285,9 @@ export function createChainRainPlugin(initial: ChainRainConfig = CHAIN_RAIN_DEFA
         if (indices.length > 0) bodies.push({ indices, fixture: false, seed });
       }
       function addFixture(path: readonly Point[]) {
-        const radius = chainNumber(config, 'nodeRadius') * 2.25, samples = path.length === 1 ? [
-          path[0] as Point
-        ] : samplePath(path, radius * 1.35);
+        const radius = chainNumber(config, 'nodeRadius') * 2.25, fixture = createBuildFixture(path, radius);
+        if (!fixture) return;
+        const samples = sampleBuildFixture(fixture);
         const indices: number[] = [];
         for (const point of samples) {
           const index = world.addCircle(point.x, point.y, {
@@ -299,7 +297,10 @@ export function createChainRainPlugin(initial: ChainRainConfig = CHAIN_RAIN_DEFA
           });
           if (index >= 0) indices.push(index);
         }
-        if (indices.length > 0) bodies.push({ indices, fixture: true, seed: 0 });
+        if (indices.length > 0) {
+          bodies.push({ indices, fixture: true, seed: 0 });
+          buildFixtures.push(fixture);
+        }
       }
       function random() {
         randomState ^= randomState << 13;

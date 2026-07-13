@@ -16,4 +16,18 @@ describe('ConstrainedCircleParticleWorld2D', () => {
     world.addCircle(10, 20); world.addCircle(30, 40); world.addDistanceConstraint(0, 1);
     expect(world.packSegments()).toMatchObject({ count: 1 });
   });
+
+  it('supports lower-strength contacts within a constrained body', () => {
+    const full = new ConstrainedCircleParticleWorld2D(2, 2, { gravity: 0, solverIterations: 1, substeps: 1, collisionSoftness: 1 });
+    const soft = new ConstrainedCircleParticleWorld2D(2, 2, { gravity: 0, solverIterations: 1, substeps: 1, collisionSoftness: 1 });
+    for (const world of [full, soft]) {
+      world.setBounds(500, 500);
+      world.addCircle(100, 100, { radius: 20 });
+      world.addCircle(110, 100, { radius: 20 });
+    }
+    soft.setCollisionScale(() => 0.2);
+    full.step(1 / 60);
+    soft.step(1 / 60);
+    expect((soft.positions[2] ?? 0) - (soft.positions[0] ?? 0)).toBeLessThan((full.positions[2] ?? 0) - (full.positions[0] ?? 0));
+  });
 });

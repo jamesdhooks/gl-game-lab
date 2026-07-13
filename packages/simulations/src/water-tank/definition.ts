@@ -46,7 +46,7 @@ export const waterTankDefinition: ExperienceDefinition = {
       id: 'build',
       label: 'Build',
       icon: '\u2B21',
-      description: 'Tap for fixed points or drag for obstacle lines.'
+      description: 'Tap for circular pegs or drag for pill-shaped obstacles.'
     }
   ],
   settings: WATER_TANK_SETTINGS,
@@ -73,7 +73,7 @@ export const waterTankDefinition: ExperienceDefinition = {
     {
       icon: '\u2B21',
       title: 'Build Surfaces',
-      body: 'Tap for fixed pegs or drag to place obstacle lines.'
+      body: 'Tap for circular pegs or drag to place round-ended pill obstacles.'
     }
   ],
   physics: {

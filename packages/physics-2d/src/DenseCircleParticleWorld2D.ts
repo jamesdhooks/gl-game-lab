@@ -90,6 +90,7 @@ export class DenseCircleParticleWorld2D {
   private randomState: number;
   private collisionHits = 0;
   private collisionFilter: ((left: number, right: number) => boolean) | undefined;
+  private collisionScale: ((left: number, right: number) => number) | undefined;
   private maxVelocity = 0;
   private awake = false;
   private settledFrames = 0;
@@ -318,6 +319,11 @@ export class DenseCircleParticleWorld2D {
     this.collisionFilter = filter;
   }
 
+  /** Optional per-pair positional response multiplier for mixed-material particle systems. */
+  setCollisionScale(scale: ((left: number, right: number) => number) | undefined): void {
+    this.collisionScale = scale;
+  }
+
   /** Stable diagnostic hash for replay/determinism verification. */
   stateHash(): string {
     let hash = 0x811c9dc5;
@@ -417,6 +423,8 @@ export class DenseCircleParticleWorld2D {
   private solvePair(left: number, right: number, relaxation: number): void {
     this.pairTests += 1;
     if (this.collisionFilter && !this.collisionFilter(left, right)) return;
+    const pairScale = this.collisionScale?.(left, right) ?? 1;
+    if (!Number.isFinite(pairScale) || pairScale <= 0) return;
     const leftOffset = left * 2;
     const rightOffset = right * 2;
     let dx = floatAt(this.positions, rightOffset) - floatAt(this.positions, leftOffset);
@@ -440,7 +448,7 @@ export class DenseCircleParticleWorld2D {
     if (totalWeight <= 0) return;
     const penetration = target - distance;
     const maximum = target * 0.5 * this.settings.maxPairPush;
-    const correction = Math.min(penetration * this.settings.collisionSoftness * relaxation, maximum) / totalWeight;
+    const correction = Math.min(penetration * this.settings.collisionSoftness * relaxation * Math.min(1, pairScale), maximum) / totalWeight;
     this.positions[leftOffset] = floatAt(this.positions, leftOffset) - dx * correction * leftWeight;
     this.positions[leftOffset + 1] = floatAt(this.positions, leftOffset + 1) - dy * correction * leftWeight;
     this.positions[rightOffset] = floatAt(this.positions, rightOffset) + dx * correction * rightWeight;

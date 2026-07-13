@@ -49,6 +49,10 @@ export function validateDensityMetaballBatch(batch: DensityMetaballBatch): void 
   if (batch.temperatures.length < batch.count)
     throw new Error('Metaball temperatures do not cover the active count');
 }
+export function authoredMetaballEdgeSoftness(value: number): number {
+  if (!Number.isFinite(value) || value < 0) throw new Error('Metaball edge softness must be non-negative and finite');
+  return Math.max(0.001, value);
+}
 export class DensityMetaballRenderer {
   private readonly splatProgram: WebGLProgram;
   private readonly compositeProgram: WebGLProgram;
@@ -173,7 +177,9 @@ export class DensityMetaballRenderer {
     gl.uniform1i(this.compositePaletteCount, options.palette.length);
     gl.uniform3fv(this.compositeBackground, this.backgroundData);
     gl.uniform1f(this.compositeThreshold, options.threshold);
-    gl.uniform1f(this.compositeSoftness, Math.max(0.001, options.edgeSoftness * 0.08));
+    // The original advanced liquid renderer consumed the authored 0..2 range
+    // directly. Scaling it down made Ultra's quadratic softness term nearly inert.
+    gl.uniform1f(this.compositeSoftness, authoredMetaballEdgeSoftness(options.edgeSoftness));
     gl.uniform1f(this.compositeThermalContrast, options.thermalContrast);
     gl.uniform1f(this.compositeRefraction, options.refraction);
     gl.uniform1f(this.compositeGloss, options.gloss);

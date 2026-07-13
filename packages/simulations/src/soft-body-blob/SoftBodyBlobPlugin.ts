@@ -2,6 +2,7 @@ import { createExtensionToken, type EnginePlugin } from '@hooksjam/gl-game-lab-c
 import { EngineInput, EngineRender2D, EngineSchedule, type ExperienceLaunchOptions, type ExperienceRuntimeController, type ExperienceSettingValue } from '@hooksjam/gl-game-lab-engine';
 import { registerSimulationRuntime } from '../SimulationPluginLifecycle.js';
 import { packDrawPathPreview } from '../DrawPathPreview.js';
+import { packBuildPreview } from '../BuildFixtures.js';
 import { blobNumber, blobString, createSoftBodyBlobConfig, SOFT_BODY_BLOB_DEFAULTS, type SoftBodyBlobConfig } from './config.js';
 import { SoftBodyModel } from './SoftBodyModel.js';
 import { blobColor3, blobColor4, SOFT_BODY_BLOB_STYLE_MANIFEST } from './styles.js';
@@ -179,10 +180,16 @@ export function createSoftBodyBlobPlugin(initial: SoftBodyBlobConfig = SOFT_BODY
           if (renderStyle === 'basic') {
             const layers = model.packBasicVisualLayers(blobNumber(config, 'liquidFillDensity'));
             if (layers.nodes.count > 0) renderer.submitParticles({ id: 'soft-body-blob-nodes', count: layers.nodes.count, positions: layers.nodes.positions, radii: layers.nodes.radii, colorSeeds: layers.nodes.seeds, palette: palette4, paletteMode: 'indexed', blend: 'alpha', opacity: 0.76 });
-            if (layers.fixtures.count > 0) renderer.submitParticles({ id: 'soft-body-blob-fixtures', count: layers.fixtures.count, positions: layers.fixtures.positions, radii: layers.fixtures.radii, colorSeeds: layers.fixtures.seeds, palette: [[0.58, 0.58, 0.58, 1]], paletteMode: 'indexed', blend: 'alpha', opacity: 0.76 });
             if (layers.fillers.count > 0) renderer.submitParticles({ id: 'soft-body-blob-fillers', count: layers.fillers.count, positions: layers.fillers.positions, radii: layers.fillers.radii, colorSeeds: layers.fillers.seeds, palette: [[1, 1, 1, 1]], paletteMode: 'indexed', blend: 'alpha', opacity: 0.18 });
           }
-          const preview = packDrawPathPreview(paths.values(), mode === 'build' ? 'endpoints' : 'closed');
+          const fixtures = model.packBuildFixtures();
+          if (fixtures.count > 0) renderer.submitSegments({
+            id: 'soft-body-blob.build-fixtures', ...fixtures, worldWidth: width, worldHeight: height,
+            palette: [[0.58, 0.58, 0.58]], opacity: 1, blend: 'alpha'
+          });
+          const preview = mode === 'build'
+            ? packBuildPreview(paths.values(), Math.max(5, blobNumber(config, 'blobSize') * 0.18))
+            : packDrawPathPreview(paths.values(), 'closed');
           if (preview.count > 0) renderer.submitSegments({
             id: 'soft-body-blob.draw-preview', ...preview, worldWidth: width, worldHeight: height,
             palette: [mode === 'build' ? [0.58, 0.58, 0.58] : [1, 0.42, 0.78]], opacity: 0.86, blend: 'alpha'

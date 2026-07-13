@@ -21,7 +21,7 @@ export const LAVA_LAMP_SETTINGS: readonly ExperienceSetting[] = Object.freeze([
   number('thermalContrast', 'Thermal Contrast', 'Rendering', 0, 2.5, .05, 1.25),
   render(number('enhancedQuality', 'Surface Detail', 'Enhanced Surface', .5, 2, .05, 1.15), ['enhanced', 'ultra']),
   render(number('liquidFieldScale', 'Field Resolution', 'Enhanced Surface', .45, 1, .01, .82), ['enhanced', 'ultra']),
-  render(number('liquidParticleRadius', 'Surface Radius', 'Enhanced Surface', .35, 2.2, .01, 1), ['enhanced', 'ultra']),
+  render(number('liquidParticleRadius', 'Surface Radius', 'Enhanced Surface', .35, 7.5, .01, 1), ['enhanced', 'ultra']),
   render(number('liquidExpansion', 'Expansion Factor', 'Enhanced Surface', .25, 2.5, .01, 1), ['enhanced', 'ultra']),
   render(number('liquidSplatDensity', 'Splat Density', 'Enhanced Surface', .35, 3.4, .01, 1.55), ['enhanced', 'ultra']),
   render(number('liquidSurfaceThreshold', 'Surface Threshold', 'Enhanced Surface', .04, .42, .005, .11), ['enhanced', 'ultra']),

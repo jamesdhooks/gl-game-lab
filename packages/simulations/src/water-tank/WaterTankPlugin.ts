@@ -1,6 +1,7 @@
 import { createExtensionToken, type EnginePlugin } from '@hooksjam/gl-game-lab-core';
 import { EngineInput, EngineRender2D, EngineSchedule, type ExperienceLaunchOptions, type ExperienceRuntimeController, type ExperienceSettingValue } from '@hooksjam/gl-game-lab-engine';
 import { registerSimulationRuntime } from '../SimulationPluginLifecycle.js';
+import { createBuildFixture, packBuildPreview } from '../BuildFixtures.js';
 import { createWaterTankConfig, WATER_TANK_DEFAULTS, waterNumber, waterString, type WaterTankConfig } from './config.js';
 import { WaterTankModel, type WaterTankTuning } from './WaterTankModel.js';
 import { waterColor3, waterColor4, WATER_TANK_STYLE_MANIFEST } from './styles.js';
@@ -240,6 +241,11 @@ export function createWaterTankPlugin(initial: WaterTankConfig = WATER_TANK_DEFA
             blend: 'alpha',
             opacity: 0.94
           });
+          const preview = packBuildPreview(paths.values(), waterNumber(config, 'buildRadius'));
+          if (mode === 'build' && preview.count > 0) renderer.submitSegments({
+            id: 'water-tank.build-preview', ...preview, worldWidth: width, worldHeight: height,
+            palette: [[0.72, 0.78, 0.84]], opacity: 0.82, blend: 'alpha'
+          });
         }
       });
       function reset() {
@@ -259,13 +265,10 @@ export function createWaterTankPlugin(initial: WaterTankConfig = WATER_TANK_DEFA
         previous.clear();
       }
       function commitBuild(path: readonly Point[]) {
-        const radius = waterNumber(config, 'buildRadius'), first = path[0], last = path[path.length - 1];
-        if (!first || !last)
-          return;
-        if (path.length < 2 || distance(first, last) < radius * 0.7)
-          model.addCircle(first.x, first.y, radius);
-        else
-          model.addSegment(first.x, first.y, last.x, last.y, radius);
+        const fixture = createBuildFixture(path, waterNumber(config, 'buildRadius'));
+        if (!fixture) return;
+        if (fixture.ax === fixture.bx && fixture.ay === fixture.by) model.addCircle(fixture.ax, fixture.ay, fixture.radius);
+        else model.addSegment(fixture.ax, fixture.ay, fixture.bx, fixture.by, fixture.radius);
       }
       function tuning(): WaterTankTuning {
         return {

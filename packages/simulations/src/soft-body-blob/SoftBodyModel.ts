@@ -1,4 +1,5 @@
 import { ConstrainedCircleParticleWorld2D } from '@hooksjam/gl-game-lab-physics-2d';
+import { createBuildFixture, packBuildFixtures, sampleBuildFixture, type BuildFixture2D } from '../BuildFixtures.js';
 
 export interface SoftBody {
   readonly indices: readonly number[];
@@ -6,6 +7,10 @@ export interface SoftBody {
   restArea: number;
   readonly restRadius: number;
   readonly seed: number;
+  readonly edgeBase: Float32Array;
+  readonly edgeRest: Float32Array;
+  readonly bendBase: Float32Array;
+  readonly bendRest: Float32Array;
 }
 
 export interface SoftBodyTuning {
@@ -21,11 +26,13 @@ export interface SoftBodyTuning {
 export class SoftBodyModel {
   readonly world = new ConstrainedCircleParticleWorld2D(65536, 196608, {}, 100118795);
   readonly bodies: SoftBody[] = [];
+  readonly buildFixtures: BuildFixture2D[] = [];
   private readonly bodyOf = new Int32Array(65536).fill(-1);
   private readonly localOf = new Int16Array(65536).fill(-1);
   private nextSeed = 1;
   private width = 1;
   private height = 1;
+  private sameBodyCollisionScale = 0.25;
 
   constructor() {
     this.world.setCollisionFilter((left, right) => {
@@ -38,6 +45,10 @@ export class SoftBodyModel {
       const separation = Math.abs(a - b);
       return separation > 1 && separation < boundaryCount - 1;
     });
+    this.world.setCollisionScale((left, right) => {
+      const body = this.bodyOf[left] ?? -1;
+      return body >= 0 && body === (this.bodyOf[right] ?? -2) ? this.sameBodyCollisionScale : 1;
+    });
   }
 
   reset(width: number, height: number, seed = 100118795) {
@@ -45,6 +56,7 @@ export class SoftBodyModel {
     this.world.setBounds(width, height);
     this.width = width; this.height = height;
     this.bodies.length = 0;
+    this.buildFixtures.length = 0;
     this.bodyOf.fill(-1); this.localOf.fill(-1);
     this.nextSeed = 1;
   }
@@ -59,7 +71,7 @@ export class SoftBodyModel {
     const bodyIndex = this.bodies.length, seed = this.nextSeed++, indices: number[] = [], interiorIndices: number[] = [];
     for (let i = 0; i < points.length; i++) {
       const point = points[i]; if (!point) continue;
-      const index = this.world.addCircle(point.x, point.y, { radius: nodeRadius, velocityX: (Math.sin(i * 12.31 + seed) - 0.5) * 18, velocityY: 0, colorSeed: seed });
+      const index = this.world.addCircle(point.x, point.y, { radius: nodeRadius, velocityX: 0, velocityY: 0, colorSeed: seed });
       if (index < 0) return;
       this.bodyOf[index] = bodyIndex; this.localOf[index] = i; indices.push(index);
     }
@@ -70,24 +82,35 @@ export class SoftBodyModel {
       if (index < 0) break;
       this.bodyOf[index] = bodyIndex; this.localOf[index] = indices.length + i; interiorIndices.push(index);
     }
+    const edgeBase = new Float32Array(indices.length), bendBase = new Float32Array(indices.length);
     for (let i = 0; i < indices.length; i++) {
-      this.world.addDistanceConstraint(indices[i] as number, indices[(i + 1) % indices.length] as number, { stiffness: 0.72 });
-      this.world.addDistanceConstraint(indices[i] as number, indices[(i + 2) % indices.length] as number, { stiffness: 0.16 });
+      edgeBase[i] = pointDistance(points[i] as Point, points[(i + 1) % points.length] as Point);
+      bendBase[i] = pointDistance(points[i] as Point, points[(i + 2) % points.length] as Point);
     }
     const restArea = Math.max(1, Math.abs(area(points)));
-    const body: SoftBody = { indices: Object.freeze(indices), interiorIndices: Object.freeze(interiorIndices), restArea, restRadius: Math.sqrt(restArea / Math.PI), seed };
+    const body: SoftBody = {
+      indices: Object.freeze(indices), interiorIndices: Object.freeze(interiorIndices), restArea,
+      restRadius: Math.sqrt(restArea / Math.PI), seed, edgeBase, edgeRest: edgeBase.slice(),
+      bendBase, bendRest: bendBase.slice(),
+    };
     this.bodies.push(body);
     return body;
   }
 
   addFixture(points: readonly Point[], radius: number) {
-    for (const point of points) this.world.addCircle(point.x, point.y, { radius, inverseMass: 0, colorSeed: 0 });
+    const fixture = createBuildFixture(points, radius);
+    if (!fixture) return;
+    for (const point of sampleBuildFixture(fixture)) this.world.addCircle(point.x, point.y, { radius, inverseMass: 0, colorSeed: 0 });
+    this.buildFixtures.push(fixture);
   }
 
   step(dt: number, tuning: SoftBodyTuning) {
+    const softness = Math.max(0, Math.min(1, tuning.squishiness / 2));
+    this.sameBodyCollisionScale = 0.14 + (1 - softness) * 0.22;
     this.world.step(dt);
     const passes = Math.max(2, Math.min(14, Math.floor(tuning.constraintPasses)));
-    for (let pass = 0; pass < passes; pass++) for (const body of this.bodies) this.solveBody(body, dt / passes, tuning, 1 / passes);
+    for (let pass = 0; pass < passes; pass++) for (const body of this.bodies) this.solveBody(body, tuning);
+    this.applyPlasticity(dt, tuning.plasticFlow);
   }
 
   configure(options: Parameters<ConstrainedCircleParticleWorld2D['configure']>[0]) { this.world.configure(options); }
@@ -124,6 +147,8 @@ export class SoftBodyModel {
     }
     return { count, segments, styles };
   }
+
+  packBuildFixtures() { return packBuildFixtures(this.buildFixtures); }
 
   packBasicVisualLayers(fillDensity: number) {
     const nodeCount = this.bodies.reduce((sum, body) => sum + body.indices.length + body.interiorIndices.length, 0);
@@ -187,9 +212,16 @@ export class SoftBodyModel {
     const ringCounts = this.bodies.map(body => Math.max(0, Math.round((2 + fillDensity * 4.75) * Math.sqrt(Math.max(1, body.restRadius / Math.max(12, (this.world.radii[body.indices[0] as number] ?? 3) * 3.2))))));
     const sampleCounts = this.bodies.map((body, index) => Math.max(0, Math.round((18 + fillDensity * 34) * Math.sqrt(Math.max(1, body.restRadius / Math.max(12, (this.world.radii[body.indices[0] as number] ?? 3) * 3.2)))) * (ringCounts[index] ? 1 : 0)));
     const fillerCapacity = this.bodies.reduce((sum, _body, index) => sum + (sampleCounts[index] ?? 0) * ((ringCounts[index] ?? 0) + 1) + 1, 0);
-    const capacity = this.world.count + fillerCapacity, positions = new Float32Array(capacity * 2), radii = new Float32Array(capacity), seeds = new Float32Array(capacity);
-    positions.set(this.world.positions.subarray(0, this.world.count * 2)); radii.set(this.world.radii.subarray(0, this.world.count)); seeds.set(this.world.colorSeeds.subarray(0, this.world.count));
-    let count = this.world.count;
+    const bodyParticleCount = this.bodies.reduce((sum, body) => sum + body.indices.length + body.interiorIndices.length, 0);
+    const capacity = bodyParticleCount + fillerCapacity, positions = new Float32Array(capacity * 2), radii = new Float32Array(capacity), seeds = new Float32Array(capacity);
+    let count = 0;
+    for (const body of this.bodies) for (const index of [...body.indices, ...body.interiorIndices]) {
+      positions[count * 2] = value(this.world.positions, index * 2);
+      positions[count * 2 + 1] = value(this.world.positions, index * 2 + 1);
+      radii[count] = this.world.radii[index] ?? 1;
+      seeds[count] = body.seed;
+      count++;
+    }
     for (const [bodyIndex, body] of this.bodies.entries()) {
       const center = this.center(body), first = body.indices[0] as number, baseRadius = this.world.radii[first] ?? 3, rings = ringCounts[bodyIndex] ?? 0, samples = sampleCounts[bodyIndex] ?? 0;
       positions[count * 2] = center.x; positions[count * 2 + 1] = center.y; radii[count] = baseRadius; seeds[count++] = body.seed;
@@ -201,10 +233,31 @@ export class SoftBodyModel {
     return { count, positions, radii, seeds };
   }
 
-  private solveBody(body: SoftBody, dt: number, tuning: SoftBodyTuning, passScale: number) {
+  private solveBody(body: SoftBody, tuning: SoftBodyTuning) {
     const points = body.indices.map(index => ({ x: value(this.world.positions, index * 2), y: value(this.world.positions, index * 2 + 1) }));
     const currentArea = area(points), target = body.restArea, softness = Math.max(0, Math.min(1, tuning.squishiness / 2));
-    const areaStiffness = (0.045 + (1 - softness) * 0.15) * tuning.areaPressure * (1 + Math.sqrt(tuning.boundaryElasticity) * 0.12) * passScale;
+    const elasticEdgeScale = Math.pow(1 / (1 + tuning.boundaryElasticity * 1.65), 1.65);
+    const elasticBendScale = Math.pow(1 / (1 + tuning.boundaryElasticity * 2.25), 1.9);
+    const edgeStiffness = (0.20 + (1 - softness) * 0.40) * elasticEdgeScale;
+    const bendStiffness = (0.01 + (1 - softness) * 0.09) * elasticBendScale;
+    const areaStiffness = (0.045 + (1 - softness) * 0.15) * tuning.areaPressure * (1 + Math.sqrt(tuning.boundaryElasticity) * 0.12);
+    const edgeDamping = tuning.membraneDamping * (0.012 + Math.min(4, tuning.boundaryElasticity) * 0.026);
+    for (let i = 0; i < body.indices.length; i++) {
+      const a = body.indices[i] as number, b = body.indices[(i + 1) % body.indices.length] as number;
+      const authoredRest = body.edgeRest[i] ?? body.edgeBase[i] ?? 1;
+      const visualLimit = ((this.world.radii[a] ?? 1) + (this.world.radii[b] ?? 1)) * 0.98;
+      const currentLength = this.particleDistance(a, b);
+      this.solveDistance(a, b, Math.min(authoredRest, visualLimit), currentLength > visualLimit ? Math.max(0.72, edgeStiffness) : edgeStiffness);
+      this.dampMembraneVelocity(a, b, edgeDamping);
+    }
+    for (let i = 0; i < body.indices.length; i++) {
+      this.solveDistance(
+        body.indices[i] as number,
+        body.indices[(i + 2) % body.indices.length] as number,
+        body.bendRest[i] ?? body.bendBase[i] ?? 1,
+        bendStiffness,
+      );
+    }
     const gradientsX = new Float32Array(body.indices.length), gradientsY = new Float32Array(body.indices.length);
     let denominator = 0;
     for (let i = 0; i < body.indices.length; i++) { const previous = points[(i - 1 + points.length) % points.length] as Point, next = points[(i + 1) % points.length] as Point; const gx = 0.5 * (next.y - previous.y), gy = 0.5 * (previous.x - next.x); gradientsX[i] = gx; gradientsY[i] = gy; denominator += gx * gx + gy * gy; }
@@ -212,7 +265,7 @@ export class SoftBodyModel {
       const lambda = -(currentArea - target) / denominator * areaStiffness, maxCorrection = body.restRadius * 0.06;
       for (let i = 0; i < body.indices.length; i++) { const index = body.indices[i] as number, dx = lambda * (gradientsX[i] ?? 0), dy = lambda * (gradientsY[i] ?? 0), length = Math.hypot(dx, dy), scale = length > maxCorrection ? maxCorrection / length : 1; this.move(index, dx * scale, dy * scale); }
     }
-    const surface = tuning.surfaceTension * 0.06 * passScale;
+    const surface = tuning.surfaceTension * 0.06;
     if (surface > 0) for (let i = 0; i < body.indices.length; i++) {
       const index = body.indices[i] as number;
       const previous = body.indices[(i - 1 + body.indices.length) % body.indices.length] as number;
@@ -223,7 +276,7 @@ export class SoftBodyModel {
         ((value(this.world.positions, previous * 2 + 1) + value(this.world.positions, next * 2 + 1)) * 0.5 - value(this.world.positions, index * 2 + 1)) * surface,
       );
     }
-    const membrane = 0.72 * Math.pow(1 / (1 + tuning.boundaryElasticity * 0.72), 1.35) * passScale;
+    const membrane = 0.72 * Math.pow(1 / (1 + tuning.boundaryElasticity * 0.72), 1.35);
     for (const index of body.interiorIndices) {
       const px = value(this.world.positions, index * 2), py = value(this.world.positions, index * 2 + 1);
       let bestBoundary = 0, bestDistance = Number.POSITIVE_INFINITY;
@@ -244,8 +297,43 @@ export class SoftBodyModel {
         this.move(b, -nx * correction * 0.035, -ny * correction * 0.035);
       }
     }
-    body.restArea += (Math.abs(currentArea) - body.restArea) * Math.max(0, tuning.plasticFlow) * dt * 0.55;
   }
+
+  private solveDistance(a: number, b: number, rest: number, stiffness: number) {
+    const ao = a * 2, bo = b * 2, dx = value(this.world.positions, bo) - value(this.world.positions, ao), dy = value(this.world.positions, bo + 1) - value(this.world.positions, ao + 1), distance = Math.hypot(dx, dy);
+    if (distance < 1e-6) return;
+    const correction = (distance - rest) / distance * 0.5 * stiffness;
+    this.move(a, dx * correction, dy * correction);
+    this.move(b, -dx * correction, -dy * correction);
+  }
+
+  private dampMembraneVelocity(a: number, b: number, damping: number) {
+    if (damping <= 0) return;
+    const ao = a * 2, bo = b * 2, dx = value(this.world.positions, bo) - value(this.world.positions, ao), dy = value(this.world.positions, bo + 1) - value(this.world.positions, ao + 1), distance = Math.hypot(dx, dy);
+    if (distance < 1e-6) return;
+    const nx = dx / distance, ny = dy / distance;
+    const velocityAX = value(this.world.positions, ao) - value(this.world.particles.previousPositions, ao), velocityAY = value(this.world.positions, ao + 1) - value(this.world.particles.previousPositions, ao + 1);
+    const velocityBX = value(this.world.positions, bo) - value(this.world.particles.previousPositions, bo), velocityBY = value(this.world.positions, bo + 1) - value(this.world.particles.previousPositions, bo + 1);
+    const impulse = ((velocityBX - velocityAX) * nx + (velocityBY - velocityAY) * ny) * damping * 0.5;
+    this.world.particles.previousPositions[ao] = value(this.world.particles.previousPositions, ao) - nx * impulse;
+    this.world.particles.previousPositions[ao + 1] = value(this.world.particles.previousPositions, ao + 1) - ny * impulse;
+    this.world.particles.previousPositions[bo] = value(this.world.particles.previousPositions, bo) + nx * impulse;
+    this.world.particles.previousPositions[bo + 1] = value(this.world.particles.previousPositions, bo + 1) + ny * impulse;
+  }
+
+  private applyPlasticity(dt: number, plasticFlow: number) {
+    const rate = Math.max(0, plasticFlow) * 0.55 * dt;
+    if (rate <= 0) return;
+    for (const body of this.bodies) for (let i = 0; i < body.indices.length; i++) {
+      const a = body.indices[i] as number, edge = body.indices[(i + 1) % body.indices.length] as number, bend = body.indices[(i + 2) % body.indices.length] as number;
+      const edgeLength = this.particleDistance(a, edge), bendLength = this.particleDistance(a, bend), edgeBase = body.edgeBase[i] ?? edgeLength, bendBase = body.bendBase[i] ?? bendLength;
+      const visibleLimit = ((this.world.radii[a] ?? 1) + (this.world.radii[edge] ?? 1)) * 0.96;
+      body.edgeRest[i] = clamp((body.edgeRest[i] ?? edgeLength) + (edgeLength - (body.edgeRest[i] ?? edgeLength)) * rate, edgeBase * 0.68, Math.min(edgeBase * 1.52, visibleLimit));
+      body.bendRest[i] = clamp((body.bendRest[i] ?? bendLength) + (bendLength - (body.bendRest[i] ?? bendLength)) * rate, bendBase * 0.65, bendBase * 1.58);
+    }
+  }
+
+  private particleDistance(a: number, b: number) { return Math.hypot(value(this.world.positions, b * 2) - value(this.world.positions, a * 2), value(this.world.positions, b * 2 + 1) - value(this.world.positions, a * 2 + 1)); }
 
   private move(index: number, dx: number, dy: number) {
     const o = index * 2, x = Math.max(this.world.radii[index] ?? 0, Math.min(this.width - (this.world.radii[index] ?? 0), value(this.world.positions, o) + dx)), y = Math.max(this.world.radii[index] ?? 0, Math.min(this.height - (this.world.radii[index] ?? 0), value(this.world.positions, o + 1) + dy));
@@ -285,5 +373,7 @@ function resampleClosed(points: readonly Point[], count: number): Point[] {
   return result;
 }
 function area(points: readonly Point[]) { let result = 0; for (let i = 0; i < points.length; i++) { const a = points[i] as Point, b = points[(i + 1) % points.length] as Point; result += a.x * b.y - a.y * b.x; } return result * 0.5; }
+function pointDistance(a: Point, b: Point) { return Math.hypot(b.x - a.x, b.y - a.y); }
+function clamp(value: number, min: number, max: number) { return Math.max(min, Math.min(max, value)); }
 function catmull(p0: number, p1: number, p2: number, p3: number, t: number) { const t2 = t * t, t3 = t2 * t; return 0.5 * (2 * p1 + (-p0 + p2) * t + (2 * p0 - 5 * p1 + 4 * p2 - p3) * t2 + (-p0 + 3 * p1 - 3 * p2 + p3) * t3); }
 function value(array: Float32Array, index: number) { return array[index] ?? 0; }

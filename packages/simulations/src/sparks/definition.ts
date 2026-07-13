@@ -53,7 +53,7 @@ export const sparksDefinition: ExperienceDefinition = {
       id: 'build',
       label: 'Build',
       icon: '#',
-      description: 'Tap for a short rail or drag to draw a rail.'
+      description: 'Tap for a circular peg or drag to draw a pill-shaped rail.'
     }
   ],
   settings: SPARKS_SETTINGS,
@@ -77,7 +77,7 @@ export const sparksDefinition: ExperienceDefinition = {
     {
       icon: '#',
       title: 'Build Rails',
-      body: 'Switch to Build and draw simple rails for sparks to ricochet from.'
+      body: 'Switch to Build, tap for a circular peg, or drag a pill-shaped rail for sparks to ricochet from.'
     },
     {
       icon: 'GPU',

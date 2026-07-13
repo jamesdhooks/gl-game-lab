@@ -40,7 +40,7 @@ export const softBodyBlobDefinition: ExperienceDefinition = {
       id: 'build',
       label: 'Build',
       icon: '\u2B21',
-      description: 'Tap for pegs or drag to make a fixed line.'
+      description: 'Tap for a circular peg or drag to make a pill-shaped barrier.'
     },
     {
       id: 'interact',
@@ -60,7 +60,7 @@ export const softBodyBlobDefinition: ExperienceDefinition = {
     {
       icon: '\u2B21',
       title: 'Build Obstacles',
-      body: 'Tap for a peg or drag to create a fixed barrier.'
+      body: 'Tap for a circular peg or drag to create a round-ended pill barrier.'
     },
     {
       icon: '\u270B',

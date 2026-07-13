@@ -47,6 +47,7 @@ export class ConstrainedCircleParticleWorld2D {
   pickNearby(x: number, y: number, radius: number, target: Int32Array): number { return this.particles.pickNearby(x, y, radius, target) }
   dragPicked(indices: Int32Array, count: number, x: number, y: number, dt: number): void { this.particles.dragPicked(indices, count, x, y, dt) }
   setCollisionFilter(filter: ((left: number, right: number) => boolean) | undefined): void { this.particles.setCollisionFilter(filter) }
+  setCollisionScale(scale: ((left: number, right: number) => number) | undefined): void { this.particles.setCollisionScale(scale) }
 
   addDistanceConstraint(a: number, b: number, options: DistanceConstraintOptions = {}): number {
     if (a < 0 || b < 0 || a >= this.count || b >= this.count || a === b) throw new Error('Constraint endpoints must be distinct active particles');

@@ -48,7 +48,7 @@ export const splashMpmDefinition: ExperienceDefinition = {
       id: 'build',
       label: 'Build',
       icon: '\u2B21',
-      description: 'Tap for fixed points or drag for collision surfaces.'
+      description: 'Tap for circular pegs or drag for pill-shaped collision surfaces.'
     }
   ],
   settings: SPLASH_MPM_SETTINGS,
@@ -75,7 +75,7 @@ export const splashMpmDefinition: ExperienceDefinition = {
     {
       icon: '\u2B21',
       title: 'Build',
-      body: 'Tap in a fixed point or drag out a fixed collision surface.'
+      body: 'Tap in a circular peg or drag out a round-ended pill collision surface.'
     }
   ],
   physics: {

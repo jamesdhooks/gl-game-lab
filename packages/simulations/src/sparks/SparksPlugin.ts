@@ -249,8 +249,8 @@ export function createSparksPlugin(initial: SparksConfig = SPARKS_DEFAULTS, laun
           else if ((event.phase === 'up' || event.phase === 'cancel') && buildStart) {
             let endX = event.x, endY = event.y;
             if (Math.hypot(endX - buildStart.x, endY - buildStart.y) < 8) {
-              endX += 48;
-              endY += Math.sin(elapsed * 3) * 12;
+              endX = buildStart.x;
+              endY = buildStart.y;
             }
             rails.push({
               x1: buildStart.x,
