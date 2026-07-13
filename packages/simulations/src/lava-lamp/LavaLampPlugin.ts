@@ -1,4 +1,4 @@
-import { createExtensionToken, type EnginePlugin } from '@hooksjam/gl-game-lab-core';
+import { createExtensionToken, type EnginePlugin, type PointerInputEvent } from '@hooksjam/gl-game-lab-core';
 import { EngineInput, EngineRender2D, EngineSchedule, type ExperienceLaunchOptions, type ExperienceRuntimeController, type ExperienceSettingValue } from '@hooksjam/gl-game-lab-engine';
 import { registerSimulationRuntime } from '../SimulationPluginLifecycle.js';
 import { createLavaLampConfig, LAVA_LAMP_DEFAULTS, lavaNumber, lavaString, type LavaLampConfig } from './config.js';
@@ -11,10 +11,19 @@ export interface LavaLampController extends ExperienceRuntimeController {
 }
 export const LavaLampControllerService = createExtensionToken<LavaLampController>('gl-game-lab.simulations.lava-lamp.controller');
 export const LAVA_LAMP_PLUGIN_ID = 'gl-game-lab.simulations.lava-lamp';
+interface HeldWax {
+  readonly index: number;
+  x: number;
+  y: number;
+  seconds: number;
+  velocityX: number;
+  velocityY: number;
+}
 export function createLavaLampPlugin(initial: LavaLampConfig = LAVA_LAMP_DEFAULTS, launch: ExperienceLaunchOptions = {}): EnginePlugin {
   let config = initial, mode: LavaLampMode = launch.modeId === 'remove' ? 'remove' : 'add', styleId = validStyle(launch.styleId) ?? LAVA_LAMP_STYLE_MANIFEST.defaultStyleId, width = 1, height = 1, elapsed = 0, pendingReset = true, lastAutoAdd = 0, randomState = (launch.seed ?? 260706) >>> 0, cleanup = (): void => undefined;
   const model = new LavaLampModel();
   const visualRadii = new Float32Array(1024);
+  const heldWax = new Map<number, HeldWax>();
   return {
     id: LAVA_LAMP_PLUGIN_ID,
     version: '1.0.0',
@@ -47,6 +56,7 @@ export function createLavaLampPlugin(initial: LavaLampConfig = LAVA_LAMP_DEFAULT
         setMode: value => {
           if (value !== 'add' && value !== 'remove')
             throw new Error(`Unknown Lava Lamp mode: ${value}`);
+          releaseAllHeld();
           mode = value;
         },
         setStyle: value => {
@@ -65,15 +75,19 @@ export function createLavaLampPlugin(initial: LavaLampConfig = LAVA_LAMP_DEFAULT
           applyStyle();
         },
         reset: () => {
+          heldWax.clear();
           pendingReset = true;
         }
       };
-      registerSimulationRuntime(context, LavaLampControllerService, controller, () => cleanup());
+      registerSimulationRuntime(context, LavaLampControllerService, controller, () => {
+        heldWax.clear();
+        cleanup();
+      });
       context.get(EngineSchedule).addSystem({
         id: 'gl-game-lab.simulations.lava-lamp.update',
         stage: 'update',
         run: ({ time }) => {
-          const nextWidth = Math.max(1, renderer.viewport.width), nextHeight = Math.max(1, renderer.viewport.height), dt = Math.min(1 / 30, time.deltaSeconds) * lavaNumber(config, 'timeScale');
+          const nextWidth = Math.max(1, renderer.viewport.width), nextHeight = Math.max(1, renderer.viewport.height), frameDt = Math.min(1 / 30, Math.max(1 / 120, time.deltaSeconds || 1 / 60)), dt = frameDt * lavaNumber(config, 'timeScale');
           elapsed += dt;
           if (pendingReset || width !== nextWidth || height !== nextHeight) {
             width = nextWidth;
@@ -82,21 +96,16 @@ export function createLavaLampPlugin(initial: LavaLampConfig = LAVA_LAMP_DEFAULT
             pendingReset = false;
           }
           for (const event of input.snapshot.events)
-            if (event.kind === 'pointer' && (event.phase === 'down' || event.phase === 'move')) {
-              if (mode === 'remove')
-                model.remove(event.x, event.y, lavaNumber(config, 'inputRadius'));
-              else {
-                if (event.phase === 'down')
-                  addWax(event.x, event.y, launch.profile === 'preview' ? 3 : 5);
-                model.heat(event.x, event.y, lavaNumber(config, 'inputRadius'), lavaNumber(config, 'inputThermalRate') * (event.phase === 'down' ? 2 : 0.5), lavaNumber(config, 'inputLift') * dt);
-              }
-            }
+            if (event.kind === 'pointer')
+              routePointer(event, frameDt);
+          updateHeldWax(dt);
           if ((launch.profile === 'preview' || launch.profile === 'demo') && elapsed - lastAutoAdd > (launch.profile === 'preview' ? 0.68 : 1.1)) {
             lastAutoAdd = elapsed;
             const x = width * (0.22 + random() * 0.56), y = height * (0.72 + random() * 0.18);
             addWax(x, y, launch.profile === 'preview' ? 2 : 3);
           }
           model.step(dt, width, height, tuning());
+          pinHeldWax();
         }
       });
       context.get(EngineSchedule).addSystem({
@@ -150,6 +159,7 @@ export function createLavaLampPlugin(initial: LavaLampConfig = LAVA_LAMP_DEFAULT
         }
       });
       function reset() {
+        heldWax.clear();
         const preview = launch.profile === 'preview', base = tuning(), next = {
           ...base,
           maxParticles: preview ? Math.max(384, base.maxParticles) : base.maxParticles,
@@ -158,6 +168,66 @@ export function createLavaLampPlugin(initial: LavaLampConfig = LAVA_LAMP_DEFAULT
         model.reset(width, height, preview ? Math.max(112, lavaNumber(config, 'initialBlobs')) : lavaNumber(config, 'initialBlobs'), next, randomState);
         lastAutoAdd = 0;
         elapsed = 0;
+      }
+      function routePointer(event: PointerInputEvent, frameDt: number) {
+        if (event.phase === 'up' || event.phase === 'cancel' || (event.phase === 'move' && event.buttons === 0)) {
+          releaseHeld(event.id);
+          return;
+        }
+        if (mode === 'remove') {
+          if (event.phase === 'down' || event.phase === 'move')
+            model.remove(event.x, event.y, lavaNumber(config, 'inputRadius'));
+          return;
+        }
+        if (event.phase === 'down') {
+          releaseHeld(event.id);
+          const index = model.beginHeld(event.x, event.y, tuning());
+          if (index >= 0)
+            heldWax.set(event.id, {
+              index,
+              x: event.x,
+              y: event.y,
+              seconds: 0,
+              velocityX: 0,
+              velocityY: 0
+            });
+          return;
+        }
+        const held = heldWax.get(event.id);
+        if (!held)
+          return;
+        const inverseDt = 1 / Math.max(1 / 120, frameDt);
+        const velocityX = clampMotion((event.x - held.x) * inverseDt);
+        const velocityY = clampMotion((event.y - held.y) * inverseDt);
+        held.velocityX = held.velocityX * 0.45 + velocityX * 0.55;
+        held.velocityY = held.velocityY * 0.45 + velocityY * 0.55;
+        held.x = event.x;
+        held.y = event.y;
+      }
+      function updateHeldWax(dt: number) {
+        const currentTuning = tuning(), maximumRadius = lavaNumber(config, 'inputRadius'), growthRate = lavaNumber(config, 'inputThermalRate');
+        for (const [pointerId, held] of heldWax) {
+          held.seconds += dt;
+          if (!model.updateHeld(held.index, held.x, held.y, held.seconds, growthRate, currentTuning, maximumRadius))
+            heldWax.delete(pointerId);
+        }
+      }
+      function pinHeldWax() {
+        const currentTuning = tuning(), maximumRadius = lavaNumber(config, 'inputRadius'), growthRate = lavaNumber(config, 'inputThermalRate');
+        for (const [pointerId, held] of heldWax)
+          if (!model.updateHeld(held.index, held.x, held.y, held.seconds, growthRate, currentTuning, maximumRadius))
+            heldWax.delete(pointerId);
+      }
+      function releaseHeld(pointerId: number) {
+        const held = heldWax.get(pointerId);
+        if (!held)
+          return;
+        model.releaseHeld(held.index, held.velocityX * 0.35, held.velocityY * 0.35 - lavaNumber(config, 'inputLift') * 0.65);
+        heldWax.delete(pointerId);
+      }
+      function releaseAllHeld() {
+        for (const pointerId of [...heldWax.keys()])
+          releaseHeld(pointerId);
       }
       function addWax(x: number, y: number, count: number) {
         for (let i = 0; i < count; i++)
@@ -233,4 +303,7 @@ export function createLavaLampPlugin(initial: LavaLampConfig = LAVA_LAMP_DEFAULT
 }
 function validStyle(value: string | undefined) {
   return value && LAVA_LAMP_STYLE_MANIFEST.styles.some(style => style.id === value) ? value : undefined;
+}
+function clampMotion(value: number) {
+  return Math.max(-900, Math.min(900, value));
 }

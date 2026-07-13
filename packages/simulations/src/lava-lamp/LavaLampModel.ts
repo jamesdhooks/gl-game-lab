@@ -73,6 +73,48 @@ export class LavaLampModel {
       this.temperatures[index] = clamp(temperature);
     return index;
   }
+  beginHeld(x: number, y: number, tuning: LavaLampTuning) {
+    this.configure(tuning);
+    const index = this.world.addCircle(x, y, {
+      radius: Math.max(1, tuning.blobRadius * 0.08),
+      radiusNoise: 0,
+      velocityX: 0,
+      velocityY: 0,
+      inverseMass: 0,
+      colorSeed: this.world.count
+    });
+    if (index >= 0)
+      this.temperatures[index] = 1;
+    return index;
+  }
+  updateHeld(index: number, x: number, y: number, heldSeconds: number, growthRate: number, tuning: LavaLampTuning, maximumVisualRadius: number) {
+    if (index < 0 || index >= this.world.count)
+      return false;
+    const offset = index * 2;
+    const minimumRadius = Math.max(1, tuning.blobRadius * 0.08);
+    const maximumRadius = collisionRadiusForVisualRadius(Math.max(tuning.blobRadius, maximumVisualRadius), tuning.blobRadius);
+    const growth = Math.min(1, Math.max(0, heldSeconds) * Math.max(0, growthRate) * 10);
+    const radius = minimumRadius + (maximumRadius - minimumRadius) * smoothstep(growth);
+    this.world.positions[offset] = x;
+    this.world.positions[offset + 1] = y;
+    this.world.previousPositions[offset] = x;
+    this.world.previousPositions[offset + 1] = y;
+    this.world.velocities[offset] = 0;
+    this.world.velocities[offset + 1] = 0;
+    this.world.radii[index] = radius;
+    this.world.inverseMasses[index] = 0;
+    this.temperatures[index] = 1;
+    return true;
+  }
+  releaseHeld(index: number, velocityX: number, velocityY: number) {
+    if (index < 0 || index >= this.world.count)
+      return false;
+    const offset = index * 2;
+    this.world.inverseMasses[index] = 1;
+    this.world.velocities[offset] = velocityX;
+    this.world.velocities[offset + 1] = velocityY;
+    return true;
+  }
   remove(x: number, y: number, radius: number) {
     const removed = this.world.removeWithin(x, y, radius);
     if (removed > 0)
@@ -129,6 +171,12 @@ export class LavaLampModel {
 }
 function clamp(value: number) {
   return Math.max(0, Math.min(1, value));
+}
+function smoothstep(value: number) {
+  return value * value * (3 - 2 * value);
+}
+function collisionRadiusForVisualRadius(visualRadius: number, blobRadius: number) {
+  return Math.max(1, (visualRadius - blobRadius * 0.47) / (0.35 / 0.34));
 }
 function randomHash(value: number) {
   return Math.abs(Math.sin(value * 12.9898) * 43758.5453) % 1;

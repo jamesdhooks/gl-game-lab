@@ -7,7 +7,7 @@ export const lavaLampDefinition: ExperienceDefinition = {
   kind: 'simulation',
   name: 'Lava Lamp',
   short: 'Warm wax blobs rise and drift like a lava lamp.',
-  long: 'Add or remove wax blobs and watch them rise, drift, and fall.',
+  long: 'Grow and release wax blobs, or remove them, and watch them rise, drift, and fall.',
   icon: '\u25D6',
   tags: [
     'simulation',
@@ -34,7 +34,7 @@ export const lavaLampDefinition: ExperienceDefinition = {
       id: 'add',
       label: 'Add',
       icon: '+',
-      description: 'Add wax and lift nearby blobs.'
+      description: 'Hold to grow one wax blob, then release it.'
     },
     {
       id: 'remove',
@@ -57,7 +57,7 @@ export const lavaLampDefinition: ExperienceDefinition = {
     {
       icon: '+',
       title: 'Add Warm Wax',
-      body: 'Tap or drag near the heater to add wax, heat nearby blobs, and lift them.'
+      body: 'Press and hold to grow one warm wax blob. Release to let it rise and drift.'
     },
     {
       icon: '-',
