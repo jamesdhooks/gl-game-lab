@@ -103,6 +103,40 @@ export interface ExperiencePhysicsDescriptor {
 export type ExperienceLaunchProfile = 'play' | 'preview' | 'demo';
 export type ExperienceSettingValue = number | boolean | string;
 
+export type PreviewRenderPolicy = 'auto' | 'live' | 'static';
+
+export interface PreviewVariationConfig {
+  readonly intensity: number;
+  readonly lockedKeys: readonly string[];
+  readonly seed: number;
+}
+
+export interface PreviewFallbackImage {
+  readonly src: string;
+  readonly revision: string;
+  readonly width: number;
+  readonly height: number;
+  readonly profileHash: string;
+}
+
+export interface ExperiencePreviewProfile {
+  readonly modeId?: string;
+  readonly styleId?: string;
+  readonly settings: Readonly<Record<string, ExperienceSettingValue>>;
+  readonly variation: PreviewVariationConfig;
+  readonly renderPolicy: PreviewRenderPolicy;
+  readonly image?: PreviewFallbackImage;
+}
+
+export interface ResolvedPreviewLaunch {
+  readonly profile: 'preview';
+  readonly modeId?: string;
+  readonly styleId?: string;
+  readonly settings: Readonly<Record<string, ExperienceSettingValue>>;
+  readonly seed: number;
+  readonly hash: string;
+}
+
 export interface ExperienceLaunchOptions {
   readonly profile?: ExperienceLaunchProfile;
   readonly modeId?: string;
@@ -144,6 +178,198 @@ export interface ExperienceDefinition {
   readonly attributions?: readonly ExperienceAttribution[];
   readonly physics?: ExperiencePhysicsDescriptor;
   createPlugins(options?: ExperienceLaunchOptions): readonly EnginePlugin[];
+}
+
+const PREVIEW_MODE_LOCK = '$mode';
+const PREVIEW_STYLE_LOCK = '$style';
+
+export function createDefaultPreviewProfile(
+  definition: ExperienceDefinition,
+  settings: Readonly<Record<string, ExperienceSettingValue>> = {},
+): ExperiencePreviewProfile {
+  const anchor: Record<string, ExperienceSettingValue> = {};
+  for (const field of definition.settings ?? []) anchor[field.key] = sanitizeSettingValue(field, settings[field.key] ?? field.default);
+  return Object.freeze({
+    ...(definition.modes?.[0]?.id ? { modeId: definition.modes[0].id } : {}),
+    ...(definition.styleManifest?.defaultStyleId ? { styleId: definition.styleManifest.defaultStyleId } : {}),
+    settings: Object.freeze(anchor),
+    variation: Object.freeze({ intensity: 0.25, lockedKeys: Object.freeze([]), seed: hashText(definition.id) }),
+    renderPolicy: 'auto' as const,
+  });
+}
+
+export function sanitizePreviewProfile(
+  definition: ExperienceDefinition,
+  candidate: ExperiencePreviewProfile | undefined,
+  fallbackSettings: Readonly<Record<string, ExperienceSettingValue>> = {},
+): ExperiencePreviewProfile {
+  const fallback = createDefaultPreviewProfile(definition, fallbackSettings);
+  if (!candidate) return fallback;
+  const settings: Record<string, ExperienceSettingValue> = {};
+  for (const field of definition.settings ?? []) {
+    settings[field.key] = sanitizeSettingValue(field, candidate.settings[field.key] ?? fallback.settings[field.key] ?? field.default);
+  }
+  const modeId = definition.modes?.some((mode) => mode.id === candidate.modeId) ? candidate.modeId : fallback.modeId;
+  const styleId = definition.styleManifest?.styles.some((style) => style.id === candidate.styleId) ? candidate.styleId : fallback.styleId;
+  const validLocks = new Set([PREVIEW_MODE_LOCK, PREVIEW_STYLE_LOCK, ...(definition.settings ?? []).map((field) => field.key)]);
+  const lockedKeys = [...new Set(candidate.variation.lockedKeys.filter((key) => validLocks.has(key)))].sort();
+  const intensity = clamp(Number.isFinite(candidate.variation.intensity) ? candidate.variation.intensity : 0.25, 0, 1);
+  const seed = Number.isSafeInteger(candidate.variation.seed) ? candidate.variation.seed >>> 0 : fallback.variation.seed;
+  const renderPolicy: PreviewRenderPolicy = candidate.renderPolicy === 'live' || candidate.renderPolicy === 'static' ? candidate.renderPolicy : 'auto';
+  const image = sanitizePreviewImage(candidate.image);
+  return Object.freeze({
+    ...(modeId ? { modeId } : {}),
+    ...(styleId ? { styleId } : {}),
+    settings: Object.freeze(settings),
+    variation: Object.freeze({ intensity, lockedKeys: Object.freeze(lockedKeys), seed }),
+    renderPolicy,
+    ...(image ? { image } : {}),
+  });
+}
+
+export function resolvePreviewLaunch(
+  definition: ExperienceDefinition,
+  candidate: ExperiencePreviewProfile | undefined,
+  sessionSeed: number,
+): ResolvedPreviewLaunch {
+  const profile = sanitizePreviewProfile(definition, candidate);
+  const seed = mixSeed(profile.variation.seed, Number.isSafeInteger(sessionSeed) ? sessionSeed >>> 0 : 0, hashText(definition.id));
+  const random = createRandom(seed);
+  const locked = new Set(profile.variation.lockedKeys);
+  const intensity = profile.variation.intensity;
+  const settings: Record<string, ExperienceSettingValue> = {};
+  for (const field of definition.settings ?? []) {
+    const anchor = profile.settings[field.key] ?? field.default;
+    settings[field.key] = locked.has(field.key) ? anchor : varySetting(field, anchor, intensity, random);
+  }
+  const modeId = varyChoice(
+    profile.modeId,
+    definition.modes?.map((mode) => mode.id) ?? [],
+    intensity,
+    locked.has(PREVIEW_MODE_LOCK),
+    random,
+  );
+  const styleId = varyChoice(
+    profile.styleId,
+    definition.styleManifest?.styles.filter((style) => style.id !== '__random__').map((style) => style.id) ?? [],
+    intensity,
+    locked.has(PREVIEW_STYLE_LOCK),
+    random,
+  );
+  const stable = stableStringify({ modeId, styleId, settings, seed });
+  return Object.freeze({
+    profile: 'preview' as const,
+    ...(modeId ? { modeId } : {}),
+    ...(styleId ? { styleId } : {}),
+    settings: Object.freeze(settings),
+    seed,
+    hash: hashText(stable).toString(16).padStart(8, '0'),
+  });
+}
+
+function varySetting(
+  field: ExperienceSetting,
+  anchor: ExperienceSettingValue,
+  intensity: number,
+  random: () => number,
+): ExperienceSettingValue {
+  if (intensity <= 0 || field.type === 'string') return anchor;
+  if (field.type === 'boolean') return random() < 0.25 * intensity ? !Boolean(anchor) : Boolean(anchor);
+  if (field.type === 'select') {
+    const options = field.options.filter((option) => option.value !== '__random__').map((option) => option.value);
+    return varyChoice(String(anchor), options, intensity, false, random) ?? String(anchor);
+  }
+  const numeric = typeof anchor === 'number' ? anchor : field.default;
+  if (field.numericScale === 'powerOfTwo') {
+    const exponent = Math.log2(Math.max(1, numeric));
+    const delta = Math.round(centeredNoise(random) * 2 * intensity);
+    return sanitizeSettingValue(field, 2 ** (Math.round(exponent) + delta));
+  }
+  const radius = (field.max - field.min) * 0.2 * intensity;
+  const value = numeric + centeredNoise(random) * radius;
+  const snapped = field.min + Math.round((value - field.min) / field.step) * field.step;
+  return sanitizeSettingValue(field, snapped);
+}
+
+function varyChoice(
+  anchor: string | undefined,
+  choices: readonly string[],
+  intensity: number,
+  locked: boolean,
+  random: () => number,
+): string | undefined {
+  if (!anchor || locked || choices.length < 2 || intensity <= 0 || random() >= 0.35 * intensity) return anchor;
+  const alternatives = choices.filter((choice) => choice !== anchor);
+  return alternatives[Math.floor(random() * alternatives.length)] ?? anchor;
+}
+
+function sanitizeSettingValue(field: ExperienceSetting, value: ExperienceSettingValue): ExperienceSettingValue {
+  if (field.type === 'number') {
+    const numeric = typeof value === 'number' && Number.isFinite(value) ? value : field.default;
+    if (field.numericScale === 'powerOfTwo') {
+      const exponent = Math.round(Math.log2(Math.max(1, numeric)));
+      return clamp(2 ** exponent, field.min, field.max);
+    }
+    const snapped = field.min + Math.round((numeric - field.min) / field.step) * field.step;
+    return clamp(Number(snapped.toFixed(10)), field.min, field.max);
+  }
+  if (field.type === 'boolean') return typeof value === 'boolean' ? value : field.default;
+  if (field.type === 'select') return typeof value === 'string' && field.options.some((option) => option.value === value) ? value : field.default;
+  return typeof value === 'string' ? value : field.default;
+}
+
+function sanitizePreviewImage(image: PreviewFallbackImage | undefined): PreviewFallbackImage | undefined {
+  if (!image || typeof image.src !== 'string' || !/^previews\/[a-z0-9-]+\.webp$/.test(image.src)) return undefined;
+  if (typeof image.revision !== 'string' || !/^[a-f0-9]{8,64}$/.test(image.revision)) return undefined;
+  if (!Number.isSafeInteger(image.width) || image.width < 1 || !Number.isSafeInteger(image.height) || image.height < 1) return undefined;
+  if (typeof image.profileHash !== 'string' || !/^[a-f0-9]{8}$/.test(image.profileHash)) return undefined;
+  return Object.freeze({ ...image });
+}
+
+function centeredNoise(random: () => number): number {
+  return random() + random() - 1;
+}
+
+function createRandom(seed: number): () => number {
+  let state = seed || 0x6d2b79f5;
+  return () => {
+    state = (state + 0x6d2b79f5) >>> 0;
+    let value = state;
+    value = Math.imul(value ^ value >>> 15, value | 1);
+    value ^= value + Math.imul(value ^ value >>> 7, value | 61);
+    return ((value ^ value >>> 14) >>> 0) / 4_294_967_296;
+  };
+}
+
+function mixSeed(...values: readonly number[]): number {
+  let mixed = 0x811c9dc5;
+  for (const value of values) {
+    mixed ^= value >>> 0;
+    mixed = Math.imul(mixed, 0x01000193) >>> 0;
+  }
+  return mixed;
+}
+
+function hashText(value: string): number {
+  let hash = 0x811c9dc5;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 0x01000193) >>> 0;
+  }
+  return hash;
+}
+
+function stableStringify(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(stableStringify).join(',')}]`;
+  if (value && typeof value === 'object') {
+    const record = value as Record<string, unknown>;
+    return `{${Object.keys(record).sort().map((key) => `${JSON.stringify(key)}:${stableStringify(record[key])}`).join(',')}}`;
+  }
+  return JSON.stringify(value);
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
 }
 
 export class ExperienceRegistry {
