@@ -144,10 +144,16 @@ export function createChainRainPlugin(initial: ChainRainConfig = CHAIN_RAIN_DEFA
         run: () => {
           const style = requireStyle(), palette3 = style.palette.slice(0, 4).map(chainColor3), palette4 = style.palette.slice(0, 4).map(color => chainColor4(color, 1)), renderStyle = chainString(config, 'renderStyle'), skin = chainNumber(config, 'skinWidth');
           if (renderStyle === 'enhanced') {
-            const mesh = packChainSkin(bodies, world, skin);
-            renderer.submitTriangleMesh({ id: 'chain-rain.skin', ...mesh, worldWidth: width, worldHeight: height, palette: palette3, opacity: 1, blend: 'alpha' });
-            const fixtures = packChainParticles(bodies.filter(body => body.fixture), world, 1.08);
-            if (fixtures.count > 0) renderer.submitParticles({ id: 'chain-rain.fixtures', ...fixtures, palette: [[0.58, 0.58, 0.58, 1]], blend: 'alpha', opacity: 1 });
+            const dynamicBodies = bodies.filter(body => !body.fixture), fixtureBodies = bodies.filter(body => body.fixture);
+            const fixtureMesh = packChainSkin(fixtureBodies, world, skin), bodyMesh = packChainSkin(dynamicBodies, world, skin);
+            if (fixtureMesh.vertexCount > 0) renderer.submitTriangleMesh({ id: 'chain-rain.fixture-skin', ...fixtureMesh, worldWidth: width, worldHeight: height, palette: [[0.58, 0.58, 0.58]], opacity: 1, blend: 'opaque', shading: 'flat' });
+            if (bodyMesh.vertexCount > 0) renderer.submitTriangleMesh({ id: 'chain-rain.skin', ...bodyMesh, worldWidth: width, worldHeight: height, palette: palette3, opacity: 1, blend: 'opaque', shading: 'flat' });
+            const highlightWidth = chainNumber(config, 'skinHighlightWidth'), highlightOpacity = chainNumber(config, 'skinHighlightOpacity');
+            if (highlightWidth > 0 && highlightOpacity > 0) {
+              const strength = chainNumber(config, 'skinHighlightStrength'), highlightableFixtures = fixtureBodies.filter(body => body.indices.length > 1), highlightableBodies = dynamicBodies.filter(body => body.indices.length > 1), fixtureHighlight = packChainSkin(highlightableFixtures, world, highlightWidth), bodyHighlight = packChainSkin(highlightableBodies, world, highlightWidth);
+              if (fixtureHighlight.vertexCount > 0) renderer.submitTriangleMesh({ id: 'chain-rain.fixture-highlight', ...fixtureHighlight, worldWidth: width, worldHeight: height, palette: [brightenColor([0.58, 0.58, 0.58], strength)], opacity: highlightOpacity, blend: 'alpha', shading: 'flat' });
+              if (bodyHighlight.vertexCount > 0) renderer.submitTriangleMesh({ id: 'chain-rain.skin-highlight', ...bodyHighlight, worldWidth: width, worldHeight: height, palette: palette3.map(color => brightenColor(color, strength)), opacity: highlightOpacity, blend: 'alpha', shading: 'flat' });
+            }
           } else if (renderStyle === 'ultra') {
             const liquid = packLiquidChains(bodies, world, chainNumber(config, 'liquidParticleRadius'), chainNumber(config, 'liquidFillDensity'));
             renderer.submitMetaballs({
@@ -352,36 +358,75 @@ function packChainParticles(bodies: readonly ChainBody[], world: ConstrainedCirc
   return { count, positions, radii, colorSeeds };
 }
 
-function packChainSkin(bodies: readonly ChainBody[], world: ConstrainedCircleParticleWorld2D, widthScale: number) {
-  const dynamic = bodies.filter(body => !body.fixture && body.indices.length > 1), subdivisions = 3, capSegments = 16;
-  const vertexCount = dynamic.reduce((sum, body) => sum + (body.indices.length - 1) * subdivisions * 6 + capSegments * 6, 0);
+export function packChainSkin(bodies: readonly ChainBody[], world: ConstrainedCircleParticleWorld2D, widthScale: number) {
+  const visible = bodies.filter(body => body.indices.length > 0), capSegments = 20;
+  const vertexCount = visible.reduce((sum, body) => {
+    if (body.indices.length === 1) return sum + capSegments * 3;
+    const smoothPointCount = body.indices.length < 3 ? body.indices.length : (body.indices.length - 1) * skinSubdivisions(body.indices.length) + 1;
+    return sum + (smoothPointCount - 1) * 6 + capSegments * 6;
+  }, 0);
   const positions = new Float32Array(vertexCount * 2), colorSeeds = new Float32Array(vertexCount);
   let vertex = 0;
   const emit = (x: number, y: number, seed: number) => { positions[vertex * 2] = x; positions[vertex * 2 + 1] = y; colorSeeds[vertex] = seed; vertex++; };
-  for (const body of dynamic) {
-    const points = body.indices.map(index => ({ x: world.positions[index * 2] ?? 0, y: world.positions[index * 2 + 1] ?? 0, r: (world.radii[index] ?? 1) * widthScale }));
-    const smooth: Array<{ x: number; y: number; r: number }> = [];
-    for (let i = 0; i < points.length - 1; i++) for (let step = 0; step < subdivisions; step++) {
-      const p0 = points[Math.max(0, i - 1)] as { x: number; y: number; r: number }, p1 = points[i] as { x: number; y: number; r: number }, p2 = points[i + 1] as { x: number; y: number; r: number }, p3 = points[Math.min(points.length - 1, i + 2)] as { x: number; y: number; r: number };
-      const t = step / subdivisions, t2 = t * t, t3 = t2 * t;
-      smooth.push({
-        x: 0.5 * (2 * p1.x + (-p0.x + p2.x) * t + (2 * p0.x - 5 * p1.x + 4 * p2.x - p3.x) * t2 + (-p0.x + 3 * p1.x - 3 * p2.x + p3.x) * t3),
-        y: 0.5 * (2 * p1.y + (-p0.y + p2.y) * t + (2 * p0.y - 5 * p1.y + 4 * p2.y - p3.y) * t2 + (-p0.y + 3 * p1.y - 3 * p2.y + p3.y) * t3),
-        r: p1.r + (p2.r - p1.r) * t,
-      });
+  for (const body of visible) {
+    const points = body.indices.map(index => ({ x: world.positions[index * 2] ?? 0, y: world.positions[index * 2 + 1] ?? 0 })), seed = body.fixture ? 0 : Math.max(0, body.seed - 1);
+    let radius = 0;
+    for (const index of body.indices) radius = Math.max(radius, world.radii[index] ?? 1);
+    radius *= widthScale;
+    if (points.length === 1) {
+      emitDisk(points[0] as Point, radius, seed, capSegments, emit);
+      continue;
     }
-    smooth.push(points[points.length - 1] as { x: number; y: number; r: number });
+    const smooth = smoothOpenPath(points, skinSubdivisions(points.length));
     for (let i = 0; i < smooth.length - 1; i++) {
-      const a = smooth[i] as { x: number; y: number; r: number }, b = smooth[i + 1] as { x: number; y: number; r: number }, length = Math.max(0.001, Math.hypot(b.x - a.x, b.y - a.y)), nx = -(b.y - a.y) / length, ny = (b.x - a.x) / length;
-      const al = { x: a.x + nx * a.r, y: a.y + ny * a.r }, ar = { x: a.x - nx * a.r, y: a.y - ny * a.r }, bl = { x: b.x + nx * b.r, y: b.y + ny * b.r }, br = { x: b.x - nx * b.r, y: b.y - ny * b.r };
-      emit(al.x, al.y, body.seed); emit(ar.x, ar.y, body.seed); emit(bl.x, bl.y, body.seed); emit(bl.x, bl.y, body.seed); emit(ar.x, ar.y, body.seed); emit(br.x, br.y, body.seed);
+      const current = smooth[i] as Point, following = smooth[i + 1] as Point, previous = smooth[Math.max(0, i - 1)] as Point, next = smooth[Math.min(smooth.length - 1, i + 1)] as Point, afterNext = smooth[Math.min(smooth.length - 1, i + 2)] as Point;
+      const currentNormal = pathNormal(previous, next), nextNormal = pathNormal(current, afterNext);
+      const currentLeft = { x: current.x + currentNormal.x * radius, y: current.y + currentNormal.y * radius }, currentRight = { x: current.x - currentNormal.x * radius, y: current.y - currentNormal.y * radius };
+      const nextLeft = { x: following.x + nextNormal.x * radius, y: following.y + nextNormal.y * radius }, nextRight = { x: following.x - nextNormal.x * radius, y: following.y - nextNormal.y * radius };
+      emit(currentLeft.x, currentLeft.y, seed); emit(currentRight.x, currentRight.y, seed); emit(nextLeft.x, nextLeft.y, seed);
+      emit(nextLeft.x, nextLeft.y, seed); emit(currentRight.x, currentRight.y, seed); emit(nextRight.x, nextRight.y, seed);
     }
-    for (const center of [smooth[0], smooth[smooth.length - 1]]) if (center) for (let i = 0; i < capSegments; i++) {
-      const a = i / capSegments * Math.PI * 2, b = (i + 1) / capSegments * Math.PI * 2;
-      emit(center.x, center.y, body.seed); emit(center.x + Math.cos(a) * center.r, center.y + Math.sin(a) * center.r, body.seed); emit(center.x + Math.cos(b) * center.r, center.y + Math.sin(b) * center.r, body.seed);
-    }
+    emitDisk(smooth[0] as Point, radius, seed, capSegments, emit);
+    emitDisk(smooth[smooth.length - 1] as Point, radius, seed, capSegments, emit);
   }
   return { vertexCount: vertex, positions, colorSeeds };
+}
+
+function skinSubdivisions(pointCount: number) {
+  return Math.max(5, Math.min(10, Math.round(pointCount * 0.32)));
+}
+
+function smoothOpenPath(points: readonly Point[], subdivisions: number): Point[] {
+  if (points.length < 3) return [...points];
+  const smooth: Point[] = [];
+  for (let index = 0; index < points.length - 1; index++) for (let step = 0; step < subdivisions; step++) {
+    const p0 = points[Math.max(0, index - 1)] as Point, p1 = points[index] as Point, p2 = points[index + 1] as Point, p3 = points[Math.min(points.length - 1, index + 2)] as Point;
+    const t = step / subdivisions, t2 = t * t, t3 = t2 * t;
+    smooth.push({
+      x: 0.5 * (2 * p1.x + (-p0.x + p2.x) * t + (2 * p0.x - 5 * p1.x + 4 * p2.x - p3.x) * t2 + (-p0.x + 3 * p1.x - 3 * p2.x + p3.x) * t3),
+      y: 0.5 * (2 * p1.y + (-p0.y + p2.y) * t + (2 * p0.y - 5 * p1.y + 4 * p2.y - p3.y) * t2 + (-p0.y + 3 * p1.y - 3 * p2.y + p3.y) * t3)
+    });
+  }
+  smooth.push(points[points.length - 1] as Point);
+  return smooth;
+}
+
+function pathNormal(from: Point, to: Point): Point {
+  const dx = to.x - from.x, dy = to.y - from.y, length = Math.max(0.001, Math.hypot(dx, dy));
+  return { x: -dy / length, y: dx / length };
+}
+
+function emitDisk(center: Point, radius: number, seed: number, segments: number, emit: (x: number, y: number, seed: number) => void) {
+  for (let index = 0; index < segments; index++) {
+    const start = index / segments * Math.PI * 2, end = (index + 1) / segments * Math.PI * 2;
+    emit(center.x, center.y, seed);
+    emit(center.x + Math.cos(start) * radius, center.y + Math.sin(start) * radius, seed);
+    emit(center.x + Math.cos(end) * radius, center.y + Math.sin(end) * radius, seed);
+  }
+}
+
+function brightenColor(color: readonly [number, number, number], amount: number): readonly [number, number, number] {
+  return [color[0] + (1 - color[0]) * amount, color[1] + (1 - color[1]) * amount, color[2] + (1 - color[2]) * amount];
 }
 
 function packLiquidChains(bodies: readonly ChainBody[], world: ConstrainedCircleParticleWorld2D, liquidRadius: number, fillDensity: number) {

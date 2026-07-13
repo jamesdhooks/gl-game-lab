@@ -109,6 +109,7 @@ export interface TriangleMeshBatch2D {
   readonly palette: readonly (readonly [number, number, number])[];
   readonly opacity?: number;
   readonly blend?: BlendMode2D;
+  readonly shading?: 'flat' | 'sheen';
 }
 
 export interface MetaballBatch2D {
