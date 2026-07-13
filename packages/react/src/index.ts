@@ -16,6 +16,8 @@ export {
   ExperienceRuntime,
   type ExperienceRuntimeProps,
   type PreviewAuthoringOptions,
+  type RuntimeSelectionState,
+  resolvePreviewToggleState,
 } from './ExperienceRuntime.js';
 export { PreviewTile, type PreviewTileProps } from './PreviewTile.js';
 export { useViewport, type ViewportState, type SafeAreaInsets } from './hooks/useViewport.js';

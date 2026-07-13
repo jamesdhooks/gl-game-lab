@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createEngineDestroyHandle, destroyEngineAfterBoot, normalizeFixedFrameCapture, resolvePixelRatio } from '../GameCanvas.js';
+import { resolvePreviewToggleState } from '../ExperienceRuntime.js';
 
 describe('normalizeFixedFrameCapture', () => {
   it('provides a deterministic sixty-hertz default', () => {
@@ -59,5 +60,20 @@ describe('resolvePixelRatio', () => {
     expect(resolvePixelRatio(400, 300, 3)).toBe(2);
     expect(resolvePixelRatio(400, 300, 2, 120_000)).toBe(1);
     expect(() => resolvePixelRatio(400, 300, 2, 0)).toThrow('maxPixels');
+  });
+});
+
+describe('preview authoring state', () => {
+  it('preserves and restores the exact play selection across Preview mode', () => {
+    const play = { modeId: 'draw', styleId: 'neon', settings: { amount: 73, ambient: false } };
+    const preview = { modeId: 'add', styleId: 'glass', settings: { amount: 12, ambient: true } };
+    const entered = resolvePreviewToggleState(false, true, play, { modeId: 'default', styleId: 'default', settings: {} }, preview);
+    expect(entered.active).toBe(preview);
+    expect(entered.savedPlay).toBe(play);
+
+    const editedPreview = { ...preview, settings: { amount: 18, ambient: true } };
+    const left = resolvePreviewToggleState(true, false, editedPreview, entered.savedPlay, editedPreview);
+    expect(left.active).toBe(play);
+    expect(left.savedPlay).toBe(play);
   });
 });

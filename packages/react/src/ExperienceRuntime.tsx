@@ -108,6 +108,24 @@ export interface PreviewAuthoringOptions {
   readonly onCapture: (capture: CanvasFrameCapture, profile: ExperiencePreviewProfile, profileHash: string) => Promise<void> | void;
 }
 
+export interface RuntimeSelectionState {
+  readonly modeId: string;
+  readonly styleId: string;
+  readonly settings: Readonly<Record<string, ExperienceSettingValue>>;
+}
+
+export function resolvePreviewToggleState(
+  wasPreviewEnabled: boolean,
+  previewEnabled: boolean,
+  current: RuntimeSelectionState,
+  savedPlay: RuntimeSelectionState,
+  preview: RuntimeSelectionState,
+): { readonly active: RuntimeSelectionState; readonly savedPlay: RuntimeSelectionState } {
+  if (!wasPreviewEnabled && previewEnabled) return Object.freeze({ active: preview, savedPlay: current });
+  if (wasPreviewEnabled && !previewEnabled) return Object.freeze({ active: savedPlay, savedPlay });
+  return Object.freeze({ active: previewEnabled ? preview : current, savedPlay });
+}
+
 export function ExperienceRuntime({
   ...props
 }: ExperienceRuntimeProps): JSX.Element {
@@ -193,8 +211,10 @@ function ImmersiveExperienceRuntime({
   const mobilePortrait = isMobile && !isLandscape;
   const previewEnabled = previewAuthoring?.enabled === true;
   const sceneSettings = useMemo(() => settingDefaults(definition), [definition]);
-  const defaultModeId = previewEnabled ? previewAuthoring.profile.modeId ?? definition.modes?.[0]?.id ?? 'default' : initialModeId ?? definition.modes?.[0]?.id ?? 'default';
-  const defaultStyleId = previewEnabled ? previewAuthoring.profile.styleId ?? definition.styleManifest?.defaultStyleId ?? 'default' : initialStyleId ?? definition.styleManifest?.defaultStyleId ?? 'default';
+  const playDefaultModeId = initialModeId ?? definition.modes?.[0]?.id ?? 'default';
+  const playDefaultStyleId = initialStyleId ?? definition.styleManifest?.defaultStyleId ?? 'default';
+  const defaultModeId = previewEnabled ? previewAuthoring.profile.modeId ?? definition.modes?.[0]?.id ?? 'default' : playDefaultModeId;
+  const defaultStyleId = previewEnabled ? previewAuthoring.profile.styleId ?? definition.styleManifest?.defaultStyleId ?? 'default' : playDefaultStyleId;
   const initialSettings = previewEnabled ? previewAuthoring.profile.settings : sceneSettings;
   const [modeId, setModeId] = useState(defaultModeId);
   const [styleId, setStyleId] = useState(defaultStyleId);
@@ -222,15 +242,32 @@ function ImmersiveExperienceRuntime({
   const localDemoInitialShuffleRef = useRef(false);
   const [localDemoAdvanceNonce, setLocalDemoAdvanceNonce] = useState(0);
   const [capturePending, setCapturePending] = useState(false);
+  const wasPreviewEnabledRef = useRef(previewEnabled);
+  const playStateRef = useRef<RuntimeSelectionState>({ modeId: playDefaultModeId, styleId: playDefaultStyleId, settings: sceneSettings });
+  const playStateExperienceIdRef = useRef(definition.id);
   onReadyRef.current = onReady;
 
   useEffect(() => {
+    if (playStateExperienceIdRef.current !== definition.id) {
+      playStateExperienceIdRef.current = definition.id;
+      playStateRef.current = { modeId: playDefaultModeId, styleId: playDefaultStyleId, settings: sceneSettings };
+      wasPreviewEnabledRef.current = previewEnabled;
+    }
+    const transition = resolvePreviewToggleState(
+      wasPreviewEnabledRef.current,
+      previewEnabled,
+      { modeId, styleId, settings },
+      playStateRef.current,
+      { modeId: defaultModeId, styleId: defaultStyleId, settings: initialSettings },
+    );
+    playStateRef.current = transition.savedPlay;
+    wasPreviewEnabledRef.current = previewEnabled;
     controllerRef.current = undefined;
     engineRef.current = undefined;
     setEngineInstance(undefined);
-    setModeId(defaultModeId);
-    setStyleId(defaultStyleId);
-    setSettings(initialSettings);
+    setModeId(transition.active.modeId);
+    setStyleId(transition.active.styleId);
+    setSettings(transition.active.settings);
     setSettingsOpen(readStoredBoolean(SETTINGS_OPEN_STORAGE_KEY, false));
     setInfoCardVisible(showIntroCard && profile !== 'demo' && !previewEnabled);
     setUiHidden(profile === 'demo');
