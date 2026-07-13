@@ -1,6 +1,7 @@
 import { createExtensionToken, type EnginePlugin } from '@hooksjam/gl-game-lab-core';
 import { EngineInput, EngineRender2D, EngineSchedule, type ExperienceLaunchOptions, type ExperienceRuntimeController, type ExperienceSettingValue } from '@hooksjam/gl-game-lab-engine';
 import { registerSimulationRuntime } from '../SimulationPluginLifecycle.js';
+import { packDrawPathPreview } from '../DrawPathPreview.js';
 import { blobNumber, blobString, createSoftBodyBlobConfig, SOFT_BODY_BLOB_DEFAULTS, type SoftBodyBlobConfig } from './config.js';
 import { SoftBodyModel } from './SoftBodyModel.js';
 import { blobColor3, blobColor4, SOFT_BODY_BLOB_STYLE_MANIFEST } from './styles.js';
@@ -185,6 +186,11 @@ export function createSoftBodyBlobPlugin(initial: SoftBodyBlobConfig = SOFT_BODY
             palette: palette4,
             blend: 'alpha',
             opacity: 1
+          });
+          const preview = packDrawPathPreview(paths.values(), mode === 'build' ? 'endpoints' : 'closed');
+          if (preview.count > 0) renderer.submitSegments({
+            id: 'soft-body-blob.draw-preview', ...preview, worldWidth: width, worldHeight: height,
+            palette: [mode === 'build' ? [0.58, 0.58, 0.58] : [1, 0.42, 0.78]], opacity: 0.86, blend: 'alpha'
           });
         }
       });

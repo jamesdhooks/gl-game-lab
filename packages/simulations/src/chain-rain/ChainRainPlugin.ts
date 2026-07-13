@@ -1,6 +1,7 @@
 import { createExtensionToken, type EnginePlugin } from '@hooksjam/gl-game-lab-core';
 import { EngineInput, EngineRender2D, EngineSchedule, type ExperienceLaunchOptions, type ExperienceRuntimeController, type ExperienceSettingValue } from '@hooksjam/gl-game-lab-engine';
 import { registerSimulationRuntime } from '../SimulationPluginLifecycle.js';
+import { packDrawPathPreview } from '../DrawPathPreview.js';
 import { ConstrainedCircleParticleWorld2D } from '@hooksjam/gl-game-lab-physics-2d';
 import { CHAIN_RAIN_DEFAULTS, chainNumber, chainString, createChainRainConfig, type ChainRainConfig } from './config.js';
 import { chainColor3, chainColor4, CHAIN_RAIN_STYLE_MANIFEST } from './styles.js';
@@ -181,6 +182,11 @@ export function createChainRainPlugin(initial: ChainRainConfig = CHAIN_RAIN_DEFA
             palette: palette4,
             blend: 'alpha',
             opacity: 1
+          });
+          const preview = packDrawPathPreview(paths.values(), mode === 'build' ? 'endpoints' : 'open');
+          if (preview.count > 0) renderer.submitSegments({
+            id: 'chain-rain.draw-preview', ...preview, worldWidth: width, worldHeight: height,
+            palette: [mode === 'build' ? [0.58, 0.58, 0.58] : [0.45, 0.92, 1]], opacity: 0.86, blend: 'alpha'
           });
         }
       });
