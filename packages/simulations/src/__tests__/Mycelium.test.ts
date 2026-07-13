@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { ExperienceRegistry } from '@hooksjam/gl-game-lab-engine';
 import { createMyceliumConfig, MYCELIUM_DEFAULTS, MYCELIUM_SETTINGS, MYCELIUM_STYLE_MANIFEST, myceliumDefinition } from '../index.js';
+import { myceliumUsesTriangleMesh } from '../mycelium/MyceliumPlugin.js';
+import { MYCELIUM_DISPLAY_SHADER } from '../mycelium/shaders.js';
 describe('Mycelium', () => {
   it('registers its cellular field contract', () => {
     const registry = new ExperienceRegistry().register(myceliumDefinition);
@@ -24,5 +26,15 @@ describe('Mycelium', () => {
     expect(() => createMyceliumConfig({
       growthRate: 20
     })).toThrow('outside its supported range');
+  });
+  it('uses the original full-screen organic field for Ultra', () => {
+    expect(myceliumUsesTriangleMesh('triangle', 'basic')).toBe(true);
+    expect(myceliumUsesTriangleMesh('triangle', 'enhanced')).toBe(true);
+    expect(myceliumUsesTriangleMesh('triangle', 'bloom')).toBe(false);
+    expect(myceliumUsesTriangleMesh('square', 'bloom')).toBe(false);
+    expect(MYCELIUM_DISPLAY_SHADER).toContain('organicBloomField');
+    expect(MYCELIUM_DISPLAY_SHADER).toContain('for(int y=-3;y<=3;y++)');
+    expect(MYCELIUM_DISPLAY_SHADER).toContain('float fiberNoise=');
+    expect(MYCELIUM_DISPLAY_SHADER).toContain('float rim=');
   });
 });

@@ -5,7 +5,88 @@ precision highp float;uniform sampler2D uFieldState;uniform vec2 uTexel;uniform 
 export const MYCELIUM_SPLAT_SHADER = `#version 300 es
 precision highp float;uniform sampler2D uFieldState;uniform vec2 uPoint;uniform float uRadius;uniform float uStrain;in vec2 vUv;out vec4 outColor;void main(){vec4 state=texture(uFieldState,vUv);float d=distance(vUv,uPoint),falloff=max(0.0,1.0-d*d/max(.00001,uRadius*uRadius));if(falloff>0.0){state.r=1.0;state.g=uStrain;state.b=max(state.b,.68+falloff*.42);}outColor=state;}`;
 export const MYCELIUM_DISPLAY_SHADER = `#version 300 es
-precision highp float;uniform sampler2D uFieldState;uniform vec2 uGrid;uniform vec3 uPalette[8];uniform vec3 uBackground;uniform int uVariant;uniform int uVisualStyle;uniform float uFieldSpread;in vec2 vUv;out vec4 outColor;vec3 paletteColor(float position){float scaled=fract(position)*8.0;int i=int(floor(scaled))%8,j=(i+1)%8;vec3 colors[8]=vec3[8](uPalette[0],uPalette[1],uPalette[2],uPalette[3],uPalette[4],uPalette[5],uPalette[6],uPalette[7]);return mix(colors[i],colors[j],smoothstep(0.0,1.0,fract(scaled)));}void main(){vec2 gridPos=vUv*uGrid;ivec2 cell;if(uVariant==0){vec2 tilePos=vec2(vUv.x*uGrid.x*.5,vUv.y*uGrid.y);vec2 local=fract(tilePos);ivec2 tile=ivec2(floor(tilePos));int rightTriangle=local.x+local.y>=1.0?1:0;cell=ivec2(tile.x*2+rightTriangle,tile.y);}else cell=ivec2(floor(gridPos));cell=clamp(cell,ivec2(0),ivec2(uGrid)-1);vec4 state=texelFetch(uFieldState,cell,0);float density=0.0;vec3 haloColor=vec3(0);for(int y=-2;y<=2;y++)for(int x=-2;x<=2;x++){ivec2 sampleCell=clamp(cell+ivec2(x,y),ivec2(0),ivec2(uGrid)-1);vec4 sampleState=texelFetch(uFieldState,sampleCell,0);float kernel=exp(-float(x*x+y*y)/max(.2,uFieldSpread));density+=step(.5,sampleState.r)*kernel;haloColor+=paletteColor(sampleState.g)*step(.5,sampleState.r)*kernel;}if(state.r<.5){float halo=smoothstep(.12,1.8,density)*(uVisualStyle>=2?.52:uVisualStyle>=1?.18:0.0);outColor=vec4(mix(uBackground,haloColor/max(.01,density),halo),1);return;}vec3 colony=paletteColor(state.g);float energy=clamp(state.b,0.0,1.35),shade=.7+energy*.3;if(uVisualStyle>=1){float frontier=smoothstep(.34,1.05,energy),organic=sin(float(cell.x)*12.9898+float(cell.y)*78.233+state.g*37.719)*.5+.5;shade=.65+energy*.28+organic*.08;colony=mix(colony,colony+vec3(.16,.14,.08),frontier*.34);}if(uVisualStyle>=2)colony+=paletteColor(fract(state.g+.08))*smoothstep(.18,1.0,energy+density*.08)*.32;outColor=vec4(colony*shade,1);}`;
+precision highp float;
+uniform sampler2D uFieldState;
+uniform vec2 uGrid;
+uniform vec3 uPalette[8];
+uniform vec3 uBackground;
+uniform int uVariant;
+uniform int uVisualStyle;
+uniform float uFieldSpread;
+in vec2 vUv;
+out vec4 outColor;
+vec3 paletteColor(float position){
+  float scaled=fract(position)*8.0;
+  int i=int(floor(scaled))%8,j=(i+1)%8;
+  vec3 colors[8]=vec3[8](uPalette[0],uPalette[1],uPalette[2],uPalette[3],uPalette[4],uPalette[5],uPalette[6],uPalette[7]);
+  return mix(colors[i],colors[j],smoothstep(0.0,1.0,fract(scaled)));
+}
+vec4 readGrid(ivec2 cell){
+  if(cell.x<0||cell.y<0||cell.x>=int(uGrid.x)||cell.y>=int(uGrid.y))return vec4(0.0);
+  return texelFetch(uFieldState,cell,0);
+}
+void gatherNeighbors(ivec2 cell,out float living,out float edge,out float glow,out vec3 glowColor){
+  living=0.0;edge=1.0;glow=0.0;glowColor=vec3(0.0);float colorWeight=0.0;
+  for(int y=-1;y<=1;y++)for(int x=-1;x<=1;x++){
+    if(x==0&&y==0)continue;
+    vec4 neighbor=readGrid(cell+ivec2(x,y));float live=step(0.5,neighbor.r);
+    living+=live;glow+=live*max(0.0,neighbor.b);
+    glowColor+=paletteColor(neighbor.g)*live*max(0.08,neighbor.b);
+    colorWeight+=live*max(0.08,neighbor.b);
+  }
+  edge=1.0-smoothstep(2.0,5.0,living);
+  if(colorWeight>0.0)glowColor/=colorWeight;
+}
+vec4 organicBloomField(vec2 uv){
+  vec2 gridPos=uv*uGrid;ivec2 baseCell=ivec2(floor(gridPos));
+  float density=0.0,glow=0.0,colorWeight=0.0;vec3 color=vec3(0.0);
+  float spreadCoefficient=1.392/max(0.4,uFieldSpread);
+  for(int y=-3;y<=3;y++)for(int x=-3;x<=3;x++){
+    ivec2 cell=baseCell+ivec2(x,y);vec4 state=readGrid(cell);
+    float live=step(0.5,state.r);
+    vec2 center=vec2(float(cell.x),float(cell.y))+vec2(0.5);
+    float distanceToCell=length(gridPos-center);
+    float kernel=exp(-distanceToCell*distanceToCell*spreadCoefficient);
+    float energy=clamp(state.b,0.0,1.35);
+    float contribution=live*kernel*(0.62+energy*0.42);
+    density+=contribution;glow+=contribution*smoothstep(0.22,1.12,energy);
+    color+=paletteColor(state.g)*contribution;colorWeight+=contribution;
+  }
+  if(colorWeight<=0.0001)return vec4(uBackground,1.0);
+  color/=colorWeight;
+  float fiberNoise=sin(gridPos.x*0.41+gridPos.y*0.23+density*3.7)*0.5+0.5;
+  float microNoise=sin(gridPos.x*1.73-gridPos.y*1.19+color.r*8.0)*0.5+0.5;
+  float contour=smoothstep(0.52,0.92,density+(fiberNoise-0.5)*0.08);
+  float core=smoothstep(1.08,1.92,density);
+  float halo=smoothstep(0.06,0.62,density)*(1.0-contour);
+  vec3 livingColor=mix(color*0.58,color*1.18+vec3(0.08,0.06,0.04),core);
+  livingColor=mix(livingColor,paletteColor(fract(colorWeight*0.09+glow*0.15)),glow*0.18);
+  livingColor*=0.82+fiberNoise*0.16+microNoise*0.06;
+  vec3 haloColor=mix(uBackground,color*(0.42+glow*0.2),halo*0.72);
+  vec3 finalColor=mix(haloColor,livingColor,contour);
+  float rim=smoothstep(0.46,0.72,density)*(1.0-smoothstep(0.86,1.2,density));
+  finalColor=mix(finalColor,color*1.32+vec3(0.06),rim*0.22);
+  return vec4(finalColor,1.0);
+}
+void main(){
+  if(uVisualStyle>=2){outColor=organicBloomField(vUv);return;}
+  vec2 sampleCell=floor(vUv*uGrid);ivec2 cell=ivec2(clamp(sampleCell,vec2(0.0),uGrid-vec2(1.0)));
+  vec4 state=texelFetch(uFieldState,cell,0);
+  float living,edge,glow;vec3 glowColor;gatherNeighbors(cell,living,edge,glow,glowColor);
+  if(state.r<0.5){outColor=vec4(uBackground,1.0);return;}
+  vec3 colony=paletteColor(state.g);float energy=clamp(state.b,0.0,1.35);
+  vec2 local=fract(vUv*uGrid);
+  float inner=smoothstep(0.02,0.42,min(min(local.x,1.0-local.x),min(local.y,1.0-local.y)));
+  float shade=0.72+clamp(energy,0.0,1.0)*0.34;
+  if(uVisualStyle>=1){
+    float frontier=smoothstep(0.34,1.05,energy);
+    float organic=sin(sampleCell.x*12.9898+sampleCell.y*78.233+state.g*37.719)*0.5+0.5;
+    shade=0.66+inner*0.14+energy*0.26+organic*0.06;
+    colony=mix(colony*(0.62+inner*0.38),colony+vec3(0.16,0.14,0.08),frontier*0.34);
+    colony=mix(colony,colony*0.54,edge*0.48);
+  }
+  outColor=vec4(colony*shade,1.0);
+}`;
 
 export const MYCELIUM_TRIANGLE_VERTEX_SHADER = `#version 300 es
 precision highp float;layout(location=0)in vec2 aClip;layout(location=1)in vec2 aCell;layout(location=2)in float aFacet;out vec2 vCell;out float vFacet;void main(){gl_Position=vec4(aClip,0,1);vCell=aCell;vFacet=aFacet;}`;

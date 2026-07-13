@@ -186,7 +186,7 @@ export function createMyceliumPlugin(initial: MyceliumConfig = MYCELIUM_DEFAULTS
                 g.uniform1i(u('uVisualStyle'), visual === 'basic' ? 0 : visual === 'enhanced' ? 1 : 2);
                 g.uniform1f(u('uFieldSpread'), myceliumNumber(config, 'fieldSpread'));
               };
-              if (myceliumString(config, 'topology') === 'triangle' && triangleMesh.vertexCount > 0) field.renderMesh('triangles', destination, triangleMesh, bindDisplay);
+              if (myceliumUsesTriangleMesh(myceliumString(config, 'topology'), visualStyle(config)) && triangleMesh.vertexCount > 0) field.renderMesh('triangles', destination, triangleMesh, bindDisplay);
               else field.render('display', destination, bindDisplay);
           });
         }
@@ -285,6 +285,14 @@ function createTriangleMesh(cols: number, rows: number): GpuFieldMesh2D {
 }
 function validStyle(value: string | undefined) {
   return value && MYCELIUM_STYLE_MANIFEST.styles.some(style => style.id === value) ? value : undefined;
+}
+
+export function myceliumUsesTriangleMesh(topology: string, visualStyleId: string): boolean {
+  return topology === 'triangle' && visualStyleId !== 'bloom';
+}
+
+function visualStyle(config: MyceliumConfig): string {
+  return myceliumString(config, 'renderStyle');
 }
 function seedValue(seed: number | undefined) {
   const value = seed ?? 260618;
