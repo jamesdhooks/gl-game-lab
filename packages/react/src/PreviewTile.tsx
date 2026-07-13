@@ -25,15 +25,17 @@ export interface PreviewTileProps {
   readonly className?: string;
 }
 
-interface PreviewScheduleEntry {
+export interface PreviewScheduleEntry {
   readonly token: object;
   readonly priority: () => number;
   readonly grant: () => void;
 }
 
-class PreviewScheduler {
+export class PreviewScheduler {
   private readonly active = new Set<object>();
   private readonly waiting = new Map<object, PreviewScheduleEntry>();
+
+  constructor(private readonly maximumContexts: () => number = previewContextLimit) {}
 
   request(entry: PreviewScheduleEntry): () => void {
     this.waiting.set(entry.token, entry);
@@ -47,7 +49,7 @@ class PreviewScheduler {
   }
 
   private pump(): void {
-    const maximum = typeof window !== 'undefined' && window.innerWidth < 768 ? 2 : 4;
+    const maximum = Math.max(1, Math.floor(this.maximumContexts()));
     while (this.active.size < maximum && this.waiting.size > 0) {
       const next = [...this.waiting.values()].sort((left, right) => left.priority() - right.priority())[0];
       if (!next) return;
@@ -59,6 +61,21 @@ class PreviewScheduler {
 }
 
 const previewScheduler = new PreviewScheduler();
+
+export interface PreviewLiveDecision {
+  readonly enabled: boolean;
+  readonly visible: boolean;
+  readonly policy: ExperiencePreviewProfile['renderPolicy'];
+  readonly reducedMotion: boolean;
+  readonly webGl2Available: boolean;
+  readonly sessionFailed: boolean;
+  readonly runtimeFailed: boolean;
+}
+
+export function shouldAttemptLivePreview(input: PreviewLiveDecision): boolean {
+  if (!input.enabled || !input.visible || input.policy === 'static' || input.runtimeFailed) return false;
+  return input.policy === 'live' || (!input.reducedMotion && input.webGl2Available && !input.sessionFailed);
+}
 
 export function PreviewTile({
   definition,
@@ -88,8 +105,15 @@ export function PreviewTile({
   const imageUrl = useMemo(() => profile.image ? joinAssetUrl(assetBaseUrl, profile.image.src, profile.image.revision) : undefined, [assetBaseUrl, profile.image]);
   const policy = profile.renderPolicy;
   const reducedMotion = prefersReducedMotion();
-  const softBlocked = policy === 'auto' && (reducedMotion || !supportsWebGl2() || hasPreviewFailure(definition.id));
-  const shouldAttemptLive = enabled && visible && policy !== 'static' && !softBlocked && !failed;
+  const shouldAttemptLive = shouldAttemptLivePreview({
+    enabled,
+    visible,
+    policy,
+    reducedMotion,
+    webGl2Available: supportsWebGl2(),
+    sessionFailed: hasPreviewFailure(definition.id),
+    runtimeFailed: failed,
+  });
 
   useEffect(() => {
     const root = rootRef.current;
@@ -201,6 +225,10 @@ function distanceFromViewport(element: HTMLElement | null): number {
   const x = bounds.left + bounds.width / 2 - window.innerWidth / 2;
   const y = bounds.top + bounds.height / 2 - window.innerHeight / 2;
   return Math.hypot(x, y);
+}
+
+function previewContextLimit(): number {
+  return typeof window !== 'undefined' && window.innerWidth < 768 ? 2 : 4;
 }
 
 function prefersReducedMotion(): boolean {

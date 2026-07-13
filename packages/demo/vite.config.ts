@@ -2,6 +2,7 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import fs from 'node:fs';
 import path from 'node:path';
+import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 
 const workspaceRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
@@ -9,17 +10,25 @@ const sceneDefaultsPath = path.join(workspaceRoot, 'scene-defaults.json');
 const sceneDefaultsEndpoint = '/__gl-game-lab-scene-defaults';
 const virtualSceneDefaultsId = 'virtual:gl-game-lab-scene-defaults';
 const resolvedVirtualSceneDefaultsId = `\0${virtualSceneDefaultsId}`;
+const previewProfilesPath = path.join(workspaceRoot, 'preview-profiles.json');
+const previewCaptureDirectory = path.join(workspaceRoot, 'packages/demo/public/previews');
+const previewProfilesEndpoint = '/__gl-game-lab-preview-profiles';
+const previewCaptureEndpoint = '/__gl-game-lab-preview-capture';
+const virtualPreviewProfilesId = 'virtual:gl-game-lab-preview-profiles';
+const resolvedVirtualPreviewProfilesId = `\0${virtualPreviewProfilesId}`;
 
 function sceneDefaultsPlugin() {
   return {
     name: 'gl-game-lab-scene-defaults',
     resolveId(id: string) {
-      return id === virtualSceneDefaultsId ? resolvedVirtualSceneDefaultsId : undefined;
+      if (id === virtualSceneDefaultsId) return resolvedVirtualSceneDefaultsId;
+      if (id === virtualPreviewProfilesId) return resolvedVirtualPreviewProfilesId;
+      return undefined;
     },
     load(id: string) {
-      return id === resolvedVirtualSceneDefaultsId
-        ? `export default ${readSceneDefaultsFile()};`
-        : undefined;
+      if (id === resolvedVirtualSceneDefaultsId) return `export default ${readSceneDefaultsFile()};`;
+      if (id === resolvedVirtualPreviewProfilesId) return `export default ${readPreviewProfilesFile()};`;
+      return undefined;
     },
     configureServer(server: import('vite').ViteDevServer) {
       server.middlewares.use(sceneDefaultsEndpoint, (request, response) => {
@@ -55,6 +64,44 @@ function sceneDefaultsPlugin() {
           response.end(next);
         });
       });
+      server.middlewares.use(previewProfilesEndpoint, (request, response) => {
+        if (request.method === 'GET') return jsonResponse(response, readPreviewProfilesFile());
+        if (request.method !== 'PUT') return response.writeHead(405).end('Method Not Allowed');
+        readRequestBody(request, 1_000_000, (raw) => {
+          const payload = parseRecord(raw);
+          const definitionId = validExperienceId(payload.definitionId);
+          const profile = normalizePreviewProfile(payload.profile);
+          if (!definitionId || !profile) return response.writeHead(400).end('Invalid preview profile payload');
+          const current = parsePreviewProfilesFile();
+          const next = writePreviewProfiles({ ...current, [definitionId]: { ...profile, image: current[definitionId]?.image } });
+          jsonResponse(response, next);
+        }, response);
+      });
+      server.middlewares.use(previewCaptureEndpoint, (request, response) => {
+        if (request.method !== 'PUT') return response.writeHead(405).end('Method Not Allowed');
+        readRequestBody(request, 3_000_000, (raw) => {
+          const payload = parseRecord(raw);
+          const definitionId = validExperienceId(payload.definitionId);
+          const profile = normalizePreviewProfile(payload.profile);
+          const profileHash = typeof payload.profileHash === 'string' && /^[a-f0-9]{8}$/.test(payload.profileHash) ? payload.profileHash : undefined;
+          if (!definitionId || !profile || !profileHash || typeof payload.imageBase64 !== 'string') return response.writeHead(400).end('Invalid preview capture payload');
+          const image = Buffer.from(payload.imageBase64, 'base64');
+          if (image.byteLength === 0 || image.byteLength > 2_000_000 || image.toString('ascii', 0, 4) !== 'RIFF' || image.toString('ascii', 8, 12) !== 'WEBP') return response.writeHead(400).end('Preview capture must be a WebP image under 2 MB');
+          fs.mkdirSync(previewCaptureDirectory, { recursive: true });
+          const imagePath = path.join(previewCaptureDirectory, `${definitionId}.webp`);
+          atomicWrite(imagePath, image);
+          const revision = createHash('sha256').update(image).digest('hex').slice(0, 16);
+          const current = parsePreviewProfilesFile();
+          const next = writePreviewProfiles({
+            ...current,
+            [definitionId]: {
+              ...profile,
+              image: { src: `previews/${definitionId}.webp`, revision, width: 512, height: 512, profileHash },
+            },
+          });
+          jsonResponse(response, next);
+        }, response);
+      });
     },
   };
 }
@@ -63,6 +110,86 @@ function readSceneDefaultsFile(): string {
   return fs.existsSync(sceneDefaultsPath)
     ? fs.readFileSync(sceneDefaultsPath, 'utf8')
     : JSON.stringify({ version: 1, scenes: {} });
+}
+
+function readPreviewProfilesFile(): string {
+  return fs.existsSync(previewProfilesPath)
+    ? fs.readFileSync(previewProfilesPath, 'utf8')
+    : JSON.stringify({ version: 1, previews: {} });
+}
+
+function parsePreviewProfilesFile(): Record<string, Record<string, unknown>> {
+  const parsed = parseRecord(readPreviewProfilesFile());
+  if (typeof parsed.previews !== 'object' || parsed.previews === null || Array.isArray(parsed.previews)) return {};
+  const previews: Record<string, Record<string, unknown>> = {};
+  for (const [id, value] of Object.entries(parsed.previews)) if (validExperienceId(id) && typeof value === 'object' && value !== null && !Array.isArray(value)) previews[id] = value as Record<string, unknown>;
+  return previews;
+}
+
+function writePreviewProfiles(previews: Record<string, Record<string, unknown>>): string {
+  const next = `${JSON.stringify({ version: 1, previews }, null, 2)}\n`;
+  atomicWrite(previewProfilesPath, next);
+  return next;
+}
+
+function normalizePreviewProfile(value: unknown): Record<string, unknown> | undefined {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return undefined;
+  const profile = value as Record<string, unknown>;
+  const settings = primitiveRecord(profile.settings);
+  const variation = typeof profile.variation === 'object' && profile.variation !== null && !Array.isArray(profile.variation) ? profile.variation as Record<string, unknown> : undefined;
+  if (!settings || !variation) return undefined;
+  const intensity = typeof variation.intensity === 'number' && Number.isFinite(variation.intensity) ? Math.max(0, Math.min(1, variation.intensity)) : undefined;
+  const seed = typeof variation.seed === 'number' && Number.isSafeInteger(variation.seed) ? variation.seed >>> 0 : undefined;
+  const lockedKeys = Array.isArray(variation.lockedKeys) ? [...new Set(variation.lockedKeys.filter((key): key is string => typeof key === 'string' && /^\$?[a-zA-Z0-9_-]+$/.test(key)))].sort() : undefined;
+  if (intensity === undefined || seed === undefined || !lockedKeys) return undefined;
+  const renderPolicy = profile.renderPolicy === 'live' || profile.renderPolicy === 'static' ? profile.renderPolicy : 'auto';
+  return {
+    ...(typeof profile.modeId === 'string' ? { modeId: profile.modeId } : {}),
+    ...(typeof profile.styleId === 'string' ? { styleId: profile.styleId } : {}),
+    settings,
+    variation: { intensity, lockedKeys, seed },
+    renderPolicy,
+  };
+}
+
+function validExperienceId(value: unknown): string | undefined {
+  return typeof value === 'string' && /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(value) ? value : undefined;
+}
+
+function atomicWrite(target: string, content: string | Buffer): void {
+  const temporary = `${target}.${process.pid}.${Date.now()}.tmp`;
+  fs.writeFileSync(temporary, content);
+  try {
+    fs.renameSync(temporary, target);
+  } catch (error) {
+    fs.rmSync(temporary, { force: true });
+    throw error;
+  }
+}
+
+function jsonResponse(response: import('node:http').ServerResponse, body: string): void {
+  response.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+  response.end(body);
+}
+
+function readRequestBody(
+  request: import('node:http').IncomingMessage,
+  maximumBytes: number,
+  complete: (body: string) => void,
+  response: import('node:http').ServerResponse,
+): void {
+  let raw = '';
+  let rejected = false;
+  request.on('data', (chunk: Buffer | string) => {
+    if (rejected) return;
+    raw += chunk.toString();
+    if (Buffer.byteLength(raw) > maximumBytes) {
+      rejected = true;
+      response.writeHead(413).end('Payload Too Large');
+      request.destroy();
+    }
+  });
+  request.on('end', () => { if (!rejected) complete(raw); });
 }
 
 function parseDefaultsFile(): { readonly scenes: Record<string, Record<string, string | number | boolean>> } {
