@@ -1,17 +1,33 @@
 import { GpuFieldPass } from './GpuFieldPass.js';
 import { GpuFieldState } from './GpuFieldState.js';
 import type { GpuParticleRenderDestination } from './GpuParticleRenderer.js';
+import {
+  FLUID_ADVECTION_SHADER,
+  FLUID_BLOOM_BLUR_SHADER,
+  FLUID_BLOOM_FINAL_SHADER,
+  FLUID_BLOOM_PREFILTER_SHADER,
+  FLUID_BLUR_SHADER,
+  FLUID_COMPOSITE_SHADER,
+  FLUID_CURL_SHADER,
+  FLUID_DISPLAY_SHADER,
+  FLUID_DIVERGENCE_SHADER,
+  FLUID_GRADIENT_SUBTRACT_SHADER,
+  FLUID_INIT_DYE_SHADER,
+  FLUID_PRESSURE_SHADER,
+  FLUID_REFERENCE_DISPLAY_SHADER,
+  FLUID_SPLAT_SHADER,
+  FLUID_SUNRAYS_MASK_SHADER,
+  FLUID_SUNRAYS_SHADER,
+  FLUID_VORTICITY_SHADER,
+} from './FluidTankReferenceShaders.js';
+
 export interface FluidSplat2D {
   readonly x: number;
   readonly y: number;
   readonly radius: number;
   readonly velocityX: number;
   readonly velocityY: number;
-  readonly dye: readonly [
-    number,
-    number,
-    number
-  ];
+  readonly dye: readonly [number, number, number];
   readonly amount: number;
   readonly previousX?: number;
   readonly previousY?: number;
@@ -20,6 +36,7 @@ export interface FluidSplat2D {
   readonly strength?: number;
   readonly velocityMode?: 'add' | 'target';
 }
+
 export interface StableFluidStepOptions {
   readonly deltaSeconds: number;
   readonly viscosity: number;
@@ -30,222 +47,358 @@ export interface StableFluidStepOptions {
   readonly ambient?: boolean;
   readonly velocitySplatsBeforeProjection?: boolean;
 }
+
+export interface StableFluidSeedOptions {
+  readonly palette?: readonly (readonly [number, number, number])[];
+  readonly paletteStrength?: number;
+  readonly cellSize?: number;
+}
+
 export interface StableFluidDisplayOptions {
-  readonly palette: readonly (readonly [
-    number,
-    number,
-    number
-  ])[];
-  readonly background: readonly [
-    number,
-    number,
-    number
-  ];
+  readonly palette: readonly (readonly [number, number, number])[];
+  readonly background: readonly [number, number, number];
   readonly shadingStrength: number;
   readonly sunraysStrength: number;
   readonly exposure?: number;
+  readonly paletteStrength?: number;
+  readonly edgeDarkening?: number;
+  readonly bloomStrength?: number;
+  readonly bloomThreshold?: number;
+  readonly visualPipeline?: 'standard' | 'reference';
+  readonly initMode?: 'blank' | 'random' | 'voronoi' | 'cloud' | 'image';
+  readonly timeSeconds?: number;
+  readonly seed?: number;
 }
+
 export interface StableFluidField2DOptions {
   readonly width: number;
   readonly height: number;
   readonly simulationWidth?: number;
   readonly simulationHeight?: number;
 }
+
+const CLEAR_SHADER = `#version 300 es
+precision highp float;in vec2 vUv;out vec4 outColor;uniform float value;
+void main(){outColor=vec4(value,value,value,1.0);}`;
+
 export class StableFluidField2D {
   readonly velocity: GpuFieldState;
   readonly dye: GpuFieldState;
   readonly pressure: GpuFieldState;
   readonly divergence: GpuFieldState;
-  private readonly velocityPass: GpuFieldPass;
-  private readonly dyePass: GpuFieldPass;
+  readonly curlTarget: GpuFieldState;
+  private readonly displayTarget: GpuFieldState;
+  private readonly bloomTarget: GpuFieldState;
+  private readonly bloomPyramid: readonly GpuFieldState[];
+  private readonly sunraysMaskTarget: GpuFieldState;
+  private readonly sunraysTarget: GpuFieldState;
+  private readonly clearPass: GpuFieldPass;
+  private readonly initPass: GpuFieldPass;
+  private readonly splatPass: GpuFieldPass;
+  private readonly advectionPass: GpuFieldPass;
   private readonly divergencePass: GpuFieldPass;
+  private readonly curlPass: GpuFieldPass;
+  private readonly vorticityPass: GpuFieldPass;
   private readonly pressurePass: GpuFieldPass;
   private readonly gradientPass: GpuFieldPass;
-  private readonly splatPass: GpuFieldPass;
-  private readonly seedPass: GpuFieldPass;
   private readonly displayPass: GpuFieldPass;
+  private readonly bloomPrefilterPass: GpuFieldPass;
+  private readonly bloomBlurPass: GpuFieldPass;
+  private readonly bloomFinalPass: GpuFieldPass;
+  private readonly blurPass: GpuFieldPass;
+  private readonly sunraysMaskPass: GpuFieldPass;
+  private readonly sunraysPass: GpuFieldPass;
+  private readonly compositePass: GpuFieldPass;
+  private readonly referenceDisplayPass: GpuFieldPass;
   private disposed = false;
+
   constructor(private readonly gl: WebGL2RenderingContext, options: StableFluidField2DOptions) {
     const simulation = { width: options.simulationWidth ?? options.width, height: options.simulationHeight ?? options.height };
-    this.velocity = new GpuFieldState(gl, {
-      ...simulation,
-      precision: 'half-float',
-      filter: 'linear'
-    });
-    this.dye = new GpuFieldState(gl, {
-      width: options.width, height: options.height,
-      precision: 'half-float',
-      filter: 'linear'
-    });
-    this.pressure = new GpuFieldState(gl, {
-      ...simulation,
-      precision: 'half-float',
-      filter: 'linear'
-    });
-    this.divergence = new GpuFieldState(gl, {
-      ...simulation,
-      precision: 'half-float',
-      filter: 'nearest'
-    });
-    this.velocityPass = new GpuFieldPass(gl, VELOCITY);
-    this.dyePass = new GpuFieldPass(gl, DYE);
-    this.divergencePass = new GpuFieldPass(gl, DIVERGENCE);
-    this.pressurePass = new GpuFieldPass(gl, PRESSURE);
-    this.gradientPass = new GpuFieldPass(gl, GRADIENT);
-    this.splatPass = new GpuFieldPass(gl, SPLAT);
-    this.seedPass = new GpuFieldPass(gl, SEED);
-    this.displayPass = new GpuFieldPass(gl, DISPLAY);
+    this.velocity = field(gl, simulation.width, simulation.height, 'linear');
+    this.dye = field(gl, options.width, options.height, 'linear');
+    this.pressure = field(gl, simulation.width, simulation.height, 'nearest');
+    this.divergence = field(gl, simulation.width, simulation.height, 'nearest');
+    this.curlTarget = field(gl, simulation.width, simulation.height, 'nearest');
+    this.displayTarget = field(gl, options.width, options.height, 'linear');
+    const bloomSize = resolutionFor(256, options.width, options.height);
+    this.bloomTarget = field(gl, bloomSize.width, bloomSize.height, 'linear');
+    const pyramid: GpuFieldState[] = [];
+    for (let i = 0; i < 8; i += 1) {
+      const width = bloomSize.width >> (i + 1);
+      const height = bloomSize.height >> (i + 1);
+      if (width < 2 || height < 2) break;
+      pyramid.push(field(gl, width, height, 'linear'));
+    }
+    this.bloomPyramid = Object.freeze(pyramid);
+    const raysSize = resolutionFor(clamp(Math.round(options.height * 0.18), 96, 220), options.width, options.height);
+    this.sunraysMaskTarget = field(gl, raysSize.width, raysSize.height, 'linear');
+    this.sunraysTarget = field(gl, raysSize.width, raysSize.height, 'linear');
+    this.clearPass = new GpuFieldPass(gl, CLEAR_SHADER, 'fluid clear');
+    this.initPass = new GpuFieldPass(gl, FLUID_INIT_DYE_SHADER, 'fluid initialization');
+    this.splatPass = new GpuFieldPass(gl, FLUID_SPLAT_SHADER, 'fluid splat');
+    this.advectionPass = new GpuFieldPass(gl, FLUID_ADVECTION_SHADER, 'fluid advection');
+    this.divergencePass = new GpuFieldPass(gl, FLUID_DIVERGENCE_SHADER, 'fluid divergence');
+    this.curlPass = new GpuFieldPass(gl, FLUID_CURL_SHADER, 'fluid curl');
+    this.vorticityPass = new GpuFieldPass(gl, FLUID_VORTICITY_SHADER, 'fluid vorticity');
+    this.pressurePass = new GpuFieldPass(gl, FLUID_PRESSURE_SHADER, 'fluid pressure');
+    this.gradientPass = new GpuFieldPass(gl, FLUID_GRADIENT_SUBTRACT_SHADER, 'fluid projection');
+    this.displayPass = new GpuFieldPass(gl, FLUID_DISPLAY_SHADER, 'fluid display');
+    this.bloomPrefilterPass = new GpuFieldPass(gl, FLUID_BLOOM_PREFILTER_SHADER, 'fluid bloom prefilter');
+    this.bloomBlurPass = new GpuFieldPass(gl, FLUID_BLOOM_BLUR_SHADER, 'fluid bloom pyramid');
+    this.bloomFinalPass = new GpuFieldPass(gl, FLUID_BLOOM_FINAL_SHADER, 'fluid bloom final');
+    this.blurPass = new GpuFieldPass(gl, FLUID_BLUR_SHADER, 'fluid blur');
+    this.sunraysMaskPass = new GpuFieldPass(gl, FLUID_SUNRAYS_MASK_SHADER, 'fluid sunrays mask');
+    this.sunraysPass = new GpuFieldPass(gl, FLUID_SUNRAYS_SHADER, 'fluid sunrays');
+    this.compositePass = new GpuFieldPass(gl, FLUID_COMPOSITE_SHADER, 'fluid composite');
+    this.referenceDisplayPass = new GpuFieldPass(gl, FLUID_REFERENCE_DISPLAY_SHADER, 'fluid reference display');
   }
-  get width() {
-    return this.dye.width;
-  }
-  get height() {
-    return this.dye.height;
-  }
-  clear() {
+
+  get width(): number { return this.dye.width; }
+  get height(): number { return this.dye.height; }
+
+  clear(): void {
     this.assert();
-    this.velocity.clear();
-    this.dye.clear();
-    this.pressure.clear();
-    this.divergence.clear();
+    for (const state of this.states()) state.clear();
   }
+
   uploadDyeRgba(values: Float32Array): void {
     const length = this.width * this.height * 4;
     if (values.length !== length) throw new Error('Fluid dye upload length does not match field dimensions');
-    const gl = this.gl;
     for (const target of [this.dye.targets.read, this.dye.targets.write]) {
-      gl.bindTexture(gl.TEXTURE_2D, target.texture);
-      gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, this.width, this.height, gl.RGBA, gl.FLOAT, values);
+      this.gl.bindTexture(this.gl.TEXTURE_2D, target.texture);
+      this.gl.texSubImage2D(this.gl.TEXTURE_2D, 0, 0, 0, this.width, this.height, this.gl.RGBA, this.gl.FLOAT, values);
     }
-    gl.bindTexture(gl.TEXTURE_2D, null);
+    this.gl.bindTexture(this.gl.TEXTURE_2D, null);
   }
-  seed(kind: 'cloud' | 'voronoi' | 'random' | 'blank', seed: number) {
+
+  seed(kind: 'cloud' | 'voronoi' | 'random' | 'blank', seed: number, options: StableFluidSeedOptions = {}): void {
     this.assert();
     this.clear();
-    if (kind === 'blank')
-      return;
-    this.seedPass.step(this.dye, (g, u) => {
-      g.uniform1i(u('uKind'), kind === 'voronoi' ? 1 : kind === 'random' ? 2 : 0);
-      g.uniform1f(u('uSeed'), seed);
+    if (kind === 'blank') return;
+    this.initPass.step(this.dye, (gl, uniform) => {
+      gl.uniform2f(uniform('resolution'), this.width, this.height);
+      gl.uniform1f(uniform('seed'), seed);
+      gl.uniform1f(uniform('cellSize'), options.cellSize ?? 1.2);
+      gl.uniform1i(uniform('initMode'), kind === 'voronoi' ? 1 : kind === 'random' ? 2 : 0);
+      gl.uniform1i(uniform('hasInitImage'), 0);
+      bindPalette(gl, uniform, options.palette ?? [[0.4, 1, 0.95]], options.paletteStrength ?? 0.76);
     });
   }
-  step(options: StableFluidStepOptions, splats: readonly FluidSplat2D[] = []) {
+
+  step(options: StableFluidStepOptions, splats: readonly FluidSplat2D[] = []): void {
     this.assert();
-    const dt = Math.max(0, Math.min(1 / 30, options.deltaSeconds)), texelX = 1 / this.velocity.width, texelY = 1 / this.velocity.height;
-    this.velocityPass.step(this.velocity, (g, u) => {
-      g.uniform2f(u('uTexel'), texelX, texelY);
-      g.uniform1f(u('uDt'), dt);
-      g.uniform1f(u('uDecay'), Math.max(0, 1 - options.velocityDissipation * dt));
-      g.uniform1f(u('uViscosity'), options.viscosity);
-      g.uniform1f(u('uCurl'), options.curl);
-      g.uniform1f(u('uAmbient'), options.ambient ? 1 : 0);
-    });
-    if (options.velocitySplatsBeforeProjection)
-      for (const splat of splats) this.applySplat(this.velocity, splat, [splat.velocityX, splat.velocityY, 0, 0], splat.velocityMode === 'target');
-    this.divergencePass.step(this.divergence, (g, u) => {
-      this.velocity.targets.read.attach(1);
-      g.uniform1i(u('uVelocity'), 1);
-      g.uniform2f(u('uTexel'), texelX, texelY);
-    });
-    this.pressure.clear();
-    const iterations = Math.max(1, Math.min(48, Math.floor(options.pressureIterations)));
-    for (let i = 0; i < iterations; i++)
-      this.pressurePass.step(this.pressure, (g, u) => {
-        this.divergence.targets.read.attach(1);
-        g.uniform1i(u('uDivergence'), 1);
-        g.uniform2f(u('uTexel'), texelX, texelY);
-      });
-    this.gradientPass.step(this.velocity, (g, u) => {
-      this.pressure.targets.read.attach(1);
-      g.uniform1i(u('uPressure'), 1);
-      g.uniform2f(u('uTexel'), texelX, texelY);
-    });
-    this.dyePass.step(this.dye, (g, u) => {
-      this.velocity.targets.read.attach(1);
-      g.uniform1i(u('uVelocity'), 1);
-      g.uniform1f(u('uDt'), dt);
-      g.uniform1f(u('uDecay'), Math.max(0, 1 - options.dyeDissipation * dt));
-    });
+    const dt = clamp(options.deltaSeconds, 0, 0.032);
     for (const splat of splats) {
-      if (!options.velocitySplatsBeforeProjection) this.applySplat(this.velocity, splat, [
-        splat.velocityX, splat.velocityY, 0, 0
-      ], splat.velocityMode === 'target');
-      this.applySplat(this.dye, splat, [
-        splat.dye[0] * splat.amount,
-        splat.dye[1] * splat.amount,
-        splat.dye[2] * splat.amount,
-        splat.amount
-      ], false);
+      this.applySplat(this.velocity, splat, [splat.velocityX, splat.velocityY, 0]);
+      if (splat.amount !== 0) this.applySplat(this.dye, splat, [splat.dye[0] * splat.amount, splat.dye[1] * splat.amount, splat.dye[2] * splat.amount]);
     }
+    const texelX = 1 / this.velocity.width;
+    const texelY = 1 / this.velocity.height;
+    this.curlPass.render(this.velocity, destination(this.curlTarget), (gl, uniform) => {
+      gl.uniform1i(uniform('uVelocity'), this.velocity.targets.read.attach(0));
+      gl.uniform2f(uniform('texelSize'), texelX, texelY);
+    });
+    if (options.curl > 0) this.vorticityPass.step(this.velocity, (gl, uniform) => {
+      gl.uniform1i(uniform('uVelocity'), this.velocity.targets.read.attach(0));
+      gl.uniform1i(uniform('uCurl'), this.curlTarget.targets.read.attach(1));
+      gl.uniform2f(uniform('texelSize'), texelX, texelY);
+      gl.uniform1f(uniform('curlStrength'), options.curl);
+      gl.uniform1f(uniform('dt'), dt);
+    });
+    this.divergencePass.render(this.velocity, destination(this.divergence), (gl, uniform) => {
+      gl.uniform1i(uniform('uVelocity'), this.velocity.targets.read.attach(0));
+      gl.uniform2f(uniform('texelSize'), texelX, texelY);
+    });
+    this.clearPressure();
+    const iterations = clamp(Math.floor(options.pressureIterations), 1, 48);
+    for (let i = 0; i < iterations; i += 1) this.pressurePass.step(this.pressure, (gl, uniform) => {
+      gl.uniform1i(uniform('uPressure'), this.pressure.targets.read.attach(0));
+      gl.uniform1i(uniform('uDivergence'), this.divergence.targets.read.attach(1));
+      gl.uniform2f(uniform('texelSize'), 1 / this.pressure.width, 1 / this.pressure.height);
+    });
+    this.gradientPass.step(this.velocity, (gl, uniform) => {
+      gl.uniform1i(uniform('uPressure'), this.pressure.targets.read.attach(0));
+      gl.uniform1i(uniform('uVelocity'), this.velocity.targets.read.attach(1));
+      gl.uniform2f(uniform('texelSize'), texelX, texelY);
+    });
+    this.advectionPass.step(this.velocity, (gl, uniform) => {
+      gl.uniform1i(uniform('uVelocity'), this.velocity.targets.read.attach(0));
+      gl.uniform1i(uniform('uSource'), this.velocity.targets.read.attach(1));
+      gl.uniform2f(uniform('texelSize'), texelX, texelY);
+      gl.uniform1f(uniform('dt'), dt);
+      gl.uniform1f(uniform('dissipation'), clamp(options.velocityDissipation, 0, 4));
+    });
+    this.advectionPass.step(this.dye, (gl, uniform) => {
+      gl.uniform1i(uniform('uVelocity'), this.velocity.targets.read.attach(0));
+      gl.uniform1i(uniform('uSource'), this.dye.targets.read.attach(1));
+      gl.uniform2f(uniform('texelSize'), texelX, texelY);
+      gl.uniform1f(uniform('dt'), dt);
+      gl.uniform1f(uniform('dissipation'), clamp(options.dyeDissipation, 0, 4));
+    });
   }
-  render(destination: GpuParticleRenderDestination, options: StableFluidDisplayOptions) {
+
+  render(destinationTarget: GpuParticleRenderDestination, options: StableFluidDisplayOptions): void {
     this.assert();
-    if (options.palette.length < 1 || options.palette.length > 4)
-      throw new Error('Fluid palette must contain between one and four colors');
-    const palette = new Float32Array(12);
-    options.palette.forEach((color, index) => palette.set(color, index * 3));
-    this.displayPass.render(this.dye, destination, (g, u) => {
-      g.uniform3fv(u('uPalette[0]'), palette);
-      g.uniform1i(u('uPaletteCount'), options.palette.length);
-      g.uniform3fv(u('uBackground'), new Float32Array(options.background));
-      g.uniform2f(u('uTexel'), 1 / this.width, 1 / this.height);
-      g.uniform1f(u('uShading'), options.shadingStrength);
-      g.uniform1f(u('uSunrays'), options.sunraysStrength);
-      g.uniform1f(u('uExposure'), options.exposure ?? 1);
-    });
-  }
-  dispose() {
-    if (this.disposed)
+    if (options.palette.length < 1 || options.palette.length > 6) throw new Error('Fluid palette must contain between one and six colors');
+    if (options.visualPipeline === 'reference') {
+      this.applyBloom(this.dye, options);
+      this.applySunrays(this.dye, options);
+      this.referenceDisplayPass.render(this.dye, destinationTarget, (gl, uniform) => {
+        gl.uniform1i(uniform('uTexture'), this.dye.targets.read.attach(0));
+        gl.uniform1i(uniform('uBloom'), this.bloomTarget.targets.read.attach(1));
+        gl.uniform1i(uniform('uSunrays'), this.sunraysTarget.targets.read.attach(2));
+        bindDisplay(gl, uniform, this.dye, destinationTarget, options);
+        gl.uniform1f(uniform('sunraysStrength'), options.sunraysStrength);
+      });
       return;
-    this.disposed = true;
-    for (const value of [
-      this.velocity,
-      this.dye,
-      this.pressure,
-      this.divergence
-    ])
-      value.dispose();
-    for (const pass of [
-      this.velocityPass,
-      this.dyePass,
-      this.divergencePass,
-      this.pressurePass,
-      this.gradientPass,
-      this.splatPass,
-      this.seedPass,
-      this.displayPass
-    ])
-      pass.dispose();
-  }
-  private applySplat(state: GpuFieldState, splat: FluidSplat2D, value: readonly [
-    number,
-    number,
-    number,
-    number
-  ], target: boolean) {
-    this.splatPass.step(state, (g, u) => {
-      g.uniform2f(u('uPoint'), splat.x, splat.y);
-      g.uniform1f(u('uRadius'), splat.radius);
-      g.uniform4f(u('uValue'), value[0], value[1], value[2], value[3]);
-      g.uniform2f(u('uPrevious'), splat.previousX ?? splat.x, splat.previousY ?? splat.y);
-      g.uniform1f(u('uSegment'), splat.previousX === undefined || splat.previousY === undefined ? 0 : 1);
-      g.uniform1f(u('uTaper'), splat.taper ?? 0);
-      g.uniform1f(u('uAspect'), splat.aspectRatio ?? 1);
-      g.uniform1f(u('uStrength'), splat.strength ?? 1);
-      g.uniform1f(u('uTargetBlend'), target ? 1 : 0);
+    }
+    this.displayPass.render(this.dye, destinationTarget, (gl, uniform) => {
+      gl.uniform1i(uniform('uTexture'), this.dye.targets.read.attach(0));
+      bindDisplay(gl, uniform, this.dye, destinationTarget, options);
+      gl.uniform1i(uniform('visualPipeline'), 0);
+      gl.uniform1f(uniform('seed'), options.seed ?? 0);
+      bindPalette(gl, uniform, options.palette, options.paletteStrength ?? 0.76);
     });
   }
-  private assert() {
-    if (this.disposed)
-      throw new Error('Stable fluid field has been disposed');
+
+  dispose(): void {
+    if (this.disposed) return;
+    this.disposed = true;
+    for (const state of this.states()) state.dispose();
+    for (const pass of this.passes()) pass.dispose();
   }
+
+  private applySplat(state: GpuFieldState, splat: FluidSplat2D, color: readonly [number, number, number]): void {
+    this.splatPass.step(state, (gl, uniform) => {
+      gl.uniform1i(uniform('uTarget'), state.targets.read.attach(0));
+      gl.uniform1f(uniform('aspectRatio'), state.width / state.height);
+      gl.uniform3f(uniform('color'), color[0], color[1], color[2]);
+      gl.uniform2f(uniform('point'), clamp(splat.x, 0.001, 0.999), clamp(splat.y, 0.001, 0.999));
+      gl.uniform1f(uniform('radius'), splat.radius * splat.radius);
+    });
+  }
+
+  private clearPressure(): void {
+    for (let i = 0; i < 2; i += 1) this.clearPass.step(this.pressure, (gl, uniform) => gl.uniform1f(uniform('value'), 0.8));
+  }
+
+  private applyBloom(source: GpuFieldState, options: StableFluidDisplayOptions): void {
+    const strength = Math.max(0, options.bloomStrength ?? 0);
+    if (strength <= 0.0001) { this.bloomTarget.clear(); return; }
+    const threshold = options.bloomThreshold ?? 0.6;
+    const knee = threshold * 0.7 + 0.0001;
+    this.bloomPrefilterPass.render(source, destination(this.bloomTarget), (gl, uniform) => {
+      gl.uniform1i(uniform('uTexture'), source.targets.read.attach(0));
+      gl.uniform3f(uniform('curve'), threshold - knee, knee * 2, 0.25 / knee);
+      gl.uniform1f(uniform('threshold'), threshold);
+    });
+    let last = this.bloomTarget;
+    for (const next of this.bloomPyramid) {
+      this.bloomBlurPass.render(last, destination(next), (gl, uniform) => {
+        gl.uniform1i(uniform('uTexture'), last.targets.read.attach(0));
+        gl.uniform2f(uniform('texelSize'), 1 / last.width, 1 / last.height);
+      });
+      last = next;
+    }
+    for (let i = this.bloomPyramid.length - 2; i >= 0; i -= 1) {
+      const next = this.bloomPyramid[i];
+      if (!next) continue;
+      this.bloomBlurPass.renderAdditive(last, destination(next), (gl, uniform) => {
+        gl.uniform1i(uniform('uTexture'), last.targets.read.attach(0));
+        gl.uniform2f(uniform('texelSize'), 1 / last.width, 1 / last.height);
+      });
+      last = next;
+    }
+    this.bloomFinalPass.render(last, destination(this.bloomTarget), (gl, uniform) => {
+      gl.uniform1i(uniform('uTexture'), last.targets.read.attach(0));
+      gl.uniform2f(uniform('texelSize'), 1 / last.width, 1 / last.height);
+      gl.uniform1f(uniform('intensity'), strength);
+    });
+  }
+
+  private applySunrays(source: GpuFieldState, options: StableFluidDisplayOptions): void {
+    if (options.sunraysStrength <= 0.0001) { this.sunraysTarget.clear(); return; }
+    this.sunraysMaskPass.render(source, {
+      framebuffer: this.dye.targets.write.framebuffer,
+      width: this.dye.width,
+      height: this.dye.height,
+    }, (gl, uniform) => gl.uniform1i(uniform('uTexture'), source.targets.read.attach(0)));
+    this.sunraysPass.render(this.dye, destination(this.sunraysTarget), (gl, uniform) => {
+      gl.uniform1i(uniform('uTexture'), this.dye.targets.write.attach(0));
+      gl.uniform1f(uniform('weight'), Math.max(0, options.sunraysStrength));
+    });
+    this.blurPass.render(this.sunraysTarget, destination(this.sunraysMaskTarget), (gl, uniform) => {
+      gl.uniform1i(uniform('uTexture'), this.sunraysTarget.targets.read.attach(0));
+      gl.uniform2f(uniform('texelSize'), 1 / this.sunraysTarget.width, 1 / this.sunraysTarget.height);
+      gl.uniform2f(uniform('direction'), 1, 0);
+    });
+    this.blurPass.render(this.sunraysMaskTarget, destination(this.sunraysTarget), (gl, uniform) => {
+      gl.uniform1i(uniform('uTexture'), this.sunraysMaskTarget.targets.read.attach(0));
+      gl.uniform2f(uniform('texelSize'), 1 / this.sunraysMaskTarget.width, 1 / this.sunraysMaskTarget.height);
+      gl.uniform2f(uniform('direction'), 0, 1);
+    });
+  }
+
+  private states(): readonly GpuFieldState[] {
+    return [this.velocity, this.dye, this.pressure, this.divergence, this.curlTarget, this.displayTarget, this.bloomTarget, ...this.bloomPyramid, this.sunraysMaskTarget, this.sunraysTarget];
+  }
+
+  private passes(): readonly GpuFieldPass[] {
+    return [this.clearPass, this.initPass, this.splatPass, this.advectionPass, this.divergencePass, this.curlPass, this.vorticityPass, this.pressurePass, this.gradientPass, this.displayPass, this.bloomPrefilterPass, this.bloomBlurPass, this.bloomFinalPass, this.blurPass, this.sunraysMaskPass, this.sunraysPass, this.compositePass, this.referenceDisplayPass];
+  }
+
+  private assert(): void { if (this.disposed) throw new Error('Stable fluid field has been disposed'); }
 }
-const HEAD = `#version 300 es\nprecision highp float;in vec2 vUv;uniform sampler2D uFieldState;uniform vec2 uFieldSize;out vec4 outColor;`;
-const VELOCITY = HEAD + `uniform vec2 uTexel;uniform float uDt,uDecay,uViscosity,uCurl,uAmbient;void main(){vec2 v=texture(uFieldState,vUv).xy;vec2 uv=clamp(vUv-v*uDt,vec2(0),vec2(1));vec2 adv=texture(uFieldState,uv).xy;float cL=texture(uFieldState,vUv-vec2(uTexel.x,0)).y-texture(uFieldState,vUv-vec2(uTexel.x,0)).x;float cR=texture(uFieldState,vUv+vec2(uTexel.x,0)).y-texture(uFieldState,vUv+vec2(uTexel.x,0)).x;float cB=texture(uFieldState,vUv-vec2(0,uTexel.y)).y-texture(uFieldState,vUv-vec2(0,uTexel.y)).x;float cT=texture(uFieldState,vUv+vec2(0,uTexel.y)).y-texture(uFieldState,vUv+vec2(0,uTexel.y)).x;vec2 gradient=vec2(abs(cT)-abs(cB),abs(cR)-abs(cL));vec2 vort=gradient/(length(gradient)+1e-5)*vec2(1,-1)*uCurl*.00008;vec2 ambient=vec2(sin(vUv.y*13.0),cos(vUv.x*11.0))*uAmbient*.0008;vec2 result=(mix(adv,v,uViscosity*.04)+vort+ambient)*uDecay;if(vUv.x<uTexel.x||vUv.x>1.0-uTexel.x)result.x=0.0;if(vUv.y<uTexel.y||vUv.y>1.0-uTexel.y)result.y=0.0;outColor=vec4(result,0,1);}`;
-const DYE = HEAD + `uniform sampler2D uVelocity;uniform float uDt,uDecay;void main(){vec2 v=texture(uVelocity,vUv).xy;outColor=texture(uFieldState,clamp(vUv-v*uDt,vec2(0),vec2(1)))*uDecay;}`;
-const DIVERGENCE = HEAD + `uniform sampler2D uVelocity;uniform vec2 uTexel;void main(){float l=texture(uVelocity,vUv-vec2(uTexel.x,0)).x,r=texture(uVelocity,vUv+vec2(uTexel.x,0)).x,b=texture(uVelocity,vUv-vec2(0,uTexel.y)).y,t=texture(uVelocity,vUv+vec2(0,uTexel.y)).y;outColor=vec4(.5*(r-l+t-b),0,0,1);}`;
-const PRESSURE = HEAD + `uniform sampler2D uDivergence;uniform vec2 uTexel;void main(){float l=texture(uFieldState,vUv-vec2(uTexel.x,0)).x,r=texture(uFieldState,vUv+vec2(uTexel.x,0)).x,b=texture(uFieldState,vUv-vec2(0,uTexel.y)).x,t=texture(uFieldState,vUv+vec2(0,uTexel.y)).x,d=texture(uDivergence,vUv).x;outColor=vec4((l+r+b+t-d)*.25,0,0,1);}`;
-const GRADIENT = HEAD + `uniform sampler2D uPressure;uniform vec2 uTexel;void main(){float l=texture(uPressure,vUv-vec2(uTexel.x,0)).x,r=texture(uPressure,vUv+vec2(uTexel.x,0)).x,b=texture(uPressure,vUv-vec2(0,uTexel.y)).x,t=texture(uPressure,vUv+vec2(0,uTexel.y)).x;vec2 v=texture(uFieldState,vUv).xy-vec2(r-l,t-b)*.5;outColor=vec4(v,0,1);}`;
-const SPLAT = HEAD + `uniform vec2 uPoint,uPrevious;uniform float uRadius,uSegment,uTaper,uAspect,uStrength,uTargetBlend;uniform vec4 uValue;vec2 segmentDistance(vec2 p,vec2 a,vec2 b){vec2 ab=b-a;float lengthSquared=max(1e-8,dot(ab,ab));float fraction=dot(p-a,ab)/lengthSquared;vec2 closest=a+ab*clamp(fraction,0.0,1.0);vec2 delta=p-closest;delta.x*=uAspect;return vec2(length(delta),fraction);}void main(){vec4 base=texture(uFieldState,vUv);vec2 pointDelta=vUv-uPoint;pointDelta.x*=uAspect;float pointInfluence=exp(-dot(pointDelta,pointDelta)/max(1e-6,uRadius*uRadius));vec2 distanceAndFraction=segmentDistance(vUv,uPoint,uPrevious);float projected=1.0-clamp(distanceAndFraction.y,0.0,1.0)*uTaper;float segmentInfluence=exp(-distanceAndFraction.x/max(1e-6,uRadius))*projected*projected;float influence=mix(pointInfluence,segmentInfluence,uSegment)*uStrength;vec4 added=base+uValue*influence;vec4 targeted=base+(uValue-base)*influence;outColor=mix(added,targeted,uTargetBlend);}`;
-const SEED = HEAD + `uniform int uKind;uniform float uSeed;float h(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7))+uSeed)*43758.5453);}void main(){vec2 p=vUv-.5;float cloud=exp(-dot(p,p)*4.0)*(.5+.5*sin(vUv.x*18.0+sin(vUv.y*13.0+uSeed)));float cells=pow(h(floor(vUv*10.0)),2.0);float random=h(floor(vUv*uFieldSize));float v=uKind==0?cloud:uKind==1?cells:random*.65;outColor=vec4(v,h(vUv+3.1)*v,h(vUv+7.7)*v,v);}`;
-const DISPLAY = HEAD + `uniform vec3 uPalette[4],uBackground;uniform int uPaletteCount;uniform vec2 uTexel;uniform float uShading,uSunrays,uExposure;vec3 paletteColor(float t){float scaled=clamp(t,0.0,.999)*float(max(1,uPaletteCount-1)),local=fract(scaled);int index=int(floor(scaled));vec3 a=uPalette[0],b=uPalette[0];for(int i=0;i<4;i++){if(i==index)a=uPalette[i];if(i==min(index+1,uPaletteCount-1))b=uPalette[i];}return mix(a,b,smoothstep(0.0,1.0,local));}void main(){vec3 dye=max(vec3(0),texture(uFieldState,vUv).rgb);float density=max(dye.r,max(dye.g,dye.b));float l=length(texture(uFieldState,vUv-vec2(uTexel.x,0)).rgb),r=length(texture(uFieldState,vUv+vec2(uTexel.x,0)).rgb),b=length(texture(uFieldState,vUv-vec2(0,uTexel.y)).rgb),t=length(texture(uFieldState,vUv+vec2(0,uTexel.y)).rgb);vec3 normal=normalize(vec3((r-l)*1.8,(t-b)*1.8,.08));float diffuse=.52+.48*dot(normal,normalize(vec3(-.35,-.52,.78)));vec3 color=dye*mix(1.0,clamp(diffuse,.62,1.38),clamp(uShading,0.0,1.0));vec3 glow=texture(uFieldState,vUv+vec2(2,0)*uTexel).rgb+texture(uFieldState,vUv-vec2(2,0)*uTexel).rgb+texture(uFieldState,vUv+vec2(0,2)*uTexel).rgb+texture(uFieldState,vUv-vec2(0,2)*uTexel).rgb;color+=glow*.075;vec2 ray=(vec2(.5)-vUv)/8.0;float rays=0.0;for(int i=0;i<8;i++)rays+=length(texture(uFieldState,vUv+ray*float(i)).rgb);color+=paletteColor(clamp(density*.35,0.0,1.0))*rays*.0125*uSunrays;color*=1.0+smoothstep(.006,.13,density)*.22;color=1.0-exp(-color*uExposure*(1.16+density*.22));color=pow(max(color,vec3(0)),vec3(.82));float edge=min(min(vUv.x,1.0-vUv.x),min(vUv.y,1.0-vUv.y)),wall=smoothstep(0.0,.035,edge),vignette=smoothstep(.92,.20,distance(vUv,vec2(.5)));color*=.78+.22*wall;color*=.82+.18*vignette;float alpha=smoothstep(.0015,.075,density);outColor=vec4(mix(uBackground,color,alpha),1);}`;
+
+function field(gl: WebGL2RenderingContext, width: number, height: number, filter: 'nearest' | 'linear'): GpuFieldState {
+  return new GpuFieldState(gl, { width, height, precision: 'half-float', filter });
+}
+
+function destination(state: GpuFieldState): GpuParticleRenderDestination {
+  return { framebuffer: state.targets.read.framebuffer, width: state.width, height: state.height };
+}
+
+function resolutionFor(base: number, width: number, height: number): { width: number; height: number } {
+  const aspect = width / Math.max(1, height);
+  return aspect >= 1 ? { width: Math.round(base * aspect), height: base } : { width: base, height: Math.round(base / aspect) };
+}
+
+function bindPalette(
+  gl: WebGL2RenderingContext,
+  uniform: (name: string) => WebGLUniformLocation | null,
+  palette: readonly (readonly [number, number, number])[],
+  strength: number,
+): void {
+  const data = new Float32Array(18);
+  const count = clamp(palette.length, 1, 6);
+  for (let i = 0; i < 6; i += 1) data.set(palette[Math.min(i, count - 1)] ?? [0.4, 1, 0.95], i * 3);
+  gl.uniform3fv(uniform('palette[0]'), data);
+  gl.uniform1i(uniform('paletteCount'), count);
+  gl.uniform1f(uniform('paletteStrength'), clamp(strength, 0, 1));
+}
+
+function bindDisplay(
+  gl: WebGL2RenderingContext,
+  uniform: (name: string) => WebGLUniformLocation | null,
+  source: GpuFieldState,
+  destinationTarget: GpuParticleRenderDestination,
+  options: StableFluidDisplayOptions,
+): void {
+  gl.uniform2f(uniform('texelSize'), 1 / source.width, 1 / source.height);
+  gl.uniform2f(uniform('resolution'), destinationTarget.width, destinationTarget.height);
+  gl.uniform1f(uniform('exposure'), options.exposure ?? 1);
+  gl.uniform1f(uniform('time'), options.timeSeconds ?? 0);
+  gl.uniform1f(uniform('edgeDarkening'), options.edgeDarkening ?? 0.18);
+  gl.uniform1f(uniform('shadingStrength'), options.shadingStrength);
+  gl.uniform1i(uniform('initMode'), initModeIndex(options.initMode));
+}
+
+function initModeIndex(mode: StableFluidDisplayOptions['initMode']): number {
+  if (mode === 'voronoi') return 1;
+  if (mode === 'random') return 2;
+  if (mode === 'image') return 3;
+  if (mode === 'blank') return 4;
+  return 0;
+}
+
+function clamp(value: number, min: number, max: number): number { return Math.max(min, Math.min(max, value)); }

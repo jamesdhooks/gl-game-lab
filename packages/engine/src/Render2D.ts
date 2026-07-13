@@ -194,13 +194,29 @@ export interface FluidDisplay2DOptions {
   readonly shadingStrength: number;
   readonly sunraysStrength: number;
   readonly exposure?: number;
+  readonly paletteStrength?: number;
+  readonly edgeDarkening?: number;
+  readonly bloomStrength?: number;
+  readonly bloomThreshold?: number;
+  readonly visualPipeline?: 'standard' | 'reference';
+  readonly initMode?: 'blank' | 'random' | 'voronoi' | 'cloud' | 'image';
+  readonly timeSeconds?: number;
+  readonly seed?: number;
+}
+
+export interface FluidSeed2DOptions {
+  readonly palette?: readonly (readonly [number, number, number])[];
+  readonly paletteStrength?: number;
+  readonly cellSize?: number;
 }
 
 export interface FluidField2D {
   readonly width: number;
   readonly height: number;
+  readonly simulationWidth: number;
+  readonly simulationHeight: number;
   step(options: FluidStep2DOptions, splats?: readonly FluidSplat2D[]): void;
-  seed(kind: 'blank' | 'random' | 'voronoi' | 'cloud', seed: number): void;
+  seed(kind: 'blank' | 'random' | 'voronoi' | 'cloud', seed: number, options?: FluidSeed2DOptions): void;
   uploadDyeRgba(values: Float32Array): void;
   texture(channel: 'velocity' | 'dye'): GpuTexture2D;
   clear(): void;

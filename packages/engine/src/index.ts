@@ -79,6 +79,7 @@ export {
   type FluidDisplay2DOptions,
   type FluidField2D,
   type FluidFieldCreate2DOptions,
+  type FluidSeed2DOptions,
   type FluidSplat2D,
   type FluidStep2DOptions,
   type Sprite2D,

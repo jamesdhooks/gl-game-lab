@@ -32,7 +32,7 @@ export { SOFT_BODY_BLOB_STYLE_MANIFEST } from './soft-body-blob/styles.js';
 export { SoftBodyModel, type SoftBody, type SoftBodyTuning } from './soft-body-blob/SoftBodyModel.js';
 export { fluidTankDefinition } from './fluid-tank/definition.js';
 export { FLUID_TANK_DEFAULTS, FLUID_TANK_SETTINGS, createFluidTankConfig, fluidBoolean, fluidNumber, fluidString, type FluidTankConfig } from './fluid-tank/config.js';
-export { FLUID_TANK_PLUGIN_ID, FluidTankControllerService, createFluidTankPlugin, type FluidTankController, type FluidTankMode } from './fluid-tank/FluidTankPlugin.js';
+export { FLUID_TANK_PLUGIN_ID, FluidTankControllerService, createFluidTankPlugin, velocityFromScreenDelta, type FluidTankController, type FluidTankMode } from './fluid-tank/FluidTankPlugin.js';
 export { FLUID_TANK_STYLE_MANIFEST } from './fluid-tank/styles.js';
 export { particleFluidDefinition } from './particle-fluid/definition.js';
 export { PARTICLE_FLUID_DEFAULTS, PARTICLE_FLUID_SETTINGS, createParticleFluidConfig, particleFluidNumber, particleFluidString, type ParticleFluidConfig } from './particle-fluid/config.js';

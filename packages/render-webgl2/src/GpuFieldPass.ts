@@ -23,6 +23,9 @@ export class GpuFieldPass {
   render(state: GpuFieldState, destination: GpuParticleRenderDestination, bind: GpuFieldUniformBinder = () => undefined): void {
     this.draw(state, destination, bind);
   }
+  renderAdditive(state: GpuFieldState, destination: GpuParticleRenderDestination, bind: GpuFieldUniformBinder = () => undefined): void {
+    this.draw(state, destination, bind, true);
+  }
   dispose(): void {
     if (this.disposed)
       return;
@@ -31,13 +34,16 @@ export class GpuFieldPass {
     this.gl.deleteProgram(this.program);
     this.uniforms.clear();
   }
-  private draw(state: GpuFieldState, destination: GpuParticleRenderDestination, bind: GpuFieldUniformBinder): void {
+  private draw(state: GpuFieldState, destination: GpuParticleRenderDestination, bind: GpuFieldUniformBinder, additive = false): void {
     if (this.disposed)
       throw new Error('GPU field pass has been disposed');
     const gl = this.gl;
     gl.bindFramebuffer(gl.FRAMEBUFFER, destination.framebuffer ?? null);
     gl.viewport(0, 0, destination.width, destination.height);
-    gl.disable(gl.BLEND);
+    if (additive) {
+      gl.enable(gl.BLEND);
+      gl.blendFunc(gl.ONE, gl.ONE);
+    } else gl.disable(gl.BLEND);
     gl.useProgram(this.program);
     gl.bindVertexArray(this.vao);
     state.targets.read.attach(0);
@@ -45,6 +51,7 @@ export class GpuFieldPass {
     gl.uniform2f(this.uniform('uFieldSize'), state.width, state.height);
     bind(gl, name => this.uniform(name));
     gl.drawArrays(gl.TRIANGLES, 0, 3);
+    if (additive) gl.disable(gl.BLEND);
     gl.bindVertexArray(null);
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
   }

@@ -4,6 +4,7 @@ import type {
   FluidSplat2D,
   FluidStep2DOptions,
   FluidFieldCreate2DOptions,
+  FluidSeed2DOptions,
 } from '@hooksjam/gl-game-lab-engine';
 import type { GpuParticleRenderDestination } from './GpuParticleRenderer.js';
 import type { RestorableResourceOwner } from './RestorableResourceOwner.js';
@@ -14,7 +15,7 @@ import { WebGLGpuTexture2D } from './WebGLGpu2DService.js';
 export class WebGLFluidField2D implements FluidField2D {
   private readonly owner: RestorableResourceOwner<StableFluidField2D>;
   private disposed = false;
-  private lastSeed: { readonly kind: 'blank' | 'random' | 'voronoi' | 'cloud'; readonly seed: number } | undefined;
+  private lastSeed: { readonly kind: 'blank' | 'random' | 'voronoi' | 'cloud'; readonly seed: number; readonly options?: FluidSeed2DOptions } | undefined;
   private dyeRgba: Float32Array | undefined;
   private readonly velocityTexture: WebGLGpuTexture2D;
   private readonly dyeTexture: WebGLGpuTexture2D;
@@ -36,7 +37,7 @@ export class WebGLFluidField2D implements FluidField2D {
       dispose: (field) => { field.dispose(); },
       restored: (field) => {
         if (this.dyeRgba) field.uploadDyeRgba(this.dyeRgba);
-        else if (this.lastSeed) field.seed(this.lastSeed.kind, this.lastSeed.seed);
+        else if (this.lastSeed) field.seed(this.lastSeed.kind, this.lastSeed.seed, this.lastSeed.options);
       },
     });
     this.velocityTexture = new WebGLGpuTexture2D(options.simulationWidth ?? width, options.simulationHeight ?? height, () => this.owner.value.velocity.targets.read.texture);
@@ -45,14 +46,16 @@ export class WebGLFluidField2D implements FluidField2D {
 
   get width(): number { return this.owner.value.width; }
   get height(): number { return this.owner.value.height; }
+  get simulationWidth(): number { return this.owner.value.velocity.width; }
+  get simulationHeight(): number { return this.owner.value.velocity.height; }
   step(options: FluidStep2DOptions, splats: readonly FluidSplat2D[] = []): void {
     this.owner.value.step(options, splats);
     this.recordWork(5 + Math.max(1, Math.min(48, Math.floor(options.pressureIterations))) + splats.length * 2);
   }
-  seed(kind: 'blank' | 'random' | 'voronoi' | 'cloud', seed: number): void {
-    this.lastSeed = { kind, seed };
+  seed(kind: 'blank' | 'random' | 'voronoi' | 'cloud', seed: number, options?: FluidSeed2DOptions): void {
+    this.lastSeed = { kind, seed, ...(options ? { options } : {}) };
     this.dyeRgba = undefined;
-    this.owner.value.seed(kind, seed);
+    this.owner.value.seed(kind, seed, options);
     if (kind !== 'blank') this.recordWork(1);
   }
   uploadDyeRgba(values: Float32Array): void {
