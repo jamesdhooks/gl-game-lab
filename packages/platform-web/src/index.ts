@@ -8,6 +8,7 @@ export {
 export {
   BrowserFrameLoop,
   type AnimationFrameDriver,
+  type BrowserFrameLoopOptions,
 } from './BrowserFrameLoop.js';
 export {
   WebTextureAsset,

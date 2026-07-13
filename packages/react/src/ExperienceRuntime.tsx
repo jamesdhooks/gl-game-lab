@@ -8,11 +8,14 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { Dices, Eye, EyeOff, HelpCircle, MousePointer2, Paintbrush, Palette, Play, Settings as SettingsIcon, X } from 'lucide-react';
+import { Camera, Dices, Eye, EyeOff, HelpCircle, Lock, LockOpen, MousePointer2, Paintbrush, Palette, Play, RefreshCw, Settings as SettingsIcon, X } from 'lucide-react';
 import {
   ExperienceRuntimeControllerService,
+  resolvePreviewLaunch,
   type ExperienceDefinition,
+  type ExperienceLaunchOptions,
   type ExperienceLaunchProfile,
+  type ExperiencePreviewProfile,
   type ExperienceRuntimeController,
   type ExperienceSetting,
   type ExperienceSettingValue,
@@ -20,7 +23,7 @@ import {
 } from '@hooksjam/gl-game-lab-engine';
 import type { GameEngine } from '@hooksjam/gl-game-lab-engine';
 import { GameCanvas } from './GameCanvas.js';
-import type { FixedFrameCaptureOptions, FixedFrameCaptureResult } from './GameCanvas.js';
+import type { CanvasFrameCapture, FixedFrameCaptureOptions, FixedFrameCaptureResult, GameCanvasHandle } from './GameCanvas.js';
 import { DebugPanel } from './ui/DebugPanel.js';
 import { HUD } from './ui/HUD.js';
 import { IntroCard, type IntroHint } from './ui/IntroCard.js';
@@ -92,6 +95,17 @@ export interface ExperienceRuntimeProps {
   readonly onDemoExit?: () => void;
   readonly onLocalDemoChange?: (active: boolean) => void;
   readonly onSaveDefaults?: (request: SettingsDefaultsSaveRequest) => Promise<void> | void;
+  readonly previewAuthoring?: PreviewAuthoringOptions;
+}
+
+export interface PreviewAuthoringOptions {
+  readonly enabled: boolean;
+  readonly profile: ExperiencePreviewProfile;
+  readonly onEnabledChange: (enabled: boolean) => void;
+  readonly onProfileChange: (profile: ExperiencePreviewProfile) => void;
+  readonly onSave: (profile: ExperiencePreviewProfile) => Promise<void> | void;
+  readonly onReset: () => ExperiencePreviewProfile;
+  readonly onCapture: (capture: CanvasFrameCapture, profile: ExperiencePreviewProfile, profileHash: string) => Promise<void> | void;
 }
 
 export function ExperienceRuntime({
@@ -173,12 +187,15 @@ function ImmersiveExperienceRuntime({
   onDemoExit,
   onLocalDemoChange,
   onSaveDefaults,
+  previewAuthoring,
 }: ExperienceRuntimeProps): JSX.Element {
   const { isMobile, isLandscape } = useViewportContext();
   const mobilePortrait = isMobile && !isLandscape;
-  const defaultModeId = initialModeId ?? definition.modes?.[0]?.id ?? 'default';
-  const defaultStyleId = initialStyleId ?? definition.styleManifest?.defaultStyleId ?? 'default';
-  const initialSettings = useMemo(() => settingDefaults(definition), [definition]);
+  const previewEnabled = previewAuthoring?.enabled === true;
+  const sceneSettings = useMemo(() => settingDefaults(definition), [definition]);
+  const defaultModeId = previewEnabled ? previewAuthoring.profile.modeId ?? definition.modes?.[0]?.id ?? 'default' : initialModeId ?? definition.modes?.[0]?.id ?? 'default';
+  const defaultStyleId = previewEnabled ? previewAuthoring.profile.styleId ?? definition.styleManifest?.defaultStyleId ?? 'default' : initialStyleId ?? definition.styleManifest?.defaultStyleId ?? 'default';
+  const initialSettings = previewEnabled ? previewAuthoring.profile.settings : sceneSettings;
   const [modeId, setModeId] = useState(defaultModeId);
   const [styleId, setStyleId] = useState(defaultStyleId);
   const [settings, setSettings] = useState<Readonly<Record<string, ExperienceSettingValue>>>(initialSettings);
@@ -199,10 +216,12 @@ function ImmersiveExperienceRuntime({
   const engineRef = useRef<GameEngine>();
   const [engineInstance, setEngineInstance] = useState<GameEngine>();
   const sceneStageRef = useRef<HTMLDivElement>(null);
+  const gameCanvasRef = useRef<GameCanvasHandle>(null);
   const onReadyRef = useRef(onReady);
   const demoHintTimerRef = useRef<number>();
   const localDemoInitialShuffleRef = useRef(false);
   const [localDemoAdvanceNonce, setLocalDemoAdvanceNonce] = useState(0);
+  const [capturePending, setCapturePending] = useState(false);
   onReadyRef.current = onReady;
 
   useEffect(() => {
@@ -213,14 +232,16 @@ function ImmersiveExperienceRuntime({
     setStyleId(defaultStyleId);
     setSettings(initialSettings);
     setSettingsOpen(readStoredBoolean(SETTINGS_OPEN_STORAGE_KEY, false));
-    setInfoCardVisible(showIntroCard && profile !== 'demo');
+    setInfoCardVisible(showIntroCard && profile !== 'demo' && !previewEnabled);
     setUiHidden(profile === 'demo');
     setIsDemo(profile === 'demo');
     localDemoInitialShuffleRef.current = false;
-    setActiveProfile(profile);
+    setActiveProfile(previewEnabled ? 'preview' : profile);
     setImageUrlEditorOpen(false);
     setImageUrlDraft('');
-  }, [defaultModeId, defaultStyleId, definition.id, initialSettings, profile, showIntroCard]);
+    setCapturePending(false);
+    setRuntimeKey((value) => value + 1);
+  }, [definition.id, previewEnabled, profile, showIntroCard]);
 
   useEffect(() => {
     writeStoredBoolean(SETTINGS_OPEN_STORAGE_KEY, settingsOpen);
@@ -240,34 +261,70 @@ function ImmersiveExperienceRuntime({
     if (demoHintTimerRef.current !== undefined) window.clearTimeout(demoHintTimerRef.current);
   }, []);
 
-  const createPlugins = useCallback(() => definition.createPlugins({
+  const previewDraft = useMemo<ExperiencePreviewProfile | undefined>(() => previewAuthoring ? ({
+    ...previewAuthoring.profile,
+    modeId,
+    styleId,
+    settings,
+  }) : undefined, [modeId, previewAuthoring, settings, styleId]);
+  const resolvedPreview = useMemo(
+    () => previewEnabled ? resolvePreviewLaunch(definition, previewDraft, 0) : undefined,
+    [definition, previewDraft, previewEnabled],
+  );
+  const launchOptionsRef = useRef<ExperienceLaunchOptions>({
     profile: activeProfile,
     modeId: defaultModeId,
     styleId: defaultStyleId,
     settings: initialSettings,
     ...(seed !== undefined ? { seed } : {}),
-  }), [activeProfile, defaultModeId, defaultStyleId, definition, initialSettings, seed]);
+  });
+  launchOptionsRef.current = resolvedPreview ?? {
+    profile: activeProfile,
+    modeId: defaultModeId,
+    styleId: defaultStyleId,
+    settings: initialSettings,
+    ...(seed !== undefined ? { seed } : {}),
+  };
+  const createPlugins = useCallback(() => definition.createPlugins(launchOptionsRef.current), [definition]);
+
+  useEffect(() => {
+    if (!previewEnabled || !previewDraft || !previewAuthoring) return;
+    previewAuthoring.onProfileChange(previewDraft);
+  }, [definition.id, modeId, previewEnabled, settings, styleId]);
+
+  useEffect(() => {
+    const controller = controllerRef.current;
+    if (!previewEnabled || !resolvedPreview || !controller) return;
+    if (resolvedPreview.modeId) controller.setMode(resolvedPreview.modeId);
+    if (resolvedPreview.styleId) controller.setStyle(resolvedPreview.styleId);
+    for (const [key, value] of Object.entries(resolvedPreview.settings)) controller.setSetting(key, value);
+  }, [previewEnabled, resolvedPreview?.hash]);
 
   const handleReady = useCallback((engine: GameEngine): void => {
     engineRef.current = engine;
     setEngineInstance(engine);
     const controller = engine.kernel.tryGet(ExperienceRuntimeControllerService);
     controllerRef.current = controller;
+    if (previewEnabled && resolvedPreview && controller) {
+      if (resolvedPreview.modeId) controller.setMode(resolvedPreview.modeId);
+      if (resolvedPreview.styleId) controller.setStyle(resolvedPreview.styleId);
+      for (const [key, value] of Object.entries(resolvedPreview.settings)) controller.setSetting(key, value);
+    }
     onReadyRef.current?.(engine, controller);
-  }, []);
+  }, [previewEnabled, resolvedPreview]);
 
   const changeMode = useCallback((nextModeId: string): void => {
-    controllerRef.current?.setMode(nextModeId);
+    if (!previewEnabled) controllerRef.current?.setMode(nextModeId);
     setModeId(nextModeId);
-  }, []);
+  }, [previewEnabled]);
   const changeStyle = useCallback((nextStyleId: string): void => {
-    controllerRef.current?.setStyle(nextStyleId);
+    if (!previewEnabled) controllerRef.current?.setStyle(nextStyleId);
     setStyleId(nextStyleId);
-  }, []);
+  }, [previewEnabled]);
   const changeSetting = useCallback((setting: ExperienceSetting, value: ExperienceSettingValue): void => {
-    controllerRef.current?.setSetting(setting.key, value);
+    if (!previewEnabled) controllerRef.current?.setSetting(setting.key, value);
     setSettings((current) => ({ ...current, [setting.key]: value }));
-  }, []);
+  }, [previewEnabled]);
   const settingsStore = useMemo(() => ({
     get: (key: string): unknown => settings[key],
     set: (key: string, value: ExperienceSettingValue): void => {
@@ -277,10 +334,11 @@ function ImmersiveExperienceRuntime({
     reset: (keys: readonly string[]): void => {
       for (const key of keys) {
         const field = (definition.settings ?? []).find((setting) => setting.key === key);
-        if (field) changeSetting(field, initialSettings[key] ?? field.default);
+        const resetValue = previewEnabled ? previewAuthoring?.profile.settings[key] : initialSettings[key];
+        if (field) changeSetting(field, resetValue ?? field.default);
       }
     },
-  }), [changeSetting, definition.settings, initialSettings, settings]);
+  }), [changeSetting, definition.settings, initialSettings, previewAuthoring?.profile.settings, previewEnabled, settings]);
   const renderStyleField = useMemo<SelectSetting | undefined>(
     () => (definition.settings ?? []).find(
       (setting): setting is SelectSetting => setting.key === 'renderStyle' && setting.type === 'select',
@@ -294,6 +352,10 @@ function ImmersiveExperienceRuntime({
   );
   const hasRenderStylePicker = renderStyleModes.length > 1;
   const saveDefaults = useCallback(async (request: SettingsDefaultsSaveRequest): Promise<void> => {
+    if (previewEnabled && previewAuthoring && previewDraft) {
+      await previewAuthoring.onSave(previewDraft);
+      return;
+    }
     const values: Record<string, unknown> = { ...request.values };
     if (request.section === null) {
       values.style = styleId;
@@ -313,7 +375,7 @@ function ImmersiveExperienceRuntime({
     } catch {
       throw new Error('Unable to save scene defaults');
     }
-  }, [definition.id, onSaveDefaults, renderStyleField, settings.renderStyle, styleId]);
+  }, [definition.id, onSaveDefaults, previewAuthoring, previewDraft, previewEnabled, renderStyleField, settings.renderStyle, styleId]);
   const injectPaletteField = useMemo<SelectSetting | undefined>(
     () => definition.id === 'fluid-tank'
       ? (definition.settings ?? []).find(
@@ -526,6 +588,86 @@ function ImmersiveExperienceRuntime({
     const timer = window.setTimeout(() => { advanceLocalDemo(); }, delay);
     return () => { window.clearTimeout(timer); };
   }, [advanceLocalDemo, engineInstance, isDemo, localDemoAdvanceNonce, profile]);
+  const updatePreviewProfile = useCallback((next: ExperiencePreviewProfile): void => {
+    previewAuthoring?.onProfileChange(next);
+  }, [previewAuthoring]);
+  const changePreviewIntensity = useCallback((intensity: number): void => {
+    if (!previewDraft) return;
+    updatePreviewProfile({ ...previewDraft, variation: { ...previewDraft.variation, intensity } });
+  }, [previewDraft, updatePreviewProfile]);
+  const togglePreviewLock = useCallback((key: string, locked: boolean): void => {
+    if (!previewDraft) return;
+    const keys = new Set(previewDraft.variation.lockedKeys);
+    if (locked) keys.add(key); else keys.delete(key);
+    updatePreviewProfile({ ...previewDraft, variation: { ...previewDraft.variation, lockedKeys: [...keys].sort() } });
+  }, [previewDraft, updatePreviewProfile]);
+  const shufflePreview = useCallback((): void => {
+    if (!previewDraft) return;
+    controllerRef.current = undefined;
+    engineRef.current = undefined;
+    setEngineInstance(undefined);
+    updatePreviewProfile({ ...previewDraft, variation: { ...previewDraft.variation, seed: randomPreviewSeed() } });
+    setRuntimeKey((value) => value + 1);
+  }, [previewDraft, updatePreviewProfile]);
+  const resetPreview = useCallback((): void => {
+    if (!previewAuthoring) return;
+    const saved = previewAuthoring.onReset();
+    setModeId(saved.modeId ?? definition.modes?.[0]?.id ?? 'default');
+    setStyleId(saved.styleId ?? definition.styleManifest?.defaultStyleId ?? 'default');
+    setSettings(saved.settings);
+    updatePreviewProfile(saved);
+  }, [definition.modes, definition.styleManifest?.defaultStyleId, previewAuthoring, updatePreviewProfile]);
+  const capturePreview = useCallback(async (): Promise<void> => {
+    if (!previewDraft || !resolvedPreview || !previewAuthoring || capturePending) return;
+    const canvas = gameCanvasRef.current;
+    if (!canvas) return;
+    setCapturePending(true);
+    try {
+      const capture = await canvas.captureFrame();
+      await previewAuthoring.onCapture(capture, previewDraft, resolvedPreview.hash);
+    } finally {
+      setCapturePending(false);
+    }
+  }, [capturePending, previewAuthoring, previewDraft, resolvedPreview]);
+  const previewHeaderControl = previewAuthoring ? (
+    <div className="inline-flex rounded-lg bg-white/[0.07] p-0.5">
+      {(['scene', 'preview'] as const).map((value) => {
+        const selected = value === 'preview' ? previewEnabled : !previewEnabled;
+        return <button key={value} type="button" onClick={() => previewAuthoring.onEnabledChange(value === 'preview')} className={`rounded-md px-2 py-1 text-[9px] font-bold uppercase tracking-wider ${selected ? 'bg-cyan-200 text-slate-950' : 'text-white/40 hover:text-white/70'}`}>{value}</button>;
+      })}
+    </div>
+  ) : undefined;
+  const previewSections = previewEnabled && previewDraft && resolvedPreview ? (
+    <>
+      <section className="rounded-lg bg-white/[0.035] px-2 py-2">
+        <div className="mb-2 flex items-center justify-between gap-2">
+          <p className="text-[9px] font-semibold uppercase tracking-[0.18em] text-white/35">Preview variation</p>
+          <button type="button" onClick={shufflePreview} className="inline-flex items-center gap-1 rounded-lg bg-white/[0.07] px-2 py-1 text-[9px] font-bold uppercase tracking-wider text-white/55 hover:bg-white/12 hover:text-white"><RefreshCw size={10} />New variation</button>
+        </div>
+        <div className="flex items-center gap-2">
+          <input aria-label="Preview variation intensity" type="range" min={0} max={1} step={0.01} value={previewDraft.variation.intensity} onChange={(event) => changePreviewIntensity(Number(event.target.value))} className="h-1.5 min-w-0 flex-1 accent-cyan-200" />
+          <span className="w-9 text-right text-[10px] tabular-nums text-white/55">{Math.round(previewDraft.variation.intensity * 100)}%</span>
+        </div>
+        <div className="mt-2 flex flex-wrap gap-1">
+          <PreviewLockButton label="Mode" locked={previewDraft.variation.lockedKeys.includes('$mode')} onChange={(locked) => togglePreviewLock('$mode', locked)} />
+          <PreviewLockButton label="Palette" locked={previewDraft.variation.lockedKeys.includes('$style')} onChange={(locked) => togglePreviewLock('$style', locked)} />
+        </div>
+        <p className="mt-2 text-[9px] leading-snug text-white/30">Settings stay anchored to your saved values. Unlocked controls receive bounded seeded variation.</p>
+      </section>
+      <section className="rounded-lg bg-white/[0.015] px-2 py-2">
+        <div className="mb-2 flex items-center justify-between gap-2">
+          <div>
+            <p className="text-[9px] font-semibold uppercase tracking-[0.18em] text-white/35">Preview image</p>
+            <p className={`mt-0.5 text-[9px] ${previewDraft.image && previewDraft.image.profileHash !== resolvedPreview.hash ? 'text-amber-200/80' : 'text-white/30'}`}>{previewDraft.image ? previewDraft.image.profileHash === resolvedPreview.hash ? `${previewDraft.image.width}×${previewDraft.image.height} capture` : 'Capture is out of date' : 'No fallback captured'}</p>
+          </div>
+          <button type="button" disabled={capturePending} onClick={() => { void capturePreview(); }} className="inline-flex items-center gap-1 rounded-lg bg-cyan-200 px-2.5 py-1.5 text-[9px] font-black uppercase tracking-wider text-slate-950 hover:bg-cyan-100 disabled:opacity-45"><Camera size={11} />{capturePending ? 'Capturing' : 'Capture'}</button>
+        </div>
+        <div className="grid grid-cols-3 gap-1">
+          {(['auto', 'live', 'static'] as const).map((policy) => <button key={policy} type="button" onClick={() => updatePreviewProfile({ ...previewDraft, renderPolicy: policy })} className={`rounded-lg px-2 py-1.5 text-[9px] font-bold uppercase tracking-wider ${previewDraft.renderPolicy === policy ? 'bg-white/16 text-white' : 'bg-white/[0.05] text-white/35 hover:bg-white/10 hover:text-white/65'}`}>{policy}</button>)}
+        </div>
+      </section>
+    </>
+  ) : undefined;
   const settingsDocked = settingsOpen && settingsPinned && !mobilePortrait && !uiHidden && !isDemo;
 
   return (
@@ -535,23 +677,29 @@ function ImmersiveExperienceRuntime({
       data-experience-profile={activeProfile}
     >
       <div ref={sceneStageRef} className="relative h-full min-w-0 flex-1 overflow-hidden">
-        <GameCanvas
-          key={runtimeKey}
-          createPlugins={createPlugins}
-          ariaLabel={`${definition.name} game canvas`}
-          onReady={handleReady}
-          showDiagnostics={showDiagnostics}
-          {...(fixedFrameCapture ? { fixedFrameCapture } : {})}
-          {...(onFixedFrameCapture ? { onFixedFrameCapture } : {})}
-          {...(canvasClassName ? { className: canvasClassName } : { className: 'h-full w-full touch-none' })}
-          {...(onError ? { onError } : {})}
-          {...(localMaxPixels === undefined ? {} : { maxPixels: localMaxPixels })}
-        />
+        <div className={previewEnabled ? 'flex h-full w-full items-center justify-center bg-[radial-gradient(circle_at_center,#141425_0%,#050509_70%)] p-12' : 'h-full w-full'}>
+          <div className={previewEnabled ? 'relative aspect-square h-[min(82vh,82vw)] max-h-full max-w-full overflow-hidden rounded-2xl bg-black shadow-2xl ring-1 ring-white/15' : 'h-full w-full'}>
+            <GameCanvas
+              ref={gameCanvasRef}
+              key={runtimeKey}
+              createPlugins={createPlugins}
+              ariaLabel={`${definition.name} game canvas`}
+              onReady={handleReady}
+              showDiagnostics={showDiagnostics}
+              {...(fixedFrameCapture ? { fixedFrameCapture } : {})}
+              {...(onFixedFrameCapture ? { onFixedFrameCapture } : {})}
+              {...(canvasClassName ? { className: canvasClassName } : { className: 'h-full w-full touch-none' })}
+              {...(onError ? { onError } : {})}
+              {...(previewEnabled ? { logicalViewport: { width: 384, height: 384 }, maxPixels: 262_144, maxFps: 30 } : localMaxPixels === undefined ? {} : { maxPixels: localMaxPixels })}
+            />
+            {previewEnabled && <div className="pointer-events-none absolute inset-0 rounded-2xl bg-gradient-to-br from-white/10 via-transparent to-black/20 shadow-[inset_0_1px_0_rgba(255,255,255,.28)]" />}
+          </div>
+        </div>
 
       {showChrome && !isDemo && (
         <div className={uiHidden ? 'pointer-events-none opacity-0' : 'opacity-100'}>
           <AnimatePresence>
-            {infoCardVisible && (
+            {infoCardVisible && !previewEnabled && (
               <IntroCard
                 key={`${definition.id}:${runtimeKey}`}
                 icon={definition.icon}
@@ -592,7 +740,7 @@ function ImmersiveExperienceRuntime({
               node: <motion.button type="button" whileTap={{ scale: 0.9 }} onClick={openSettings} aria-label="Settings" className="flex h-8 w-8 items-center justify-center rounded-xl bg-black/30 text-white/70 backdrop-blur-md transition-colors hover:bg-black/50 hover:text-white"><SettingsIcon size={15} /></motion.button>,
             },
             {
-              key: 'randomize', label: 'Randomize', hidden: definition.kind !== 'simulation',
+              key: 'randomize', label: 'Randomize', hidden: previewEnabled || definition.kind !== 'simulation',
               node: <motion.button type="button" whileTap={{ scale: 0.9 }} onClick={randomizeScene} aria-label="Randomize settings" title="Randomize settings" className="flex h-8 w-8 items-center justify-center rounded-xl bg-black/30 text-white/70 backdrop-blur-md transition-colors hover:bg-black/50 hover:text-white"><Dices size={15} /></motion.button>,
             },
             {
@@ -600,7 +748,7 @@ function ImmersiveExperienceRuntime({
               node: <motion.button type="button" whileTap={{ scale: 0.9 }} onClick={() => { setUiHidden(true); }} aria-label="Hide UI" className="flex h-8 w-8 items-center justify-center rounded-xl bg-black/30 text-white/40 backdrop-blur-md transition-colors hover:bg-black/50 hover:text-white/70"><EyeOff size={14} /></motion.button>,
             },
             {
-              key: 'demo', label: 'Demo mode', hidden: !definition.capabilities.demo,
+              key: 'demo', label: 'Demo mode', hidden: previewEnabled || !definition.capabilities.demo,
               node: <motion.button type="button" whileTap={{ scale: 0.9 }} onClick={enterDemo} aria-label="Demo mode" className="flex h-8 items-center gap-1.5 rounded-xl bg-black/30 px-2.5 text-white/40 backdrop-blur-md transition-colors hover:bg-black/50 hover:text-white/70"><Play size={11} /><span className="text-[10px] uppercase tracking-widest">Demo</span></motion.button>,
             },
             {
@@ -618,6 +766,13 @@ function ImmersiveExperienceRuntime({
               {...(localMaxPixels === undefined ? {} : { maxPixels: localMaxPixels })}
               onMaxPixelsChange={setLocalMaxPixels}
               onSaveDefaults={saveDefaults}
+              title={previewEnabled ? 'Preview settings' : 'Settings'}
+              saveLabel={previewEnabled ? 'preview profile' : 'scene defaults'}
+              headerControl={previewHeaderControl}
+              supplementalSections={previewSections}
+              lockedKeys={previewEnabled && previewDraft ? previewDraft.variation.lockedKeys : []}
+              {...(previewEnabled ? { onFieldLockChange: togglePreviewLock } : {})}
+              {...(previewEnabled ? { onResetAll: resetPreview } : {})}
               ariaLabel={`${definition.name} settings`}
               pinned={settingsPinned && !mobilePortrait}
               onPinnedChange={changeSettingsPinned}
@@ -716,6 +871,13 @@ function ImmersiveExperienceRuntime({
             {...(localMaxPixels === undefined ? {} : { maxPixels: localMaxPixels })}
             onMaxPixelsChange={setLocalMaxPixels}
             onSaveDefaults={saveDefaults}
+            title={previewEnabled ? 'Preview settings' : 'Settings'}
+            saveLabel={previewEnabled ? 'preview profile' : 'scene defaults'}
+            headerControl={previewHeaderControl}
+            supplementalSections={previewSections}
+            lockedKeys={previewEnabled && previewDraft ? previewDraft.variation.lockedKeys : []}
+            {...(previewEnabled ? { onFieldLockChange: togglePreviewLock } : {})}
+            {...(previewEnabled ? { onResetAll: resetPreview } : {})}
             ariaLabel={`${definition.name} settings`}
             pinned
             docked
@@ -725,6 +887,19 @@ function ImmersiveExperienceRuntime({
       )}
     </section>
   );
+}
+
+function PreviewLockButton({ label, locked, onChange }: { readonly label: string; readonly locked: boolean; readonly onChange: (locked: boolean) => void }): JSX.Element {
+  return (
+    <button type="button" aria-pressed={locked} onClick={() => onChange(!locked)} className={`inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[9px] font-bold uppercase tracking-wider ${locked ? 'bg-cyan-200/16 text-cyan-100' : 'bg-white/[0.06] text-white/40 hover:text-white/70'}`}>
+      {locked ? <Lock size={9} /> : <LockOpen size={9} />}{label}
+    </button>
+  );
+}
+
+function randomPreviewSeed(): number {
+  if (typeof crypto !== 'undefined' && typeof crypto.getRandomValues === 'function') return crypto.getRandomValues(new Uint32Array(1))[0] ?? Date.now() >>> 0;
+  return Date.now() >>> 0;
 }
 
 function fluidInjectChipStyle(value: string): CSSProperties {

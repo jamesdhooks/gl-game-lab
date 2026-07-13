@@ -7,12 +7,17 @@ export {
   type FixedFrameCaptureOptions,
   type FixedFrameCaptureResult,
   type FixedFrameInputEvent,
+  type CanvasFrameCapture,
+  type GameCanvasHandle,
   type GameCanvasProps,
+  type LogicalCanvasViewport,
 } from './GameCanvas.js';
 export {
   ExperienceRuntime,
   type ExperienceRuntimeProps,
+  type PreviewAuthoringOptions,
 } from './ExperienceRuntime.js';
+export { PreviewTile, type PreviewTileProps } from './PreviewTile.js';
 export { useViewport, type ViewportState, type SafeAreaInsets } from './hooks/useViewport.js';
 export { ViewportProvider, useViewportContext } from './ViewportProvider.js';
 export { HUD } from './ui/HUD.js';

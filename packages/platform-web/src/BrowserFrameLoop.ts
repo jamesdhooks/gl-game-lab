@@ -5,6 +5,11 @@ export interface AnimationFrameDriver {
   cancel(handle: number): void;
 }
 
+export interface BrowserFrameLoopOptions {
+  readonly maxFps?: number;
+  readonly onAfterFrame?: (timestamp: number) => void;
+}
+
 export class BrowserFrameLoop {
   private frameHandle: number | undefined;
   private previousTimestamp: number | undefined;
@@ -14,6 +19,7 @@ export class BrowserFrameLoop {
     private readonly engine: GameEngine,
     private readonly driver: AnimationFrameDriver = browserAnimationFrameDriver(),
     private readonly onError?: (error: unknown) => void,
+    private readonly options: BrowserFrameLoopOptions = {},
   ) {}
 
   get isRunning(): boolean {
@@ -36,6 +42,11 @@ export class BrowserFrameLoop {
 
   private readonly onFrame = (timestamp: number): void => {
     if (!this.running) return;
+    const minimumFrameMs = this.options.maxFps && this.options.maxFps > 0 ? 1_000 / this.options.maxFps : 0;
+    if (this.previousTimestamp !== undefined && minimumFrameMs > 0 && timestamp - this.previousTimestamp < minimumFrameMs) {
+      this.frameHandle = this.driver.request(this.onFrame);
+      return;
+    }
     const previous = this.previousTimestamp ?? timestamp;
     this.previousTimestamp = timestamp;
     try {
@@ -46,6 +57,7 @@ export class BrowserFrameLoop {
       else queueMicrotask(() => { throw error; });
       return;
     }
+    this.options.onAfterFrame?.(timestamp);
     if (this.running) this.frameHandle = this.driver.request(this.onFrame);
   };
 }

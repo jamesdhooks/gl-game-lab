@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useRef, type CSSProperties } from 'react';
+import { Fragment, forwardRef, useEffect, useImperativeHandle, useRef, type CSSProperties } from 'react';
 import type { EnginePlugin, InputEvent } from '@hooksjam/gl-game-lab-core';
 import {
   EngineRenderer,
@@ -39,6 +39,21 @@ export interface FixedFrameCaptureResult {
   readonly budgets: readonly PerformanceBudgetResult[];
 }
 
+export interface CanvasFrameCapture {
+  readonly width: number;
+  readonly height: number;
+  readonly rgba: Uint8Array;
+}
+
+export interface GameCanvasHandle {
+  captureFrame(): Promise<CanvasFrameCapture>;
+}
+
+export interface LogicalCanvasViewport {
+  readonly width: number;
+  readonly height: number;
+}
+
 export interface GameCanvasProps {
   readonly plugins?: readonly EnginePlugin[];
   readonly createPlugins?: () => readonly EnginePlugin[];
@@ -53,6 +68,9 @@ export interface GameCanvasProps {
   readonly onFixedFrameCapture?: (result: FixedFrameCaptureResult) => void;
   readonly showDiagnostics?: boolean;
   readonly maxPixels?: number;
+  readonly maxFps?: number;
+  readonly logicalViewport?: LogicalCanvasViewport;
+  readonly onFrame?: (timestamp: number) => void;
 }
 
 const EMPTY_ENGINE_PLUGINS: readonly EnginePlugin[] = Object.freeze([]);
@@ -92,7 +110,7 @@ export function createBrowserGameEngine(
   });
 }
 
-export function GameCanvas({
+export const GameCanvas = forwardRef<GameCanvasHandle, GameCanvasProps>(function GameCanvas({
   plugins = EMPTY_ENGINE_PLUGINS,
   createPlugins,
   createEngine,
@@ -106,15 +124,27 @@ export function GameCanvas({
   onFixedFrameCapture,
   showDiagnostics = false,
   maxPixels,
-}: GameCanvasProps): JSX.Element {
+  maxFps,
+  logicalViewport,
+  onFrame,
+}: GameCanvasProps, forwardedRef): JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const diagnosticsRef = useRef<HTMLOutputElement | null>(null);
   const onReadyRef = useRef(onReady);
   const onErrorRef = useRef(onError);
   const onFixedFrameCaptureRef = useRef(onFixedFrameCapture);
+  const onFrameRef = useRef(onFrame);
+  const captureWaitersRef = useRef<Array<{ resolve: (capture: CanvasFrameCapture) => void; reject: (error: Error) => void }>>([]);
   onReadyRef.current = onReady;
   onErrorRef.current = onError;
   onFixedFrameCaptureRef.current = onFixedFrameCapture;
+  onFrameRef.current = onFrame;
+
+  useImperativeHandle(forwardedRef, () => ({
+    captureFrame: () => new Promise<CanvasFrameCapture>((resolve, reject) => {
+      captureWaitersRef.current.push({ resolve, reject });
+    }),
+  }), []);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -138,8 +168,8 @@ export function GameCanvas({
       if (!engine.kernel.has(EngineRenderer)) return;
       const renderer = engine.kernel.get(EngineRenderer);
       const bounds = canvas.getBoundingClientRect();
-      const width = Math.max(1, bounds.width);
-      const height = Math.max(1, bounds.height);
+      const width = Math.max(1, logicalViewport?.width ?? bounds.width);
+      const height = Math.max(1, logicalViewport?.height ?? bounds.height);
       const pixelRatio = fixedFrameCapture
         ? 1
         : resolvePixelRatio(width, height, window.devicePixelRatio || 1, maxPixels);
@@ -224,6 +254,21 @@ export function GameCanvas({
         } else {
           loop = new BrowserFrameLoop(engine, undefined, (error) => {
             reportError(error);
+          }, {
+            ...(maxFps === undefined ? {} : { maxFps }),
+            onAfterFrame: (timestamp) => {
+              onFrameRef.current?.(timestamp);
+              const waiters = captureWaitersRef.current.splice(0);
+              if (waiters.length === 0) return;
+              try {
+                const renderer = engine.kernel.get(EngineRenderer);
+                const capture = Object.freeze({ width: canvas.width, height: canvas.height, rgba: renderer.readRgba() });
+                for (const waiter of waiters) waiter.resolve(capture);
+              } catch (error) {
+                const failure = error instanceof Error ? error : new Error(String(error));
+                for (const waiter of waiters) waiter.reject(failure);
+              }
+            },
           });
           loop.start();
           canvas.dataset.engineState = 'running';
@@ -269,8 +314,10 @@ export function GameCanvas({
           reportError(error);
         }
       });
+      const waiters = captureWaitersRef.current.splice(0);
+      for (const waiter of waiters) waiter.reject(new Error('Game canvas was destroyed before capture completed'));
     };
-  }, [createEngine, createPlugins, fixedFrameCapture, maxPixels, plugins, preventDefaultInput, showDiagnostics]);
+  }, [createEngine, createPlugins, fixedFrameCapture, logicalViewport?.height, logicalViewport?.width, maxFps, maxPixels, plugins, preventDefaultInput, showDiagnostics]);
 
   return <Fragment>
     <canvas
@@ -282,7 +329,9 @@ export function GameCanvas({
     />
     {showDiagnostics ? <output ref={diagnosticsRef} aria-live="off" style={DIAGNOSTICS_STYLE} /> : null}
   </Fragment>;
-}
+});
+
+GameCanvas.displayName = 'GameCanvas';
 
 export function normalizeFixedFrameCapture(options: FixedFrameCaptureOptions): Required<FixedFrameCaptureOptions> {
   if (!Number.isSafeInteger(options.frameNumber) || options.frameNumber < 1 || options.frameNumber > 10_000) {

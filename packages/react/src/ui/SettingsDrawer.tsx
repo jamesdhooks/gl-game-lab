@@ -5,9 +5,9 @@
  * controls bar. Opens below the settings button with a slide-down animation.
  * Less blur, less dramatic than a full modal.
  */
-import { useState, useEffect, useRef, useId } from 'react';
+import { useState, useEffect, useRef, useId, type ReactNode } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, ChevronDown, Check, RotateCcw, Save, PanelRight, PanelRightOpen, Info } from 'lucide-react';
+import { X, ChevronDown, Check, RotateCcw, Save, PanelRight, PanelRightOpen, Info, Lock, LockOpen } from 'lucide-react';
 import type {
   ExperienceSetting as SettingsField,
   NumberSetting,
@@ -41,6 +41,13 @@ export interface SettingsDrawerProps {
   pinned?: boolean;
   docked?: boolean;
   onPinnedChange?: (pinned: boolean) => void;
+  title?: string;
+  saveLabel?: string;
+  headerControl?: ReactNode;
+  supplementalSections?: ReactNode;
+  lockedKeys?: readonly string[];
+  onFieldLockChange?: (key: string, locked: boolean) => void;
+  onResetAll?: () => void;
 }
 
 export function SettingsDrawer({
@@ -56,6 +63,13 @@ export function SettingsDrawer({
   pinned = false,
   docked = false,
   onPinnedChange,
+  title = 'Settings',
+  saveLabel = 'scene defaults',
+  headerControl,
+  supplementalSections,
+  lockedKeys = [],
+  onFieldLockChange,
+  onResetAll,
 }: SettingsDrawerProps) {
   const { isMobile, isLandscape } = useViewportContext();
   const [vals, setVals] = useState<Record<string, unknown>>({});
@@ -77,6 +91,10 @@ export function SettingsDrawer({
   };
 
   const resetVisibleSettings = () => {
+    if (onResetAll) {
+      onResetAll();
+      return;
+    }
     const fieldsToReset = visibleSections.flatMap((section) => section.fields);
     settings.reset(fieldsToReset.map((field) => field.key));
     const next: Record<string, unknown> = {};
@@ -171,6 +189,8 @@ export function SettingsDrawer({
             value={vals[field.key]}
             onChange={(v) => apply(field.key, v)}
             onReset={() => resetField(field.key)}
+            locked={lockedKeys.includes(field.key)}
+            {...(onFieldLockChange ? { onLockChange: (locked) => onFieldLockChange(field.key, locked) } : {})}
           />
         ))}
       </section>
@@ -213,8 +233,8 @@ export function SettingsDrawer({
                     ? 'text-rose-200'
                     : 'text-white/45 hover:bg-white/10 hover:text-white'
               } disabled:opacity-45`}
-              aria-label={sectionFilter ? `Save ${sectionFilter} defaults` : 'Save scene defaults'}
-              title={sectionFilter ? `Save ${sectionFilter} as defaults` : 'Save visible settings as defaults'}
+              aria-label={sectionFilter ? `Save ${sectionFilter} ${saveLabel}` : `Save ${saveLabel}`}
+              title={sectionFilter ? `Save ${sectionFilter} ${saveLabel}` : `Save ${saveLabel}`}
             >
               <Save size={15} />
             </button>
@@ -231,6 +251,7 @@ export function SettingsDrawer({
       )}
       {sectionFilters}
       {visibleSections.map((section, index) => renderFieldSection(section.label, section.fields, index))}
+      {supplementalSections}
       {resolutionSection}
     </div>
   );
@@ -238,7 +259,10 @@ export function SettingsDrawer({
   const header = (
     <>
       <div className="flex items-center justify-between px-3.5 py-1.5">
-        <h3 className="text-sm font-bold text-white">Settings</h3>
+        <div className="flex min-w-0 items-center gap-2">
+          <h3 className="shrink-0 text-sm font-bold text-white">{title}</h3>
+          {headerControl}
+        </div>
         <div className="flex items-center gap-1">
           {onPinnedChange && (
             <button
@@ -264,8 +288,8 @@ export function SettingsDrawer({
                     ? 'text-rose-200'
                     : 'text-white/40 hover:bg-white/10 hover:text-white'
               } disabled:opacity-45`}
-              aria-label={sectionFilter ? `Save ${sectionFilter} defaults` : 'Save scene defaults'}
-              title={sectionFilter ? `Save ${sectionFilter} as defaults` : 'Save visible settings as defaults'}
+              aria-label={sectionFilter ? `Save ${sectionFilter} ${saveLabel}` : `Save ${saveLabel}`}
+              title={sectionFilter ? `Save ${sectionFilter} ${saveLabel}` : `Save ${saveLabel}`}
             >
               <Save size={14} />
             </button>
@@ -294,7 +318,7 @@ export function SettingsDrawer({
   // Mobile portrait — render as a BottomSheet
   if (isMobile && !isLandscape) {
     return (
-      <BottomSheet open={open} onClose={onClose} title="Settings">
+      <BottomSheet open={open} onClose={onClose} title={title}>
         {content}
       </BottomSheet>
     );
@@ -353,11 +377,15 @@ function FieldRow({
   value,
   onChange,
   onReset,
+  locked = false,
+  onLockChange,
 }: {
   field: SettingsField;
   value: unknown;
   onChange: (v: unknown) => void;
   onReset: () => void;
+  locked?: boolean;
+  onLockChange?: (locked: boolean) => void;
 }) {
   return (
     <div data-experience-setting={field.key} className="group flex items-start justify-between gap-3 rounded-lg px-2 py-1.5">
@@ -366,6 +394,17 @@ function FieldRow({
           <p className="min-w-0 text-xs font-semibold text-white">{field.label}</p>
           {field.description && (
             <FieldDescriptionTooltip label={field.label} description={field.description} />
+          )}
+          {onLockChange && (
+            <button
+              type="button"
+              aria-label={`${locked ? 'Unlock' : 'Lock'} ${field.label} preview variation`}
+              aria-pressed={locked}
+              onClick={() => onLockChange(!locked)}
+              className={`inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full transition-colors ${locked ? 'bg-cyan-200/16 text-cyan-100' : 'text-white/30 hover:bg-white/10 hover:text-white/75'}`}
+            >
+              {locked ? <Lock size={9} aria-hidden="true" /> : <LockOpen size={9} aria-hidden="true" />}
+            </button>
           )}
           <button
             type="button"
