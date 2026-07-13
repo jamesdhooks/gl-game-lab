@@ -128,6 +128,7 @@ function DemoGallery(): JSX.Element {
   const [pickerSide, setPickerSide] = useState<'bottom' | 'left' | 'right'>('bottom');
   const [pickerDocked, setPickerDocked] = useState(false);
   const [demoMode, setDemoMode] = useState(false);
+  const [localDemoMode, setLocalDemoMode] = useState(false);
   const [demoIndex, setDemoIndex] = useState(0);
   const [pendingLaunch, setPendingLaunch] = useState<PendingLaunch>();
   const scrollerRef = useRef<HTMLDivElement>(null);
@@ -204,6 +205,7 @@ function DemoGallery(): JSX.Element {
 
   const selectExperience = useCallback((definition: ExperienceDefinition): void => {
     setDemoMode(false);
+    setLocalDemoMode(false);
     if (active) setActive(definition);
     else setPendingLaunch({ definition, demo: false });
     const url = new URL(window.location.href);
@@ -214,6 +216,7 @@ function DemoGallery(): JSX.Element {
   const quit = useCallback((): void => {
     setActive(undefined);
     setDemoMode(false);
+    setLocalDemoMode(false);
     setPickerOpen(false);
     const url = new URL(window.location.href);
     url.searchParams.delete('experience');
@@ -267,8 +270,8 @@ function DemoGallery(): JSX.Element {
                   profile={demoMode ? 'demo' : 'play'}
                   presentation="immersive"
                   onQuit={quit}
-                  onDemoAdvance={advanceDemo}
-                  onDemoExit={quit}
+                  {...(demoMode ? { onDemoAdvance: advanceDemo, onDemoExit: quit } : {})}
+                  onLocalDemoChange={setLocalDemoMode}
                   onSaveDefaults={saveSceneDefaults}
                   showChrome
                   className="h-full w-full"
@@ -314,7 +317,7 @@ function DemoGallery(): JSX.Element {
           )}
         </AnimatePresence>
 
-        {active && !demoMode && (
+        {active && !demoMode && !localDemoMode && (
           <>
             {!pickerOpen && <button type="button" aria-label="Show experience picker" onClick={() => { setPickerOpen(true); }} className={`fixed z-[60] flex items-center justify-center text-white/20 transition-colors hover:text-white/50 ${pickerBottom ? 'bottom-1 left-1/2 h-8 w-12 -translate-x-1/2' : pickerLeft ? 'left-1 top-1/2 h-12 w-8 -translate-y-1/2' : 'right-1 top-1/2 h-12 w-8 -translate-y-1/2'}`}>{pickerBottom ? <ChevronUp size={16} /> : pickerLeft ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}</button>}
             <AnimatePresence>

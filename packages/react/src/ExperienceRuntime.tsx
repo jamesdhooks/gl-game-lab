@@ -38,6 +38,7 @@ const MIN_SETTINGS_SIDEBAR_WIDTH = 320;
 const MAX_SETTINGS_SIDEBAR_WIDTH = 720;
 const MIN_SCENE_STAGE_WIDTH = 360;
 const COMPACT_TOPBAR_STAGE_WIDTH = 1360;
+export const LOCAL_DEMO_INTERVAL_MS = 10_000;
 const FLUID_BASIC_STYLE_ID = 'bounded-cyan';
 const FLUID_ENHANCED_STYLE_ID = 'webgl-fluid-glow';
 const FLUID_VISUAL_STYLE_MODES = [
@@ -89,6 +90,7 @@ export interface ExperienceRuntimeProps {
   readonly maxPixels?: number;
   readonly onDemoAdvance?: () => void;
   readonly onDemoExit?: () => void;
+  readonly onLocalDemoChange?: (active: boolean) => void;
   readonly onSaveDefaults?: (request: SettingsDefaultsSaveRequest) => Promise<void> | void;
 }
 
@@ -169,6 +171,7 @@ function ImmersiveExperienceRuntime({
   maxPixels,
   onDemoAdvance,
   onDemoExit,
+  onLocalDemoChange,
   onSaveDefaults,
 }: ExperienceRuntimeProps): JSX.Element {
   const { isMobile, isLandscape } = useViewportContext();
@@ -198,6 +201,8 @@ function ImmersiveExperienceRuntime({
   const sceneStageRef = useRef<HTMLDivElement>(null);
   const onReadyRef = useRef(onReady);
   const demoHintTimerRef = useRef<number>();
+  const localDemoInitialShuffleRef = useRef(false);
+  const [localDemoAdvanceNonce, setLocalDemoAdvanceNonce] = useState(0);
   onReadyRef.current = onReady;
 
   useEffect(() => {
@@ -211,6 +216,7 @@ function ImmersiveExperienceRuntime({
     setInfoCardVisible(showIntroCard && profile !== 'demo');
     setUiHidden(profile === 'demo');
     setIsDemo(profile === 'demo');
+    localDemoInitialShuffleRef.current = false;
     setActiveProfile(profile);
     setImageUrlEditorOpen(false);
     setImageUrlDraft('');
@@ -444,7 +450,7 @@ function ImmersiveExperienceRuntime({
   const openInfo = (): void => {
     setInfoCardVisible(true);
   };
-  const randomizeScene = (): void => {
+  const randomizeScene = useCallback((): void => {
     for (const setting of definition.settings ?? []) {
       if (setting.type === 'number') {
         const spread = Math.max(setting.step, Math.abs(setting.default) * 0.35);
@@ -456,13 +462,15 @@ function ImmersiveExperienceRuntime({
       } else if (setting.type === 'select' && setting.options.length > 1) {
         const option = setting.options[Math.floor(Math.random() * setting.options.length)];
         if (option) changeSetting(setting, option.value);
+      } else if (setting.type === 'boolean') {
+        changeSetting(setting, Math.random() >= 0.5);
       }
     }
     const styles = definition.styleManifest?.styles.filter((style) => style.id !== '__random__') ?? [];
     const style = styles[Math.floor(Math.random() * styles.length)];
     if (style) changeStyle(style.id);
     controllerRef.current?.reset();
-  };
+  }, [changeSetting, changeStyle, definition.settings, definition.styleManifest?.styles]);
   const showDemoHint = (): void => {
     setDemoHintVisible(true);
     if (demoHintTimerRef.current !== undefined) window.clearTimeout(demoHintTimerRef.current);
@@ -474,16 +482,50 @@ function ImmersiveExperienceRuntime({
     setUiHidden(true);
     setIsDemo(true);
     setDemoHintVisible(true);
+    localDemoInitialShuffleRef.current = profile !== 'demo';
+    controllerRef.current = undefined;
+    engineRef.current = undefined;
+    setEngineInstance(undefined);
     setActiveProfile('demo');
     setRuntimeKey((value) => value + 1);
+    if (profile !== 'demo') onLocalDemoChange?.(true);
     showDemoHint();
   };
   const exitDemo = (): void => {
+    localDemoInitialShuffleRef.current = false;
     setIsDemo(false);
     setUiHidden(false);
     setActiveProfile(profile);
     setRuntimeKey((value) => value + 1);
+    if (profile !== 'demo') onLocalDemoChange?.(false);
   };
+  const advanceLocalDemo = useCallback((): void => {
+    localDemoInitialShuffleRef.current = false;
+    randomizeScene();
+    setLocalDemoAdvanceNonce((value) => value + 1);
+  }, [randomizeScene]);
+  const advanceDemo = (): void => {
+    showDemoHint();
+    if (profile === 'demo' && onDemoAdvance) {
+      onDemoAdvance();
+      return;
+    }
+    advanceLocalDemo();
+  };
+  const leaveDemo = (): void => {
+    if (profile === 'demo' && onDemoExit) {
+      onDemoExit();
+      return;
+    }
+    exitDemo();
+  };
+
+  useEffect(() => {
+    if (!isDemo || profile === 'demo' || !engineInstance) return;
+    const delay = localDemoInitialShuffleRef.current ? 0 : LOCAL_DEMO_INTERVAL_MS;
+    const timer = window.setTimeout(() => { advanceLocalDemo(); }, delay);
+    return () => { window.clearTimeout(timer); };
+  }, [advanceLocalDemo, engineInstance, isDemo, localDemoAdvanceNonce, profile]);
   const settingsDocked = settingsOpen && settingsPinned && !mobilePortrait && !uiHidden && !isDemo;
 
   return (
@@ -641,10 +683,10 @@ function ImmersiveExperienceRuntime({
 
       {showChrome && isDemo && (
         <>
-          <button type="button" className="absolute inset-0 z-10 cursor-pointer" aria-label="Advance demo" onPointerMove={showDemoHint} onClick={() => { if (onDemoAdvance) onDemoAdvance(); else controllerRef.current?.reset(); showDemoHint(); }} />
+          <button type="button" className="absolute inset-0 z-10 cursor-pointer" aria-label="Advance demo" onPointerMove={showDemoHint} onClick={advanceDemo} />
           <AnimatePresence>
             {demoHintVisible && (
-              <motion.button type="button" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute right-3 top-3 z-40 flex h-8 w-8 items-center justify-center rounded-xl bg-black/30 text-white/60 backdrop-blur-md transition-colors hover:bg-black/50 hover:text-white" aria-label="Exit demo" onClick={(event) => { event.stopPropagation(); if (onDemoExit) onDemoExit(); else exitDemo(); }}><X size={14} /></motion.button>
+              <motion.button type="button" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute right-3 top-3 z-40 flex h-8 w-8 items-center justify-center rounded-xl bg-black/30 text-white/60 backdrop-blur-md transition-colors hover:bg-black/50 hover:text-white" aria-label="Exit demo" onClick={(event) => { event.stopPropagation(); leaveDemo(); }}><X size={14} /></motion.button>
             )}
           </AnimatePresence>
         </>
