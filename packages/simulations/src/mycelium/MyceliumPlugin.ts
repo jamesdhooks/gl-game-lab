@@ -185,6 +185,12 @@ export function createMyceliumPlugin(initial: MyceliumConfig = MYCELIUM_DEFAULTS
                 const visual = myceliumString(config, 'renderStyle');
                 g.uniform1i(u('uVisualStyle'), visual === 'basic' ? 0 : visual === 'enhanced' ? 1 : 2);
                 g.uniform1f(u('uFieldSpread'), myceliumNumber(config, 'fieldSpread'));
+                g.uniform1f(u('uUltraSurfaceThreshold'), myceliumNumber(config, 'ultraSurfaceThreshold'));
+                g.uniform1f(u('uUltraEdgeSoftness'), myceliumNumber(config, 'ultraEdgeSoftness'));
+                g.uniform1f(u('uUltraHaloStrength'), myceliumNumber(config, 'ultraHaloStrength'));
+                g.uniform1f(u('uUltraFiberStrength'), myceliumNumber(config, 'ultraFiberStrength'));
+                g.uniform1f(u('uUltraCoreBrightness'), myceliumNumber(config, 'ultraCoreBrightness'));
+                g.uniform1f(u('uUltraRimStrength'), myceliumNumber(config, 'ultraRimStrength'));
               };
               if (myceliumUsesTriangleMesh(myceliumString(config, 'topology'), visualStyle(config)) && triangleMesh.vertexCount > 0) field.renderMesh('triangles', destination, triangleMesh, bindDisplay);
               else field.render('display', destination, bindDisplay);

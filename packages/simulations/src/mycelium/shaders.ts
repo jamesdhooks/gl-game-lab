@@ -13,6 +13,12 @@ uniform vec3 uBackground;
 uniform int uVariant;
 uniform int uVisualStyle;
 uniform float uFieldSpread;
+uniform float uUltraSurfaceThreshold;
+uniform float uUltraEdgeSoftness;
+uniform float uUltraHaloStrength;
+uniform float uUltraFiberStrength;
+uniform float uUltraCoreBrightness;
+uniform float uUltraRimStrength;
 in vec2 vUv;
 out vec4 outColor;
 vec3 paletteColor(float position){
@@ -56,16 +62,19 @@ vec4 organicBloomField(vec2 uv){
   color/=colorWeight;
   float fiberNoise=sin(gridPos.x*0.41+gridPos.y*0.23+density*3.7)*0.5+0.5;
   float microNoise=sin(gridPos.x*1.73-gridPos.y*1.19+color.r*8.0)*0.5+0.5;
-  float contour=smoothstep(0.52,0.92,density+(fiberNoise-0.5)*0.08);
-  float core=smoothstep(1.08,1.92,density);
-  float halo=smoothstep(0.06,0.62,density)*(1.0-contour);
-  vec3 livingColor=mix(color*0.58,color*1.18+vec3(0.08,0.06,0.04),core);
-  livingColor=mix(livingColor,paletteColor(fract(colorWeight*0.09+glow*0.15)),glow*0.18);
-  livingColor*=0.82+fiberNoise*0.16+microNoise*0.06;
-  vec3 haloColor=mix(uBackground,color*(0.42+glow*0.2),halo*0.72);
+  float threshold=uUltraSurfaceThreshold,softness=max(0.01,uUltraEdgeSoftness);
+  float contour=smoothstep(threshold-softness,threshold+softness,density+(fiberNoise-0.5)*0.08);
+  float core=smoothstep(threshold+0.36,threshold+1.2,density);
+  float haloStart=max(0.01,threshold-softness*3.3);
+  float haloEnd=max(haloStart+0.01,threshold-softness*0.5);
+  float halo=smoothstep(haloStart,haloEnd,density)*(1.0-contour);
+  vec3 livingColor=mix(color*0.58,color*(1.18*uUltraCoreBrightness)+vec3(0.08,0.06,0.04),core);
+  livingColor=mix(livingColor,paletteColor(fract(colorWeight*0.09+glow*0.15)),glow*0.18*uUltraHaloStrength);
+  livingColor*=0.82+fiberNoise*uUltraFiberStrength+microNoise*0.06;
+  vec3 haloColor=mix(uBackground,color*(0.42+glow*0.2*uUltraHaloStrength),halo*0.72*uUltraHaloStrength);
   vec3 finalColor=mix(haloColor,livingColor,contour);
-  float rim=smoothstep(0.46,0.72,density)*(1.0-smoothstep(0.86,1.2,density));
-  finalColor=mix(finalColor,color*1.32+vec3(0.06),rim*0.22);
+  float rim=smoothstep(threshold-softness*1.3,threshold,density)*(1.0-smoothstep(threshold+0.14,threshold+0.48,density));
+  finalColor=mix(finalColor,color*1.32+vec3(0.06),rim*uUltraRimStrength);
   return vec4(finalColor,1.0);
 }
 void main(){

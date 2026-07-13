@@ -10,7 +10,7 @@ describe('Mycelium', () => {
       'paint'
     ]);
     expect(MYCELIUM_STYLE_MANIFEST.styles).toHaveLength(10);
-    expect(MYCELIUM_SETTINGS).toHaveLength(17);
+    expect(MYCELIUM_SETTINGS).toHaveLength(23);
   });
   it('preserves growth defaults and topology controls', () => {
     expect(createMyceliumConfig()).toEqual(MYCELIUM_DEFAULTS);
@@ -36,5 +36,29 @@ describe('Mycelium', () => {
     expect(MYCELIUM_DISPLAY_SHADER).toContain('for(int y=-3;y<=3;y++)');
     expect(MYCELIUM_DISPLAY_SHADER).toContain('float fiberNoise=');
     expect(MYCELIUM_DISPLAY_SHADER).toContain('float rim=');
+  });
+  it('exposes fine-grained controls only for the Ultra renderer', () => {
+    const ultraFields = MYCELIUM_SETTINGS.filter(setting => setting.visibleRenderStyles?.includes('bloom'));
+    expect(ultraFields.map(setting => setting.key)).toEqual([
+      'fieldSpread',
+      'ultraSurfaceThreshold',
+      'ultraEdgeSoftness',
+      'ultraHaloStrength',
+      'ultraFiberStrength',
+      'ultraCoreBrightness',
+      'ultraRimStrength',
+    ]);
+    expect(createMyceliumConfig()).toMatchObject({
+      fieldSpread: 2.4,
+      ultraSurfaceThreshold: 0.72,
+      ultraEdgeSoftness: 0.2,
+      ultraHaloStrength: 1,
+      ultraFiberStrength: 0.16,
+      ultraCoreBrightness: 1,
+      ultraRimStrength: 0.22,
+    });
+    expect(MYCELIUM_DISPLAY_SHADER).toContain('uniform float uUltraSurfaceThreshold;');
+    expect(MYCELIUM_DISPLAY_SHADER).toContain('uniform float uUltraEdgeSoftness;');
+    expect(MYCELIUM_DISPLAY_SHADER).toContain('uniform float uUltraHaloStrength;');
   });
 });

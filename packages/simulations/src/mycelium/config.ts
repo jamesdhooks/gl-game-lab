@@ -55,7 +55,13 @@ export const MYCELIUM_SETTINGS: readonly ExperienceSetting[] = Object.freeze([
   n('brushRadius', 'Paint Brush Size', 'Input Mode', 0.002, 0.04, 0.001, 0.008, [
     'paint'
   ]),
-  n('fieldSpread', 'Spore Glow', 'Rendering', 0.4, 5.5, 0.1, 2.4),
+  ultra('fieldSpread', 'Spore Glow', 0.4, 5.5, 0.1, 2.4),
+  ultra('ultraSurfaceThreshold', 'Surface Threshold', 0.2, 1.4, 0.01, 0.72),
+  ultra('ultraEdgeSoftness', 'Edge Softness', 0.03, 0.5, 0.01, 0.2),
+  ultra('ultraHaloStrength', 'Halo Strength', 0, 2, 0.05, 1),
+  ultra('ultraFiberStrength', 'Fiber Detail', 0, 0.4, 0.01, 0.16),
+  ultra('ultraCoreBrightness', 'Core Brightness', 0.4, 2, 0.05, 1),
+  ultra('ultraRimStrength', 'Rim Highlight', 0, 0.8, 0.01, 0.22),
   n('pruneRate', 'Decay Rate', 'Growth', 0.01, 1.4, 0.01, 0.18),
   n('demoSeedColonies', 'Demo Seed Colonies', 'Demo', 0, 16, 1, 0, [
     '__demo__'
@@ -107,5 +113,12 @@ function n(key: string, label: string, section: string, min: number, max: number
     ...(visibleModes ? {
       visibleModes
     } : {})
+  });
+}
+
+function ultra(key: string, label: string, min: number, max: number, step: number, defaultValue: number): ExperienceSetting {
+  return Object.freeze({
+    ...n(key, label, 'Ultra Rendering', min, max, step, defaultValue),
+    visibleRenderStyles: ['bloom'],
   });
 }
