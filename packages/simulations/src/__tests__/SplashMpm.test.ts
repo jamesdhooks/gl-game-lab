@@ -394,6 +394,7 @@ describe('Splash MPM', () => {
     expect(result.supported).toBe(false);
     expect(result.seedRoundTrip).toBe(false);
     expect(result.particleToGrid).toBe(false);
+    expect(result.instancedParticleToGrid).toBe(false);
     expect(result.gridUpdate).toBe(false);
     expect(result.particleUpdate).toBe(false);
     expect(result.reasons).toEqual(['test unavailable']);

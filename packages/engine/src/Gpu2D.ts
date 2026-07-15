@@ -125,6 +125,7 @@ export interface GpuParticleGridSnapshot2D {
 export interface GpuParticleGridTransferOptions2D {
   readonly cell: number;
   readonly radius: number;
+  readonly particleToGridMode?: 'debug-gather' | 'instanced-splat';
 }
 
 export interface GpuParticleGridTransfer2D {

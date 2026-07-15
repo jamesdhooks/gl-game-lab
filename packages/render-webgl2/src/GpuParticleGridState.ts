@@ -48,11 +48,13 @@ export class GpuParticleGridState {
   private scratchUpload = new Float32Array(0);
   private scratchReadback = new Float32Array(0);
   private debugP2GProgram: WebGLProgram | undefined;
+  private instancedP2GProgram: WebGLProgram | undefined;
   private debugNormalizePressureProgram: WebGLProgram | undefined;
   private debugForceProgram: WebGLProgram | undefined;
   private debugViscosityProgram: WebGLProgram | undefined;
   private debugParticleUpdateProgram: WebGLProgram | undefined;
   private debugP2GVao: WebGLVertexArrayObject | undefined;
+  private instancedP2GVao: WebGLVertexArrayObject | undefined;
   private readonly uniforms = new Map<WebGLProgram, Map<string, WebGLUniformLocation | null>>();
   private activeCount = 0;
   private disposed = false;
@@ -213,11 +215,13 @@ export class GpuParticleGridState {
     this.previous.dispose();
     this.scratch.dispose();
     if (this.debugP2GProgram) this.gl.deleteProgram(this.debugP2GProgram);
+    if (this.instancedP2GProgram) this.gl.deleteProgram(this.instancedP2GProgram);
     if (this.debugNormalizePressureProgram) this.gl.deleteProgram(this.debugNormalizePressureProgram);
     if (this.debugForceProgram) this.gl.deleteProgram(this.debugForceProgram);
     if (this.debugViscosityProgram) this.gl.deleteProgram(this.debugViscosityProgram);
     if (this.debugParticleUpdateProgram) this.gl.deleteProgram(this.debugParticleUpdateProgram);
     if (this.debugP2GVao) this.gl.deleteVertexArray(this.debugP2GVao);
+    if (this.instancedP2GVao) this.gl.deleteVertexArray(this.instancedP2GVao);
     this.uniforms.clear();
   }
 
@@ -275,6 +279,17 @@ export class GpuParticleGridState {
     return this.debugNormalizePressureProgram;
   }
 
+  private ensureInstancedP2GProgram(): WebGLProgram {
+    if (!this.instancedP2GProgram) {
+      this.instancedP2GProgram = createShaderProgram(this.gl, {
+        label: 'GPU particle-grid instanced P2G',
+        vertexSource: INSTANCED_P2G_VERTEX_SHADER,
+        fragmentSource: INSTANCED_P2G_FRAGMENT_SHADER,
+      });
+    }
+    return this.instancedP2GProgram;
+  }
+
   private ensureDebugForceProgram(): WebGLProgram {
     if (!this.debugForceProgram) {
       this.debugForceProgram = createShaderProgram(this.gl, {
@@ -317,6 +332,15 @@ export class GpuParticleGridState {
     return this.debugP2GVao;
   }
 
+  private ensureInstancedP2GVao(): WebGLVertexArrayObject {
+    if (!this.instancedP2GVao) {
+      const vao = this.gl.createVertexArray();
+      if (!vao) throw new Error('Unable to allocate GPU particle-grid instanced P2G vertex array');
+      this.instancedP2GVao = vao;
+    }
+    return this.instancedP2GVao;
+  }
+
   private uniform(program: WebGLProgram, name: string): WebGLUniformLocation | null {
     let uniforms = this.uniforms.get(program);
     if (!uniforms) {
@@ -328,6 +352,10 @@ export class GpuParticleGridState {
   }
 
   private runParticleToGridPass(options: GpuParticleGridTransferOptions2D): void {
+    if (options.particleToGridMode === 'instanced-splat') {
+      this.runInstancedParticleToGridPass(options);
+      return;
+    }
     if (this.activeCount > DEBUG_P2G_MAX_PARTICLES) throw new Error(`GPU particle-grid debug P2G supports at most ${DEBUG_P2G_MAX_PARTICLES} particles`);
     if (!Number.isFinite(options.cell) || options.cell <= 0) throw new Error('GPU particle-grid debug P2G cell must be positive');
     if (!Number.isFinite(options.radius) || options.radius <= 0) throw new Error('GPU particle-grid debug P2G radius must be positive');
@@ -354,6 +382,40 @@ export class GpuParticleGridState {
     gl.uniform1f(this.uniform(program, 'uCell'), options.cell);
     gl.uniform1f(this.uniform(program, 'uRadius'), options.radius);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
+    gl.bindVertexArray(null);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    this.accumulation.swap();
+  }
+
+  private runInstancedParticleToGridPass(options: GpuParticleGridTransferOptions2D): void {
+    if (!Number.isFinite(options.cell) || options.cell <= 0) throw new Error('GPU particle-grid instanced P2G cell must be positive');
+    if (!Number.isFinite(options.radius) || options.radius <= 0) throw new Error('GPU particle-grid instanced P2G radius must be positive');
+    const gl = this.gl;
+    const program = this.ensureInstancedP2GProgram();
+    const vao = this.ensureInstancedP2GVao();
+    this.accumulation.write.clear();
+    gl.bindFramebuffer(gl.FRAMEBUFFER, this.accumulation.write.framebuffer);
+    gl.viewport(0, 0, this.gridWidth, this.gridHeight);
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.ONE, gl.ONE);
+    gl.useProgram(program);
+    gl.bindVertexArray(vao);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, this.particleA.read.texture);
+    gl.uniform1i(this.uniform(program, 'uParticleA'), 0);
+    gl.activeTexture(gl.TEXTURE1);
+    gl.bindTexture(gl.TEXTURE_2D, this.particleB.read.texture);
+    gl.uniform1i(this.uniform(program, 'uParticleB'), 1);
+    gl.activeTexture(gl.TEXTURE2);
+    gl.bindTexture(gl.TEXTURE_2D, this.particleC.read.texture);
+    gl.uniform1i(this.uniform(program, 'uParticleC'), 2);
+    gl.uniform1i(this.uniform(program, 'uParticleCount'), this.activeCount);
+    gl.uniform2i(this.uniform(program, 'uParticleStateSize'), this.width, this.height);
+    gl.uniform2i(this.uniform(program, 'uGridSize'), this.gridWidth, this.gridHeight);
+    gl.uniform1f(this.uniform(program, 'uCell'), options.cell);
+    gl.uniform1f(this.uniform(program, 'uRadius'), options.radius);
+    gl.drawArraysInstanced(gl.TRIANGLES, 0, 6, this.activeCount);
+    gl.disable(gl.BLEND);
     gl.bindVertexArray(null);
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     this.accumulation.swap();
@@ -567,6 +629,135 @@ const FULLSCREEN_VERTEX_SHADER = `#version 300 es
 const vec2 POSITIONS[3] = vec2[3](vec2(-1.0, -1.0), vec2(3.0, -1.0), vec2(-1.0, 3.0));
 void main() {
   gl_Position = vec4(POSITIONS[gl_VertexID], 0.0, 1.0);
+}`;
+
+const INSTANCED_P2G_VERTEX_SHADER = `#version 300 es
+precision highp float;
+precision highp int;
+uniform sampler2D uParticleA;
+uniform sampler2D uParticleB;
+uniform sampler2D uParticleC;
+uniform int uParticleCount;
+uniform ivec2 uParticleStateSize;
+uniform ivec2 uGridSize;
+uniform float uCell;
+uniform float uRadius;
+flat out int vActive;
+flat out ivec2 vMinVirtual;
+flat out ivec2 vMaxVirtual;
+out vec2 vGridPosition;
+out vec4 vParticleB;
+out vec4 vParticleC;
+
+const vec2 CORNERS[6] = vec2[6](
+  vec2(0.0, 0.0),
+  vec2(1.0, 0.0),
+  vec2(0.0, 1.0),
+  vec2(0.0, 1.0),
+  vec2(1.0, 0.0),
+  vec2(1.0, 1.0)
+);
+
+ivec2 particleTexel(int index) {
+  return ivec2(index % uParticleStateSize.x, index / uParticleStateSize.x);
+}
+
+void main() {
+  int particle = gl_InstanceID;
+  vec2 corner = CORNERS[gl_VertexID];
+  if (particle >= uParticleCount) {
+    vActive = 0;
+    gl_Position = vec4(2.0, 2.0, 0.0, 1.0);
+    return;
+  }
+  ivec2 texel = particleTexel(particle);
+  vec4 a = texelFetch(uParticleA, texel, 0);
+  if (a.w <= 0.0) {
+    vActive = 0;
+    gl_Position = vec4(2.0, 2.0, 0.0, 1.0);
+    return;
+  }
+  float support = clamp(uRadius / uCell, 0.65, 8.0);
+  int supportCells = int(ceil(support)) + 1;
+  vec2 gridPosition = a.xy / uCell;
+  ivec2 minVirtual = ivec2(floor(gridPosition - vec2(float(supportCells))));
+  ivec2 maxVirtual = ivec2(ceil(gridPosition + vec2(float(supportCells))));
+  ivec2 minCell = clamp(minVirtual, ivec2(0), uGridSize - ivec2(1));
+  ivec2 maxCell = clamp(maxVirtual, ivec2(0), uGridSize - ivec2(1));
+  vec2 gridCorner = mix(vec2(minCell), vec2(maxCell + ivec2(1)), corner);
+  vec2 clip = gridCorner / vec2(uGridSize) * 2.0 - 1.0;
+  vActive = 1;
+  vMinVirtual = minVirtual;
+  vMaxVirtual = maxVirtual;
+  vGridPosition = gridPosition;
+  vParticleB = texelFetch(uParticleB, texel, 0);
+  vParticleC = texelFetch(uParticleC, texel, 0);
+  gl_Position = vec4(clip, 0.0, 1.0);
+}`;
+
+const INSTANCED_P2G_FRAGMENT_SHADER = `#version 300 es
+precision highp float;
+precision highp int;
+uniform ivec2 uGridSize;
+uniform float uCell;
+uniform float uRadius;
+flat in int vActive;
+flat in ivec2 vMinVirtual;
+flat in ivec2 vMaxVirtual;
+in vec2 vGridPosition;
+in vec4 vParticleB;
+in vec4 vParticleC;
+out vec4 outGrid;
+
+int gridIndex(ivec2 cell) {
+  return cell.y * uGridSize.x + cell.x;
+}
+
+float kernelWeight(ivec2 virtualCell, float inverseSupportSquared) {
+  vec2 delta = vec2(virtualCell) - vGridPosition;
+  float normalizedDistanceSquared = dot(delta, delta) * inverseSupportSquared;
+  if (normalizedDistanceSquared >= 1.0) return 0.0;
+  float core = 1.0 - normalizedDistanceSquared;
+  return core * core * (0.56 + core * 0.44);
+}
+
+void main() {
+  if (vActive == 0) discard;
+  ivec2 current = ivec2(gl_FragCoord.xy);
+  float support = clamp(uRadius / uCell, 0.65, 8.0);
+  float inverseSupportSquared = 1.0 / (support * support);
+  float weightSum = 0.0;
+  for (int yyOffset = 0; yyOffset <= 20; yyOffset += 1) {
+    int yy = vMinVirtual.y + yyOffset;
+    if (yy > vMaxVirtual.y) continue;
+    for (int xxOffset = 0; xxOffset <= 20; xxOffset += 1) {
+      int xx = vMinVirtual.x + xxOffset;
+      if (xx > vMaxVirtual.x) continue;
+      weightSum += kernelWeight(ivec2(xx, yy), inverseSupportSquared);
+    }
+  }
+  if (weightSum <= 0.000001) discard;
+  float invWeight = clamp(1.05 + support * support * 0.88, 1.05, 42.0) / weightSum;
+  vec3 total = vec3(0.0);
+  for (int yyOffset = 0; yyOffset <= 20; yyOffset += 1) {
+    int yy = vMinVirtual.y + yyOffset;
+    if (yy > vMaxVirtual.y) continue;
+    for (int xxOffset = 0; xxOffset <= 20; xxOffset += 1) {
+      int xx = vMinVirtual.x + xxOffset;
+      if (xx > vMaxVirtual.x) continue;
+      ivec2 clamped = ivec2(clamp(xx, 0, uGridSize.x - 1), clamp(yy, 0, uGridSize.y - 1));
+      if (gridIndex(clamped) != gridIndex(current)) continue;
+      vec2 delta = vec2(float(xx), float(yy)) - vGridPosition;
+      float baseWeight = kernelWeight(ivec2(xx, yy), inverseSupportSquared);
+      if (baseWeight <= 0.0) continue;
+      float weight = baseWeight * invWeight;
+      float affineX = vParticleC.x * delta.x + vParticleC.y * delta.y;
+      float affineY = vParticleC.z * delta.x + vParticleC.w * delta.y;
+      total += vec3(weight, (vParticleB.x + affineX) * weight, (vParticleB.y + affineY) * weight);
+    }
+  }
+  if (total.x <= 0.0) discard;
+  outGrid = vec4(total, 0.0);
 }`;
 
 const DEBUG_P2G_FRAGMENT_SHADER = `#version 300 es

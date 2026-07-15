@@ -9,9 +9,11 @@ export interface SplashPicFlipGpuParityResult {
   readonly supported: boolean;
   readonly seedRoundTrip: boolean;
   readonly particleToGrid: boolean;
+  readonly instancedParticleToGrid: boolean;
   readonly gridUpdate: boolean;
   readonly particleUpdate: boolean;
   readonly maxParticleToGridError: number | undefined;
+  readonly maxInstancedParticleToGridError: number | undefined;
   readonly maxGridUpdateError: number | undefined;
   readonly maxParticleUpdateError: number | undefined;
   readonly reasons: readonly string[];
@@ -24,9 +26,11 @@ export function validateSplashPicFlipGpuParity(gpu2D: Gpu2DService): SplashPicFl
       supported: false,
       seedRoundTrip: false,
       particleToGrid: false,
+      instancedParticleToGrid: false,
       gridUpdate: false,
       particleUpdate: false,
       maxParticleToGridError: undefined,
+      maxInstancedParticleToGridError: undefined,
       maxGridUpdateError: undefined,
       maxParticleUpdateError: undefined,
       reasons: Object.freeze([validation.reason ?? 'GPU particle-grid support is unavailable']),
@@ -76,6 +80,12 @@ export function validateSplashPicFlipGpuParity(gpu2D: Gpu2DService): SplashPicFl
       maxAbsDifference(gpuTransfer.mass, cpuTransfer.mass),
       maxAbsDifference(gpuTransfer.momentumX, cpuTransfer.momentumX),
       maxAbsDifference(gpuTransfer.momentumY, cpuTransfer.momentumY),
+    );
+    const gpuInstancedTransfer = particleGrid.debugComputeParticleToGrid({ cell, radius, particleToGridMode: 'instanced-splat' });
+    const maxInstancedParticleToGridError = Math.max(
+      maxAbsDifference(gpuInstancedTransfer.mass, cpuTransfer.mass),
+      maxAbsDifference(gpuInstancedTransfer.momentumX, cpuTransfer.momentumX),
+      maxAbsDifference(gpuInstancedTransfer.momentumY, cpuTransfer.momentumY),
     );
     const updateOptions = {
       cell,
@@ -146,20 +156,24 @@ export function validateSplashPicFlipGpuParity(gpu2D: Gpu2DService): SplashPicFl
       maxAbsDifference(gpuParticle.affine, cpuParticle.affine),
     );
     const particleToGrid = Number.isFinite(maxParticleToGridError) && maxParticleToGridError <= 0.002;
+    const instancedParticleToGrid = Number.isFinite(maxInstancedParticleToGridError) && maxInstancedParticleToGridError <= 0.002;
     const gridUpdate = Number.isFinite(maxGridUpdateError) && maxGridUpdateError <= 0.004;
     const particleUpdate = Number.isFinite(maxParticleUpdateError) && maxParticleUpdateError <= 0.006;
     const reasons: string[] = [];
     if (!seedRoundTrip) reasons.push('GPU particle seed round trip failed');
     if (!particleToGrid) reasons.push(`GPU particle-to-grid parity failed: ${maxParticleToGridError}`);
+    if (!instancedParticleToGrid) reasons.push(`GPU instanced particle-to-grid parity failed: ${maxInstancedParticleToGridError}`);
     if (!gridUpdate) reasons.push(`GPU grid update parity failed: ${maxGridUpdateError}`);
     if (!particleUpdate) reasons.push(`GPU particle update parity failed: ${maxParticleUpdateError}`);
     return Object.freeze({
       supported: true,
       seedRoundTrip,
       particleToGrid,
+      instancedParticleToGrid,
       gridUpdate,
       particleUpdate,
       maxParticleToGridError,
+      maxInstancedParticleToGridError,
       maxGridUpdateError,
       maxParticleUpdateError,
       reasons: Object.freeze(reasons),
@@ -169,9 +183,11 @@ export function validateSplashPicFlipGpuParity(gpu2D: Gpu2DService): SplashPicFl
       supported: false,
       seedRoundTrip: false,
       particleToGrid: false,
+      instancedParticleToGrid: false,
       gridUpdate: false,
       particleUpdate: false,
       maxParticleToGridError: undefined,
+      maxInstancedParticleToGridError: undefined,
       maxGridUpdateError: undefined,
       maxParticleUpdateError: undefined,
       reasons: Object.freeze([error instanceof Error ? error.message : String(error)]),

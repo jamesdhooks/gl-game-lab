@@ -818,6 +818,8 @@ function DiagnosticExperienceHost(): JSX.Element {
   const [gpuGridSeedRoundTrip, setGpuGridSeedRoundTrip] = useState<boolean>();
   const [gpuGridP2GParity, setGpuGridP2GParity] = useState<boolean>();
   const [gpuGridP2GMaxError, setGpuGridP2GMaxError] = useState<number>();
+  const [gpuGridInstancedP2GParity, setGpuGridInstancedP2GParity] = useState<boolean>();
+  const [gpuGridInstancedP2GMaxError, setGpuGridInstancedP2GMaxError] = useState<number>();
   const [gpuGridUpdateParity, setGpuGridUpdateParity] = useState<boolean>();
   const [gpuGridUpdateMaxError, setGpuGridUpdateMaxError] = useState<number>();
   const [gpuGridParticleParity, setGpuGridParticleParity] = useState<boolean>();
@@ -880,6 +882,8 @@ function DiagnosticExperienceHost(): JSX.Element {
         setGpuGridSeedRoundTrip(parity.seedRoundTrip);
         setGpuGridP2GParity(parity.particleToGrid);
         setGpuGridP2GMaxError(parity.maxParticleToGridError);
+        setGpuGridInstancedP2GParity(parity.instancedParticleToGrid);
+        setGpuGridInstancedP2GMaxError(parity.maxInstancedParticleToGridError);
         setGpuGridUpdateParity(parity.gridUpdate);
         setGpuGridUpdateMaxError(parity.maxGridUpdateError);
         setGpuGridParticleParity(parity.particleUpdate);
@@ -890,6 +894,8 @@ function DiagnosticExperienceHost(): JSX.Element {
         setGpuGridSeedRoundTrip(false);
         setGpuGridP2GParity(false);
         setGpuGridP2GMaxError(undefined);
+        setGpuGridInstancedP2GParity(false);
+        setGpuGridInstancedP2GMaxError(undefined);
         setGpuGridUpdateParity(false);
         setGpuGridUpdateMaxError(undefined);
         setGpuGridParticleParity(false);
@@ -989,6 +995,8 @@ function DiagnosticExperienceHost(): JSX.Element {
           data-gpu-particle-grid-seed-roundtrip={gpuGridSeedRoundTrip}
           data-gpu-particle-grid-p2g-parity={gpuGridP2GParity}
           data-gpu-particle-grid-p2g-max-error={gpuGridP2GMaxError}
+          data-gpu-particle-grid-instanced-p2g-parity={gpuGridInstancedP2GParity}
+          data-gpu-particle-grid-instanced-p2g-max-error={gpuGridInstancedP2GMaxError}
           data-gpu-particle-grid-update-parity={gpuGridUpdateParity}
           data-gpu-particle-grid-update-max-error={gpuGridUpdateMaxError}
           data-gpu-particle-grid-particle-parity={gpuGridParticleParity}
