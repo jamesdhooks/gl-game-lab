@@ -93,6 +93,49 @@ export interface GpuParticleSystem2D {
   dispose(): void;
 }
 
+export interface GpuParticleGridSystem2DOptions {
+  readonly capacity: number;
+  readonly width?: number;
+  readonly height?: number;
+  readonly gridWidth: number;
+  readonly gridHeight: number;
+  readonly precision?: 'float';
+}
+
+export interface GpuParticleGridSeed2D {
+  readonly count: number;
+  readonly positions: Float32Array;
+  readonly velocities: Float32Array;
+  readonly radii: Float32Array;
+  readonly colorSeeds: Float32Array;
+  readonly foam: Float32Array;
+  readonly affine: Float32Array;
+}
+
+export interface GpuParticleGridSnapshot2D {
+  readonly count: number;
+  readonly positions: Float32Array;
+  readonly velocities: Float32Array;
+  readonly radii: Float32Array;
+  readonly colorSeeds: Float32Array;
+  readonly foam: Float32Array;
+  readonly affine: Float32Array;
+}
+
+export interface GpuParticleGridSystem2D {
+  readonly capacity: number;
+  readonly width: number;
+  readonly height: number;
+  readonly gridWidth: number;
+  readonly gridHeight: number;
+  readonly count: number;
+  readonly generation: number;
+  clear(): void;
+  uploadSeed(seed: GpuParticleGridSeed2D): void;
+  debugReadback(): GpuParticleGridSnapshot2D;
+  dispose(): void;
+}
+
 export interface GpuParticleGridCapabilities2D {
   /** True only when particle-grid scatter/gather can run without changing solver semantics. */
   readonly supported: boolean;
@@ -119,5 +162,6 @@ export interface Gpu2DService {
   validateParticleGridSupport(): GpuParticleGridValidation2D;
   createFieldSystem(id: string, options: GpuFieldSystem2DOptions): GpuFieldSystem2D;
   createParticleSystem(id: string, options: GpuParticleSystem2DOptions): GpuParticleSystem2D;
+  createParticleGridSystem(id: string, options: GpuParticleGridSystem2DOptions): GpuParticleGridSystem2D;
   submit(id: string, execute: (target: GpuRenderTarget2D) => void): void;
 }

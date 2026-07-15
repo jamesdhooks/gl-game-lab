@@ -4,6 +4,10 @@ import type {
   GpuFieldSystem2DOptions,
   GpuFieldMesh2D,
   GpuParticleSeed2D,
+  GpuParticleGridSeed2D,
+  GpuParticleGridSnapshot2D,
+  GpuParticleGridSystem2D,
+  GpuParticleGridSystem2DOptions,
   GpuParticleSystem2D,
   GpuParticleSystem2DOptions,
   Gpu2DCapabilities,
@@ -19,6 +23,7 @@ import { GpuFieldPass } from './GpuFieldPass.js';
 import { GpuFieldState } from './GpuFieldState.js';
 import { GpuFieldMeshPass } from './GpuFieldMeshPass.js';
 import { GpuParticleRenderer } from './GpuParticleRenderer.js';
+import { GpuParticleGridState, gpuParticleGridBytes } from './GpuParticleGridState.js';
 import { GpuParticleState } from './GpuParticleState.js';
 import type { GpuParticleRenderDestination } from './GpuParticleRenderer.js';
 import { GpuSimulationPass } from './GpuSimulationPass.js';
@@ -39,6 +44,10 @@ interface ParticleBundle {
   readonly stepper: GpuSimulationPass;
   readonly points: GpuParticleRenderer;
   readonly trails: TrailFeedbackRenderer | undefined;
+}
+
+interface ParticleGridBundle {
+  readonly state: GpuParticleGridState;
 }
 
 class WebGLGpuRenderTarget implements GpuRenderTarget2D {
@@ -182,12 +191,72 @@ class WebGLGpuParticleSystem implements GpuParticleSystem2D {
   }
 }
 
+class WebGLGpuParticleGridSystem implements GpuParticleGridSystem2D {
+  private readonly owner: RestorableResourceOwner<ParticleGridBundle>;
+  private retainedSeed: GpuParticleGridSeed2D | undefined;
+  private disposed = false;
+  private currentGeneration = 0;
+
+  constructor(
+    device: WebGL2Device,
+    id: string,
+    options: GpuParticleGridSystem2DOptions,
+    private readonly onDispose: () => void,
+    private readonly countUpload: (bytes: number) => void,
+  ) {
+    this.owner = device.ownContextResource({
+      id,
+      priority: 55,
+      estimatedBytes: gpuParticleGridBytes(options),
+      create: () => createParticleGridBundle(device.gl, options),
+      dispose: disposeParticleGridBundle,
+      restored: (bundle) => {
+        if (this.retainedSeed) bundle.state.uploadSeed(this.retainedSeed);
+        this.currentGeneration += 1;
+      },
+    });
+  }
+
+  get capacity(): number { return this.owner.value.state.capacity; }
+  get width(): number { return this.owner.value.state.width; }
+  get height(): number { return this.owner.value.state.height; }
+  get gridWidth(): number { return this.owner.value.state.gridWidth; }
+  get gridHeight(): number { return this.owner.value.state.gridHeight; }
+  get count(): number { return this.owner.value.state.count; }
+  get generation(): number { return this.currentGeneration; }
+
+  clear(): void {
+    this.retainedSeed = undefined;
+    this.owner.value.state.clear();
+  }
+
+  uploadSeed(seed: GpuParticleGridSeed2D): void {
+    this.retainedSeed = cloneParticleGridSeed(seed);
+    this.owner.value.state.uploadSeed(this.retainedSeed);
+    this.countUpload(particleGridSeedBytes(seed));
+  }
+
+  debugReadback(): GpuParticleGridSnapshot2D {
+    return this.owner.value.state.debugReadback();
+  }
+
+  dispose(): void {
+    if (this.disposed) return;
+    this.disposed = true;
+    this.owner.dispose();
+    this.retainedSeed = undefined;
+    this.onDispose();
+  }
+}
+
 export class WebGLGpu2DService implements Gpu2DService {
   readonly capabilities: Gpu2DCapabilities;
   private readonly fields = new Set<WebGLGpuFieldSystem>();
   private readonly particles = new Set<WebGLGpuParticleSystem>();
+  private readonly particleGrids = new Set<WebGLGpuParticleGridSystem>();
   private fieldId = 0;
   private particleId = 0;
+  private particleGridId = 0;
   private frameDrawCalls = 0;
   private framePoints = 0;
   private frameTriangles = 0;
@@ -238,6 +307,24 @@ export class WebGLGpu2DService implements Gpu2DService {
     return particles;
   }
 
+  createParticleGridSystem(id: string, options: GpuParticleGridSystem2DOptions): GpuParticleGridSystem2D {
+    const normalized = id.trim();
+    if (normalized.length === 0) throw new Error('GPU particle-grid system id cannot be empty');
+    const validation = this.validateParticleGridSupport();
+    if (!validation.supported) throw new Error(validation.reason ?? 'GPU particle-grid system is unsupported');
+    let particleGrid: WebGLGpuParticleGridSystem | undefined;
+    particleGrid = new WebGLGpuParticleGridSystem(
+      this.device,
+      `gl-game-lab.render-webgl2.particle-grid.${this.particleGridId}.${normalized}`,
+      options,
+      () => { if (particleGrid) this.particleGrids.delete(particleGrid); },
+      (bytes) => { this.pendingUploadBytes += bytes; },
+    );
+    this.particleGridId += 1;
+    this.particleGrids.add(particleGrid);
+    return particleGrid;
+  }
+
   submit(id: string, execute: (target: GpuRenderTarget2D) => void): void {
     this.pendingSubmissions += 1;
     const pass: GpuFrameRenderPass = {
@@ -256,11 +343,21 @@ export class WebGLGpu2DService implements Gpu2DService {
   }
 
   destroy(): void {
+    for (const particleGrid of [...this.particleGrids]) particleGrid.dispose();
+    this.particleGrids.clear();
     for (const particles of [...this.particles]) particles.dispose();
     this.particles.clear();
     for (const field of [...this.fields]) field.dispose();
     this.fields.clear();
   }
+}
+
+function createParticleGridBundle(gl: WebGL2RenderingContext, options: GpuParticleGridSystem2DOptions): ParticleGridBundle {
+  return { state: new GpuParticleGridState(gl, options) };
+}
+
+function disposeParticleGridBundle(bundle: ParticleGridBundle): void {
+  bundle.state.dispose();
 }
 
 function createParticleBundle(gl: WebGL2RenderingContext, options: GpuParticleSystem2DOptions, label: string): ParticleBundle {
@@ -385,6 +482,23 @@ function particleBytes(options: GpuParticleSystem2DOptions): number {
   const width = options.width ?? Math.ceil(Math.sqrt(options.capacity));
   const height = options.height ?? Math.ceil(options.capacity / width);
   return width * height * (options.precision === 'half-float' ? 8 : 16) * 4;
+}
+
+function cloneParticleGridSeed(seed: GpuParticleGridSeed2D): GpuParticleGridSeed2D {
+  return Object.freeze({
+    count: seed.count,
+    positions: seed.positions.slice(),
+    velocities: seed.velocities.slice(),
+    radii: seed.radii.slice(),
+    colorSeeds: seed.colorSeeds.slice(),
+    foam: seed.foam.slice(),
+    affine: seed.affine.slice(),
+  });
+}
+
+function particleGridSeedBytes(seed: GpuParticleGridSeed2D): number {
+  return seed.positions.byteLength + seed.velocities.byteLength + seed.radii.byteLength
+    + seed.colorSeeds.byteLength + seed.foam.byteLength + seed.affine.byteLength;
 }
 
 export function detectGpu2DCapabilities(gl: WebGL2RenderingContext): Gpu2DCapabilities {

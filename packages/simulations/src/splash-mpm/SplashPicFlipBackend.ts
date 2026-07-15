@@ -1,4 +1,5 @@
-import type { Gpu2DCapabilities } from '@hooksjam/gl-game-lab-engine';
+import type { Gpu2DCapabilities, GpuParticleGridSeed2D } from '@hooksjam/gl-game-lab-engine';
+import type { SplashPicFlipStateSnapshot } from './SplashMpmModel.js';
 
 export type SplashPicFlipBackendKind = 'cpu' | 'gpu';
 export type SplashPicFlipBackendRequest = 'auto' | 'cpu' | 'gpu';
@@ -59,5 +60,17 @@ export function resolveSplashPicFlipBackend(
     gpuEligible,
     gpuImplemented: options.gpuImplemented === true,
     reasons: Object.freeze(reasons),
+  });
+}
+
+export function splashSnapshotToGpuParticleGridSeed(snapshot: SplashPicFlipStateSnapshot): GpuParticleGridSeed2D {
+  return Object.freeze({
+    count: snapshot.count,
+    positions: snapshot.positions.slice(),
+    velocities: snapshot.velocities.slice(),
+    radii: snapshot.radii.slice(),
+    colorSeeds: snapshot.colorSeeds.slice(),
+    foam: snapshot.foam.slice(),
+    affine: snapshot.affine.slice(),
   });
 }

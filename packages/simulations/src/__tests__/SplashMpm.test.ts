@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createSplashMpmConfig, SPLASH_MPM_DEFAULTS, SPLASH_MPM_SETTINGS, splashMpmDefinition, SPLASH_MPM_STYLE_MANIFEST, SplashMpmModel } from '../index.js';
-import { resolveSplashPicFlipBackend } from '../splash-mpm/SplashPicFlipBackend.js';
+import { resolveSplashPicFlipBackend, splashSnapshotToGpuParticleGridSeed } from '../splash-mpm/SplashPicFlipBackend.js';
 import { resolveSplashSurfaceParameters, selectHeldSplashPointer } from '../splash-mpm/SplashMpmPlugin.js';
 import { compareSplashPicFlipMetrics, type SplashMpmTuning } from '../splash-mpm/SplashMpmModel.js';
 
@@ -76,6 +76,22 @@ describe('Splash MPM', () => {
     expect(delta.kineticEnergyRelativeError).toBeLessThan(0.0001);
     expect(delta.foamCoverageError).toBe(0);
     expect(restored.obstacles).toEqual(original.obstacles);
+  });
+  it('converts CPU snapshots into GPU particle-grid seeds without changing particle data', () => {
+    const model = new SplashMpmModel();
+    model.reset(320, 240, BASE_TUNING);
+    model.seed(320, 240, BASE_TUNING);
+    model.step(1 / 60, 320, 240, BASE_TUNING);
+    const snapshot = model.snapshot();
+    const seed = splashSnapshotToGpuParticleGridSeed(snapshot);
+    expect(seed.count).toBe(snapshot.count);
+    expect(seed.positions).toEqual(snapshot.positions);
+    expect(seed.velocities).toEqual(snapshot.velocities);
+    expect(seed.radii).toEqual(snapshot.radii);
+    expect(seed.colorSeeds).toEqual(snapshot.colorSeeds);
+    expect(seed.foam).toEqual(snapshot.foam);
+    expect(seed.affine).toEqual(snapshot.affine);
+    expect(seed.positions).not.toBe(snapshot.positions);
   });
   it('reports divergent trajectories through parity metrics', () => {
     const reference = new SplashMpmModel();
