@@ -50,6 +50,7 @@ export { WATER_TANK_STYLE_MANIFEST } from './water-tank/styles.js';
 export { WaterTankModel, type WaterObstacle, type WaterTankTuning } from './water-tank/WaterTankModel.js';
 export { splashMpmDefinition } from './splash-mpm/definition.js';
 export { SPLASH_MPM_DEFAULTS, SPLASH_MPM_SETTINGS, createSplashMpmConfig, splashNumber, splashString, type SplashMpmConfig } from './splash-mpm/config.js';
+export { resolveSplashPicFlipBackend, type SplashPicFlipBackendDecision, type SplashPicFlipBackendKind, type SplashPicFlipBackendOptions, type SplashPicFlipBackendRequest } from './splash-mpm/SplashPicFlipBackend.js';
 export { SPLASH_MPM_PLUGIN_ID, SplashMpmControllerService, createSplashMpmPlugin, type SplashMpmController, type SplashMpmMode } from './splash-mpm/SplashMpmPlugin.js';
 export { SPLASH_MPM_STYLE_MANIFEST } from './splash-mpm/styles.js';
 export { SPLASH_PIC_FLIP_CAPACITY, SplashPicFlipModel, SplashMpmModel, type SplashMpmTuning } from './splash-mpm/SplashMpmModel.js';

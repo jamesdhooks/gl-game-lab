@@ -93,7 +93,24 @@ export interface GpuParticleSystem2D {
   dispose(): void;
 }
 
+export interface GpuParticleGridCapabilities2D {
+  /** True only when particle-grid scatter/gather can run without changing solver semantics. */
+  readonly supported: boolean;
+  readonly floatRenderTargets: boolean;
+  readonly floatBlend: boolean;
+  readonly multipleRenderTargets: boolean;
+  readonly vertexTextureFetch: boolean;
+  readonly maxDrawBuffers: number;
+  readonly maxColorAttachments: number;
+  readonly maxVertexTextureImageUnits: number;
+}
+
+export interface Gpu2DCapabilities {
+  readonly particleGrid: GpuParticleGridCapabilities2D;
+}
+
 export interface Gpu2DService {
+  readonly capabilities: Gpu2DCapabilities;
   createFieldSystem(id: string, options: GpuFieldSystem2DOptions): GpuFieldSystem2D;
   createParticleSystem(id: string, options: GpuParticleSystem2DOptions): GpuParticleSystem2D;
   submit(id: string, execute: (target: GpuRenderTarget2D) => void): void;

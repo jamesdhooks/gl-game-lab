@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createSplashMpmConfig, SPLASH_MPM_DEFAULTS, SPLASH_MPM_SETTINGS, splashMpmDefinition, SPLASH_MPM_STYLE_MANIFEST, SplashMpmModel } from '../index.js';
+import { resolveSplashPicFlipBackend } from '../splash-mpm/SplashPicFlipBackend.js';
 import { resolveSplashSurfaceParameters, selectHeldSplashPointer } from '../splash-mpm/SplashMpmPlugin.js';
 import { compareSplashPicFlipMetrics, type SplashMpmTuning } from '../splash-mpm/SplashMpmModel.js';
 
@@ -86,6 +87,33 @@ describe('Splash MPM', () => {
     const delta = compareSplashPicFlipMetrics(reference.metrics(), candidate.metrics());
     expect(delta.countEqual).toBe(true);
     expect(delta.momentumRelativeError).toBeGreaterThan(0.1);
+  });
+  it('keeps GPU PIC/FLIP behind capability, implementation, and parity gates', () => {
+    const eligible = {
+      particleGrid: {
+        supported: true,
+        floatRenderTargets: true,
+        floatBlend: true,
+        multipleRenderTargets: true,
+        vertexTextureFetch: true,
+        maxDrawBuffers: 4,
+        maxColorAttachments: 4,
+        maxVertexTextureImageUnits: 8,
+      },
+    };
+    expect(resolveSplashPicFlipBackend(eligible).backend).toBe('cpu');
+    expect(resolveSplashPicFlipBackend(eligible, { gpuImplemented: true }).backend).toBe('cpu');
+    expect(resolveSplashPicFlipBackend(eligible, { gpuImplemented: true, parityValidated: true }).backend).toBe('gpu');
+    expect(resolveSplashPicFlipBackend({
+      particleGrid: {
+        ...eligible.particleGrid,
+        supported: false,
+        floatBlend: false,
+      },
+    }, { request: 'gpu', gpuImplemented: true, parityValidated: true })).toMatchObject({
+      backend: 'cpu',
+      gpuEligible: false,
+    });
   });
   it('validates maintained defaults', () => {
     expect(SPLASH_MPM_SETTINGS.length).toBeGreaterThan(25);

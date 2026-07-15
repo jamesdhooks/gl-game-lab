@@ -1,8 +1,9 @@
 import { createExtensionToken, type EnginePlugin } from '@hooksjam/gl-game-lab-core';
-import { applyPaletteGradientBackdrop2D, EngineInput, EngineRender2D, EngineSchedule, type ExperienceLaunchOptions, type ExperienceRuntimeController, type ExperienceSettingValue } from '@hooksjam/gl-game-lab-engine';
+import { applyPaletteGradientBackdrop2D, EngineGpu2D, EngineInput, EngineRender2D, EngineSchedule, type ExperienceLaunchOptions, type ExperienceRuntimeController, type ExperienceSettingValue } from '@hooksjam/gl-game-lab-engine';
 import { registerSimulationRuntime } from '../SimulationPluginLifecycle.js';
 import { createBuildFixture, packBuildPreview } from '../BuildFixtures.js';
 import { createSplashMpmConfig, SPLASH_MPM_DEFAULTS, splashNumber, splashString, type SplashMpmConfig } from './config.js';
+import { resolveSplashPicFlipBackend, type SplashPicFlipBackendDecision } from './SplashPicFlipBackend.js';
 import { SPLASH_PIC_FLIP_CAPACITY, SplashPicFlipModel, type SplashMpmTuning } from './SplashMpmModel.js';
 import { splashPointScale, splashRgb, splashRgba, SPLASH_MPM_STYLE_MANIFEST } from './styles.js';
 export type SplashMpmMode = 'splash' | 'pour' | 'build';
@@ -10,6 +11,7 @@ export interface SplashMpmController extends ExperienceRuntimeController {
   readonly mode: SplashMpmMode;
   readonly particleCount: number;
   readonly obstacleCount: number;
+  readonly solverBackend: SplashPicFlipBackendDecision;
 }
 export const SplashMpmControllerService = createExtensionToken<SplashMpmController>('gl-game-lab.simulations.splash-mpm.controller');
 export const SPLASH_MPM_PLUGIN_ID = 'gl-game-lab.simulations.splash-mpm';
@@ -71,7 +73,8 @@ export function createSplashMpmPlugin(initial: SplashMpmConfig = SPLASH_MPM_DEFA
     version: '1.0.0',
     dependencies: [{ id: 'gl-game-lab.runtime' }],
     install: context => {
-      const renderer = context.get(EngineRender2D), input = context.get(EngineInput);
+      const renderer = context.get(EngineRender2D), gpu = context.get(EngineGpu2D), input = context.get(EngineInput);
+      const solverBackend = resolveSplashPicFlipBackend(gpu.capabilities);
       cleanup = () => undefined;
       applyStyle();
       const controller: SplashMpmController = {
@@ -97,6 +100,9 @@ export function createSplashMpmPlugin(initial: SplashMpmConfig = SPLASH_MPM_DEFA
         },
         get obstacleCount() {
           return model.obstacles.length;
+        },
+        get solverBackend() {
+          return solverBackend;
         },
         setMode: v => {
           if (v !== 'splash' && v !== 'pour' && v !== 'build')

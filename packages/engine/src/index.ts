@@ -104,10 +104,12 @@ export {
 } from './PaletteGradientBackdrop2D.js';
 export { InputSourceRegistry, type InputSource } from './InputSourceRegistry.js';
 export {
+  type Gpu2DCapabilities,
   type Gpu2DService,
   type GpuFieldSystem2D,
   type GpuFieldSystem2DOptions,
   type GpuFieldMesh2D,
+  type GpuParticleGridCapabilities2D,
   type GpuParticleSeed2D,
   type GpuParticleSystem2D,
   type GpuParticleSystem2DOptions,

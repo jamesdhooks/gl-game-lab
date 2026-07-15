@@ -6,6 +6,7 @@ import type {
   GpuParticleSeed2D,
   GpuParticleSystem2D,
   GpuParticleSystem2DOptions,
+  Gpu2DCapabilities,
   GpuRenderTarget2D,
   GpuTexture2D,
   GpuUniforms2D,
@@ -180,6 +181,7 @@ class WebGLGpuParticleSystem implements GpuParticleSystem2D {
 }
 
 export class WebGLGpu2DService implements Gpu2DService {
+  readonly capabilities: Gpu2DCapabilities;
   private readonly fields = new Set<WebGLGpuFieldSystem>();
   private readonly particles = new Set<WebGLGpuParticleSystem>();
   private fieldId = 0;
@@ -190,7 +192,9 @@ export class WebGLGpu2DService implements Gpu2DService {
   private pendingUploadBytes = 0;
   private pendingSubmissions = 0;
 
-  constructor(private readonly device: WebGL2Device, private readonly queue: GpuRenderPassQueue) {}
+  constructor(private readonly device: WebGL2Device, private readonly queue: GpuRenderPassQueue) {
+    this.capabilities = detectGpu2DCapabilities(device.gl);
+  }
 
   createFieldSystem(id: string, options: GpuFieldSystem2DOptions): GpuFieldSystem2D {
     const normalized = id.trim();
@@ -372,4 +376,31 @@ function particleBytes(options: GpuParticleSystem2DOptions): number {
   const width = options.width ?? Math.ceil(Math.sqrt(options.capacity));
   const height = options.height ?? Math.ceil(options.capacity / width);
   return width * height * (options.precision === 'half-float' ? 8 : 16) * 4;
+}
+
+export function detectGpu2DCapabilities(gl: WebGL2RenderingContext): Gpu2DCapabilities {
+  const floatRenderTargets = gl.getExtension('EXT_color_buffer_float') !== null;
+  const floatBlend = gl.getExtension('EXT_float_blend') !== null;
+  const maxDrawBuffers = numberParameter(gl, gl.MAX_DRAW_BUFFERS);
+  const maxColorAttachments = numberParameter(gl, gl.MAX_COLOR_ATTACHMENTS);
+  const maxVertexTextureImageUnits = numberParameter(gl, gl.MAX_VERTEX_TEXTURE_IMAGE_UNITS);
+  const multipleRenderTargets = maxDrawBuffers >= 2 && maxColorAttachments >= 2;
+  const vertexTextureFetch = maxVertexTextureImageUnits >= 1;
+  return Object.freeze({
+    particleGrid: Object.freeze({
+      supported: floatRenderTargets && floatBlend && multipleRenderTargets && vertexTextureFetch,
+      floatRenderTargets,
+      floatBlend,
+      multipleRenderTargets,
+      vertexTextureFetch,
+      maxDrawBuffers,
+      maxColorAttachments,
+      maxVertexTextureImageUnits,
+    }),
+  });
+}
+
+function numberParameter(gl: WebGL2RenderingContext, parameter: number): number {
+  const value = gl.getParameter(parameter) as unknown;
+  return typeof value === 'number' && Number.isFinite(value) ? value : 0;
 }
