@@ -207,6 +207,8 @@ export interface GpuParticleGridPointOptions2D {
   readonly worldWidth: number;
   readonly worldHeight: number;
   readonly radiusScale: number;
+  readonly radiusMode?: 'raw' | 'splash-ultra';
+  readonly splashUltraPointScale?: number;
   readonly palette: readonly (readonly [number, number, number, number])[];
   readonly paletteMode?: 'hashed' | 'indexed';
   readonly opacity: number;

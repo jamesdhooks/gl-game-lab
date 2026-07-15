@@ -62,6 +62,32 @@ export class SplashPicFlipGpuRuntime {
     return this.particleGrid !== undefined;
   }
 
+  snapshot(obstacles: readonly WaterObstacle[]): SplashPicFlipStateSnapshot {
+    const particleGrid = this.requireParticleGrid();
+    const snapshot = particleGrid.debugReadback();
+    return Object.freeze({
+      count: snapshot.count,
+      positions: snapshot.positions,
+      velocities: snapshot.velocities,
+      radii: snapshot.radii,
+      colorSeeds: snapshot.colorSeeds,
+      foam: snapshot.foam,
+      affine: snapshot.affine,
+      obstacles: obstacles.slice(),
+      grid: Object.freeze({
+        columns: this.gridColumns,
+        rows: this.gridRows,
+        cell: this.cell,
+        mass: new Float32Array(this.gridColumns * this.gridRows),
+        velocityX: new Float32Array(this.gridColumns * this.gridRows),
+        velocityY: new Float32Array(this.gridColumns * this.gridRows),
+        previousVelocityX: new Float32Array(this.gridColumns * this.gridRows),
+        previousVelocityY: new Float32Array(this.gridColumns * this.gridRows),
+        pressure: new Float32Array(this.gridColumns * this.gridRows),
+      }),
+    });
+  }
+
   resetFromSnapshot(snapshot: SplashPicFlipStateSnapshot, tuning: SplashMpmTuning): void {
     this.cell = snapshot.grid.cell;
     this.foamFrame = 0;

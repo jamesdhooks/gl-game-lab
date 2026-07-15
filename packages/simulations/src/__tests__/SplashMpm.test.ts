@@ -55,6 +55,15 @@ class FakeParticleGridSystem implements GpuParticleGridSystem2D {
   readonly metaballRenders: { readonly target: GpuRenderTarget2D; readonly options: GpuParticleGridMetaballOptions2D }[] = [];
   readonly particleRenders: { readonly target: GpuRenderTarget2D; readonly options: GpuParticleGridPointOptions2D }[] = [];
   disposed = false;
+  private currentSnapshot: GpuParticleGridSnapshot2D = Object.freeze({
+    count: 0,
+    positions: new Float32Array(0),
+    velocities: new Float32Array(0),
+    radii: new Float32Array(0),
+    colorSeeds: new Float32Array(0),
+    foam: new Float32Array(0),
+    affine: new Float32Array(0),
+  });
 
   constructor(
     readonly capacity: number,
@@ -71,6 +80,15 @@ class FakeParticleGridSystem implements GpuParticleGridSystem2D {
   uploadSeed(seed: GpuParticleGridSeed2D): void {
     this.uploadedSeeds.push(seed);
     this.count = seed.count;
+    this.currentSnapshot = Object.freeze({
+      count: seed.count,
+      positions: seed.positions.slice(),
+      velocities: seed.velocities.slice(),
+      radii: seed.radii.slice(),
+      colorSeeds: seed.colorSeeds.slice(),
+      foam: seed.foam.slice(),
+      affine: seed.affine.slice(),
+    });
   }
 
   emit(batch: GpuParticleGridEmit2D): number {
@@ -97,7 +115,7 @@ class FakeParticleGridSystem implements GpuParticleGridSystem2D {
   }
 
   debugReadback(): GpuParticleGridSnapshot2D {
-    throw new Error('unexpected particle-grid readback');
+    return this.currentSnapshot;
   }
 
   debugComputeParticleToGrid(_options: GpuParticleGridTransferOptions2D): GpuParticleGridTransfer2D {
@@ -307,6 +325,21 @@ describe('Splash MPM', () => {
     expect(grid.obstacleUploads).toHaveLength(1);
     expect(grid.obstacleUploads[0]).toEqual(createSplashGpuObstacles(snapshot.obstacles, 0));
     expect(runtime.count).toBe(snapshot.count);
+    expect(runtime.snapshot(snapshot.obstacles)).toMatchObject({
+      count: snapshot.count,
+      positions: snapshot.positions,
+      velocities: snapshot.velocities,
+      radii: snapshot.radii,
+      colorSeeds: snapshot.colorSeeds,
+      foam: snapshot.foam,
+      affine: snapshot.affine,
+      obstacles: snapshot.obstacles,
+      grid: {
+        columns: snapshot.grid.columns,
+        rows: snapshot.grid.rows,
+        cell: snapshot.grid.cell,
+      },
+    });
 
     expect(runtime.pour(80, 24, 5, 18, BASE_TUNING.radius, 3, 4)).toBe(5);
     expect(grid.emittedBatches).toHaveLength(1);
