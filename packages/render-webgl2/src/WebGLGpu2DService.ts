@@ -7,6 +7,7 @@ import type {
   GpuParticleGridSeed2D,
   GpuParticleGridSnapshot2D,
   GpuParticleGridParticleUpdateOptions2D,
+  GpuParticleGridMetaballOptions2D,
   GpuParticleGridSystem2D,
   GpuParticleGridSystem2DOptions,
   GpuParticleGridTransfer2D,
@@ -29,6 +30,7 @@ import { GpuFieldState } from './GpuFieldState.js';
 import { GpuFieldMeshPass } from './GpuFieldMeshPass.js';
 import { GpuParticleRenderer } from './GpuParticleRenderer.js';
 import { GpuParticleGridState, gpuParticleGridBytes } from './GpuParticleGridState.js';
+import { DensityMetaballRenderer } from './DensityMetaballRenderer.js';
 import { GpuParticleState } from './GpuParticleState.js';
 import type { GpuParticleRenderDestination } from './GpuParticleRenderer.js';
 import { GpuSimulationPass } from './GpuSimulationPass.js';
@@ -53,6 +55,7 @@ interface ParticleBundle {
 
 interface ParticleGridBundle {
   readonly state: GpuParticleGridState;
+  readonly metaballs: DensityMetaballRenderer;
 }
 
 class WebGLGpuRenderTarget implements GpuRenderTarget2D {
@@ -247,6 +250,12 @@ class WebGLGpuParticleGridSystem implements GpuParticleGridSystem2D {
     this.countDraw(5);
   }
 
+  renderMetaballs(target: GpuRenderTarget2D, options: GpuParticleGridMetaballOptions2D): void {
+    const bundle = this.owner.value;
+    bundle.metaballs.renderParticleGrid(bundle.state, requireTarget(target), options);
+    this.countDraw(2);
+  }
+
   debugReadback(): GpuParticleGridSnapshot2D {
     return this.owner.value.state.debugReadback();
   }
@@ -377,10 +386,11 @@ export class WebGLGpu2DService implements Gpu2DService {
 }
 
 function createParticleGridBundle(gl: WebGL2RenderingContext, options: GpuParticleGridSystem2DOptions): ParticleGridBundle {
-  return { state: new GpuParticleGridState(gl, options) };
+  return { state: new GpuParticleGridState(gl, options), metaballs: new DensityMetaballRenderer(gl) };
 }
 
 function disposeParticleGridBundle(bundle: ParticleGridBundle): void {
+  bundle.metaballs.dispose();
   bundle.state.dispose();
 }
 

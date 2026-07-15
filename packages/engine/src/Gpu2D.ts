@@ -164,6 +164,32 @@ export interface GpuParticleGridParticleUpdateOptions2D extends GpuParticleGridU
   readonly segmentObstacles?: Float32Array;
 }
 
+export interface GpuParticleGridMetaballOptions2D {
+  readonly worldWidth: number;
+  readonly worldHeight: number;
+  readonly fieldScale: number;
+  readonly particleRadiusScale: number;
+  readonly threshold: number;
+  readonly edgeSoftness: number;
+  readonly edgeTightness?: number;
+  readonly palette: readonly (readonly [number, number, number])[];
+  readonly background: readonly [number, number, number];
+  readonly thermalContrast: number;
+  readonly paletteMapping?: 'thermal' | 'gradient';
+  readonly refraction: number;
+  readonly gloss: number;
+  readonly rimLighting: number;
+  readonly foamStrength?: number;
+  readonly thermalStrength?: number;
+  readonly bloomStrength?: number;
+  readonly heatShimmer?: number;
+  readonly depthDiffusion?: number;
+  readonly renderStyle?: 'enhanced' | 'ultra';
+  readonly opacity: number;
+  readonly time?: number;
+  readonly backgroundDepth?: number;
+}
+
 export interface GpuParticleGridSystem2D {
   readonly capacity: number;
   readonly width: number;
@@ -176,6 +202,7 @@ export interface GpuParticleGridSystem2D {
   uploadSeed(seed: GpuParticleGridSeed2D): void;
   /** Advances particle-grid simulation state entirely on the active GPU backend. */
   step(options: GpuParticleGridParticleUpdateOptions2D): void;
+  renderMetaballs(target: GpuRenderTarget2D, options: GpuParticleGridMetaballOptions2D): void;
   debugReadback(): GpuParticleGridSnapshot2D;
   debugComputeParticleToGrid(options: GpuParticleGridTransferOptions2D): GpuParticleGridTransfer2D;
   debugComputeGridUpdate(options: GpuParticleGridUpdateOptions2D): GpuParticleGridUpdate2D;

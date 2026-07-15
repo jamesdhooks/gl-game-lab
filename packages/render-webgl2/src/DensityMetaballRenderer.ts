@@ -6,6 +6,7 @@ import { createGpuRenderTarget, type GpuRenderTarget } from './GpuRenderTarget.j
 import type { GpuParticleRenderDestination } from './GpuParticleRenderer.js';
 import { createShaderProgram, requireShaderUniform } from './ShaderProgram.js';
 import { PALETTE_GRADIENT_BACKDROP_GLSL } from './PaletteGradientBackdropShader.js';
+import type { GpuParticleGridState } from './GpuParticleGridState.js';
 export interface DensityMetaballBatch {
   readonly count: number;
   readonly positions: Float32Array;
@@ -61,8 +62,10 @@ export function authoredMetaballEdgeSoftness(value: number): number {
 }
 export class DensityMetaballRenderer {
   private readonly splatProgram: WebGLProgram;
+  private readonly gridSplatProgram: WebGLProgram;
   private readonly compositeProgram: WebGLProgram;
   private readonly splatVao: WebGLVertexArrayObject;
+  private readonly gridSplatVao: WebGLVertexArrayObject;
   private readonly screenVao: WebGLVertexArrayObject;
   private readonly positionBuffer: WebGLBuffer;
   private readonly radiusBuffer: WebGLBuffer;
@@ -70,6 +73,13 @@ export class DensityMetaballRenderer {
   private readonly splatWorldSize: WebGLUniformLocation;
   private readonly splatPixelScale: WebGLUniformLocation;
   private readonly splatRadiusScale: WebGLUniformLocation;
+  private readonly gridSplatParticleA: WebGLUniformLocation;
+  private readonly gridSplatParticleB: WebGLUniformLocation;
+  private readonly gridSplatParticleStateSize: WebGLUniformLocation;
+  private readonly gridSplatParticleCount: WebGLUniformLocation;
+  private readonly gridSplatWorldSize: WebGLUniformLocation;
+  private readonly gridSplatPixelScale: WebGLUniformLocation;
+  private readonly gridSplatRadiusScale: WebGLUniformLocation;
   private readonly compositeDensity: WebGLUniformLocation;
   private readonly compositeTexel: WebGLUniformLocation;
   private readonly compositePalette: WebGLUniformLocation;
@@ -100,8 +110,10 @@ export class DensityMetaballRenderer {
   private disposed = false;
   constructor(private readonly gl: WebGL2RenderingContext) {
     this.splatProgram = createShaderProgram(gl, { label: 'density metaball splat', vertexSource: SPLAT_VERTEX, fragmentSource: SPLAT_FRAGMENT });
+    this.gridSplatProgram = createShaderProgram(gl, { label: 'density metaball particle-grid splat', vertexSource: GRID_SPLAT_VERTEX, fragmentSource: SPLAT_FRAGMENT });
     this.compositeProgram = createShaderProgram(gl, { label: 'density metaball composite', vertexSource: SCREEN_VERTEX, fragmentSource: compositeFragmentSource() });
     this.splatVao = req(gl.createVertexArray(), 'Unable to allocate metaball vertex array');
+    this.gridSplatVao = req(gl.createVertexArray(), 'Unable to allocate particle-grid metaball vertex array');
     this.screenVao = req(gl.createVertexArray(), 'Unable to allocate metaball screen array');
     this.positionBuffer = req(gl.createBuffer(), 'Unable to allocate metaball positions');
     this.radiusBuffer = req(gl.createBuffer(), 'Unable to allocate metaball radii');
@@ -109,6 +121,13 @@ export class DensityMetaballRenderer {
     this.splatWorldSize = requireShaderUniform(gl, this.splatProgram, 'uWorldSize', 'density metaball splat');
     this.splatPixelScale = requireShaderUniform(gl, this.splatProgram, 'uPixelScale', 'density metaball splat');
     this.splatRadiusScale = requireShaderUniform(gl, this.splatProgram, 'uRadiusScale', 'density metaball splat');
+    this.gridSplatParticleA = requireShaderUniform(gl, this.gridSplatProgram, 'uParticleA', 'density metaball particle-grid splat');
+    this.gridSplatParticleB = requireShaderUniform(gl, this.gridSplatProgram, 'uParticleB', 'density metaball particle-grid splat');
+    this.gridSplatParticleStateSize = requireShaderUniform(gl, this.gridSplatProgram, 'uParticleStateSize', 'density metaball particle-grid splat');
+    this.gridSplatParticleCount = requireShaderUniform(gl, this.gridSplatProgram, 'uParticleCount', 'density metaball particle-grid splat');
+    this.gridSplatWorldSize = requireShaderUniform(gl, this.gridSplatProgram, 'uWorldSize', 'density metaball particle-grid splat');
+    this.gridSplatPixelScale = requireShaderUniform(gl, this.gridSplatProgram, 'uPixelScale', 'density metaball particle-grid splat');
+    this.gridSplatRadiusScale = requireShaderUniform(gl, this.gridSplatProgram, 'uRadiusScale', 'density metaball particle-grid splat');
     this.compositeDensity = requireShaderUniform(gl, this.compositeProgram, 'uDensity', 'density metaball composite');
     this.compositeTexel = requireShaderUniform(gl, this.compositeProgram, 'uTexel', 'density metaball composite');
     this.compositePalette = requireShaderUniform(gl, this.compositeProgram, 'uPalette[0]', 'density metaball composite');
@@ -208,6 +227,34 @@ export class DensityMetaballRenderer {
     gl.bindVertexArray(null);
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
   }
+  renderParticleGrid(source: GpuParticleGridState, destination: GpuParticleRenderDestination, options: DensityMetaballOptions) {
+    this.assert();
+    this.validateOptions(options);
+    const target = this.prepareDensityTarget(destination, options);
+    if (!target) return;
+    const gl = this.gl;
+    gl.bindFramebuffer(gl.FRAMEBUFFER, target.framebuffer);
+    gl.viewport(0, 0, target.width, target.height);
+    gl.useProgram(this.gridSplatProgram);
+    gl.bindVertexArray(this.gridSplatVao);
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.ONE, gl.ONE);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, source.particleA.read.texture);
+    gl.uniform1i(this.gridSplatParticleA, 0);
+    gl.activeTexture(gl.TEXTURE1);
+    gl.bindTexture(gl.TEXTURE_2D, source.particleB.read.texture);
+    gl.uniform1i(this.gridSplatParticleB, 1);
+    gl.uniform2i(this.gridSplatParticleStateSize, source.width, source.height);
+    gl.uniform1i(this.gridSplatParticleCount, source.count);
+    gl.uniform2f(this.gridSplatWorldSize, options.worldWidth, options.worldHeight);
+    gl.uniform1f(this.gridSplatPixelScale, target.width / options.worldWidth);
+    gl.uniform1f(this.gridSplatRadiusScale, options.particleRadiusScale);
+    gl.drawArrays(gl.POINTS, 0, source.count);
+    gl.bindVertexArray(null);
+    gl.disable(gl.BLEND);
+    this.renderComposite(destination, target, options);
+  }
   dispose() {
     if (this.disposed)
       return;
@@ -217,9 +264,65 @@ export class DensityMetaballRenderer {
     this.gl.deleteBuffer(this.radiusBuffer);
     this.gl.deleteBuffer(this.temperatureBuffer);
     this.gl.deleteVertexArray(this.splatVao);
+    this.gl.deleteVertexArray(this.gridSplatVao);
     this.gl.deleteVertexArray(this.screenVao);
     this.gl.deleteProgram(this.splatProgram);
+    this.gl.deleteProgram(this.gridSplatProgram);
     this.gl.deleteProgram(this.compositeProgram);
+  }
+  private validateOptions(options: DensityMetaballOptions): void {
+    if (options.palette.length < 2 || options.palette.length > 4)
+      throw new Error('Metaball palette must contain between two and four colors');
+  }
+  private prepareDensityTarget(destination: GpuParticleRenderDestination, options: DensityMetaballOptions): GpuRenderTarget | undefined {
+    this.validateOptions(options);
+    const requestedScale = bound(options.fieldScale, 0.2, 1.5);
+    const scale = Math.min(requestedScale, 2048 / Math.max(1, destination.width), 2048 / Math.max(1, destination.height));
+    const width = Math.max(32, Math.round(destination.width * scale)), height = Math.max(32, Math.round(destination.height * scale));
+    this.ensureTarget(width, height);
+    const density = this.density;
+    if (!density) return undefined;
+    density.clear();
+    return density;
+  }
+  private renderComposite(destination: GpuParticleRenderDestination, density: GpuRenderTarget, options: DensityMetaballOptions): void {
+    const gl = this.gl;
+    gl.bindFramebuffer(gl.FRAMEBUFFER, destination.framebuffer ?? null);
+    gl.viewport(0, 0, destination.width, destination.height);
+    gl.useProgram(this.compositeProgram);
+    gl.bindVertexArray(this.screenVao);
+    density.attach(0);
+    gl.uniform1i(this.compositeDensity, 0);
+    gl.uniform2f(this.compositeTexel, 1 / density.width, 1 / density.height);
+    this.paletteData.fill(0);
+    options.palette.forEach((color, index) => this.paletteData.set(color, index * 3));
+    this.backgroundData.set(options.background);
+    gl.uniform3fv(this.compositePalette, this.paletteData);
+    gl.uniform1i(this.compositePaletteCount, options.palette.length);
+    gl.uniform3fv(this.compositeBackground, this.backgroundData);
+    gl.uniform1f(this.compositeThreshold, options.threshold);
+    // The original advanced liquid renderer consumed the authored 0..2 range
+    // directly. Scaling it down made Ultra's quadratic softness term nearly inert.
+    gl.uniform1f(this.compositeSoftness, authoredMetaballEdgeSoftness(options.edgeSoftness));
+    gl.uniform1f(this.compositeThermalContrast, options.thermalContrast);
+    gl.uniform1f(this.compositePaletteMapping, options.paletteMapping === 'gradient' ? 1 : 0);
+    gl.uniform1f(this.compositeRefraction, options.refraction);
+    gl.uniform1f(this.compositeGloss, options.gloss);
+    gl.uniform1f(this.compositeRim, options.rimLighting);
+    gl.uniform1f(this.compositeOpacity, options.opacity);
+    gl.uniform1f(this.compositeTime, options.time ?? 0);
+    gl.uniform1f(this.compositeBackgroundDepth, options.backgroundDepth ?? 0);
+    gl.uniform1f(this.compositeAspect, destination.width / Math.max(1, destination.height));
+    gl.uniform1f(this.compositeTightness, options.edgeTightness ?? 0.72);
+    gl.uniform1f(this.compositeUltra, options.renderStyle === 'ultra' ? 1 : 0);
+    gl.uniform1f(this.compositeFoam, options.foamStrength ?? 0);
+    gl.uniform1f(this.compositeThermalStrength, options.thermalStrength ?? 1);
+    gl.uniform1f(this.compositeBloom, options.bloomStrength ?? 0);
+    gl.uniform1f(this.compositeShimmer, options.heatShimmer ?? 0);
+    gl.uniform1f(this.compositeDepthDiffusion, options.depthDiffusion ?? 0);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+    gl.bindVertexArray(null);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
   }
   private ensureTarget(width: number, height: number) {
     if (this.density?.width === width && this.density.height === height)
@@ -259,6 +362,8 @@ function req<T>(value: T | null, message: string): T {
 }
 const SPLAT_VERTEX = `#version 300 es
 precision highp float;layout(location=0)in vec2 aPosition;layout(location=1)in float aRadius;layout(location=2)in float aTemperature;uniform vec2 uWorldSize;uniform float uPixelScale,uRadiusScale;out float vTemperature;void main(){gl_Position=vec4(aPosition.x/uWorldSize.x*2.0-1.0,1.0-aPosition.y/uWorldSize.y*2.0,0,1);gl_PointSize=max(2.0,aRadius*2.0*uPixelScale*uRadiusScale);vTemperature=aTemperature;}`;
+const GRID_SPLAT_VERTEX = `#version 300 es
+precision highp float;precision highp int;uniform sampler2D uParticleA,uParticleB;uniform ivec2 uParticleStateSize;uniform int uParticleCount;uniform vec2 uWorldSize;uniform float uPixelScale,uRadiusScale;out float vTemperature;ivec2 particleTexel(int index){return ivec2(index%uParticleStateSize.x,index/uParticleStateSize.x);}void main(){int index=gl_VertexID;if(index>=uParticleCount){gl_Position=vec4(2,2,0,1);gl_PointSize=0.0;vTemperature=0.0;return;}ivec2 texel=particleTexel(index);vec4 a=texelFetch(uParticleA,texel,0);vec4 b=texelFetch(uParticleB,texel,0);if(a.w<=0.0){gl_Position=vec4(2,2,0,1);gl_PointSize=0.0;vTemperature=0.0;return;}gl_Position=vec4(a.x/uWorldSize.x*2.0-1.0,1.0-a.y/uWorldSize.y*2.0,0,1);gl_PointSize=max(2.0,b.z*2.0*uPixelScale*uRadiusScale);vTemperature=a.z;}`;
 const SPLAT_FRAGMENT = `#version 300 es
 precision highp float;in float vTemperature;out vec4 outColor;void main(){vec2 p=gl_PointCoord*2.0-1.0;float d=dot(p,p);if(d>1.0)discard;float om=1.0-d;float density=(om*om*(.72+.28*om)*.42+smoothstep(.86,.06,d)*.055);outColor=vec4(density,density*(.72+.22*om),density*clamp(vTemperature,0.0,1.0),density);}`;
 const SCREEN_VERTEX = `#version 300 es
