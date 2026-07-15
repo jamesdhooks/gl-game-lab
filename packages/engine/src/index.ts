@@ -110,6 +110,7 @@ export {
   type GpuFieldSystem2DOptions,
   type GpuFieldMesh2D,
   type GpuParticleGridCapabilities2D,
+  type GpuParticleGridEmit2D,
   type GpuParticleGridMetaballOptions2D,
   type GpuParticleGridSeed2D,
   type GpuParticleGridSnapshot2D,

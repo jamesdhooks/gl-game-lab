@@ -5,6 +5,7 @@ import type {
   GpuFieldMesh2D,
   GpuParticleSeed2D,
   GpuParticleGridSeed2D,
+  GpuParticleGridEmit2D,
   GpuParticleGridSnapshot2D,
   GpuParticleGridParticleUpdateOptions2D,
   GpuParticleGridMetaballOptions2D,
@@ -243,6 +244,14 @@ class WebGLGpuParticleGridSystem implements GpuParticleGridSystem2D {
     this.retainedSeed = cloneParticleGridSeed(seed);
     this.owner.value.state.uploadSeed(this.retainedSeed);
     this.countUpload(particleGridSeedBytes(seed));
+  }
+
+  emit(batch: GpuParticleGridEmit2D): number {
+    const made = this.owner.value.state.emit(batch);
+    if (made === 0) return 0;
+    this.retainedSeed = appendParticleGridSeed(this.retainedSeed, batch, made, this.capacity);
+    this.countUpload(particleGridSeedBytes({ ...batch, count: made }));
+    return made;
   }
 
   step(options: GpuParticleGridParticleUpdateOptions2D): void {
@@ -528,6 +537,37 @@ function cloneParticleGridSeed(seed: GpuParticleGridSeed2D): GpuParticleGridSeed
     foam: seed.foam.slice(),
     affine: seed.affine.slice(),
   });
+}
+
+function appendParticleGridSeed(
+  existing: GpuParticleGridSeed2D | undefined,
+  batch: GpuParticleGridEmit2D,
+  made: number,
+  capacity: number,
+): GpuParticleGridSeed2D {
+  const previousCount = existing?.count ?? 0;
+  const nextCount = Math.min(capacity, previousCount + made);
+  const positions = new Float32Array(nextCount * 2);
+  const velocities = new Float32Array(nextCount * 2);
+  const radii = new Float32Array(nextCount);
+  const colorSeeds = new Float32Array(nextCount);
+  const foam = new Float32Array(nextCount);
+  const affine = new Float32Array(nextCount * 4);
+  if (existing) {
+    positions.set(existing.positions.subarray(0, previousCount * 2));
+    velocities.set(existing.velocities.subarray(0, previousCount * 2));
+    radii.set(existing.radii.subarray(0, previousCount));
+    colorSeeds.set(existing.colorSeeds.subarray(0, previousCount));
+    foam.set(existing.foam.subarray(0, previousCount));
+    affine.set(existing.affine.subarray(0, previousCount * 4));
+  }
+  positions.set(batch.positions.subarray(0, made * 2), previousCount * 2);
+  velocities.set(batch.velocities.subarray(0, made * 2), previousCount * 2);
+  radii.set(batch.radii.subarray(0, made), previousCount);
+  colorSeeds.set(batch.colorSeeds.subarray(0, made), previousCount);
+  foam.set(batch.foam.subarray(0, made), previousCount);
+  affine.set(batch.affine.subarray(0, made * 4), previousCount * 4);
+  return Object.freeze({ count: nextCount, positions, velocities, radii, colorSeeds, foam, affine });
 }
 
 function particleGridSeedBytes(seed: GpuParticleGridSeed2D): number {

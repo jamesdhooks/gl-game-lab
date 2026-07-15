@@ -1,5 +1,6 @@
 import type {
   GpuParticleGridSeed2D,
+  GpuParticleGridEmit2D,
   GpuParticleGridSnapshot2D,
   GpuParticleGridParticleUpdateOptions2D,
   GpuParticleGridSystem2DOptions,
@@ -117,6 +118,29 @@ export class GpuParticleGridState {
     this.upload(this.particleC, packParticleC(seed, this.ensureUploadScratch(length)));
   }
 
+  emit(batch: GpuParticleGridEmit2D): number {
+    this.assertUsable();
+    validateSeed(batch, Math.max(batch.count, 1));
+    const made = Math.max(0, Math.min(batch.count, this.capacity - this.activeCount));
+    if (made === 0) return 0;
+    const texel = new Float32Array(4);
+    for (let index = 0; index < made; index += 1) {
+      const particle = this.activeCount + index;
+      const x = particle % this.width;
+      const y = Math.floor(particle / this.width);
+      const vectorOffset = index * 2;
+      const affineOffset = index * 4;
+      texel.set([batch.positions[vectorOffset] ?? 0, batch.positions[vectorOffset + 1] ?? 0, batch.foam[index] ?? 0, 1]);
+      this.uploadTexel(this.particleA, x, y, texel);
+      texel.set([batch.velocities[vectorOffset] ?? 0, batch.velocities[vectorOffset + 1] ?? 0, batch.radii[index] ?? 0, batch.colorSeeds[index] ?? 0]);
+      this.uploadTexel(this.particleB, x, y, texel);
+      texel.set(batch.affine.subarray(affineOffset, affineOffset + 4));
+      this.uploadTexel(this.particleC, x, y, texel);
+    }
+    this.activeCount += made;
+    return made;
+  }
+
   debugReadback(): GpuParticleGridSnapshot2D {
     this.assertUsable();
     const count = this.activeCount;
@@ -230,6 +254,14 @@ export class GpuParticleGridState {
     this.gl.texSubImage2D(this.gl.TEXTURE_2D, 0, 0, 0, target.width, target.height, this.gl.RGBA, this.gl.FLOAT, data);
     this.gl.bindTexture(this.gl.TEXTURE_2D, target.write.texture);
     this.gl.texSubImage2D(this.gl.TEXTURE_2D, 0, 0, 0, target.width, target.height, this.gl.RGBA, this.gl.FLOAT, data);
+    this.gl.bindTexture(this.gl.TEXTURE_2D, null);
+  }
+
+  private uploadTexel(target: GpuDoubleRenderTarget, x: number, y: number, data: Float32Array): void {
+    this.gl.bindTexture(this.gl.TEXTURE_2D, target.read.texture);
+    this.gl.texSubImage2D(this.gl.TEXTURE_2D, 0, x, y, 1, 1, this.gl.RGBA, this.gl.FLOAT, data);
+    this.gl.bindTexture(this.gl.TEXTURE_2D, target.write.texture);
+    this.gl.texSubImage2D(this.gl.TEXTURE_2D, 0, x, y, 1, 1, this.gl.RGBA, this.gl.FLOAT, data);
     this.gl.bindTexture(this.gl.TEXTURE_2D, null);
   }
 

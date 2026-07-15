@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { Gpu2DService, GpuFieldSystem2DOptions, GpuParticleGridSystem2DOptions, GpuParticleSystem2DOptions } from '@hooksjam/gl-game-lab-engine';
 import { computeSplashPicFlipGridUpdate, computeSplashPicFlipParticleToGrid, computeSplashPicFlipParticleUpdate, createSplashMpmConfig, SPLASH_MPM_DEFAULTS, SPLASH_MPM_SETTINGS, splashMpmDefinition, SPLASH_MPM_STYLE_MANIFEST, SplashMpmModel, validateSplashPicFlipGpuParity } from '../index.js';
-import { resolveSplashPicFlipBackend, splashObstaclesToGpuArrays, splashSnapshotToGpuParticleGridSeed, splashSnapshotToGpuParticleGridStep } from '../splash-mpm/SplashPicFlipBackend.js';
+import { createSplashGpuPourBatch, resolveSplashPicFlipBackend, splashObstaclesToGpuArrays, splashSnapshotToGpuParticleGridSeed, splashSnapshotToGpuParticleGridStep } from '../splash-mpm/SplashPicFlipBackend.js';
 import { resolveSplashSurfaceParameters, selectHeldSplashPointer } from '../splash-mpm/SplashMpmPlugin.js';
 import { compareSplashPicFlipMetrics, type SplashMpmTuning } from '../splash-mpm/SplashMpmModel.js';
 
@@ -142,6 +142,18 @@ describe('Splash MPM', () => {
     });
     expect(options.circleObstacles).toEqual(obstacles.circleObstacles);
     expect(options.segmentObstacles).toEqual(obstacles.segmentObstacles);
+  });
+  it('creates GPU pour batches that match authored CPU pour semantics', () => {
+    const cpu = new SplashMpmModel();
+    cpu.reset(128, 96, BASE_TUNING);
+    cpu.pour(40, 12, 6, 18, 2, 3);
+    const batch = createSplashGpuPourBatch(0, BASE_TUNING.radius, 40, 12, 6, 18, 2, 3);
+    expect(batch.count).toBe(6);
+    expect(batch.positions).toEqual(cpu.snapshot().positions);
+    expect(batch.velocities).toEqual(cpu.snapshot().velocities);
+    expect(batch.radii).toEqual(cpu.snapshot().radii);
+    expect(batch.colorSeeds).toEqual(cpu.snapshot().colorSeeds);
+    expect(batch.foam).toEqual(cpu.snapshot().foam);
   });
   it('computes the reusable CPU particle-to-grid transfer without per-frame allocations', () => {
     const model = new SplashMpmModel();

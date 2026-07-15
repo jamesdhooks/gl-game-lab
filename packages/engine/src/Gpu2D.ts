@@ -112,6 +112,8 @@ export interface GpuParticleGridSeed2D {
   readonly affine: Float32Array;
 }
 
+export type GpuParticleGridEmit2D = GpuParticleGridSeed2D;
+
 export interface GpuParticleGridSnapshot2D {
   readonly count: number;
   readonly positions: Float32Array;
@@ -200,6 +202,7 @@ export interface GpuParticleGridSystem2D {
   readonly generation: number;
   clear(): void;
   uploadSeed(seed: GpuParticleGridSeed2D): void;
+  emit(batch: GpuParticleGridEmit2D): number;
   /** Advances particle-grid simulation state entirely on the active GPU backend. */
   step(options: GpuParticleGridParticleUpdateOptions2D): void;
   renderMetaballs(target: GpuRenderTarget2D, options: GpuParticleGridMetaballOptions2D): void;
