@@ -89,6 +89,46 @@ export interface SplashPicFlipParticleToGridTransfer {
   readonly momentumY: Float32Array;
 }
 
+export interface SplashPicFlipGridUpdateInput {
+  readonly columns: number;
+  readonly rows: number;
+  readonly cell: number;
+  readonly support: number;
+  readonly mass: Float32Array;
+  readonly momentumX: Float32Array;
+  readonly momentumY: Float32Array;
+  readonly dt: number;
+  readonly stiffness: number;
+  readonly restDensity: number;
+  readonly separation: number;
+  readonly viscosity: number;
+  readonly gravity: number;
+  readonly output?: SplashPicFlipGridUpdateOutput;
+}
+
+export interface SplashPicFlipGridUpdateOutput {
+  readonly velocityX: Float32Array;
+  readonly velocityY: Float32Array;
+  readonly previousVelocityX: Float32Array;
+  readonly previousVelocityY: Float32Array;
+  readonly pressure: Float32Array;
+  readonly scratchVelocityX: Float32Array;
+  readonly scratchVelocityY: Float32Array;
+}
+
+export interface SplashPicFlipGridUpdate {
+  readonly columns: number;
+  readonly rows: number;
+  readonly cell: number;
+  readonly restDensity: number;
+  readonly viscosityBlend: number;
+  readonly velocityX: Float32Array;
+  readonly velocityY: Float32Array;
+  readonly previousVelocityX: Float32Array;
+  readonly previousVelocityY: Float32Array;
+  readonly pressure: Float32Array;
+}
+
 export class SplashPicFlipModel {
   readonly world = new DenseCircleParticleWorld2D(SPLASH_PIC_FLIP_CAPACITY, {
     maxParticles: SPLASH_PIC_FLIP_CAPACITY,
@@ -247,41 +287,30 @@ export class SplashPicFlipModel {
       },
     });
     const support = transfer.support;
-    for (let c = 0; c < this.mass.length; c++) {
-      const m = this.mass[c] ?? 0;
-      if (m <= 0) {
-        this.oldVx[c] = 0;
-        this.oldVy[c] = 0;
-        continue;
-      }
-      this.vx[c] = (this.vx[c] ?? 0) / m;
-      this.vy[c] = (this.vy[c] ?? 0) / m;
-      this.oldVx[c] = this.vx[c] ?? 0;
-      this.oldVy[c] = this.vy[c] ?? 0;
-    }
-    const restDensity = t.restDensity * Math.max(0.62, Math.min(1.05, 1.08 - support * 0.035));
-    for (let c = 0; c < this.mass.length; c++) {
-      const ratio = (this.mass[c] ?? 0) / Math.max(0.001, restDensity);
-      this.pressure[c] = Math.max(0, ratio - 1) * t.stiffness + Math.max(0, ratio - 0.28) * t.stiffness * t.separation * 0.34;
-    }
-    for (let y = 0; y < this.rows; y++) for (let x = 0; x < this.columns; x++) {
-      const c = y * this.columns + x;
-      if ((this.mass[c] ?? 0) <= 0.000001) continue;
-      const gradX = ((this.pressure[this.gridIndex(x + 1, y)] ?? 0) - (this.pressure[this.gridIndex(x - 1, y)] ?? 0)) / Math.max(1, this.cell * 2);
-      const gradY = ((this.pressure[this.gridIndex(x, y + 1)] ?? 0) - (this.pressure[this.gridIndex(x, y - 1)] ?? 0)) / Math.max(1, this.cell * 2);
-      this.vx[c] = (this.vx[c] ?? 0) - gradX * dt * this.cell * 18;
-      this.vy[c] = (this.vy[c] ?? 0) + t.gravity * dt - gradY * dt * this.cell * 18;
-    }
-    const viscosityBlend = Math.max(0, Math.min(0.85, t.viscosity * dt * 14));
-    for (let y = 0; y < this.rows; y++) for (let x = 0; x < this.columns; x++) {
-      const c = y * this.columns + x;
-      const avgX = ((this.vx[this.gridIndex(x - 1, y)] ?? 0) + (this.vx[this.gridIndex(x + 1, y)] ?? 0) + (this.vx[this.gridIndex(x, y - 1)] ?? 0) + (this.vx[this.gridIndex(x, y + 1)] ?? 0)) * 0.25;
-      const avgY = ((this.vy[this.gridIndex(x - 1, y)] ?? 0) + (this.vy[this.gridIndex(x + 1, y)] ?? 0) + (this.vy[this.gridIndex(x, y - 1)] ?? 0) + (this.vy[this.gridIndex(x, y + 1)] ?? 0)) * 0.25;
-      this.nextVx[c] = (this.vx[c] ?? 0) + (avgX - (this.vx[c] ?? 0)) * viscosityBlend;
-      this.nextVy[c] = (this.vy[c] ?? 0) + (avgY - (this.vy[c] ?? 0)) * viscosityBlend;
-    }
-    [this.vx, this.nextVx] = [this.nextVx, this.vx];
-    [this.vy, this.nextVy] = [this.nextVy, this.vy];
+    computeSplashPicFlipGridUpdate({
+      columns: this.columns,
+      rows: this.rows,
+      cell: this.cell,
+      support,
+      mass: this.mass,
+      momentumX: this.vx,
+      momentumY: this.vy,
+      dt,
+      stiffness: t.stiffness,
+      restDensity: t.restDensity,
+      separation: t.separation,
+      viscosity: t.viscosity,
+      gravity: t.gravity,
+      output: {
+        velocityX: this.vx,
+        velocityY: this.vy,
+        previousVelocityX: this.oldVx,
+        previousVelocityY: this.oldVy,
+        pressure: this.pressure,
+        scratchVelocityX: this.nextVx,
+        scratchVelocityY: this.nextVy,
+      },
+    });
     const flip = Math.max(0, Math.min(1, t.flipness));
     const foamParity = this.foamFrame & 1;
     for (let i = 0; i < this.count; i++) {
@@ -601,6 +630,91 @@ export function computeSplashPicFlipParticleToGrid(input: SplashPicFlipParticleT
     mass,
     momentumX,
     momentumY,
+  });
+}
+
+export function computeSplashPicFlipGridUpdate(input: SplashPicFlipGridUpdateInput): SplashPicFlipGridUpdate {
+  if (!Number.isSafeInteger(input.columns) || input.columns < 1) throw new Error('Splash PIC/FLIP grid update columns must be positive');
+  if (!Number.isSafeInteger(input.rows) || input.rows < 1) throw new Error('Splash PIC/FLIP grid update rows must be positive');
+  if (!Number.isFinite(input.cell) || input.cell <= 0) throw new Error('Splash PIC/FLIP grid update cell must be positive');
+  if (!Number.isFinite(input.support) || input.support <= 0) throw new Error('Splash PIC/FLIP grid update support must be positive');
+  if (!Number.isFinite(input.dt) || input.dt < 0) throw new Error('Splash PIC/FLIP grid update dt must be non-negative');
+  const cellCount = input.columns * input.rows;
+  if (input.mass.length < cellCount || input.momentumX.length < cellCount || input.momentumY.length < cellCount) {
+    throw new Error('Splash PIC/FLIP grid update input arrays are too short');
+  }
+  const velocityX = input.output?.velocityX ?? new Float32Array(cellCount);
+  const velocityY = input.output?.velocityY ?? new Float32Array(cellCount);
+  const previousVelocityX = input.output?.previousVelocityX ?? new Float32Array(cellCount);
+  const previousVelocityY = input.output?.previousVelocityY ?? new Float32Array(cellCount);
+  const pressure = input.output?.pressure ?? new Float32Array(cellCount);
+  const scratchVelocityX = input.output?.scratchVelocityX ?? new Float32Array(cellCount);
+  const scratchVelocityY = input.output?.scratchVelocityY ?? new Float32Array(cellCount);
+  if (velocityX.length < cellCount || velocityY.length < cellCount || previousVelocityX.length < cellCount
+    || previousVelocityY.length < cellCount || pressure.length < cellCount
+    || scratchVelocityX.length < cellCount || scratchVelocityY.length < cellCount) {
+    throw new Error('Splash PIC/FLIP grid update output arrays are too short');
+  }
+  for (let cell = 0; cell < cellCount; cell += 1) {
+    const mass = input.mass[cell] ?? 0;
+    if (mass <= 0) {
+      velocityX[cell] = 0;
+      velocityY[cell] = 0;
+      previousVelocityX[cell] = 0;
+      previousVelocityY[cell] = 0;
+      continue;
+    }
+    velocityX[cell] = (input.momentumX[cell] ?? 0) / mass;
+    velocityY[cell] = (input.momentumY[cell] ?? 0) / mass;
+    previousVelocityX[cell] = velocityX[cell] ?? 0;
+    previousVelocityY[cell] = velocityY[cell] ?? 0;
+  }
+  const restDensity = input.restDensity * Math.max(0.62, Math.min(1.05, 1.08 - input.support * 0.035));
+  for (let cell = 0; cell < cellCount; cell += 1) {
+    const ratio = (input.mass[cell] ?? 0) / Math.max(0.001, restDensity);
+    pressure[cell] = Math.max(0, ratio - 1) * input.stiffness + Math.max(0, ratio - 0.28) * input.stiffness * input.separation * 0.34;
+  }
+  for (let y = 0; y < input.rows; y += 1) {
+    for (let x = 0; x < input.columns; x += 1) {
+      const cell = y * input.columns + x;
+      if ((input.mass[cell] ?? 0) <= 0.000001) continue;
+      const gradX = ((pressure[splashPicFlipGridIndex(x + 1, y, input.columns, input.rows)] ?? 0)
+        - (pressure[splashPicFlipGridIndex(x - 1, y, input.columns, input.rows)] ?? 0)) / Math.max(1, input.cell * 2);
+      const gradY = ((pressure[splashPicFlipGridIndex(x, y + 1, input.columns, input.rows)] ?? 0)
+        - (pressure[splashPicFlipGridIndex(x, y - 1, input.columns, input.rows)] ?? 0)) / Math.max(1, input.cell * 2);
+      velocityX[cell] = (velocityX[cell] ?? 0) - gradX * input.dt * input.cell * 18;
+      velocityY[cell] = (velocityY[cell] ?? 0) + input.gravity * input.dt - gradY * input.dt * input.cell * 18;
+    }
+  }
+  const viscosityBlend = Math.max(0, Math.min(0.85, input.viscosity * input.dt * 14));
+  for (let y = 0; y < input.rows; y += 1) {
+    for (let x = 0; x < input.columns; x += 1) {
+      const cell = y * input.columns + x;
+      const avgX = ((velocityX[splashPicFlipGridIndex(x - 1, y, input.columns, input.rows)] ?? 0)
+        + (velocityX[splashPicFlipGridIndex(x + 1, y, input.columns, input.rows)] ?? 0)
+        + (velocityX[splashPicFlipGridIndex(x, y - 1, input.columns, input.rows)] ?? 0)
+        + (velocityX[splashPicFlipGridIndex(x, y + 1, input.columns, input.rows)] ?? 0)) * 0.25;
+      const avgY = ((velocityY[splashPicFlipGridIndex(x - 1, y, input.columns, input.rows)] ?? 0)
+        + (velocityY[splashPicFlipGridIndex(x + 1, y, input.columns, input.rows)] ?? 0)
+        + (velocityY[splashPicFlipGridIndex(x, y - 1, input.columns, input.rows)] ?? 0)
+        + (velocityY[splashPicFlipGridIndex(x, y + 1, input.columns, input.rows)] ?? 0)) * 0.25;
+      scratchVelocityX[cell] = (velocityX[cell] ?? 0) + (avgX - (velocityX[cell] ?? 0)) * viscosityBlend;
+      scratchVelocityY[cell] = (velocityY[cell] ?? 0) + (avgY - (velocityY[cell] ?? 0)) * viscosityBlend;
+    }
+  }
+  velocityX.set(scratchVelocityX.subarray(0, cellCount), 0);
+  velocityY.set(scratchVelocityY.subarray(0, cellCount), 0);
+  return Object.freeze({
+    columns: input.columns,
+    rows: input.rows,
+    cell: input.cell,
+    restDensity,
+    viscosityBlend,
+    velocityX,
+    velocityY,
+    previousVelocityX,
+    previousVelocityY,
+    pressure,
   });
 }
 

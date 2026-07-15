@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { computeSplashPicFlipParticleToGrid, createSplashMpmConfig, SPLASH_MPM_DEFAULTS, SPLASH_MPM_SETTINGS, splashMpmDefinition, SPLASH_MPM_STYLE_MANIFEST, SplashMpmModel } from '../index.js';
+import { computeSplashPicFlipGridUpdate, computeSplashPicFlipParticleToGrid, createSplashMpmConfig, SPLASH_MPM_DEFAULTS, SPLASH_MPM_SETTINGS, splashMpmDefinition, SPLASH_MPM_STYLE_MANIFEST, SplashMpmModel } from '../index.js';
 import { resolveSplashPicFlipBackend, splashSnapshotToGpuParticleGridSeed } from '../splash-mpm/SplashPicFlipBackend.js';
 import { resolveSplashSurfaceParameters, selectHeldSplashPointer } from '../splash-mpm/SplashMpmPlugin.js';
 import { compareSplashPicFlipMetrics, type SplashMpmTuning } from '../splash-mpm/SplashMpmModel.js';
@@ -35,6 +35,13 @@ function sumAbs(values: Float32Array): number {
   let total = 0;
   for (const value of values) total += Math.abs(value);
   return total;
+}
+
+function maxDiff(a: Float32Array, b: Float32Array): number {
+  expect(a.length).toBe(b.length);
+  let maximum = 0;
+  for (let index = 0; index < a.length; index += 1) maximum = Math.max(maximum, Math.abs((a[index] ?? 0) - (b[index] ?? 0)));
+  return maximum;
 }
 
 describe('Splash MPM', () => {
@@ -132,6 +139,74 @@ describe('Splash MPM', () => {
     expect(sum(transfer.mass)).toBeGreaterThan(snapshot.count);
     expect(sumAbs(transfer.momentumX)).toBeGreaterThan(0);
     expect(sumAbs(transfer.momentumY)).toBeGreaterThan(0);
+  });
+  it('computes the reusable CPU grid update as the model grid reference', () => {
+    const model = new SplashMpmModel();
+    model.reset(320, 240, BASE_TUNING);
+    model.seed(320, 240, BASE_TUNING);
+    const before = model.snapshot();
+    const cell = 320 / Math.max(24, Math.floor(BASE_TUNING.resolution));
+    const columns = Math.max(8, Math.ceil(320 / cell));
+    const rows = Math.max(8, Math.ceil(240 / cell));
+    const cellCount = columns * rows;
+    const mass = new Float32Array(cellCount);
+    const momentumX = new Float32Array(cellCount);
+    const momentumY = new Float32Array(cellCount);
+    const transfer = computeSplashPicFlipParticleToGrid({
+      count: before.count,
+      positions: before.positions,
+      velocities: before.velocities,
+      affine: before.affine,
+      columns,
+      rows,
+      cell,
+      radius: BASE_TUNING.radius,
+      output: { mass, momentumX, momentumY },
+    });
+    const velocityX = new Float32Array(cellCount);
+    const velocityY = new Float32Array(cellCount);
+    const previousVelocityX = new Float32Array(cellCount);
+    const previousVelocityY = new Float32Array(cellCount);
+    const pressure = new Float32Array(cellCount);
+    const scratchVelocityX = new Float32Array(cellCount);
+    const scratchVelocityY = new Float32Array(cellCount);
+    const grid = computeSplashPicFlipGridUpdate({
+      columns,
+      rows,
+      cell,
+      support: transfer.support,
+      mass,
+      momentumX,
+      momentumY,
+      dt: 1 / 60,
+      stiffness: BASE_TUNING.stiffness,
+      restDensity: BASE_TUNING.restDensity,
+      separation: BASE_TUNING.separation,
+      viscosity: BASE_TUNING.viscosity,
+      gravity: BASE_TUNING.gravity,
+      output: {
+        velocityX,
+        velocityY,
+        previousVelocityX,
+        previousVelocityY,
+        pressure,
+        scratchVelocityX,
+        scratchVelocityY,
+      },
+    });
+    expect(grid.velocityX).toBe(velocityX);
+    expect(grid.velocityY).toBe(velocityY);
+    expect(grid.previousVelocityX).toBe(previousVelocityX);
+    expect(grid.previousVelocityY).toBe(previousVelocityY);
+    expect(grid.pressure).toBe(pressure);
+    model.step(1 / 60, 320, 240, BASE_TUNING);
+    const after = model.snapshot();
+    expect(maxDiff(after.grid.mass, mass)).toBeLessThan(0.0001);
+    expect(maxDiff(after.grid.velocityX, velocityX)).toBeLessThan(0.0001);
+    expect(maxDiff(after.grid.velocityY, velocityY)).toBeLessThan(0.0001);
+    expect(maxDiff(after.grid.previousVelocityX, previousVelocityX)).toBeLessThan(0.0001);
+    expect(maxDiff(after.grid.previousVelocityY, previousVelocityY)).toBeLessThan(0.0001);
+    expect(maxDiff(after.grid.pressure, pressure)).toBeLessThan(0.0001);
   });
   it('reports divergent trajectories through parity metrics', () => {
     const reference = new SplashMpmModel();
