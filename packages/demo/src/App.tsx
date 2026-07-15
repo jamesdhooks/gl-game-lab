@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Activity, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Image as ImageIcon, MonitorPlay, PanelBottom, PanelLeft, PanelRight, Pin, PinOff, Play, RefreshCw, Settings as SettingsIcon } from 'lucide-react';
 import { ExperienceRuntime, GameCanvas, PreviewTile as EnginePreviewTile, useViewport, type CanvasFrameCapture } from '@hooksjam/gl-game-lab-react';
-import { createDefaultPreviewProfile, type ExperienceDefinition, type ExperiencePreviewProfile, type ExperienceSettingValue, type GameEngine } from '@hooksjam/gl-game-lab-engine';
+import { createDefaultPreviewProfile, type ExperienceDefinition, type ExperiencePreviewProfile, type ExperienceSettingValue, type GameEngine, type GpuParticleGridValidation2D } from '@hooksjam/gl-game-lab-engine';
 import { WebGL2RendererService, type ContextCycleDiagnostics } from '@hooksjam/gl-game-lab-render-webgl2';
 import bundledSceneDefaults from 'virtual:gl-game-lab-scene-defaults';
 import bundledPreviewProfiles from 'virtual:gl-game-lab-preview-profiles';
@@ -126,6 +126,7 @@ export function App(): JSX.Element {
   const diagnosticHost = capture.enabled
     || query.get('diagnostics') === '1'
     || query.get('contextTest') === '1'
+    || query.get('gpuProbe') === '1'
     || query.get('lifecycleTest') === '1'
     || query.get('inputTest') === '1';
   return diagnosticHost ? <DiagnosticExperienceHost /> : <DemoGallery />;
@@ -812,6 +813,7 @@ function DiagnosticExperienceHost(): JSX.Element {
   const [runtimeError, setRuntimeError] = useState<string>();
   const [diagnosticStatus, setDiagnosticStatus] = useState('idle');
   const [contextResult, setContextResult] = useState<ContextCycleDiagnostics>();
+  const [gpuGridValidation, setGpuGridValidation] = useState<GpuParticleGridValidation2D>();
   const [lifecycleAlternate, setLifecycleAlternate] = useState(false);
   const [selectedExperience, setSelectedExperience] = useState<ExperienceDefinition>();
   const [alternateExperience, setAlternateExperience] = useState<ExperienceDefinition>();
@@ -827,6 +829,7 @@ function DiagnosticExperienceHost(): JSX.Element {
   const experienceId = query.get('experience');
   const showDiagnostics = query.get('diagnostics') === '1';
   const contextTest = query.get('contextTest') === '1';
+  const gpuProbe = query.get('gpuProbe') === '1';
   const contextStrategy = query.get('contextStrategy') === 'registry' ? 'registry' : 'driver';
   const lifecycleTest = query.get('lifecycleTest') === '1';
   const inputTest = query.get('inputTest') === '1';
@@ -860,13 +863,23 @@ function DiagnosticExperienceHost(): JSX.Element {
         },
       });
     }
+    if (gpuProbe) {
+      try {
+        const gpu2D = engine.kernel.get(WebGL2RendererService).gpu2D;
+        setGpuGridValidation(gpu2D.validateParticleGridSupport());
+        setDiagnosticStatus('gpu-probed');
+      } catch (error) {
+        setGpuGridValidation({ supported: false, reason: error instanceof Error ? error.message : String(error) });
+        setDiagnosticStatus('gpu-probe-error');
+      }
+    }
     if (readyCountRef.current > 1) {
       window.setTimeout(() => {
         const previous = previousEngineRef.current;
         setDiagnosticStatus(previous?.state === 'destroyed' ? 'lifecycle-passed' : `lifecycle-failed:${previous?.state ?? 'missing'}`);
       }, 100);
     }
-  }, [inputTest]);
+  }, [gpuProbe, inputTest]);
   const cycleContext = async (): Promise<void> => {
     const engine = engineRef.current;
     if (!engine) return;
@@ -933,7 +946,7 @@ function DiagnosticExperienceHost(): JSX.Element {
         className="h-full w-full"
         canvasClassName="game-canvas h-full w-full touch-none"
       />
-      {(contextTest || lifecycleTest || inputTest) && (
+      {(contextTest || gpuProbe || lifecycleTest || inputTest) && (
         <aside
           className="fixed left-3 top-3 z-[100] flex items-center gap-2 rounded-xl bg-zinc-950/95 p-2 text-xs text-white shadow-2xl ring-1 ring-white/15"
           aria-label="Engine diagnostic controls"
@@ -947,6 +960,8 @@ function DiagnosticExperienceHost(): JSX.Element {
           data-context-resources-after={contextResult?.resourcesAfter}
           data-context-bytes-before={contextResult?.bytesBefore}
           data-context-bytes-after={contextResult?.bytesAfter}
+          data-gpu-particle-grid-supported={gpuGridValidation?.supported}
+          data-gpu-particle-grid-reason={gpuGridValidation?.reason}
           data-input-pointers={inputPointers}
           data-input-pointer-events={inputPointers}
           data-input-gamepads={inputGamepads}
