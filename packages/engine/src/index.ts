@@ -112,6 +112,7 @@ export {
   type GpuParticleGridCapabilities2D,
   type GpuParticleGridSeed2D,
   type GpuParticleGridSnapshot2D,
+  type GpuParticleGridParticleUpdateOptions2D,
   type GpuParticleGridSystem2D,
   type GpuParticleGridSystem2DOptions,
   type GpuParticleGridTransfer2D,

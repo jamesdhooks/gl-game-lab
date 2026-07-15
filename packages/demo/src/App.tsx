@@ -4,7 +4,7 @@ import { Activity, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Image as I
 import { ExperienceRuntime, GameCanvas, PreviewTile as EnginePreviewTile, useViewport, type CanvasFrameCapture } from '@hooksjam/gl-game-lab-react';
 import { createDefaultPreviewProfile, type ExperienceDefinition, type ExperiencePreviewProfile, type ExperienceSettingValue, type GameEngine, type GpuParticleGridValidation2D } from '@hooksjam/gl-game-lab-engine';
 import { WebGL2RendererService, type ContextCycleDiagnostics } from '@hooksjam/gl-game-lab-render-webgl2';
-import { computeSplashPicFlipGridUpdate, computeSplashPicFlipParticleToGrid } from '@hooksjam/gl-game-lab-simulations';
+import { computeSplashPicFlipGridUpdate, computeSplashPicFlipParticleToGrid, computeSplashPicFlipParticleUpdate } from '@hooksjam/gl-game-lab-simulations';
 import bundledSceneDefaults from 'virtual:gl-game-lab-scene-defaults';
 import bundledPreviewProfiles from 'virtual:gl-game-lab-preview-profiles';
 import './index.css';
@@ -833,6 +833,8 @@ function DiagnosticExperienceHost(): JSX.Element {
   const [gpuGridP2GMaxError, setGpuGridP2GMaxError] = useState<number>();
   const [gpuGridUpdateParity, setGpuGridUpdateParity] = useState<boolean>();
   const [gpuGridUpdateMaxError, setGpuGridUpdateMaxError] = useState<number>();
+  const [gpuGridParticleParity, setGpuGridParticleParity] = useState<boolean>();
+  const [gpuGridParticleMaxError, setGpuGridParticleMaxError] = useState<number>();
   const [lifecycleAlternate, setLifecycleAlternate] = useState(false);
   const [selectedExperience, setSelectedExperience] = useState<ExperienceDefinition>();
   const [alternateExperience, setAlternateExperience] = useState<ExperienceDefinition>();
@@ -973,6 +975,47 @@ function DiagnosticExperienceHost(): JSX.Element {
             );
             setGpuGridUpdateMaxError(updateMaxError);
             setGpuGridUpdateParity(Number.isFinite(updateMaxError) && updateMaxError <= 0.004);
+            const cpuPositions = seed.positions.slice();
+            const cpuVelocities = seed.velocities.slice();
+            const cpuFoam = seed.foam.slice();
+            const cpuAffine = seed.affine.slice();
+            const cpuParticle = computeSplashPicFlipParticleUpdate({
+              count: seed.count,
+              positions: cpuPositions,
+              velocities: cpuVelocities,
+              radii: seed.radii,
+              foam: cpuFoam,
+              affine: cpuAffine,
+              obstacles: [],
+              columns: particleGrid.gridWidth,
+              rows: particleGrid.gridHeight,
+              cell,
+              mass: cpuTransfer.mass,
+              velocityX: cpuUpdate.velocityX,
+              velocityY: cpuUpdate.velocityY,
+              previousVelocityX: cpuUpdate.previousVelocityX,
+              previousVelocityY: cpuUpdate.previousVelocityY,
+              dt: updateOptions.dt,
+              width: 64,
+              height: 64,
+              flipness: 0.88,
+              foamFrame: 0,
+            });
+            const gpuParticle = particleGrid.debugComputeParticleUpdate({
+              ...updateOptions,
+              width: 64,
+              height: 64,
+              flipness: 0.88,
+              foamFrame: 0,
+            });
+            const particleMaxError = Math.max(
+              maxAbsDifference(gpuParticle.positions, cpuParticle.positions),
+              maxAbsDifference(gpuParticle.velocities, cpuParticle.velocities),
+              maxAbsDifference(gpuParticle.foam, cpuParticle.foam),
+              maxAbsDifference(gpuParticle.affine, cpuParticle.affine),
+            );
+            setGpuGridParticleMaxError(particleMaxError);
+            setGpuGridParticleParity(Number.isFinite(particleMaxError) && particleMaxError <= 0.006);
           } finally {
             particleGrid.dispose();
           }
@@ -982,6 +1025,8 @@ function DiagnosticExperienceHost(): JSX.Element {
           setGpuGridP2GMaxError(undefined);
           setGpuGridUpdateParity(false);
           setGpuGridUpdateMaxError(undefined);
+          setGpuGridParticleParity(false);
+          setGpuGridParticleMaxError(undefined);
         }
         setDiagnosticStatus('gpu-probed');
       } catch (error) {
@@ -991,6 +1036,8 @@ function DiagnosticExperienceHost(): JSX.Element {
         setGpuGridP2GMaxError(undefined);
         setGpuGridUpdateParity(false);
         setGpuGridUpdateMaxError(undefined);
+        setGpuGridParticleParity(false);
+        setGpuGridParticleMaxError(undefined);
         setDiagnosticStatus('gpu-probe-error');
       }
     }
@@ -1088,6 +1135,8 @@ function DiagnosticExperienceHost(): JSX.Element {
           data-gpu-particle-grid-p2g-max-error={gpuGridP2GMaxError}
           data-gpu-particle-grid-update-parity={gpuGridUpdateParity}
           data-gpu-particle-grid-update-max-error={gpuGridUpdateMaxError}
+          data-gpu-particle-grid-particle-parity={gpuGridParticleParity}
+          data-gpu-particle-grid-particle-max-error={gpuGridParticleMaxError}
           data-input-pointers={inputPointers}
           data-input-pointer-events={inputPointers}
           data-input-gamepads={inputGamepads}

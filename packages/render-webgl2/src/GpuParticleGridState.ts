@@ -1,6 +1,7 @@
 import type {
   GpuParticleGridSeed2D,
   GpuParticleGridSnapshot2D,
+  GpuParticleGridParticleUpdateOptions2D,
   GpuParticleGridSystem2DOptions,
   GpuParticleGridTransfer2D,
   GpuParticleGridTransferOptions2D,
@@ -48,6 +49,7 @@ export class GpuParticleGridState {
   private debugNormalizePressureProgram: WebGLProgram | undefined;
   private debugForceProgram: WebGLProgram | undefined;
   private debugViscosityProgram: WebGLProgram | undefined;
+  private debugParticleUpdateProgram: WebGLProgram | undefined;
   private debugP2GVao: WebGLVertexArrayObject | undefined;
   private readonly uniforms = new Map<WebGLProgram, Map<string, WebGLUniformLocation | null>>();
   private activeCount = 0;
@@ -218,6 +220,20 @@ export class GpuParticleGridState {
     return Object.freeze({ columns: this.gridWidth, rows: this.gridHeight, velocityX, velocityY, previousVelocityX, previousVelocityY, pressure });
   }
 
+  debugComputeParticleUpdate(options: GpuParticleGridParticleUpdateOptions2D): GpuParticleGridSnapshot2D {
+    this.assertUsable();
+    if (!Number.isFinite(options.width) || options.width <= 0 || !Number.isFinite(options.height) || options.height <= 0) {
+      throw new Error('GPU particle-grid debug particle update bounds must be positive');
+    }
+    if ((options.obstacleCount ?? 0) !== 0) throw new Error('GPU particle-grid debug particle update does not yet support obstacles');
+    this.debugComputeGridUpdate(options);
+    this.runParticleUpdatePass(options);
+    this.particleA.swap();
+    this.particleB.swap();
+    this.particleC.swap();
+    return this.debugReadback();
+  }
+
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
@@ -232,6 +248,7 @@ export class GpuParticleGridState {
     if (this.debugNormalizePressureProgram) this.gl.deleteProgram(this.debugNormalizePressureProgram);
     if (this.debugForceProgram) this.gl.deleteProgram(this.debugForceProgram);
     if (this.debugViscosityProgram) this.gl.deleteProgram(this.debugViscosityProgram);
+    if (this.debugParticleUpdateProgram) this.gl.deleteProgram(this.debugParticleUpdateProgram);
     if (this.debugP2GVao) this.gl.deleteVertexArray(this.debugP2GVao);
     this.uniforms.clear();
   }
@@ -310,6 +327,17 @@ export class GpuParticleGridState {
       });
     }
     return this.debugViscosityProgram;
+  }
+
+  private ensureDebugParticleUpdateProgram(): WebGLProgram {
+    if (!this.debugParticleUpdateProgram) {
+      this.debugParticleUpdateProgram = createShaderProgram(this.gl, {
+        label: 'GPU particle-grid debug particle update',
+        vertexSource: FULLSCREEN_VERTEX_SHADER,
+        fragmentSource: DEBUG_PARTICLE_UPDATE_FRAGMENT_SHADER,
+      });
+    }
+    return this.debugParticleUpdateProgram;
   }
 
   private ensureDebugP2GVao(): WebGLVertexArrayObject {
@@ -393,6 +421,50 @@ export class GpuParticleGridState {
     gl.bindVertexArray(null);
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     this.scratch.swap();
+  }
+
+  private runParticleUpdatePass(options: GpuParticleGridParticleUpdateOptions2D): void {
+    const gl = this.gl;
+    const program = this.ensureDebugParticleUpdateProgram();
+    const vao = this.ensureDebugP2GVao();
+    gl.bindFramebuffer(gl.FRAMEBUFFER, this.particleA.write.framebuffer);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT1, gl.TEXTURE_2D, this.particleB.write.texture, 0);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT2, gl.TEXTURE_2D, this.particleC.write.texture, 0);
+    gl.drawBuffers([gl.COLOR_ATTACHMENT0, gl.COLOR_ATTACHMENT1, gl.COLOR_ATTACHMENT2]);
+    gl.viewport(0, 0, this.width, this.height);
+    gl.disable(gl.BLEND);
+    gl.useProgram(program);
+    gl.bindVertexArray(vao);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, this.particleA.read.texture);
+    gl.uniform1i(this.uniform(program, 'uParticleA'), 0);
+    gl.activeTexture(gl.TEXTURE1);
+    gl.bindTexture(gl.TEXTURE_2D, this.particleB.read.texture);
+    gl.uniform1i(this.uniform(program, 'uParticleB'), 1);
+    gl.activeTexture(gl.TEXTURE2);
+    gl.bindTexture(gl.TEXTURE_2D, this.particleC.read.texture);
+    gl.uniform1i(this.uniform(program, 'uParticleC'), 2);
+    gl.activeTexture(gl.TEXTURE3);
+    gl.bindTexture(gl.TEXTURE_2D, this.scratch.read.texture);
+    gl.uniform1i(this.uniform(program, 'uVelocityGrid'), 3);
+    gl.activeTexture(gl.TEXTURE4);
+    gl.bindTexture(gl.TEXTURE_2D, this.accumulation.read.texture);
+    gl.uniform1i(this.uniform(program, 'uMassGrid'), 4);
+    gl.uniform1i(this.uniform(program, 'uParticleCount'), this.activeCount);
+    gl.uniform2i(this.uniform(program, 'uParticleStateSize'), this.width, this.height);
+    gl.uniform2i(this.uniform(program, 'uGridSize'), this.gridWidth, this.gridHeight);
+    gl.uniform1f(this.uniform(program, 'uCell'), options.cell);
+    gl.uniform1f(this.uniform(program, 'uDt'), options.dt);
+    gl.uniform1f(this.uniform(program, 'uWidth'), options.width);
+    gl.uniform1f(this.uniform(program, 'uHeight'), options.height);
+    gl.uniform1f(this.uniform(program, 'uFlipness'), Math.max(0, Math.min(1, options.flipness)));
+    gl.uniform1i(this.uniform(program, 'uFoamParity'), options.foamFrame & 1);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+    gl.bindVertexArray(null);
+    gl.drawBuffers([gl.COLOR_ATTACHMENT0]);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT1, gl.TEXTURE_2D, null, 0);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT2, gl.TEXTURE_2D, null, 0);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
   }
 }
 
@@ -608,4 +680,124 @@ void main() {
   float velocityX = center.x + (avgX - center.x) * uViscosityBlend;
   float velocityY = center.y + (avgY - center.y) * uViscosityBlend;
   outGrid = vec4(velocityX, velocityY, center.z, center.w);
+}`;
+
+const DEBUG_PARTICLE_UPDATE_FRAGMENT_SHADER = `#version 300 es
+precision highp float;
+precision highp int;
+uniform sampler2D uParticleA;
+uniform sampler2D uParticleB;
+uniform sampler2D uParticleC;
+uniform sampler2D uVelocityGrid;
+uniform sampler2D uMassGrid;
+uniform int uParticleCount;
+uniform ivec2 uParticleStateSize;
+uniform ivec2 uGridSize;
+uniform float uCell;
+uniform float uDt;
+uniform float uWidth;
+uniform float uHeight;
+uniform float uFlipness;
+uniform int uFoamParity;
+layout(location = 0) out vec4 outParticleA;
+layout(location = 1) out vec4 outParticleB;
+layout(location = 2) out vec4 outParticleC;
+
+int particleIndex(ivec2 texel) {
+  return texel.y * uParticleStateSize.x + texel.x;
+}
+
+ivec2 clampGridCell(ivec2 cell) {
+  return ivec2(clamp(cell.x, 0, uGridSize.x - 1), clamp(cell.y, 0, uGridSize.y - 1));
+}
+
+float smoothstepCompat(float edge0, float edge1, float value) {
+  if (edge0 == edge1) return value < edge0 ? 0.0 : 1.0;
+  float t = clamp((value - edge0) / (edge1 - edge0), 0.0, 1.0);
+  return t * t * (3.0 - 2.0 * t);
+}
+
+vec3 sampleWeights(float t) {
+  return vec3(
+    0.5 * (1.5 - t) * (1.5 - t),
+    0.75 - (t - 1.0) * (t - 1.0),
+    0.5 * (t - 0.5) * (t - 0.5)
+  );
+}
+
+vec4 sampleGrid(sampler2D source, vec2 position) {
+  vec2 gridPosition = position / max(1.0, uCell);
+  ivec2 base = ivec2(floor(gridPosition - vec2(0.5)));
+  vec2 fraction = gridPosition - vec2(base);
+  vec3 wx = sampleWeights(fraction.x);
+  vec3 wy = sampleWeights(fraction.y);
+  vec4 total = vec4(0.0);
+  for (int offsetY = 0; offsetY < 3; offsetY += 1) {
+    float weightY = offsetY == 0 ? wy.x : offsetY == 1 ? wy.y : wy.z;
+    for (int offsetX = 0; offsetX < 3; offsetX += 1) {
+      float weightX = offsetX == 0 ? wx.x : offsetX == 1 ? wx.y : wx.z;
+      total += texelFetch(source, clampGridCell(base + ivec2(offsetX, offsetY)), 0) * weightX * weightY;
+    }
+  }
+  return total;
+}
+
+void main() {
+  ivec2 texel = ivec2(gl_FragCoord.xy);
+  int index = particleIndex(texel);
+  vec4 a = texelFetch(uParticleA, texel, 0);
+  vec4 b = texelFetch(uParticleB, texel, 0);
+  vec4 c = texelFetch(uParticleC, texel, 0);
+  if (index >= uParticleCount || a.w <= 0.0) {
+    outParticleA = vec4(0.0);
+    outParticleB = vec4(0.0);
+    outParticleC = vec4(0.0);
+    return;
+  }
+  vec4 sampled = sampleGrid(uVelocityGrid, a.xy);
+  vec2 pic = sampled.xy;
+  vec2 previous = sampled.zw;
+  vec2 velocity = pic * (1.0 - uFlipness) + (b.xy + (pic - previous)) * uFlipness;
+  vec2 position = a.xy + velocity * uDt;
+  float particleRadius = max(0.5, b.z * 0.45);
+  if (position.x < particleRadius) {
+    position.x = particleRadius;
+    velocity.x = abs(velocity.x) * 0.34;
+  }
+  if (position.x > uWidth - particleRadius) {
+    position.x = uWidth - particleRadius;
+    velocity.x = -abs(velocity.x) * 0.34;
+  }
+  if (position.y < particleRadius) {
+    position.y = particleRadius;
+    velocity.y = abs(velocity.y) * 0.34;
+  }
+  if (position.y > uHeight - particleRadius) {
+    position.y = uHeight - particleRadius;
+    velocity.y = -abs(velocity.y) * 0.34;
+    velocity.x *= 0.86;
+  }
+  float eps = max(1.0, uCell);
+  vec2 right = sampleGrid(uVelocityGrid, position + vec2(eps, 0.0)).xy;
+  vec2 left = sampleGrid(uVelocityGrid, position - vec2(eps, 0.0)).xy;
+  vec2 below = sampleGrid(uVelocityGrid, position + vec2(0.0, eps)).xy;
+  vec2 above = sampleGrid(uVelocityGrid, position - vec2(0.0, eps)).xy;
+  vec4 affine = vec4((right.x - left.x) * 0.5, (below.x - above.x) * 0.5, (right.y - left.y) * 0.5, (below.y - above.y) * 0.5);
+  float foam = a.z;
+  if ((index & 1) == uFoamParity) {
+    float localMass = sampleGrid(uMassGrid, position).x;
+    float massAbove = sampleGrid(uMassGrid, position - vec2(0.0, eps)).x;
+    float massBelow = sampleGrid(uMassGrid, position + vec2(0.0, eps)).x;
+    float massLeft = sampleGrid(uMassGrid, position - vec2(eps, 0.0)).x;
+    float massRight = sampleGrid(uMassGrid, position + vec2(eps, 0.0)).x;
+    float freeSurface = smoothstepCompat(0.08, 0.8, localMass) * smoothstepCompat(0.04, 0.75, localMass - massAbove);
+    float massGradient = smoothstepCompat(0.05, 1.2, abs(massBelow - massAbove) + abs(massRight - massLeft) * 0.45);
+    float turbulentSpeed = smoothstepCompat(260.0, 1250.0, sqrt(dot(velocity, velocity)));
+    float shear = smoothstepCompat(0.08, 0.9, abs(affine.y) + abs(affine.z) + abs(affine.x) * 0.35 + abs(affine.w) * 0.35);
+    float foamSource = freeSurface * massGradient * max(turbulentSpeed, shear * 0.72);
+    foam = clamp(foam * pow(0.996, uDt * 120.0) + foamSource * 0.056, 0.0, 1.0);
+  }
+  outParticleA = vec4(position, foam, 1.0);
+  outParticleB = vec4(velocity, b.z, b.w);
+  outParticleC = affine;
 }`;

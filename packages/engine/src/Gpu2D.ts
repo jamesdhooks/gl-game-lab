@@ -154,6 +154,14 @@ export interface GpuParticleGridUpdate2D {
   readonly pressure: Float32Array;
 }
 
+export interface GpuParticleGridParticleUpdateOptions2D extends GpuParticleGridUpdateOptions2D {
+  readonly width: number;
+  readonly height: number;
+  readonly flipness: number;
+  readonly foamFrame: number;
+  readonly obstacleCount?: number;
+}
+
 export interface GpuParticleGridSystem2D {
   readonly capacity: number;
   readonly width: number;
@@ -167,6 +175,7 @@ export interface GpuParticleGridSystem2D {
   debugReadback(): GpuParticleGridSnapshot2D;
   debugComputeParticleToGrid(options: GpuParticleGridTransferOptions2D): GpuParticleGridTransfer2D;
   debugComputeGridUpdate(options: GpuParticleGridUpdateOptions2D): GpuParticleGridUpdate2D;
+  debugComputeParticleUpdate(options: GpuParticleGridParticleUpdateOptions2D): GpuParticleGridSnapshot2D;
   dispose(): void;
 }
 
