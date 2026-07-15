@@ -809,11 +809,16 @@ function randomSessionSeed(): number {
   return Date.now() >>> 0;
 }
 
+function nearly(value: number | undefined, expected: number): boolean {
+  return Math.abs((value ?? Number.NaN) - expected) <= 0.001;
+}
+
 function DiagnosticExperienceHost(): JSX.Element {
   const [runtimeError, setRuntimeError] = useState<string>();
   const [diagnosticStatus, setDiagnosticStatus] = useState('idle');
   const [contextResult, setContextResult] = useState<ContextCycleDiagnostics>();
   const [gpuGridValidation, setGpuGridValidation] = useState<GpuParticleGridValidation2D>();
+  const [gpuGridSeedRoundTrip, setGpuGridSeedRoundTrip] = useState<boolean>();
   const [lifecycleAlternate, setLifecycleAlternate] = useState(false);
   const [selectedExperience, setSelectedExperience] = useState<ExperienceDefinition>();
   const [alternateExperience, setAlternateExperience] = useState<ExperienceDefinition>();
@@ -866,10 +871,44 @@ function DiagnosticExperienceHost(): JSX.Element {
     if (gpuProbe) {
       try {
         const gpu2D = engine.kernel.get(WebGL2RendererService).gpu2D;
-        setGpuGridValidation(gpu2D.validateParticleGridSupport());
+        const validation = gpu2D.validateParticleGridSupport();
+        setGpuGridValidation(validation);
+        if (validation.supported) {
+          const particleGrid = gpu2D.createParticleGridSystem('diagnostic-seed-roundtrip', {
+            capacity: 2,
+            width: 2,
+            height: 1,
+            gridWidth: 2,
+            gridHeight: 2,
+          });
+          try {
+            particleGrid.uploadSeed({
+              count: 2,
+              positions: new Float32Array([12, 24, 48, 96]),
+              velocities: new Float32Array([1.5, -2.5, 3.5, -4.5]),
+              radii: new Float32Array([5, 6]),
+              colorSeeds: new Float32Array([7, 8]),
+              foam: new Float32Array([0.25, 0.75]),
+              affine: new Float32Array([1, 2, 3, 4, 5, 6, 7, 8]),
+            });
+            const snapshot = particleGrid.debugReadback();
+            setGpuGridSeedRoundTrip(
+              snapshot.count === 2
+              && nearly(snapshot.positions[0], 12) && nearly(snapshot.positions[3], 96)
+              && nearly(snapshot.velocities[0], 1.5) && nearly(snapshot.velocities[3], -4.5)
+              && nearly(snapshot.radii[1], 6)
+              && nearly(snapshot.colorSeeds[1], 8)
+              && nearly(snapshot.foam[0], 0.25) && nearly(snapshot.foam[1], 0.75)
+              && nearly(snapshot.affine[7], 8),
+            );
+          } finally {
+            particleGrid.dispose();
+          }
+        } else setGpuGridSeedRoundTrip(false);
         setDiagnosticStatus('gpu-probed');
       } catch (error) {
         setGpuGridValidation({ supported: false, reason: error instanceof Error ? error.message : String(error) });
+        setGpuGridSeedRoundTrip(false);
         setDiagnosticStatus('gpu-probe-error');
       }
     }
@@ -962,6 +1001,7 @@ function DiagnosticExperienceHost(): JSX.Element {
           data-context-bytes-after={contextResult?.bytesAfter}
           data-gpu-particle-grid-supported={gpuGridValidation?.supported}
           data-gpu-particle-grid-reason={gpuGridValidation?.reason}
+          data-gpu-particle-grid-seed-roundtrip={gpuGridSeedRoundTrip}
           data-input-pointers={inputPointers}
           data-input-pointer-events={inputPointers}
           data-input-gamepads={inputGamepads}
