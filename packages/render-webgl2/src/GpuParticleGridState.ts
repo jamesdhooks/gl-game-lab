@@ -1110,9 +1110,10 @@ void main() {
   vec4 sampled = sampleGrid(uVelocityGrid, a.xy);
   vec2 pic = sampled.xy;
   vec2 previous = sampled.zw;
-  vec2 velocity = pic * (1.0 - uFlipness) + (b.xy + (pic - previous)) * uFlipness;
   float foam = a.z;
-  applyImpulse(velocity, foam, a.xy);
+  vec2 authoredVelocity = b.xy;
+  applyImpulse(authoredVelocity, foam, a.xy);
+  vec2 velocity = pic * (1.0 - uFlipness) + (authoredVelocity + (pic - previous)) * uFlipness;
   vec2 position = a.xy + velocity * uDt;
   float particleRadius = max(0.5, b.z * 0.45);
   if (position.x < particleRadius) {

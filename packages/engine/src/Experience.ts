@@ -154,6 +154,7 @@ export interface ExperienceRuntimeController {
   readonly styleId: string;
   readonly settings: Readonly<Record<string, ExperienceSettingValue>>;
   readonly entityCount?: number;
+  readonly runtimeDiagnostics?: Readonly<Record<string, string | number | boolean>>;
   /** False while an automated scene has not yet produced meaningful visible capture content. */
   readonly captureReady?: boolean;
   setMode(modeId: string): void;

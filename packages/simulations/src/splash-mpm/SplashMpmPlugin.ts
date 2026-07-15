@@ -12,6 +12,8 @@ export interface SplashMpmController extends ExperienceRuntimeController {
   readonly mode: SplashMpmMode;
   readonly particleCount: number;
   readonly obstacleCount: number;
+  readonly activeSolverBackend: SplashPicFlipBackendKind;
+  readonly gpuParityValidated: boolean;
   readonly solverBackend: SplashPicFlipBackendDecision;
 }
 export const SplashMpmControllerService = createExtensionToken<SplashMpmController>('gl-game-lab.simulations.splash-mpm.controller');
@@ -105,8 +107,37 @@ export function createSplashMpmPlugin(initial: SplashMpmConfig = SPLASH_MPM_DEFA
         get obstacleCount() {
           return model.obstacles.length;
         },
+        get activeSolverBackend() {
+          return activeBackend;
+        },
+        get gpuParityValidated() {
+          return gpuParityValidated;
+        },
         get solverBackend() {
           return backendDecision();
+        },
+        get runtimeDiagnostics() {
+          const decision = backendDecision();
+          return Object.freeze({
+            'splash.activeBackend': activeBackend,
+            'splash.selectedBackend': decision.backend,
+            'splash.gpuEligible': decision.gpuEligible,
+            'splash.gpuParityValidated': gpuParityValidated,
+            'splash.paritySeed': parity.seedRoundTrip,
+            'splash.parityP2G': parity.particleToGrid,
+            'splash.parityInstancedP2G': parity.instancedParticleToGrid,
+            'splash.parityGrid': parity.gridUpdate,
+            'splash.parityParticle': parity.particleUpdate,
+            'splash.parityMaxInstancedP2G': parity.maxInstancedParticleToGridError ?? 'n/a',
+            'splash.parityMaxGrid': parity.maxGridUpdateError ?? 'n/a',
+            'splash.parityMaxParticle': parity.maxParticleUpdateError ?? 'n/a',
+            'splash.parityMaxPosition': parity.maxParticlePositionError ?? 'n/a',
+            'splash.parityMaxVelocity': parity.maxParticleVelocityError ?? 'n/a',
+            'splash.parityMaxFoam': parity.maxParticleFoamError ?? 'n/a',
+            'splash.parityMaxAffine': parity.maxParticleAffineError ?? 'n/a',
+            'splash.reasonCount': decision.reasons.length,
+            'splash.reasons': [...decision.reasons, ...parity.reasons].join('; ') || 'none',
+          });
         },
         setMode: v => {
           if (v !== 'splash' && v !== 'pour' && v !== 'build')

@@ -17,6 +17,10 @@ export interface SplashPicFlipGpuParityResult {
   readonly maxInstancedParticleToGridError: number | undefined;
   readonly maxGridUpdateError: number | undefined;
   readonly maxParticleUpdateError: number | undefined;
+  readonly maxParticlePositionError: number | undefined;
+  readonly maxParticleVelocityError: number | undefined;
+  readonly maxParticleFoamError: number | undefined;
+  readonly maxParticleAffineError: number | undefined;
   readonly reasons: readonly string[];
 }
 
@@ -34,6 +38,10 @@ export function validateSplashPicFlipGpuParity(gpu2D: Gpu2DService): SplashPicFl
       maxInstancedParticleToGridError: undefined,
       maxGridUpdateError: undefined,
       maxParticleUpdateError: undefined,
+      maxParticlePositionError: undefined,
+      maxParticleVelocityError: undefined,
+      maxParticleFoamError: undefined,
+      maxParticleAffineError: undefined,
       reasons: Object.freeze([validation.reason ?? 'GPU particle-grid support is unavailable']),
     });
   }
@@ -156,12 +164,11 @@ export function validateSplashPicFlipGpuParity(gpu2D: Gpu2DService): SplashPicFl
       circleObstacles: new Float32Array([15, 11, 5, 0]),
       segmentObstacles: new Float32Array([2, 24, 22, 24, 4, 0, 0, 0]),
     });
-    const maxParticleUpdateError = Math.max(
-      maxAbsDifference(gpuParticle.positions, cpuParticle.positions),
-      maxAbsDifference(gpuParticle.velocities, cpuParticle.velocities),
-      maxAbsDifference(gpuParticle.foam, cpuParticle.foam),
-      maxAbsDifference(gpuParticle.affine, cpuParticle.affine),
-    );
+    const maxParticlePositionError = maxAbsDifference(gpuParticle.positions, cpuParticle.positions);
+    const maxParticleVelocityError = maxAbsDifference(gpuParticle.velocities, cpuParticle.velocities);
+    const maxParticleFoamError = maxAbsDifference(gpuParticle.foam, cpuParticle.foam);
+    const maxParticleAffineError = maxAbsDifference(gpuParticle.affine, cpuParticle.affine);
+    const maxParticleUpdateError = Math.max(maxParticlePositionError, maxParticleVelocityError, maxParticleFoamError, maxParticleAffineError);
     const particleToGrid = Number.isFinite(maxParticleToGridError) && maxParticleToGridError <= 0.002;
     const instancedParticleToGrid = Number.isFinite(maxInstancedParticleToGridError) && maxInstancedParticleToGridError <= 0.002;
     const gridUpdate = Number.isFinite(maxGridUpdateError) && maxGridUpdateError <= 0.004;
@@ -183,6 +190,10 @@ export function validateSplashPicFlipGpuParity(gpu2D: Gpu2DService): SplashPicFl
       maxInstancedParticleToGridError,
       maxGridUpdateError,
       maxParticleUpdateError,
+      maxParticlePositionError,
+      maxParticleVelocityError,
+      maxParticleFoamError,
+      maxParticleAffineError,
       reasons: Object.freeze(reasons),
     });
   } catch (error) {
@@ -197,6 +208,10 @@ export function validateSplashPicFlipGpuParity(gpu2D: Gpu2DService): SplashPicFl
       maxInstancedParticleToGridError: undefined,
       maxGridUpdateError: undefined,
       maxParticleUpdateError: undefined,
+      maxParticlePositionError: undefined,
+      maxParticleVelocityError: undefined,
+      maxParticleFoamError: undefined,
+      maxParticleAffineError: undefined,
       reasons: Object.freeze([error instanceof Error ? error.message : String(error)]),
     });
   } finally {

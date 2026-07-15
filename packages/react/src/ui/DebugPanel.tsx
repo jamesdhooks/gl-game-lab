@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Bug, X } from 'lucide-react';
-import type { EngineDiagnosticsSnapshot, GameEngine } from '@hooksjam/gl-game-lab-engine';
+import { ExperienceRuntimeControllerService, type EngineDiagnosticsSnapshot, type GameEngine } from '@hooksjam/gl-game-lab-engine';
 
 export interface DebugPanelProps {
   readonly engine: GameEngine | undefined;
@@ -24,6 +24,7 @@ export function DebugPanel({ engine }: DebugPanelProps): JSX.Element {
   }, [engine]);
 
   const renderer = stats?.renderer;
+  const runtimeDiagnostics = engine?.kernel.tryGet(ExperienceRuntimeControllerService)?.runtimeDiagnostics;
   const uploads = (renderer?.bufferUploadBytes ?? 0) + (renderer?.textureUploadBytes ?? 0);
   const systems = [...(stats?.systems ?? [])].sort((left, right) => right.cpuMs - left.cpuMs);
 
@@ -65,6 +66,11 @@ export function DebugPanel({ engine }: DebugPanelProps): JSX.Element {
               {renderer && renderer.renderPasses.length > 0 && (
                 <DebugSection title="Render passes">
                   {renderer.renderPasses.map((pass) => <div key={pass} className="break-all text-[10px] leading-4 text-white/60">{pass}</div>)}
+                </DebugSection>
+              )}
+              {runtimeDiagnostics && Object.keys(runtimeDiagnostics).length > 0 && (
+                <DebugSection title="Runtime">
+                  {Object.entries(runtimeDiagnostics).map(([key, value]) => <StatRow key={key} label={key} value={String(value)} />)}
                 </DebugSection>
               )}
               {systems.length > 0 && (

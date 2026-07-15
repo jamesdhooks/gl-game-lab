@@ -384,6 +384,8 @@ export const GameCanvas = forwardRef<GameCanvasHandle, GameCanvasProps>(function
           const updateDiagnostics = (): void => {
             const output = diagnosticsRef.current;
             const snapshot = engine.diagnostics.snapshot();
+            const runtimeDiagnostics = engine.kernel.tryGet(ExperienceRuntimeControllerService)?.runtimeDiagnostics;
+            stampRuntimeDiagnostics(canvas, runtimeDiagnostics);
             if (output && snapshot) output.textContent = diagnosticText(snapshot);
             diagnosticsFrame = requestAnimationFrame(updateDiagnostics);
           };
@@ -508,6 +510,26 @@ function diagnosticText(snapshot: EngineDiagnosticsSnapshot): string {
     `${formatBytes(uploads)} uploads  ${formatBytes(renderer?.gpuResourceBytes ?? 0)} GPU`,
     `${formatBytes(renderer?.transientAllocationBytes ?? 0)} tracked alloc`,
   ].join('\n');
+}
+
+function stampRuntimeDiagnostics(canvas: HTMLCanvasElement, diagnostics: Readonly<Record<string, string | number | boolean>> | undefined): void {
+  if (!diagnostics) {
+    delete canvas.dataset.runtimeDiagnostics;
+    return;
+  }
+  canvas.dataset.runtimeDiagnostics = JSON.stringify(diagnostics);
+  for (const [key, value] of Object.entries(diagnostics)) {
+    canvas.dataset[runtimeDiagnosticDatasetKey(key)] = String(value);
+  }
+}
+
+function runtimeDiagnosticDatasetKey(key: string): string {
+  return `runtime${key.split(/[^a-zA-Z0-9]+/).filter(Boolean).map(capitalizeSegment).join('')}`;
+}
+
+function capitalizeSegment(segment: string): string {
+  const first = segment[0];
+  return first === undefined ? segment : first.toUpperCase() + segment.slice(1);
 }
 
 function formatBytes(value: number): string {
