@@ -14,6 +14,7 @@ import type { SplashMpmTuning, SplashPicFlipStateSnapshot } from './SplashMpmMod
 
 export type SplashPicFlipBackendKind = 'cpu' | 'gpu';
 export type SplashPicFlipBackendRequest = 'auto' | 'cpu' | 'gpu';
+export type SplashPicFlipGpuRenderPath = 'surface' | 'particles' | 'surface-with-particles';
 
 export interface SplashPicFlipBackendDecision {
   readonly backend: SplashPicFlipBackendKind;
@@ -26,6 +27,8 @@ export interface SplashPicFlipBackendOptions {
   readonly request?: SplashPicFlipBackendRequest;
   readonly gpuImplemented?: boolean;
   readonly parityValidated?: boolean;
+  readonly renderPath?: SplashPicFlipGpuRenderPath;
+  readonly gpuParticleRenderImplemented?: boolean;
 }
 
 export interface SplashPicFlipGpuRuntimeOptions {
@@ -187,6 +190,9 @@ export function resolveSplashPicFlipBackend(
 
   if (options.gpuImplemented !== true) reasons.push('GPU PIC/FLIP backend is not implemented');
   if (options.parityValidated !== true) reasons.push('GPU PIC/FLIP parity has not been validated');
+  if (requiresParticleRendering(options.renderPath) && options.gpuParticleRenderImplemented !== true) {
+    reasons.push('GPU particle-grid point rendering is not implemented');
+  }
 
   const backend = reasons.length === 0 ? 'gpu' : 'cpu';
   if (request === 'gpu' && backend === 'cpu') reasons.unshift('GPU backend requested but cannot be selected safely');
@@ -317,6 +323,10 @@ export function createSplashGpuPourBatch(
 
 function splashHash(v: number) {
   return Math.abs(Math.sin(v * 12.9898) * 43758.5453) % 1;
+}
+
+function requiresParticleRendering(renderPath: SplashPicFlipGpuRenderPath | undefined): boolean {
+  return renderPath === 'particles' || renderPath === 'surface-with-particles';
 }
 
 function packImpulses(impulses: readonly Float32Array[]): Float32Array {

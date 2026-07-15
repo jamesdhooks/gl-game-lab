@@ -3,7 +3,7 @@ import { applyPaletteGradientBackdrop2D, EngineGpu2D, EngineInput, EngineRender2
 import { registerSimulationRuntime } from '../SimulationPluginLifecycle.js';
 import { createBuildFixture, packBuildPreview } from '../BuildFixtures.js';
 import { createSplashMpmConfig, SPLASH_MPM_DEFAULTS, splashNumber, splashString, type SplashMpmConfig } from './config.js';
-import { resolveSplashPicFlipBackend, type SplashPicFlipBackendDecision } from './SplashPicFlipBackend.js';
+import { resolveSplashPicFlipBackend, type SplashPicFlipBackendDecision, type SplashPicFlipGpuRenderPath } from './SplashPicFlipBackend.js';
 import { SPLASH_PIC_FLIP_CAPACITY, SplashPicFlipModel, type SplashMpmTuning } from './SplashMpmModel.js';
 import { splashPointScale, splashRgb, splashRgba, SPLASH_MPM_STYLE_MANIFEST } from './styles.js';
 export type SplashMpmMode = 'splash' | 'pour' | 'build';
@@ -74,7 +74,6 @@ export function createSplashMpmPlugin(initial: SplashMpmConfig = SPLASH_MPM_DEFA
     dependencies: [{ id: 'gl-game-lab.runtime' }],
     install: context => {
       const renderer = context.get(EngineRender2D), gpu = context.get(EngineGpu2D), input = context.get(EngineInput);
-      const solverBackend = resolveSplashPicFlipBackend(gpu.capabilities);
       cleanup = () => undefined;
       applyStyle();
       const controller: SplashMpmController = {
@@ -102,7 +101,9 @@ export function createSplashMpmPlugin(initial: SplashMpmConfig = SPLASH_MPM_DEFA
           return model.obstacles.length;
         },
         get solverBackend() {
-          return solverBackend;
+          return resolveSplashPicFlipBackend(gpu.capabilities, {
+            renderPath: gpuRenderPathForStyle(splashString(config, 'renderStyle')),
+          });
         },
         setMode: v => {
           if (v !== 'splash' && v !== 'pour' && v !== 'build')
@@ -354,6 +355,11 @@ function distance(a: Point, b: Point) {
 }
 function validStyle(v: string | undefined) {
   return v && SPLASH_MPM_STYLE_MANIFEST.styles.some(x => x.id === v) ? v : undefined;
+}
+function gpuRenderPathForStyle(renderStyle: string): SplashPicFlipGpuRenderPath {
+  if (renderStyle === 'basic') return 'particles';
+  if (renderStyle === 'ultra') return 'surface-with-particles';
+  return 'surface';
 }
 export function selectHeldSplashPointer<T extends { readonly buttons: number }>(pointers: readonly T[]): T | undefined {
   return pointers.find(pointer => pointer.buttons !== 0);

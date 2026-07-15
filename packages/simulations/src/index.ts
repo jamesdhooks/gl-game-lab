@@ -50,7 +50,7 @@ export { WATER_TANK_STYLE_MANIFEST } from './water-tank/styles.js';
 export { WaterTankModel, type WaterObstacle, type WaterTankTuning } from './water-tank/WaterTankModel.js';
 export { splashMpmDefinition } from './splash-mpm/definition.js';
 export { SPLASH_MPM_DEFAULTS, SPLASH_MPM_SETTINGS, createSplashMpmConfig, splashNumber, splashString, type SplashMpmConfig } from './splash-mpm/config.js';
-export { createSplashGpuImpulse, createSplashGpuObstacles, createSplashGpuPourBatch, resolveSplashPicFlipBackend, SplashPicFlipGpuRuntime, splashObstaclesToGpuArrays, splashSnapshotToGpuParticleGridSeed, splashSnapshotToGpuParticleGridStep, type SplashPicFlipBackendDecision, type SplashPicFlipBackendKind, type SplashPicFlipBackendOptions, type SplashPicFlipBackendRequest, type SplashPicFlipGpuRuntimeOptions } from './splash-mpm/SplashPicFlipBackend.js';
+export { createSplashGpuImpulse, createSplashGpuObstacles, createSplashGpuPourBatch, resolveSplashPicFlipBackend, SplashPicFlipGpuRuntime, splashObstaclesToGpuArrays, splashSnapshotToGpuParticleGridSeed, splashSnapshotToGpuParticleGridStep, type SplashPicFlipBackendDecision, type SplashPicFlipBackendKind, type SplashPicFlipBackendOptions, type SplashPicFlipBackendRequest, type SplashPicFlipGpuRenderPath, type SplashPicFlipGpuRuntimeOptions } from './splash-mpm/SplashPicFlipBackend.js';
 export { validateSplashPicFlipGpuParity, type SplashPicFlipGpuParityResult } from './splash-mpm/SplashPicFlipGpuParity.js';
 export { SPLASH_MPM_PLUGIN_ID, SplashMpmControllerService, createSplashMpmPlugin, type SplashMpmController, type SplashMpmMode } from './splash-mpm/SplashMpmPlugin.js';
 export { SPLASH_MPM_STYLE_MANIFEST } from './splash-mpm/styles.js';

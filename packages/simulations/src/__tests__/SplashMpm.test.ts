@@ -573,6 +573,25 @@ describe('Splash MPM', () => {
     expect(resolveSplashPicFlipBackend(eligible).backend).toBe('cpu');
     expect(resolveSplashPicFlipBackend(eligible, { gpuImplemented: true }).backend).toBe('cpu');
     expect(resolveSplashPicFlipBackend(eligible, { gpuImplemented: true, parityValidated: true }).backend).toBe('gpu');
+    expect(resolveSplashPicFlipBackend(eligible, {
+      gpuImplemented: true,
+      parityValidated: true,
+      renderPath: 'surface',
+    }).backend).toBe('gpu');
+    expect(resolveSplashPicFlipBackend(eligible, {
+      gpuImplemented: true,
+      parityValidated: true,
+      renderPath: 'particles',
+    })).toMatchObject({
+      backend: 'cpu',
+      reasons: ['GPU particle-grid point rendering is not implemented'],
+    });
+    expect(resolveSplashPicFlipBackend(eligible, {
+      gpuImplemented: true,
+      parityValidated: true,
+      renderPath: 'surface-with-particles',
+      gpuParticleRenderImplemented: true,
+    }).backend).toBe('gpu');
     expect(resolveSplashPicFlipBackend({
       particleGrid: {
         ...eligible.particleGrid,
