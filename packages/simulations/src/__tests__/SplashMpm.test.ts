@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { Gpu2DService, GpuFieldSystem2DOptions, GpuParticleGridSystem2DOptions, GpuParticleSystem2DOptions } from '@hooksjam/gl-game-lab-engine';
 import { computeSplashPicFlipGridUpdate, computeSplashPicFlipParticleToGrid, computeSplashPicFlipParticleUpdate, createSplashMpmConfig, SPLASH_MPM_DEFAULTS, SPLASH_MPM_SETTINGS, splashMpmDefinition, SPLASH_MPM_STYLE_MANIFEST, SplashMpmModel, validateSplashPicFlipGpuParity } from '../index.js';
-import { createSplashGpuImpulse, createSplashGpuPourBatch, resolveSplashPicFlipBackend, splashObstaclesToGpuArrays, splashSnapshotToGpuParticleGridSeed, splashSnapshotToGpuParticleGridStep } from '../splash-mpm/SplashPicFlipBackend.js';
+import { createSplashGpuImpulse, createSplashGpuObstacles, createSplashGpuPourBatch, resolveSplashPicFlipBackend, splashObstaclesToGpuArrays, splashSnapshotToGpuParticleGridSeed, splashSnapshotToGpuParticleGridStep } from '../splash-mpm/SplashPicFlipBackend.js';
 import { resolveSplashSurfaceParameters, selectHeldSplashPointer } from '../splash-mpm/SplashMpmPlugin.js';
 import { compareSplashPicFlipMetrics, type SplashMpmTuning } from '../splash-mpm/SplashMpmModel.js';
 
@@ -142,6 +142,10 @@ describe('Splash MPM', () => {
     });
     expect(options.circleObstacles).toEqual(obstacles.circleObstacles);
     expect(options.segmentObstacles).toEqual(obstacles.segmentObstacles);
+    const retained = createSplashGpuObstacles(snapshot.obstacles, 3);
+    expect(retained.revision).toBe(3);
+    expect(retained.circleObstacles).toEqual(obstacles.circleObstacles);
+    expect(retained.segmentObstacles).toEqual(obstacles.segmentObstacles);
   });
   it('creates GPU pour batches that match authored CPU pour semantics', () => {
     const cpu = new SplashMpmModel();

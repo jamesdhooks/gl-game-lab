@@ -1,4 +1,4 @@
-import type { Gpu2DCapabilities, GpuParticleGridEmit2D, GpuParticleGridParticleUpdateOptions2D, GpuParticleGridSeed2D } from '@hooksjam/gl-game-lab-engine';
+import type { Gpu2DCapabilities, GpuParticleGridEmit2D, GpuParticleGridObstacles2D, GpuParticleGridParticleUpdateOptions2D, GpuParticleGridSeed2D } from '@hooksjam/gl-game-lab-engine';
 import type { WaterObstacle } from '../water-tank/WaterTankModel.js';
 import type { SplashMpmTuning, SplashPicFlipStateSnapshot } from './SplashMpmModel.js';
 
@@ -91,6 +91,16 @@ export function splashObstaclesToGpuArrays(obstacles: readonly WaterObstacle[]):
     segmentObstacles.set([obstacle.ax, obstacle.ay, obstacle.bx, obstacle.by, obstacle.radius, 0, 0, 0], index * 8);
   });
   return Object.freeze({ circleObstacles, segmentObstacles });
+}
+
+export function createSplashGpuObstacles(obstacles: readonly WaterObstacle[], revision: number): GpuParticleGridObstacles2D {
+  if (!Number.isSafeInteger(revision) || revision < 0) throw new Error('Splash GPU obstacle revision must be a non-negative integer');
+  const packed = splashObstaclesToGpuArrays(obstacles);
+  return Object.freeze({
+    revision,
+    circleObstacles: packed.circleObstacles,
+    segmentObstacles: packed.segmentObstacles,
+  });
 }
 
 export function splashSnapshotToGpuParticleGridStep(

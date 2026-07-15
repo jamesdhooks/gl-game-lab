@@ -9,6 +9,7 @@ import type {
   GpuParticleGridSnapshot2D,
   GpuParticleGridParticleUpdateOptions2D,
   GpuParticleGridMetaballOptions2D,
+  GpuParticleGridObstacles2D,
   GpuParticleGridSystem2D,
   GpuParticleGridSystem2DOptions,
   GpuParticleGridTransfer2D,
@@ -203,6 +204,7 @@ class WebGLGpuParticleSystem implements GpuParticleSystem2D {
 class WebGLGpuParticleGridSystem implements GpuParticleGridSystem2D {
   private readonly owner: RestorableResourceOwner<ParticleGridBundle>;
   private retainedSeed: GpuParticleGridSeed2D | undefined;
+  private retainedObstacles: GpuParticleGridObstacles2D | undefined;
   private disposed = false;
   private currentGeneration = 0;
 
@@ -237,6 +239,7 @@ class WebGLGpuParticleGridSystem implements GpuParticleGridSystem2D {
 
   clear(): void {
     this.retainedSeed = undefined;
+    this.retainedObstacles = undefined;
     this.owner.value.state.clear();
   }
 
@@ -254,8 +257,26 @@ class WebGLGpuParticleGridSystem implements GpuParticleGridSystem2D {
     return made;
   }
 
+  setObstacles(obstacles: GpuParticleGridObstacles2D): void {
+    if (!Number.isSafeInteger(obstacles.revision) || obstacles.revision < 0) throw new Error('GPU particle-grid obstacle revision must be a non-negative integer');
+    if (obstacles.circleObstacles.length % 4 !== 0) throw new Error('GPU particle-grid circle obstacles must be packed in groups of 4');
+    if (obstacles.segmentObstacles.length % 8 !== 0) throw new Error('GPU particle-grid segment obstacles must be packed in groups of 8');
+    this.retainedObstacles = Object.freeze({
+      revision: obstacles.revision,
+      circleObstacles: obstacles.circleObstacles.slice(),
+      segmentObstacles: obstacles.segmentObstacles.slice(),
+    });
+  }
+
   step(options: GpuParticleGridParticleUpdateOptions2D): void {
-    this.owner.value.state.step(options);
+    const obstacles = this.retainedObstacles;
+    const circleObstacles = options.circleObstacles ?? obstacles?.circleObstacles;
+    const segmentObstacles = options.segmentObstacles ?? obstacles?.segmentObstacles;
+    this.owner.value.state.step(Object.freeze({
+      ...options,
+      ...(circleObstacles ? { circleObstacles } : {}),
+      ...(segmentObstacles ? { segmentObstacles } : {}),
+    }));
     this.countDraw(5);
   }
 
@@ -286,6 +307,7 @@ class WebGLGpuParticleGridSystem implements GpuParticleGridSystem2D {
     this.disposed = true;
     this.owner.dispose();
     this.retainedSeed = undefined;
+    this.retainedObstacles = undefined;
     this.onDispose();
   }
 }

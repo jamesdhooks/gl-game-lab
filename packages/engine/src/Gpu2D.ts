@@ -171,6 +171,12 @@ export interface GpuParticleGridParticleUpdateOptions2D extends GpuParticleGridU
   readonly impulses?: Float32Array;
 }
 
+export interface GpuParticleGridObstacles2D {
+  readonly revision: number;
+  readonly circleObstacles: Float32Array;
+  readonly segmentObstacles: Float32Array;
+}
+
 export interface GpuParticleGridMetaballOptions2D {
   readonly worldWidth: number;
   readonly worldHeight: number;
@@ -208,6 +214,7 @@ export interface GpuParticleGridSystem2D {
   clear(): void;
   uploadSeed(seed: GpuParticleGridSeed2D): void;
   emit(batch: GpuParticleGridEmit2D): number;
+  setObstacles(obstacles: GpuParticleGridObstacles2D): void;
   /** Advances particle-grid simulation state entirely on the active GPU backend. */
   step(options: GpuParticleGridParticleUpdateOptions2D): void;
   renderMetaballs(target: GpuRenderTarget2D, options: GpuParticleGridMetaballOptions2D): void;
