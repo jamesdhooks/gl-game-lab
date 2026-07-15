@@ -109,8 +109,14 @@ export interface Gpu2DCapabilities {
   readonly particleGrid: GpuParticleGridCapabilities2D;
 }
 
+export interface GpuParticleGridValidation2D {
+  readonly supported: boolean;
+  readonly reason?: string;
+}
+
 export interface Gpu2DService {
   readonly capabilities: Gpu2DCapabilities;
+  validateParticleGridSupport(): GpuParticleGridValidation2D;
   createFieldSystem(id: string, options: GpuFieldSystem2DOptions): GpuFieldSystem2D;
   createParticleSystem(id: string, options: GpuParticleSystem2DOptions): GpuParticleSystem2D;
   submit(id: string, execute: (target: GpuRenderTarget2D) => void): void;

@@ -7,6 +7,7 @@ import type {
   GpuParticleSystem2D,
   GpuParticleSystem2DOptions,
   Gpu2DCapabilities,
+  GpuParticleGridValidation2D,
   GpuRenderTarget2D,
   GpuTexture2D,
   GpuUniforms2D,
@@ -21,6 +22,7 @@ import { GpuParticleRenderer } from './GpuParticleRenderer.js';
 import { GpuParticleState } from './GpuParticleState.js';
 import type { GpuParticleRenderDestination } from './GpuParticleRenderer.js';
 import { GpuSimulationPass } from './GpuSimulationPass.js';
+import { createShaderProgram } from './ShaderProgram.js';
 import type { GpuFrameRenderPass, GpuRenderPassQueue } from './GpuRenderPassQueue.js';
 import type { RestorableResourceOwner } from './RestorableResourceOwner.js';
 import type { WebGL2Device } from './WebGL2Device.js';
@@ -194,6 +196,13 @@ export class WebGLGpu2DService implements Gpu2DService {
 
   constructor(private readonly device: WebGL2Device, private readonly queue: GpuRenderPassQueue) {
     this.capabilities = detectGpu2DCapabilities(device.gl);
+  }
+
+  validateParticleGridSupport(): GpuParticleGridValidation2D {
+    if (!this.capabilities.particleGrid.supported) {
+      return Object.freeze({ supported: false, reason: 'Required WebGL2 particle-grid capabilities are unavailable' });
+    }
+    return validateParticleGridFloatBlend(this.device.gl);
   }
 
   createFieldSystem(id: string, options: GpuFieldSystem2DOptions): GpuFieldSystem2D {
@@ -404,3 +413,83 @@ function numberParameter(gl: WebGL2RenderingContext, parameter: number): number 
   const value = gl.getParameter(parameter) as unknown;
   return typeof value === 'number' && Number.isFinite(value) ? value : 0;
 }
+
+function validateParticleGridFloatBlend(gl: WebGL2RenderingContext): GpuParticleGridValidation2D {
+  const texture = gl.createTexture();
+  const framebuffer = gl.createFramebuffer();
+  const vao = gl.createVertexArray();
+  if (!texture || !framebuffer || !vao) {
+    if (texture) gl.deleteTexture(texture);
+    if (framebuffer) gl.deleteFramebuffer(framebuffer);
+    if (vao) gl.deleteVertexArray(vao);
+    return Object.freeze({ supported: false, reason: 'Unable to allocate particle-grid validation resources' });
+  }
+
+  let program: WebGLProgram | undefined;
+  try {
+    gl.bindTexture(gl.TEXTURE_2D, texture);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, 1, 1, 0, gl.RGBA, gl.FLOAT, null);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texture, 0);
+    if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE) {
+      return Object.freeze({ supported: false, reason: 'RGBA32F particle-grid validation framebuffer is incomplete' });
+    }
+
+    program = createShaderProgram(gl, {
+      label: 'particle-grid float blend validation',
+      vertexSource: FLOAT_BLEND_VALIDATION_VERTEX,
+      fragmentSource: FLOAT_BLEND_VALIDATION_FRAGMENT,
+    });
+    gl.viewport(0, 0, 1, 1);
+    gl.clearColor(0, 0, 0, 0);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+    gl.useProgram(program);
+    gl.bindVertexArray(vao);
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.ONE, gl.ONE);
+    gl.drawArrays(gl.POINTS, 0, 1);
+    gl.drawArrays(gl.POINTS, 0, 1);
+    gl.disable(gl.BLEND);
+
+    const pixel = new Float32Array(4);
+    gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.FLOAT, pixel);
+    const ok = close(pixel[0] ?? 0, 2) && close(pixel[1] ?? 0, 4)
+      && close(pixel[2] ?? 0, 6) && close(pixel[3] ?? 0, 8);
+    return Object.freeze({
+      supported: ok,
+      ...(ok ? {} : { reason: `Float blend validation returned [${Array.from(pixel).map(v => v.toFixed(3)).join(', ')}]` }),
+    });
+  } catch (error) {
+    return Object.freeze({ supported: false, reason: error instanceof Error ? error.message : String(error) });
+  } finally {
+    gl.disable(gl.BLEND);
+    gl.bindVertexArray(null);
+    gl.bindTexture(gl.TEXTURE_2D, null);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    if (program) gl.deleteProgram(program);
+    gl.deleteVertexArray(vao);
+    gl.deleteFramebuffer(framebuffer);
+    gl.deleteTexture(texture);
+  }
+}
+
+function close(actual: number, expected: number): boolean {
+  return Math.abs(actual - expected) <= 0.001;
+}
+
+const FLOAT_BLEND_VALIDATION_VERTEX = `#version 300 es
+void main() {
+  gl_Position = vec4(0.0, 0.0, 0.0, 1.0);
+  gl_PointSize = 1.0;
+}`;
+
+const FLOAT_BLEND_VALIDATION_FRAGMENT = `#version 300 es
+precision highp float;
+out vec4 outColor;
+void main() {
+  outColor = vec4(1.0, 2.0, 3.0, 4.0);
+}`;
