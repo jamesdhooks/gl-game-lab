@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { Gpu2DService, GpuFieldSystem2D, GpuFieldSystem2DOptions, GpuParticleGridEmit2D, GpuParticleGridMetaballOptions2D, GpuParticleGridObstacles2D, GpuParticleGridParticleUpdateOptions2D, GpuParticleGridSeed2D, GpuParticleGridSnapshot2D, GpuParticleGridSystem2D, GpuParticleGridSystem2DOptions, GpuParticleGridTransfer2D, GpuParticleGridTransferOptions2D, GpuParticleGridUpdate2D, GpuParticleGridUpdateOptions2D, GpuParticleSystem2D, GpuParticleSystem2DOptions, GpuRenderTarget2D } from '@hooksjam/gl-game-lab-engine';
+import type { Gpu2DService, GpuFieldSystem2D, GpuFieldSystem2DOptions, GpuParticleGridEmit2D, GpuParticleGridMetaballOptions2D, GpuParticleGridObstacles2D, GpuParticleGridParticleUpdateOptions2D, GpuParticleGridPointOptions2D, GpuParticleGridSeed2D, GpuParticleGridSnapshot2D, GpuParticleGridSystem2D, GpuParticleGridSystem2DOptions, GpuParticleGridTransfer2D, GpuParticleGridTransferOptions2D, GpuParticleGridUpdate2D, GpuParticleGridUpdateOptions2D, GpuParticleSystem2D, GpuParticleSystem2DOptions, GpuRenderTarget2D } from '@hooksjam/gl-game-lab-engine';
 import { computeSplashPicFlipGridUpdate, computeSplashPicFlipParticleToGrid, computeSplashPicFlipParticleUpdate, createSplashMpmConfig, SPLASH_MPM_DEFAULTS, SPLASH_MPM_SETTINGS, splashMpmDefinition, SPLASH_MPM_STYLE_MANIFEST, SplashMpmModel, validateSplashPicFlipGpuParity } from '../index.js';
 import { createSplashGpuImpulse, createSplashGpuObstacles, createSplashGpuPourBatch, resolveSplashPicFlipBackend, SplashPicFlipGpuRuntime, splashObstaclesToGpuArrays, splashSnapshotToGpuParticleGridSeed, splashSnapshotToGpuParticleGridStep } from '../splash-mpm/SplashPicFlipBackend.js';
 import { resolveSplashSurfaceParameters, selectHeldSplashPointer } from '../splash-mpm/SplashMpmPlugin.js';
@@ -53,6 +53,7 @@ class FakeParticleGridSystem implements GpuParticleGridSystem2D {
   readonly obstacleUploads: GpuParticleGridObstacles2D[] = [];
   readonly steps: GpuParticleGridParticleUpdateOptions2D[] = [];
   readonly metaballRenders: { readonly target: GpuRenderTarget2D; readonly options: GpuParticleGridMetaballOptions2D }[] = [];
+  readonly particleRenders: { readonly target: GpuRenderTarget2D; readonly options: GpuParticleGridPointOptions2D }[] = [];
   disposed = false;
 
   constructor(
@@ -89,6 +90,10 @@ class FakeParticleGridSystem implements GpuParticleGridSystem2D {
 
   renderMetaballs(target: GpuRenderTarget2D, options: GpuParticleGridMetaballOptions2D): void {
     this.metaballRenders.push({ target, options });
+  }
+
+  renderParticles(target: GpuRenderTarget2D, options: GpuParticleGridPointOptions2D): void {
+    this.particleRenders.push({ target, options });
   }
 
   debugReadback(): GpuParticleGridSnapshot2D {
@@ -353,6 +358,17 @@ describe('Splash MPM', () => {
     };
     runtime.renderMetaballs(target, metaballs);
     expect(grid.metaballRenders).toEqual([{ target, options: metaballs }]);
+    const particles: GpuParticleGridPointOptions2D = {
+      worldWidth: 192,
+      worldHeight: 128,
+      radiusScale: 1.4,
+      palette: [[1, 0, 0, 0.8], [0, 1, 0, 0.4]],
+      paletteMode: 'indexed',
+      opacity: 0.7,
+      blend: 'additive',
+    };
+    runtime.renderParticles(target, particles);
+    expect(grid.particleRenders).toEqual([{ target, options: particles }]);
     runtime.dispose();
     expect(grid.disposed).toBe(true);
     expect(runtime.available).toBe(false);

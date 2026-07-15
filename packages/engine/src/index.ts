@@ -113,6 +113,7 @@ export {
   type GpuParticleGridEmit2D,
   type GpuParticleGridMetaballOptions2D,
   type GpuParticleGridObstacles2D,
+  type GpuParticleGridPointOptions2D,
   type GpuParticleGridSeed2D,
   type GpuParticleGridSnapshot2D,
   type GpuParticleGridParticleUpdateOptions2D,

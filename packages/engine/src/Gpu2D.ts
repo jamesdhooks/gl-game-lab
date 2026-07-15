@@ -203,6 +203,16 @@ export interface GpuParticleGridMetaballOptions2D {
   readonly backgroundDepth?: number;
 }
 
+export interface GpuParticleGridPointOptions2D {
+  readonly worldWidth: number;
+  readonly worldHeight: number;
+  readonly radiusScale: number;
+  readonly palette: readonly (readonly [number, number, number, number])[];
+  readonly paletteMode?: 'hashed' | 'indexed';
+  readonly opacity: number;
+  readonly blend?: 'alpha' | 'additive';
+}
+
 export interface GpuParticleGridSystem2D {
   readonly capacity: number;
   readonly width: number;
@@ -218,6 +228,7 @@ export interface GpuParticleGridSystem2D {
   /** Advances particle-grid simulation state entirely on the active GPU backend. */
   step(options: GpuParticleGridParticleUpdateOptions2D): void;
   renderMetaballs(target: GpuRenderTarget2D, options: GpuParticleGridMetaballOptions2D): void;
+  renderParticles(target: GpuRenderTarget2D, options: GpuParticleGridPointOptions2D): void;
   debugReadback(): GpuParticleGridSnapshot2D;
   debugComputeParticleToGrid(options: GpuParticleGridTransferOptions2D): GpuParticleGridTransfer2D;
   debugComputeGridUpdate(options: GpuParticleGridUpdateOptions2D): GpuParticleGridUpdate2D;

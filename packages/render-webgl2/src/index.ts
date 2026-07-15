@@ -25,6 +25,7 @@ export {
 export { DynamicTriangleMeshRenderer, validateDynamicTriangleMeshBatch, type DynamicTriangleMeshBatch, type DynamicTriangleMeshOptions } from './DynamicTriangleMeshRenderer.js';
 export { StableFluidField2D, type FluidSplat2D, type StableFluidDisplayOptions, type StableFluidField2DOptions, type StableFluidStepOptions } from './StableFluidField2D.js';
 export { DensityMetaballRenderer, validateDensityMetaballBatch, type DensityMetaballBatch, type DensityMetaballOptions } from './DensityMetaballRenderer.js';
+export { GpuParticleGridPointRenderer } from './GpuParticleGridPointRenderer.js';
 export {
   GpuFieldState,
   type GpuFieldStateOptions,

@@ -4,6 +4,7 @@ import type {
   GpuParticleGridEmit2D,
   GpuParticleGridMetaballOptions2D,
   GpuParticleGridObstacles2D,
+  GpuParticleGridPointOptions2D,
   GpuParticleGridParticleUpdateOptions2D,
   GpuParticleGridSystem2D,
   GpuParticleGridSeed2D,
@@ -119,6 +120,10 @@ export class SplashPicFlipGpuRuntime {
 
   renderMetaballs(target: GpuRenderTarget2D, options: GpuParticleGridMetaballOptions2D): void {
     this.requireParticleGrid().renderMetaballs(target, options);
+  }
+
+  renderParticles(target: GpuRenderTarget2D, options: GpuParticleGridPointOptions2D): void {
+    this.requireParticleGrid().renderParticles(target, options);
   }
 
   dispose(): void {
