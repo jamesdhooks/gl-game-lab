@@ -135,6 +135,25 @@ export interface GpuParticleGridTransfer2D {
   readonly momentumY: Float32Array;
 }
 
+export interface GpuParticleGridUpdateOptions2D extends GpuParticleGridTransferOptions2D {
+  readonly dt: number;
+  readonly stiffness: number;
+  readonly restDensity: number;
+  readonly separation: number;
+  readonly viscosity: number;
+  readonly gravity: number;
+}
+
+export interface GpuParticleGridUpdate2D {
+  readonly columns: number;
+  readonly rows: number;
+  readonly velocityX: Float32Array;
+  readonly velocityY: Float32Array;
+  readonly previousVelocityX: Float32Array;
+  readonly previousVelocityY: Float32Array;
+  readonly pressure: Float32Array;
+}
+
 export interface GpuParticleGridSystem2D {
   readonly capacity: number;
   readonly width: number;
@@ -147,6 +166,7 @@ export interface GpuParticleGridSystem2D {
   uploadSeed(seed: GpuParticleGridSeed2D): void;
   debugReadback(): GpuParticleGridSnapshot2D;
   debugComputeParticleToGrid(options: GpuParticleGridTransferOptions2D): GpuParticleGridTransfer2D;
+  debugComputeGridUpdate(options: GpuParticleGridUpdateOptions2D): GpuParticleGridUpdate2D;
   dispose(): void;
 }
 

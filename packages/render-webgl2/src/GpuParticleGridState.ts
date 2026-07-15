@@ -4,6 +4,8 @@ import type {
   GpuParticleGridSystem2DOptions,
   GpuParticleGridTransfer2D,
   GpuParticleGridTransferOptions2D,
+  GpuParticleGridUpdate2D,
+  GpuParticleGridUpdateOptions2D,
 } from '@hooksjam/gl-game-lab-engine';
 import { createGpuDoubleRenderTarget, type GpuDoubleRenderTarget } from './GpuRenderTarget.js';
 import { createShaderProgram } from './ShaderProgram.js';
@@ -43,8 +45,11 @@ export class GpuParticleGridState {
   private scratchUpload = new Float32Array(0);
   private scratchReadback = new Float32Array(0);
   private debugP2GProgram: WebGLProgram | undefined;
+  private debugNormalizePressureProgram: WebGLProgram | undefined;
+  private debugForceProgram: WebGLProgram | undefined;
+  private debugViscosityProgram: WebGLProgram | undefined;
   private debugP2GVao: WebGLVertexArrayObject | undefined;
-  private readonly uniforms = new Map<string, WebGLUniformLocation | null>();
+  private readonly uniforms = new Map<WebGLProgram, Map<string, WebGLUniformLocation | null>>();
   private activeCount = 0;
   private disposed = false;
 
@@ -148,18 +153,18 @@ export class GpuParticleGridState {
     gl.bindVertexArray(vao);
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, this.particleA.read.texture);
-    gl.uniform1i(this.uniform('uParticleA'), 0);
+    gl.uniform1i(this.uniform(program, 'uParticleA'), 0);
     gl.activeTexture(gl.TEXTURE1);
     gl.bindTexture(gl.TEXTURE_2D, this.particleB.read.texture);
-    gl.uniform1i(this.uniform('uParticleB'), 1);
+    gl.uniform1i(this.uniform(program, 'uParticleB'), 1);
     gl.activeTexture(gl.TEXTURE2);
     gl.bindTexture(gl.TEXTURE_2D, this.particleC.read.texture);
-    gl.uniform1i(this.uniform('uParticleC'), 2);
-    gl.uniform1i(this.uniform('uParticleCount'), this.activeCount);
-    gl.uniform2i(this.uniform('uParticleStateSize'), this.width, this.height);
-    gl.uniform2i(this.uniform('uGridSize'), this.gridWidth, this.gridHeight);
-    gl.uniform1f(this.uniform('uCell'), options.cell);
-    gl.uniform1f(this.uniform('uRadius'), options.radius);
+    gl.uniform1i(this.uniform(program, 'uParticleC'), 2);
+    gl.uniform1i(this.uniform(program, 'uParticleCount'), this.activeCount);
+    gl.uniform2i(this.uniform(program, 'uParticleStateSize'), this.width, this.height);
+    gl.uniform2i(this.uniform(program, 'uGridSize'), this.gridWidth, this.gridHeight);
+    gl.uniform1f(this.uniform(program, 'uCell'), options.cell);
+    gl.uniform1f(this.uniform(program, 'uRadius'), options.radius);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
     gl.bindVertexArray(null);
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
@@ -178,6 +183,41 @@ export class GpuParticleGridState {
     return Object.freeze({ columns: this.gridWidth, rows: this.gridHeight, mass, momentumX, momentumY });
   }
 
+  debugComputeGridUpdate(options: GpuParticleGridUpdateOptions2D): GpuParticleGridUpdate2D {
+    this.assertUsable();
+    if (!Number.isFinite(options.dt) || options.dt < 0) throw new Error('GPU particle-grid debug update dt must be non-negative');
+    for (const [value, label] of [
+      [options.stiffness, 'stiffness'],
+      [options.restDensity, 'rest density'],
+      [options.separation, 'separation'],
+      [options.viscosity, 'viscosity'],
+      [options.gravity, 'gravity'],
+    ] as const) {
+      if (!Number.isFinite(value)) throw new Error(`GPU particle-grid debug update ${label} must be finite`);
+    }
+    this.debugComputeParticleToGrid(options);
+    this.runNormalizePressurePass(options);
+    this.runForcePass(options);
+    this.runViscosityPass(options);
+    const pressureGrid = this.read(this.working);
+    const velocityGrid = this.read(this.scratch);
+    const cellCount = this.gridWidth * this.gridHeight;
+    const velocityX = new Float32Array(cellCount);
+    const velocityY = new Float32Array(cellCount);
+    const previousVelocityX = new Float32Array(cellCount);
+    const previousVelocityY = new Float32Array(cellCount);
+    const pressure = new Float32Array(cellCount);
+    for (let index = 0; index < cellCount; index += 1) {
+      const offset = index * 4;
+      velocityX[index] = velocityGrid[offset] ?? 0;
+      velocityY[index] = velocityGrid[offset + 1] ?? 0;
+      previousVelocityX[index] = velocityGrid[offset + 2] ?? 0;
+      previousVelocityY[index] = velocityGrid[offset + 3] ?? 0;
+      pressure[index] = pressureGrid[offset + 2] ?? 0;
+    }
+    return Object.freeze({ columns: this.gridWidth, rows: this.gridHeight, velocityX, velocityY, previousVelocityX, previousVelocityY, pressure });
+  }
+
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
@@ -189,6 +229,9 @@ export class GpuParticleGridState {
     this.previous.dispose();
     this.scratch.dispose();
     if (this.debugP2GProgram) this.gl.deleteProgram(this.debugP2GProgram);
+    if (this.debugNormalizePressureProgram) this.gl.deleteProgram(this.debugNormalizePressureProgram);
+    if (this.debugForceProgram) this.gl.deleteProgram(this.debugForceProgram);
+    if (this.debugViscosityProgram) this.gl.deleteProgram(this.debugViscosityProgram);
     if (this.debugP2GVao) this.gl.deleteVertexArray(this.debugP2GVao);
     this.uniforms.clear();
   }
@@ -236,6 +279,39 @@ export class GpuParticleGridState {
     return this.debugP2GProgram;
   }
 
+  private ensureDebugNormalizePressureProgram(): WebGLProgram {
+    if (!this.debugNormalizePressureProgram) {
+      this.debugNormalizePressureProgram = createShaderProgram(this.gl, {
+        label: 'GPU particle-grid debug normalize pressure',
+        vertexSource: FULLSCREEN_VERTEX_SHADER,
+        fragmentSource: DEBUG_NORMALIZE_PRESSURE_FRAGMENT_SHADER,
+      });
+    }
+    return this.debugNormalizePressureProgram;
+  }
+
+  private ensureDebugForceProgram(): WebGLProgram {
+    if (!this.debugForceProgram) {
+      this.debugForceProgram = createShaderProgram(this.gl, {
+        label: 'GPU particle-grid debug pressure force',
+        vertexSource: FULLSCREEN_VERTEX_SHADER,
+        fragmentSource: DEBUG_FORCE_FRAGMENT_SHADER,
+      });
+    }
+    return this.debugForceProgram;
+  }
+
+  private ensureDebugViscosityProgram(): WebGLProgram {
+    if (!this.debugViscosityProgram) {
+      this.debugViscosityProgram = createShaderProgram(this.gl, {
+        label: 'GPU particle-grid debug viscosity',
+        vertexSource: FULLSCREEN_VERTEX_SHADER,
+        fragmentSource: DEBUG_VISCOSITY_FRAGMENT_SHADER,
+      });
+    }
+    return this.debugViscosityProgram;
+  }
+
   private ensureDebugP2GVao(): WebGLVertexArrayObject {
     if (!this.debugP2GVao) {
       const vao = this.gl.createVertexArray();
@@ -245,10 +321,78 @@ export class GpuParticleGridState {
     return this.debugP2GVao;
   }
 
-  private uniform(name: string): WebGLUniformLocation | null {
-    const program = this.ensureDebugP2GProgram();
-    if (!this.uniforms.has(name)) this.uniforms.set(name, this.gl.getUniformLocation(program, name));
-    return this.uniforms.get(name) ?? null;
+  private uniform(program: WebGLProgram, name: string): WebGLUniformLocation | null {
+    let uniforms = this.uniforms.get(program);
+    if (!uniforms) {
+      uniforms = new Map<string, WebGLUniformLocation | null>();
+      this.uniforms.set(program, uniforms);
+    }
+    if (!uniforms.has(name)) uniforms.set(name, this.gl.getUniformLocation(program, name));
+    return uniforms.get(name) ?? null;
+  }
+
+  private runNormalizePressurePass(options: GpuParticleGridUpdateOptions2D): void {
+    const gl = this.gl;
+    const program = this.ensureDebugNormalizePressureProgram();
+    const vao = this.ensureDebugP2GVao();
+    gl.bindFramebuffer(gl.FRAMEBUFFER, this.working.write.framebuffer);
+    gl.viewport(0, 0, this.gridWidth, this.gridHeight);
+    gl.disable(gl.BLEND);
+    gl.useProgram(program);
+    gl.bindVertexArray(vao);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, this.accumulation.read.texture);
+    gl.uniform1i(this.uniform(program, 'uTransfer'), 0);
+    gl.uniform1f(this.uniform(program, 'uSupport'), Math.max(0.65, Math.min(8, options.radius / options.cell)));
+    gl.uniform1f(this.uniform(program, 'uRestDensity'), options.restDensity);
+    gl.uniform1f(this.uniform(program, 'uStiffness'), options.stiffness);
+    gl.uniform1f(this.uniform(program, 'uSeparation'), options.separation);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+    gl.bindVertexArray(null);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    this.working.swap();
+  }
+
+  private runForcePass(options: GpuParticleGridUpdateOptions2D): void {
+    const gl = this.gl;
+    const program = this.ensureDebugForceProgram();
+    const vao = this.ensureDebugP2GVao();
+    gl.bindFramebuffer(gl.FRAMEBUFFER, this.previous.write.framebuffer);
+    gl.viewport(0, 0, this.gridWidth, this.gridHeight);
+    gl.disable(gl.BLEND);
+    gl.useProgram(program);
+    gl.bindVertexArray(vao);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, this.working.read.texture);
+    gl.uniform1i(this.uniform(program, 'uNormalized'), 0);
+    gl.uniform2i(this.uniform(program, 'uGridSize'), this.gridWidth, this.gridHeight);
+    gl.uniform1f(this.uniform(program, 'uCell'), options.cell);
+    gl.uniform1f(this.uniform(program, 'uDt'), options.dt);
+    gl.uniform1f(this.uniform(program, 'uGravity'), options.gravity);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+    gl.bindVertexArray(null);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    this.previous.swap();
+  }
+
+  private runViscosityPass(options: GpuParticleGridUpdateOptions2D): void {
+    const gl = this.gl;
+    const program = this.ensureDebugViscosityProgram();
+    const vao = this.ensureDebugP2GVao();
+    gl.bindFramebuffer(gl.FRAMEBUFFER, this.scratch.write.framebuffer);
+    gl.viewport(0, 0, this.gridWidth, this.gridHeight);
+    gl.disable(gl.BLEND);
+    gl.useProgram(program);
+    gl.bindVertexArray(vao);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, this.previous.read.texture);
+    gl.uniform1i(this.uniform(program, 'uForced'), 0);
+    gl.uniform2i(this.uniform(program, 'uGridSize'), this.gridWidth, this.gridHeight);
+    gl.uniform1f(this.uniform(program, 'uViscosityBlend'), Math.max(0, Math.min(0.85, options.viscosity * options.dt * 14)));
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+    gl.bindVertexArray(null);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    this.scratch.swap();
   }
 }
 
@@ -384,4 +528,84 @@ void main() {
     }
   }
   outGrid = vec4(total, 0.0);
+}`;
+
+const DEBUG_NORMALIZE_PRESSURE_FRAGMENT_SHADER = `#version 300 es
+precision highp float;
+precision highp int;
+uniform sampler2D uTransfer;
+uniform float uSupport;
+uniform float uRestDensity;
+uniform float uStiffness;
+uniform float uSeparation;
+out vec4 outGrid;
+
+void main() {
+  ivec2 cell = ivec2(gl_FragCoord.xy);
+  vec4 transfer = texelFetch(uTransfer, cell, 0);
+  float mass = transfer.x;
+  float velocityX = mass > 0.0 ? transfer.y / mass : 0.0;
+  float velocityY = mass > 0.0 ? transfer.z / mass : 0.0;
+  float restDensity = uRestDensity * max(0.62, min(1.05, 1.08 - uSupport * 0.035));
+  float ratio = mass / max(0.001, restDensity);
+  float pressure = max(0.0, ratio - 1.0) * uStiffness + max(0.0, ratio - 0.28) * uStiffness * uSeparation * 0.34;
+  outGrid = vec4(velocityX, velocityY, pressure, mass);
+}`;
+
+const DEBUG_FORCE_FRAGMENT_SHADER = `#version 300 es
+precision highp float;
+precision highp int;
+uniform sampler2D uNormalized;
+uniform ivec2 uGridSize;
+uniform float uCell;
+uniform float uDt;
+uniform float uGravity;
+out vec4 outGrid;
+
+ivec2 clampCell(ivec2 cell) {
+  return ivec2(clamp(cell.x, 0, uGridSize.x - 1), clamp(cell.y, 0, uGridSize.y - 1));
+}
+
+vec4 grid(ivec2 cell) {
+  return texelFetch(uNormalized, clampCell(cell), 0);
+}
+
+void main() {
+  ivec2 cell = ivec2(gl_FragCoord.xy);
+  vec4 center = grid(cell);
+  float velocityX = center.x;
+  float velocityY = center.y;
+  if (center.w > 0.000001) {
+    float gradX = (grid(cell + ivec2(1, 0)).z - grid(cell + ivec2(-1, 0)).z) / max(1.0, uCell * 2.0);
+    float gradY = (grid(cell + ivec2(0, 1)).z - grid(cell + ivec2(0, -1)).z) / max(1.0, uCell * 2.0);
+    velocityX -= gradX * uDt * uCell * 18.0;
+    velocityY += uGravity * uDt - gradY * uDt * uCell * 18.0;
+  }
+  outGrid = vec4(velocityX, velocityY, center.x, center.y);
+}`;
+
+const DEBUG_VISCOSITY_FRAGMENT_SHADER = `#version 300 es
+precision highp float;
+precision highp int;
+uniform sampler2D uForced;
+uniform ivec2 uGridSize;
+uniform float uViscosityBlend;
+out vec4 outGrid;
+
+ivec2 clampCell(ivec2 cell) {
+  return ivec2(clamp(cell.x, 0, uGridSize.x - 1), clamp(cell.y, 0, uGridSize.y - 1));
+}
+
+vec4 grid(ivec2 cell) {
+  return texelFetch(uForced, clampCell(cell), 0);
+}
+
+void main() {
+  ivec2 cell = ivec2(gl_FragCoord.xy);
+  vec4 center = grid(cell);
+  float avgX = (grid(cell + ivec2(-1, 0)).x + grid(cell + ivec2(1, 0)).x + grid(cell + ivec2(0, -1)).x + grid(cell + ivec2(0, 1)).x) * 0.25;
+  float avgY = (grid(cell + ivec2(-1, 0)).y + grid(cell + ivec2(1, 0)).y + grid(cell + ivec2(0, -1)).y + grid(cell + ivec2(0, 1)).y) * 0.25;
+  float velocityX = center.x + (avgX - center.x) * uViscosityBlend;
+  float velocityY = center.y + (avgY - center.y) * uViscosityBlend;
+  outGrid = vec4(velocityX, velocityY, center.z, center.w);
 }`;

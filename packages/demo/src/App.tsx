@@ -4,7 +4,7 @@ import { Activity, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Image as I
 import { ExperienceRuntime, GameCanvas, PreviewTile as EnginePreviewTile, useViewport, type CanvasFrameCapture } from '@hooksjam/gl-game-lab-react';
 import { createDefaultPreviewProfile, type ExperienceDefinition, type ExperiencePreviewProfile, type ExperienceSettingValue, type GameEngine, type GpuParticleGridValidation2D } from '@hooksjam/gl-game-lab-engine';
 import { WebGL2RendererService, type ContextCycleDiagnostics } from '@hooksjam/gl-game-lab-render-webgl2';
-import { computeSplashPicFlipParticleToGrid } from '@hooksjam/gl-game-lab-simulations';
+import { computeSplashPicFlipGridUpdate, computeSplashPicFlipParticleToGrid } from '@hooksjam/gl-game-lab-simulations';
 import bundledSceneDefaults from 'virtual:gl-game-lab-scene-defaults';
 import bundledPreviewProfiles from 'virtual:gl-game-lab-preview-profiles';
 import './index.css';
@@ -831,6 +831,8 @@ function DiagnosticExperienceHost(): JSX.Element {
   const [gpuGridSeedRoundTrip, setGpuGridSeedRoundTrip] = useState<boolean>();
   const [gpuGridP2GParity, setGpuGridP2GParity] = useState<boolean>();
   const [gpuGridP2GMaxError, setGpuGridP2GMaxError] = useState<number>();
+  const [gpuGridUpdateParity, setGpuGridUpdateParity] = useState<boolean>();
+  const [gpuGridUpdateMaxError, setGpuGridUpdateMaxError] = useState<number>();
   const [lifecycleAlternate, setLifecycleAlternate] = useState(false);
   const [selectedExperience, setSelectedExperience] = useState<ExperienceDefinition>();
   const [alternateExperience, setAlternateExperience] = useState<ExperienceDefinition>();
@@ -942,6 +944,35 @@ function DiagnosticExperienceHost(): JSX.Element {
             );
             setGpuGridP2GMaxError(maxError);
             setGpuGridP2GParity(Number.isFinite(maxError) && maxError <= 0.002);
+            const updateOptions = {
+              cell,
+              radius,
+              dt: 1 / 60,
+              stiffness: 86,
+              restDensity: 3.2,
+              separation: 0.7,
+              viscosity: 0.18,
+              gravity: 920,
+            };
+            const gpuUpdate = particleGrid.debugComputeGridUpdate(updateOptions);
+            const cpuUpdate = computeSplashPicFlipGridUpdate({
+              columns: particleGrid.gridWidth,
+              rows: particleGrid.gridHeight,
+              support: Math.max(0.65, Math.min(8, radius / cell)),
+              mass: cpuTransfer.mass,
+              momentumX: cpuTransfer.momentumX,
+              momentumY: cpuTransfer.momentumY,
+              ...updateOptions,
+            });
+            const updateMaxError = Math.max(
+              maxAbsDifference(gpuUpdate.velocityX, cpuUpdate.velocityX),
+              maxAbsDifference(gpuUpdate.velocityY, cpuUpdate.velocityY),
+              maxAbsDifference(gpuUpdate.previousVelocityX, cpuUpdate.previousVelocityX),
+              maxAbsDifference(gpuUpdate.previousVelocityY, cpuUpdate.previousVelocityY),
+              maxAbsDifference(gpuUpdate.pressure, cpuUpdate.pressure),
+            );
+            setGpuGridUpdateMaxError(updateMaxError);
+            setGpuGridUpdateParity(Number.isFinite(updateMaxError) && updateMaxError <= 0.004);
           } finally {
             particleGrid.dispose();
           }
@@ -949,6 +980,8 @@ function DiagnosticExperienceHost(): JSX.Element {
           setGpuGridSeedRoundTrip(false);
           setGpuGridP2GParity(false);
           setGpuGridP2GMaxError(undefined);
+          setGpuGridUpdateParity(false);
+          setGpuGridUpdateMaxError(undefined);
         }
         setDiagnosticStatus('gpu-probed');
       } catch (error) {
@@ -956,6 +989,8 @@ function DiagnosticExperienceHost(): JSX.Element {
         setGpuGridSeedRoundTrip(false);
         setGpuGridP2GParity(false);
         setGpuGridP2GMaxError(undefined);
+        setGpuGridUpdateParity(false);
+        setGpuGridUpdateMaxError(undefined);
         setDiagnosticStatus('gpu-probe-error');
       }
     }
@@ -1051,6 +1086,8 @@ function DiagnosticExperienceHost(): JSX.Element {
           data-gpu-particle-grid-seed-roundtrip={gpuGridSeedRoundTrip}
           data-gpu-particle-grid-p2g-parity={gpuGridP2GParity}
           data-gpu-particle-grid-p2g-max-error={gpuGridP2GMaxError}
+          data-gpu-particle-grid-update-parity={gpuGridUpdateParity}
+          data-gpu-particle-grid-update-max-error={gpuGridUpdateMaxError}
           data-input-pointers={inputPointers}
           data-input-pointer-events={inputPointers}
           data-input-gamepads={inputGamepads}
