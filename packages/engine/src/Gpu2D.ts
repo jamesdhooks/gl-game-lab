@@ -159,7 +159,8 @@ export interface GpuParticleGridParticleUpdateOptions2D extends GpuParticleGridU
   readonly height: number;
   readonly flipness: number;
   readonly foamFrame: number;
-  readonly obstacleCount?: number;
+  readonly circleObstacles?: Float32Array;
+  readonly segmentObstacles?: Float32Array;
 }
 
 export interface GpuParticleGridSystem2D {

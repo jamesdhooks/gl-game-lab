@@ -12,6 +12,8 @@ import { createGpuDoubleRenderTarget, type GpuDoubleRenderTarget } from './GpuRe
 import { createShaderProgram } from './ShaderProgram.js';
 
 const DEBUG_P2G_MAX_PARTICLES = 64;
+const DEBUG_PARTICLE_UPDATE_MAX_CIRCLES = 8;
+const DEBUG_PARTICLE_UPDATE_MAX_SEGMENTS = 8;
 
 export interface GpuParticleGridStateSize {
   readonly capacity: number;
@@ -225,7 +227,10 @@ export class GpuParticleGridState {
     if (!Number.isFinite(options.width) || options.width <= 0 || !Number.isFinite(options.height) || options.height <= 0) {
       throw new Error('GPU particle-grid debug particle update bounds must be positive');
     }
-    if ((options.obstacleCount ?? 0) !== 0) throw new Error('GPU particle-grid debug particle update does not yet support obstacles');
+    const circleCount = Math.floor((options.circleObstacles?.length ?? 0) / 4);
+    const segmentCount = Math.floor((options.segmentObstacles?.length ?? 0) / 8);
+    if (circleCount > DEBUG_PARTICLE_UPDATE_MAX_CIRCLES) throw new Error(`GPU particle-grid debug particle update supports at most ${DEBUG_PARTICLE_UPDATE_MAX_CIRCLES} circle obstacles`);
+    if (segmentCount > DEBUG_PARTICLE_UPDATE_MAX_SEGMENTS) throw new Error(`GPU particle-grid debug particle update supports at most ${DEBUG_PARTICLE_UPDATE_MAX_SEGMENTS} segment obstacles`);
     this.debugComputeGridUpdate(options);
     this.runParticleUpdatePass(options);
     this.particleA.swap();
@@ -459,12 +464,39 @@ export class GpuParticleGridState {
     gl.uniform1f(this.uniform(program, 'uHeight'), options.height);
     gl.uniform1f(this.uniform(program, 'uFlipness'), Math.max(0, Math.min(1, options.flipness)));
     gl.uniform1i(this.uniform(program, 'uFoamParity'), options.foamFrame & 1);
+    this.setObstacleUniforms(program, options);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
     gl.bindVertexArray(null);
     gl.drawBuffers([gl.COLOR_ATTACHMENT0]);
     gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT1, gl.TEXTURE_2D, null, 0);
     gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT2, gl.TEXTURE_2D, null, 0);
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  }
+
+  private setObstacleUniforms(program: WebGLProgram, options: GpuParticleGridParticleUpdateOptions2D): void {
+    const gl = this.gl;
+    const circleCount = Math.floor((options.circleObstacles?.length ?? 0) / 4);
+    const segmentCount = Math.floor((options.segmentObstacles?.length ?? 0) / 8);
+    const circles = new Float32Array(DEBUG_PARTICLE_UPDATE_MAX_CIRCLES * 4);
+    const segmentsA = new Float32Array(DEBUG_PARTICLE_UPDATE_MAX_SEGMENTS * 4);
+    const segmentsB = new Float32Array(DEBUG_PARTICLE_UPDATE_MAX_SEGMENTS * 4);
+    if (options.circleObstacles) circles.set(options.circleObstacles.subarray(0, Math.min(options.circleObstacles.length, circles.length)));
+    if (options.segmentObstacles) {
+      for (let index = 0; index < segmentCount; index += 1) {
+        const source = index * 8;
+        const target = index * 4;
+        segmentsA[target] = options.segmentObstacles[source] ?? 0;
+        segmentsA[target + 1] = options.segmentObstacles[source + 1] ?? 0;
+        segmentsA[target + 2] = options.segmentObstacles[source + 2] ?? 0;
+        segmentsA[target + 3] = options.segmentObstacles[source + 3] ?? 0;
+        segmentsB[target] = options.segmentObstacles[source + 4] ?? 0;
+      }
+    }
+    gl.uniform1i(this.uniform(program, 'uCircleObstacleCount'), circleCount);
+    gl.uniform1i(this.uniform(program, 'uSegmentObstacleCount'), segmentCount);
+    gl.uniform4fv(this.uniform(program, 'uCircleObstacles'), circles);
+    gl.uniform4fv(this.uniform(program, 'uSegmentObstacleA'), segmentsA);
+    gl.uniform4fv(this.uniform(program, 'uSegmentObstacleB'), segmentsB);
   }
 }
 
@@ -699,6 +731,11 @@ uniform float uWidth;
 uniform float uHeight;
 uniform float uFlipness;
 uniform int uFoamParity;
+uniform int uCircleObstacleCount;
+uniform int uSegmentObstacleCount;
+uniform vec4 uCircleObstacles[${DEBUG_PARTICLE_UPDATE_MAX_CIRCLES}];
+uniform vec4 uSegmentObstacleA[${DEBUG_PARTICLE_UPDATE_MAX_SEGMENTS}];
+uniform vec4 uSegmentObstacleB[${DEBUG_PARTICLE_UPDATE_MAX_SEGMENTS}];
 layout(location = 0) out vec4 outParticleA;
 layout(location = 1) out vec4 outParticleB;
 layout(location = 2) out vec4 outParticleC;
@@ -742,6 +779,25 @@ vec4 sampleGrid(sampler2D source, vec2 position) {
   return total;
 }
 
+vec2 closestOnSegment(vec2 point, vec4 segment) {
+  vec2 a = segment.xy;
+  vec2 delta = segment.zw - segment.xy;
+  float lengthSquared = dot(delta, delta);
+  float t = lengthSquared > 0.001 ? clamp(dot(point - a, delta) / lengthSquared, 0.0, 1.0) : 0.0;
+  return a + delta * t;
+}
+
+void resolveObstacle(vec2 point, float obstacleRadius, inout vec2 position, inout vec2 velocity, float particleRadius) {
+  vec2 delta = position - point;
+  float distance = length(delta);
+  float target = particleRadius + obstacleRadius;
+  if (distance >= target) return;
+  vec2 normal = distance > 0.001 ? delta / distance : vec2(0.0, -1.0);
+  position = point + normal * target;
+  float projection = dot(velocity, normal);
+  if (projection < 0.0) velocity -= 1.05 * projection * normal;
+}
+
 void main() {
   ivec2 texel = ivec2(gl_FragCoord.xy);
   int index = particleIndex(texel);
@@ -776,6 +832,17 @@ void main() {
     position.y = uHeight - particleRadius;
     velocity.y = -abs(velocity.y) * 0.34;
     velocity.x *= 0.86;
+  }
+  for (int circle = 0; circle < ${DEBUG_PARTICLE_UPDATE_MAX_CIRCLES}; circle += 1) {
+    if (circle >= uCircleObstacleCount) break;
+    vec4 obstacle = uCircleObstacles[circle];
+    resolveObstacle(obstacle.xy, obstacle.z, position, velocity, b.z);
+  }
+  for (int segment = 0; segment < ${DEBUG_PARTICLE_UPDATE_MAX_SEGMENTS}; segment += 1) {
+    if (segment >= uSegmentObstacleCount) break;
+    vec4 obstacle = uSegmentObstacleA[segment];
+    vec2 closest = closestOnSegment(position, obstacle);
+    resolveObstacle(closest, uSegmentObstacleB[segment].x, position, velocity, b.z);
   }
   float eps = max(1.0, uCell);
   vec2 right = sampleGrid(uVelocityGrid, position + vec2(eps, 0.0)).xy;

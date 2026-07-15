@@ -979,6 +979,10 @@ function DiagnosticExperienceHost(): JSX.Element {
             const cpuVelocities = seed.velocities.slice();
             const cpuFoam = seed.foam.slice();
             const cpuAffine = seed.affine.slice();
+            const diagnosticObstacles = [
+              Object.freeze({ kind: 'circle' as const, ax: 15, ay: 11, bx: 15, by: 11, radius: 5 }),
+              Object.freeze({ kind: 'segment' as const, ax: 2, ay: 24, bx: 22, by: 24, radius: 4 }),
+            ];
             const cpuParticle = computeSplashPicFlipParticleUpdate({
               count: seed.count,
               positions: cpuPositions,
@@ -986,7 +990,7 @@ function DiagnosticExperienceHost(): JSX.Element {
               radii: seed.radii,
               foam: cpuFoam,
               affine: cpuAffine,
-              obstacles: [],
+              obstacles: diagnosticObstacles,
               columns: particleGrid.gridWidth,
               rows: particleGrid.gridHeight,
               cell,
@@ -1007,6 +1011,8 @@ function DiagnosticExperienceHost(): JSX.Element {
               height: 64,
               flipness: 0.88,
               foamFrame: 0,
+              circleObstacles: new Float32Array([15, 11, 5, 0]),
+              segmentObstacles: new Float32Array([2, 24, 22, 24, 4, 0, 0, 0]),
             });
             const particleMaxError = Math.max(
               maxAbsDifference(gpuParticle.positions, cpuParticle.positions),
