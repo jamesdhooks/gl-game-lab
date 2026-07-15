@@ -1,5 +1,5 @@
 import { createExtensionToken, type EnginePlugin } from '@hooksjam/gl-game-lab-core';
-import { EngineInput, EngineRender2D, EngineSchedule, type ExperienceLaunchOptions, type ExperienceRuntimeController, type ExperienceSettingValue } from '@hooksjam/gl-game-lab-engine';
+import { applyPaletteGradientBackdrop2D, EngineInput, EngineRender2D, EngineSchedule, type ExperienceLaunchOptions, type ExperienceRuntimeController, type ExperienceSettingValue } from '@hooksjam/gl-game-lab-engine';
 import { registerSimulationRuntime } from '../SimulationPluginLifecycle.js';
 import { createBuildFixture, packBuildPreview } from '../BuildFixtures.js';
 import { createWaterTankConfig, WATER_TANK_DEFAULTS, waterNumber, waterString, type WaterTankConfig } from './config.js';
@@ -280,14 +280,8 @@ export function createWaterTankPlugin(initial: WaterTankConfig = WATER_TANK_DEFA
         };
       }
       function applyStyle() {
-        const style = requireStyle(), background = waterColor3(style.background), ultra = waterString(config, 'renderStyle') === 'ultra';
-        renderer.setClearColor([
-          background[0],
-          background[1],
-          background[2],
-          1
-        ]);
-        renderer.setBackdrop(undefined);
+        const style = requireStyle(), ultra = waterString(config, 'renderStyle') === 'ultra';
+        applyPaletteGradientBackdrop2D(renderer, style);
         renderer.setBloom({
           enabled: ultra,
           intensity: ultra ? waterNumber(config, 'liquidBloomStrength') : 0,

@@ -1,6 +1,11 @@
+import {
+  DEFAULT_PALETTE_GRADIENT_BLEND_STRENGTH,
+  DEFAULT_PALETTE_GRADIENT_TIER,
+} from '@hooksjam/gl-game-lab-engine';
 import type { SpriteRenderTarget } from './SpriteRenderer.js';
 import type { WebGL2Device } from './WebGL2Device.js';
 import { createShaderProgram, requireShaderUniform } from './ShaderProgram.js';
+import { PALETTE_GRADIENT_BACKDROP_GLSL } from './PaletteGradientBackdropShader.js';
 
 export interface PaletteBackdropOptions {
   readonly base: readonly [number, number, number, number];
@@ -23,8 +28,8 @@ export function normalizePaletteBackdropOptions(options: PaletteBackdropOptions)
   const primary = rgb(options.palette[0] ?? options.base, 'Backdrop primary');
   const secondary = rgb(options.palette[1] ?? options.palette[2] ?? options.palette[0] ?? options.base, 'Backdrop secondary');
   const accent = rgb(options.palette[3] ?? options.palette[2] ?? options.palette[1] ?? options.palette[0] ?? options.base, 'Backdrop accent');
-  const tier = range(options.tier ?? 0.55, 0, 1, 'Backdrop tier');
-  const blendStrength = range(options.blendStrength ?? 0.12, 0, 1, 'Backdrop blend strength');
+  const tier = range(options.tier ?? DEFAULT_PALETTE_GRADIENT_TIER, 0, 1, 'Backdrop tier');
+  const blendStrength = range(options.blendStrength ?? DEFAULT_PALETTE_GRADIENT_BLEND_STRENGTH, 0, 1, 'Backdrop blend strength');
   const paletteBase = mix(primary, secondary, 0.45);
   return Object.freeze({
     base: Object.freeze(mix(base, paletteBase, blendStrength)),
@@ -146,14 +151,8 @@ uniform vec3 u_secondary;
 uniform vec3 u_accent;
 uniform float u_tier;
 out vec4 outColor;
+${PALETTE_GRADIENT_BACKDROP_GLSL}
 void main() {
   vec2 uv = gl_FragCoord.xy / u_viewport;
-  float vertical = smoothstep(0.0, 1.0, uv.y);
-  float horizon = exp(-pow((uv.y - 0.44) * 4.3, 2.0));
-  float vignette = 1.0 - smoothstep(0.28, 0.9, length((uv - 0.5) * vec2(1.22, 1.0))) * 0.42;
-  float shimmer = sin((uv.x * 4.6 + uv.y * 2.1) * 3.14159) * 0.5 + 0.5;
-  vec3 field = mix(u_base * 0.72 + u_primary * 0.08, u_base * 0.88 + u_secondary * 0.09, vertical);
-  field += u_accent * horizon * mix(0.035, 0.1, u_tier);
-  field += u_primary * shimmer * horizon * mix(0.012, 0.04, u_tier);
-  outColor = vec4(field * vignette, 1.0);
+  outColor = vec4(paletteGradientBackdrop(uv, u_base, u_primary, u_secondary, u_accent, u_tier), 1.0);
 }`;

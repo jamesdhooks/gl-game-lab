@@ -1,5 +1,6 @@
 import { createExtensionToken, type EnginePlugin, type PointerInputEvent } from '@hooksjam/gl-game-lab-core';
 import {
+  applyPaletteGradientBackdrop2D,
   EngineInput,
   InteractionRadiusIndicator2D,
   EngineQuality,
@@ -287,10 +288,7 @@ function configureWorld(world: DenseCircleParticleWorld2D, config: BallPitConfig
 function applyStyle(renderer: import('@hooksjam/gl-game-lab-engine').Render2DService, styleId: string): void {
   const style = BALL_PIT_STYLE_MANIFEST.styles.find((candidate) => candidate.id === styleId);
   if (!style) throw new Error(`Unknown Ball Pit style: ${styleId}`);
-  const background = rgbHexToRgba(style.background);
-  const palette = requirePalette(styleId);
-  renderer.setClearColor(background);
-  renderer.setBackdrop({ base: background, palette, tier: 0.55, blendStrength: 0.12 });
+  applyPaletteGradientBackdrop2D(renderer, style);
   renderer.setBloom({ enabled: false });
 }
 

@@ -1,5 +1,5 @@
 import { createExtensionToken, type EnginePlugin } from '@hooksjam/gl-game-lab-core';
-import { EngineInput, EngineRender2D, EngineSchedule, InteractionRadiusIndicator2D, type ExperienceLaunchOptions, type ExperienceRuntimeController, type ExperienceSettingValue } from '@hooksjam/gl-game-lab-engine';
+import { applyPaletteGradientBackdrop2D, EngineInput, EngineRender2D, EngineSchedule, InteractionRadiusIndicator2D, type ExperienceLaunchOptions, type ExperienceRuntimeController, type ExperienceSettingValue } from '@hooksjam/gl-game-lab-engine';
 import { registerSimulationRuntime } from '../SimulationPluginLifecycle.js';
 import { packDrawPathPreview } from '../DrawPathPreview.js';
 import { createBuildFixture, packBuildFixtures, packBuildPreview, sampleBuildFixture, type BuildFixture2D } from '../BuildFixtures.js';
@@ -252,24 +252,8 @@ export function createChainRainPlugin(initial: ChainRainConfig = CHAIN_RAIN_DEFA
         });
       }
       function applyStyle() {
-        const style = requireStyle(), background = chainColor3(style.background), renderStyle = chainString(config, 'renderStyle');
-        renderer.setClearColor([
-          background[0],
-          background[1],
-          background[2],
-          1
-        ]);
-        renderer.setBackdrop({
-          base: [
-            background[0],
-            background[1],
-            background[2],
-            1
-          ],
-          palette: style.palette.slice(0, 4).map(color => chainColor4(color)),
-          tier: 0.3,
-          blendStrength: 0.07
-        });
+        const style = requireStyle(), renderStyle = chainString(config, 'renderStyle');
+        applyPaletteGradientBackdrop2D(renderer, style);
         renderer.setBloom({
           enabled: renderStyle === 'ultra',
           intensity: renderStyle === 'ultra' ? chainNumber(config, 'liquidBloomStrength') : 0.2,

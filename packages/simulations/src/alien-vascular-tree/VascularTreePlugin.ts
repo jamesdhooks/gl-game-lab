@@ -1,5 +1,5 @@
 import { createExtensionToken, type EnginePlugin } from '@hooksjam/gl-game-lab-core';
-import { EngineInput, EngineRender2D, EngineSchedule, type ExperienceLaunchOptions, type ExperienceRuntimeController, type ExperienceSettingValue } from '@hooksjam/gl-game-lab-engine';
+import { applyPaletteGradientBackdrop2D, EngineInput, EngineRender2D, EngineSchedule, type ExperienceLaunchOptions, type ExperienceRuntimeController, type ExperienceSettingValue } from '@hooksjam/gl-game-lab-engine';
 import { registerSimulationRuntime } from '../SimulationPluginLifecycle.js';
 import { createVascularTreeConfig, VASCULAR_TREE_DEFAULTS, type VascularTreeConfig } from './config.js';
 import { VASCULAR_MARKER_SHADER } from './shaders.js';
@@ -161,27 +161,7 @@ export function createVascularTreePlugin(initial: VascularTreeConfig = VASCULAR_
         }
       });
       function applyStyle() {
-        const background = vascularColor3(requireStyle().background);
-        renderer.setClearColor([
-          background[0],
-          background[1],
-          background[2],
-          1
-        ]);
-        renderer.setBackdrop({
-          base: [
-            background[0],
-            background[1],
-            background[2],
-            1
-          ],
-          palette: requireStyle().palette.slice(0, 4).map(color => [
-            ...vascularColor3(color),
-            1
-          ] as const),
-          tier: 0.35,
-          blendStrength: 0.08
-        });
+        applyPaletteGradientBackdrop2D(renderer, requireStyle());
         renderer.setBloom({
           enabled: false
         });

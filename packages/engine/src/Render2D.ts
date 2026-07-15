@@ -82,6 +82,7 @@ export interface Bloom2DOptions {
 }
 
 export interface Backdrop2DOptions {
+  /** Prefer applyPaletteGradientBackdrop2D for the standard scene background. */
   readonly base: ColorRgba;
   readonly palette: readonly ColorRgba[];
   readonly tier?: number;

@@ -1,5 +1,5 @@
 import { createExtensionToken, type EnginePlugin, type PointerInputEvent } from '@hooksjam/gl-game-lab-core';
-import { EngineInput, EngineRender2D, EngineSchedule, type ExperienceLaunchOptions, type ExperienceRuntimeController, type ExperienceSettingValue } from '@hooksjam/gl-game-lab-engine';
+import { applyPaletteGradientBackdrop2D, EngineInput, EngineRender2D, EngineSchedule, type ExperienceLaunchOptions, type ExperienceRuntimeController, type ExperienceSettingValue } from '@hooksjam/gl-game-lab-engine';
 import { registerSimulationRuntime } from '../SimulationPluginLifecycle.js';
 import { createLavaLampConfig, LAVA_LAMP_DEFAULTS, lavaNumber, lavaString, type LavaLampConfig } from './config.js';
 import { LavaLampModel, type LavaLampTuning } from './LavaLampModel.js';
@@ -249,24 +249,8 @@ export function createLavaLampPlugin(initial: LavaLampConfig = LAVA_LAMP_DEFAULT
         };
       }
       function applyStyle() {
-        const style = requireStyle(), background = lavaColor3(style.background), ultra = lavaString(config, 'renderStyle') === 'ultra';
-        renderer.setClearColor([
-          background[0],
-          background[1],
-          background[2],
-          1
-        ]);
-        renderer.setBackdrop(ultra ? undefined : {
-          base: [
-            background[0],
-            background[1],
-            background[2],
-            1
-          ],
-          palette: style.palette.slice(0, 4).map(lavaColor4),
-          tier: 0.4,
-          blendStrength: 0.06
-        });
+        const style = requireStyle(), ultra = lavaString(config, 'renderStyle') === 'ultra';
+        applyPaletteGradientBackdrop2D(renderer, style, { enabled: !ultra });
         renderer.setBloom({
           enabled: ultra,
           intensity: ultra ? lavaNumber(config, 'liquidBloomStrength') : 0,

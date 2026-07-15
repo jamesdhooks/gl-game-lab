@@ -95,6 +95,13 @@ export {
   type InteractionIndicatorPointer2D,
   type InteractionRadiusIndicator2DOptions,
 } from './InteractionRadiusIndicator2D.js';
+export {
+  applyPaletteGradientBackdrop2D,
+  paletteGradientColorRgba,
+  DEFAULT_PALETTE_GRADIENT_BLEND_STRENGTH,
+  DEFAULT_PALETTE_GRADIENT_TIER,
+  type PaletteGradientBackdrop2DOptions,
+} from './PaletteGradientBackdrop2D.js';
 export { InputSourceRegistry, type InputSource } from './InputSourceRegistry.js';
 export {
   type Gpu2DService,

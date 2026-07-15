@@ -1,5 +1,5 @@
 import { createExtensionToken, type EnginePlugin } from '@hooksjam/gl-game-lab-core';
-import { EngineInput, EngineRender2D, EngineSchedule, InteractionRadiusIndicator2D, type ExperienceLaunchOptions, type ExperienceRuntimeController, type ExperienceSettingValue } from '@hooksjam/gl-game-lab-engine';
+import { applyPaletteGradientBackdrop2D, EngineInput, EngineRender2D, EngineSchedule, InteractionRadiusIndicator2D, type ExperienceLaunchOptions, type ExperienceRuntimeController, type ExperienceSettingValue } from '@hooksjam/gl-game-lab-engine';
 import { registerSimulationRuntime } from '../SimulationPluginLifecycle.js';
 import { packDrawPathPreview } from '../DrawPathPreview.js';
 import { packBuildPreview } from '../BuildFixtures.js';
@@ -235,24 +235,8 @@ export function createSoftBodyBlobPlugin(initial: SoftBodyBlobConfig = SOFT_BODY
         });
       }
       function applyStyle() {
-        const style = requireStyle(), background = blobColor3(style.background), ultra = blobString(config, 'renderStyle') === 'ultra';
-        renderer.setClearColor([
-          background[0],
-          background[1],
-          background[2],
-          1
-        ]);
-        renderer.setBackdrop({
-          base: [
-            background[0],
-            background[1],
-            background[2],
-            1
-          ],
-          palette: style.palette.slice(0, 4).map(color => blobColor4(color)),
-          tier: 0.33,
-          blendStrength: 0.08
-        });
+        const style = requireStyle(), ultra = blobString(config, 'renderStyle') === 'ultra';
+        applyPaletteGradientBackdrop2D(renderer, style);
         renderer.setBloom({
           enabled: ultra,
           intensity: ultra ? blobNumber(config, 'liquidBloomStrength') : 0.2,
