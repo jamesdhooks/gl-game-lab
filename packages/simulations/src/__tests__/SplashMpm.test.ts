@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { computeSplashPicFlipGridUpdate, computeSplashPicFlipParticleToGrid, createSplashMpmConfig, SPLASH_MPM_DEFAULTS, SPLASH_MPM_SETTINGS, splashMpmDefinition, SPLASH_MPM_STYLE_MANIFEST, SplashMpmModel } from '../index.js';
+import { computeSplashPicFlipGridUpdate, computeSplashPicFlipParticleToGrid, computeSplashPicFlipParticleUpdate, createSplashMpmConfig, SPLASH_MPM_DEFAULTS, SPLASH_MPM_SETTINGS, splashMpmDefinition, SPLASH_MPM_STYLE_MANIFEST, SplashMpmModel } from '../index.js';
 import { resolveSplashPicFlipBackend, splashSnapshotToGpuParticleGridSeed } from '../splash-mpm/SplashPicFlipBackend.js';
 import { resolveSplashSurfaceParameters, selectHeldSplashPointer } from '../splash-mpm/SplashMpmPlugin.js';
 import { compareSplashPicFlipMetrics, type SplashMpmTuning } from '../splash-mpm/SplashMpmModel.js';
@@ -207,6 +207,99 @@ describe('Splash MPM', () => {
     expect(maxDiff(after.grid.previousVelocityX, previousVelocityX)).toBeLessThan(0.0001);
     expect(maxDiff(after.grid.previousVelocityY, previousVelocityY)).toBeLessThan(0.0001);
     expect(maxDiff(after.grid.pressure, pressure)).toBeLessThan(0.0001);
+  });
+  it('computes the reusable CPU particle update as the model particle reference', () => {
+    const model = new SplashMpmModel();
+    model.reset(320, 240, BASE_TUNING);
+    model.seed(320, 240, BASE_TUNING);
+    model.addCircle(180, 150, 12);
+    model.addSegment(70, 190, 240, 170, 8);
+    const before = model.snapshot();
+    const cell = 320 / Math.max(24, Math.floor(BASE_TUNING.resolution));
+    const columns = Math.max(8, Math.ceil(320 / cell));
+    const rows = Math.max(8, Math.ceil(240 / cell));
+    const cellCount = columns * rows;
+    const mass = new Float32Array(cellCount);
+    const momentumX = new Float32Array(cellCount);
+    const momentumY = new Float32Array(cellCount);
+    const transfer = computeSplashPicFlipParticleToGrid({
+      count: before.count,
+      positions: before.positions,
+      velocities: before.velocities,
+      affine: before.affine,
+      columns,
+      rows,
+      cell,
+      radius: BASE_TUNING.radius,
+      output: { mass, momentumX, momentumY },
+    });
+    const velocityX = new Float32Array(cellCount);
+    const velocityY = new Float32Array(cellCount);
+    const previousVelocityX = new Float32Array(cellCount);
+    const previousVelocityY = new Float32Array(cellCount);
+    const pressure = new Float32Array(cellCount);
+    const scratchVelocityX = new Float32Array(cellCount);
+    const scratchVelocityY = new Float32Array(cellCount);
+    computeSplashPicFlipGridUpdate({
+      columns,
+      rows,
+      cell,
+      support: transfer.support,
+      mass,
+      momentumX,
+      momentumY,
+      dt: 1 / 60,
+      stiffness: BASE_TUNING.stiffness,
+      restDensity: BASE_TUNING.restDensity,
+      separation: BASE_TUNING.separation,
+      viscosity: BASE_TUNING.viscosity,
+      gravity: BASE_TUNING.gravity,
+      output: {
+        velocityX,
+        velocityY,
+        previousVelocityX,
+        previousVelocityY,
+        pressure,
+        scratchVelocityX,
+        scratchVelocityY,
+      },
+    });
+    const positions = before.positions.slice();
+    const velocities = before.velocities.slice();
+    const foam = before.foam.slice();
+    const affine = before.affine.slice();
+    const update = computeSplashPicFlipParticleUpdate({
+      count: before.count,
+      positions,
+      velocities,
+      radii: before.radii,
+      foam,
+      affine,
+      obstacles: before.obstacles,
+      columns,
+      rows,
+      cell,
+      mass,
+      velocityX,
+      velocityY,
+      previousVelocityX,
+      previousVelocityY,
+      dt: 1 / 60,
+      width: 320,
+      height: 240,
+      flipness: BASE_TUNING.flipness,
+      foamFrame: 0,
+    });
+    expect(update.positions).toBe(positions);
+    expect(update.velocities).toBe(velocities);
+    expect(update.foam).toBe(foam);
+    expect(update.affine).toBe(affine);
+    model.step(1 / 60, 320, 240, BASE_TUNING);
+    const after = model.snapshot();
+    expect(maxDiff(after.positions, positions)).toBeLessThan(0.0001);
+    expect(maxDiff(after.velocities, velocities)).toBeLessThan(0.0001);
+    expect(maxDiff(after.foam, foam)).toBeLessThan(0.0001);
+    expect(maxDiff(after.affine, affine)).toBeLessThan(0.0001);
   });
   it('reports divergent trajectories through parity metrics', () => {
     const reference = new SplashMpmModel();

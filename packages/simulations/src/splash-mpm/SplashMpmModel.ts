@@ -129,6 +129,37 @@ export interface SplashPicFlipGridUpdate {
   readonly pressure: Float32Array;
 }
 
+export interface SplashPicFlipParticleUpdateInput {
+  readonly count: number;
+  readonly positions: Float32Array;
+  readonly velocities: Float32Array;
+  readonly radii: Float32Array;
+  readonly foam: Float32Array;
+  readonly affine: Float32Array;
+  readonly obstacles: readonly WaterObstacle[];
+  readonly columns: number;
+  readonly rows: number;
+  readonly cell: number;
+  readonly mass: Float32Array;
+  readonly velocityX: Float32Array;
+  readonly velocityY: Float32Array;
+  readonly previousVelocityX: Float32Array;
+  readonly previousVelocityY: Float32Array;
+  readonly dt: number;
+  readonly width: number;
+  readonly height: number;
+  readonly flipness: number;
+  readonly foamFrame: number;
+  readonly scratch?: Float64Array;
+}
+
+export interface SplashPicFlipParticleUpdate {
+  readonly positions: Float32Array;
+  readonly velocities: Float32Array;
+  readonly foam: Float32Array;
+  readonly affine: Float32Array;
+}
+
 export class SplashPicFlipModel {
   readonly world = new DenseCircleParticleWorld2D(SPLASH_PIC_FLIP_CAPACITY, {
     maxParticles: SPLASH_PIC_FLIP_CAPACITY,
@@ -311,43 +342,29 @@ export class SplashPicFlipModel {
         scratchVelocityY: this.nextVy,
       },
     });
-    const flip = Math.max(0, Math.min(1, t.flipness));
-    const foamParity = this.foamFrame & 1;
-    for (let i = 0; i < this.count; i++) {
-      const o = i * 2, ao = i * 4, px = this.world.positions[o] ?? 0, py = this.world.positions[o + 1] ?? 0;
-      this.sampleFour(this.vx, this.vy, this.oldVx, this.oldVy, px, py, this.sampleScratch);
-      const picX = this.sampleScratch[0] ?? 0, picY = this.sampleScratch[1] ?? 0;
-      const prevX = this.sampleScratch[2] ?? 0, prevY = this.sampleScratch[3] ?? 0;
-      const deltaX = picX - prevX, deltaY = picY - prevY;
-      this.world.velocities[o] = picX * (1 - flip) + ((this.world.velocities[o] ?? 0) + deltaX) * flip;
-      this.world.velocities[o + 1] = picY * (1 - flip) + ((this.world.velocities[o + 1] ?? 0) + deltaY) * flip;
-      this.world.positions[o] = (this.world.positions[o] ?? 0) + (this.world.velocities[o] ?? 0) * dt;
-      this.world.positions[o + 1] = (this.world.positions[o + 1] ?? 0) + (this.world.velocities[o + 1] ?? 0) * dt;
-      this.bound(i, width, height);
-      this.collide(i);
-      const eps = Math.max(1, this.cell), x = this.world.positions[o] ?? 0, y = this.world.positions[o + 1] ?? 0;
-      this.samplePair(this.vx, this.vy, x + eps, y, this.sampleScratch, 0);
-      this.samplePair(this.vx, this.vy, x - eps, y, this.sampleScratch, 2);
-      this.samplePair(this.vx, this.vy, x, y + eps, this.sampleScratch, 4);
-      this.samplePair(this.vx, this.vy, x, y - eps, this.sampleScratch, 6);
-      this.affine[ao] = ((this.sampleScratch[0] ?? 0) - (this.sampleScratch[2] ?? 0)) * 0.5;
-      this.affine[ao + 1] = ((this.sampleScratch[4] ?? 0) - (this.sampleScratch[6] ?? 0)) * 0.5;
-      this.affine[ao + 2] = ((this.sampleScratch[1] ?? 0) - (this.sampleScratch[3] ?? 0)) * 0.5;
-      this.affine[ao + 3] = ((this.sampleScratch[5] ?? 0) - (this.sampleScratch[7] ?? 0)) * 0.5;
-      if ((i & 1) !== foamParity) continue;
-      const localMass = this.sample(this.mass, x, y);
-      const massAbove = this.sample(this.mass, x, y - eps);
-      const massBelow = this.sample(this.mass, x, y + eps);
-      const massLeft = this.sample(this.mass, x - eps, y);
-      const massRight = this.sample(this.mass, x + eps, y);
-      const freeSurface = smoothstep(0.08, 0.8, localMass) * smoothstep(0.04, 0.75, localMass - massAbove);
-      const massGradient = smoothstep(0.05, 1.2, Math.abs(massBelow - massAbove) + Math.abs(massRight - massLeft) * 0.45);
-      const velocityX = this.world.velocities[o] ?? 0, velocityY = this.world.velocities[o + 1] ?? 0;
-      const turbulentSpeed = smoothstep(260, 1250, Math.sqrt(velocityX * velocityX + velocityY * velocityY));
-      const shear = smoothstep(0.08, 0.9, Math.abs(this.affine[ao + 1] ?? 0) + Math.abs(this.affine[ao + 2] ?? 0) + Math.abs(this.affine[ao] ?? 0) * 0.35 + Math.abs(this.affine[ao + 3] ?? 0) * 0.35);
-      const foamSource = freeSurface * massGradient * Math.max(turbulentSpeed, shear * 0.72);
-      this.foam[i] = Math.max(0, Math.min(1, (this.foam[i] ?? 0) * Math.pow(0.996, dt * 120) + foamSource * 0.056));
-    }
+    computeSplashPicFlipParticleUpdate({
+      count: this.count,
+      positions: this.world.positions,
+      velocities: this.world.velocities,
+      radii: this.world.radii,
+      foam: this.foam,
+      affine: this.affine,
+      obstacles: this.obstacles,
+      columns: this.columns,
+      rows: this.rows,
+      cell: this.cell,
+      mass: this.mass,
+      velocityX: this.vx,
+      velocityY: this.vy,
+      previousVelocityX: this.oldVx,
+      previousVelocityY: this.oldVy,
+      dt,
+      width,
+      height,
+      flipness: t.flipness,
+      foamFrame: this.foamFrame,
+      scratch: this.sampleScratch,
+    });
     this.foamFrame++;
   }
   snapshot(): SplashPicFlipStateSnapshot {
@@ -718,6 +735,81 @@ export function computeSplashPicFlipGridUpdate(input: SplashPicFlipGridUpdateInp
   });
 }
 
+export function computeSplashPicFlipParticleUpdate(input: SplashPicFlipParticleUpdateInput): SplashPicFlipParticleUpdate {
+  if (!Number.isSafeInteger(input.count) || input.count < 0) throw new Error('Splash PIC/FLIP particle update count must be non-negative');
+  if (!Number.isSafeInteger(input.columns) || input.columns < 1) throw new Error('Splash PIC/FLIP particle update columns must be positive');
+  if (!Number.isSafeInteger(input.rows) || input.rows < 1) throw new Error('Splash PIC/FLIP particle update rows must be positive');
+  if (!Number.isFinite(input.cell) || input.cell <= 0) throw new Error('Splash PIC/FLIP particle update cell must be positive');
+  if (!Number.isFinite(input.dt) || input.dt < 0) throw new Error('Splash PIC/FLIP particle update dt must be non-negative');
+  if (!Number.isFinite(input.width) || input.width <= 0 || !Number.isFinite(input.height) || input.height <= 0) {
+    throw new Error('Splash PIC/FLIP particle update bounds must be positive');
+  }
+  const gridCount = input.columns * input.rows;
+  if (input.positions.length < input.count * 2 || input.velocities.length < input.count * 2 || input.radii.length < input.count
+    || input.foam.length < input.count || input.affine.length < input.count * 4) {
+    throw new Error('Splash PIC/FLIP particle update particle arrays are too short');
+  }
+  if (input.mass.length < gridCount || input.velocityX.length < gridCount || input.velocityY.length < gridCount
+    || input.previousVelocityX.length < gridCount || input.previousVelocityY.length < gridCount) {
+    throw new Error('Splash PIC/FLIP particle update grid arrays are too short');
+  }
+  const flip = Math.max(0, Math.min(1, input.flipness));
+  const foamParity = input.foamFrame & 1;
+  const scratch = input.scratch ?? new Float64Array(8);
+  if (scratch.length < 8) throw new Error('Splash PIC/FLIP particle update scratch array is too short');
+  for (let particle = 0; particle < input.count; particle += 1) {
+    const offset = particle * 2;
+    const affineOffset = particle * 4;
+    const px = input.positions[offset] ?? 0;
+    const py = input.positions[offset + 1] ?? 0;
+    splashPicFlipSampleFour(input.velocityX, input.velocityY, input.previousVelocityX, input.previousVelocityY, px, py, input.columns, input.rows, input.cell, scratch);
+    const picX = scratch[0] ?? 0;
+    const picY = scratch[1] ?? 0;
+    const prevX = scratch[2] ?? 0;
+    const prevY = scratch[3] ?? 0;
+    const deltaX = picX - prevX;
+    const deltaY = picY - prevY;
+    input.velocities[offset] = picX * (1 - flip) + ((input.velocities[offset] ?? 0) + deltaX) * flip;
+    input.velocities[offset + 1] = picY * (1 - flip) + ((input.velocities[offset + 1] ?? 0) + deltaY) * flip;
+    input.positions[offset] = (input.positions[offset] ?? 0) + (input.velocities[offset] ?? 0) * input.dt;
+    input.positions[offset + 1] = (input.positions[offset + 1] ?? 0) + (input.velocities[offset + 1] ?? 0) * input.dt;
+    splashPicFlipResolveBounds(particle, input.positions, input.velocities, input.radii, input.width, input.height);
+    splashPicFlipResolveObstacles(particle, input.positions, input.velocities, input.radii, input.obstacles);
+    const eps = Math.max(1, input.cell);
+    const x = input.positions[offset] ?? 0;
+    const y = input.positions[offset + 1] ?? 0;
+    splashPicFlipSamplePair(input.velocityX, input.velocityY, x + eps, y, input.columns, input.rows, input.cell, scratch, 0);
+    splashPicFlipSamplePair(input.velocityX, input.velocityY, x - eps, y, input.columns, input.rows, input.cell, scratch, 2);
+    splashPicFlipSamplePair(input.velocityX, input.velocityY, x, y + eps, input.columns, input.rows, input.cell, scratch, 4);
+    splashPicFlipSamplePair(input.velocityX, input.velocityY, x, y - eps, input.columns, input.rows, input.cell, scratch, 6);
+    input.affine[affineOffset] = ((scratch[0] ?? 0) - (scratch[2] ?? 0)) * 0.5;
+    input.affine[affineOffset + 1] = ((scratch[4] ?? 0) - (scratch[6] ?? 0)) * 0.5;
+    input.affine[affineOffset + 2] = ((scratch[1] ?? 0) - (scratch[3] ?? 0)) * 0.5;
+    input.affine[affineOffset + 3] = ((scratch[5] ?? 0) - (scratch[7] ?? 0)) * 0.5;
+    if ((particle & 1) !== foamParity) continue;
+    const localMass = splashPicFlipSample(input.mass, x, y, input.columns, input.rows, input.cell);
+    const massAbove = splashPicFlipSample(input.mass, x, y - eps, input.columns, input.rows, input.cell);
+    const massBelow = splashPicFlipSample(input.mass, x, y + eps, input.columns, input.rows, input.cell);
+    const massLeft = splashPicFlipSample(input.mass, x - eps, y, input.columns, input.rows, input.cell);
+    const massRight = splashPicFlipSample(input.mass, x + eps, y, input.columns, input.rows, input.cell);
+    const freeSurface = smoothstep(0.08, 0.8, localMass) * smoothstep(0.04, 0.75, localMass - massAbove);
+    const massGradient = smoothstep(0.05, 1.2, Math.abs(massBelow - massAbove) + Math.abs(massRight - massLeft) * 0.45);
+    const velocityX = input.velocities[offset] ?? 0;
+    const velocityY = input.velocities[offset + 1] ?? 0;
+    const turbulentSpeed = smoothstep(260, 1250, Math.sqrt(velocityX * velocityX + velocityY * velocityY));
+    const shear = smoothstep(0.08, 0.9, Math.abs(input.affine[affineOffset + 1] ?? 0) + Math.abs(input.affine[affineOffset + 2] ?? 0)
+      + Math.abs(input.affine[affineOffset] ?? 0) * 0.35 + Math.abs(input.affine[affineOffset + 3] ?? 0) * 0.35);
+    const foamSource = freeSurface * massGradient * Math.max(turbulentSpeed, shear * 0.72);
+    input.foam[particle] = Math.max(0, Math.min(1, (input.foam[particle] ?? 0) * Math.pow(0.996, input.dt * 120) + foamSource * 0.056));
+  }
+  return Object.freeze({
+    positions: input.positions,
+    velocities: input.velocities,
+    foam: input.foam,
+    affine: input.affine,
+  });
+}
+
 export function measureSplashPicFlipSnapshot(snapshot: SplashPicFlipStateSnapshot): SplashPicFlipMetrics {
   let sumX = 0, sumY = 0, momentumX = 0, momentumY = 0, kineticEnergy = 0, foamCount = 0, finite = true;
   for (let index = 0; index < snapshot.count; index += 1) {
@@ -775,6 +867,104 @@ function relativeError(reference: number, candidate: number): number {
 }
 function splashPicFlipGridIndex(x: number, y: number, columns: number, rows: number) {
   return Math.max(0, Math.min(rows - 1, y)) * columns + Math.max(0, Math.min(columns - 1, x));
+}
+function splashPicFlipSample(values: Float32Array, x: number, y: number, columns: number, rows: number, cell: number) {
+  const gx = x / Math.max(1, cell), gy = y / Math.max(1, cell);
+  const baseX = Math.floor(gx - 0.5), baseY = Math.floor(gy - 0.5);
+  const tx = gx - baseX, ty = gy - baseY;
+  const wx0 = 0.5 * (1.5 - tx) * (1.5 - tx), wx1 = 0.75 - (tx - 1) * (tx - 1), wx2 = 0.5 * (tx - 0.5) * (tx - 0.5);
+  const wy0 = 0.5 * (1.5 - ty) * (1.5 - ty), wy1 = 0.75 - (ty - 1) * (ty - 1), wy2 = 0.5 * (ty - 0.5) * (ty - 0.5);
+  let value = 0;
+  for (let offsetY = 0; offsetY < 3; offsetY += 1) {
+    const wy = offsetY === 0 ? wy0 : offsetY === 1 ? wy1 : wy2;
+    for (let offsetX = 0; offsetX < 3; offsetX += 1) {
+      const wx = offsetX === 0 ? wx0 : offsetX === 1 ? wx1 : wx2;
+      value += (values[splashPicFlipGridIndex(baseX + offsetX, baseY + offsetY, columns, rows)] ?? 0) * wx * wy;
+    }
+  }
+  return value;
+}
+function splashPicFlipSamplePair(a: Float32Array, b: Float32Array, x: number, y: number, columns: number, rows: number, cell: number, output: Float64Array, offset: number) {
+  const gx = x / Math.max(1, cell), gy = y / Math.max(1, cell);
+  const baseX = Math.floor(gx - 0.5), baseY = Math.floor(gy - 0.5), tx = gx - baseX, ty = gy - baseY;
+  const wx0 = 0.5 * (1.5 - tx) * (1.5 - tx), wx1 = 0.75 - (tx - 1) * (tx - 1), wx2 = 0.5 * (tx - 0.5) * (tx - 0.5);
+  const wy0 = 0.5 * (1.5 - ty) * (1.5 - ty), wy1 = 0.75 - (ty - 1) * (ty - 1), wy2 = 0.5 * (ty - 0.5) * (ty - 0.5);
+  let valueA = 0, valueB = 0;
+  for (let offsetY = 0; offsetY < 3; offsetY += 1) {
+    const wy = offsetY === 0 ? wy0 : offsetY === 1 ? wy1 : wy2;
+    for (let offsetX = 0; offsetX < 3; offsetX += 1) {
+      const wx = offsetX === 0 ? wx0 : offsetX === 1 ? wx1 : wx2, weight = wx * wy;
+      const index = splashPicFlipGridIndex(baseX + offsetX, baseY + offsetY, columns, rows);
+      valueA += (a[index] ?? 0) * weight;
+      valueB += (b[index] ?? 0) * weight;
+    }
+  }
+  output[offset] = valueA;
+  output[offset + 1] = valueB;
+}
+function splashPicFlipSampleFour(a: Float32Array, b: Float32Array, c: Float32Array, d: Float32Array, x: number, y: number, columns: number, rows: number, cell: number, output: Float64Array) {
+  const gx = x / Math.max(1, cell), gy = y / Math.max(1, cell);
+  const baseX = Math.floor(gx - 0.5), baseY = Math.floor(gy - 0.5), tx = gx - baseX, ty = gy - baseY;
+  const wx0 = 0.5 * (1.5 - tx) * (1.5 - tx), wx1 = 0.75 - (tx - 1) * (tx - 1), wx2 = 0.5 * (tx - 0.5) * (tx - 0.5);
+  const wy0 = 0.5 * (1.5 - ty) * (1.5 - ty), wy1 = 0.75 - (ty - 1) * (ty - 1), wy2 = 0.5 * (ty - 0.5) * (ty - 0.5);
+  let valueA = 0, valueB = 0, valueC = 0, valueD = 0;
+  for (let offsetY = 0; offsetY < 3; offsetY += 1) {
+    const wy = offsetY === 0 ? wy0 : offsetY === 1 ? wy1 : wy2;
+    for (let offsetX = 0; offsetX < 3; offsetX += 1) {
+      const wx = offsetX === 0 ? wx0 : offsetX === 1 ? wx1 : wx2, weight = wx * wy;
+      const index = splashPicFlipGridIndex(baseX + offsetX, baseY + offsetY, columns, rows);
+      valueA += (a[index] ?? 0) * weight;
+      valueB += (b[index] ?? 0) * weight;
+      valueC += (c[index] ?? 0) * weight;
+      valueD += (d[index] ?? 0) * weight;
+    }
+  }
+  output[0] = valueA;
+  output[1] = valueB;
+  output[2] = valueC;
+  output[3] = valueD;
+}
+function splashPicFlipResolveBounds(index: number, positions: Float32Array, velocities: Float32Array, radii: Float32Array, width: number, height: number) {
+  const offset = index * 2, radius = Math.max(0.5, (radii[index] ?? 2) * 0.45), bounce = 0.34;
+  if ((positions[offset] ?? 0) < radius) {
+    positions[offset] = radius;
+    velocities[offset] = Math.abs(velocities[offset] ?? 0) * bounce;
+  }
+  if ((positions[offset] ?? 0) > width - radius) {
+    positions[offset] = width - radius;
+    velocities[offset] = -Math.abs(velocities[offset] ?? 0) * bounce;
+  }
+  if ((positions[offset + 1] ?? 0) < radius) {
+    positions[offset + 1] = radius;
+    velocities[offset + 1] = Math.abs(velocities[offset + 1] ?? 0) * bounce;
+  }
+  if ((positions[offset + 1] ?? 0) > height - radius) {
+    positions[offset + 1] = height - radius;
+    velocities[offset + 1] = -Math.abs(velocities[offset + 1] ?? 0) * bounce;
+    velocities[offset] = (velocities[offset] ?? 0) * 0.86;
+  }
+}
+function splashPicFlipResolveObstacles(index: number, positions: Float32Array, velocities: Float32Array, radii: Float32Array, obstacles: readonly WaterObstacle[]) {
+  for (const obstacle of obstacles) {
+    const offset = index * 2;
+    const px = positions[offset] ?? 0;
+    const py = positions[offset + 1] ?? 0;
+    const point = obstacle.kind === 'circle' ? { x: obstacle.ax, y: obstacle.ay } : closest(px, py, obstacle);
+    const dx = px - point.x;
+    const dy = py - point.y;
+    const distance = Math.hypot(dx, dy);
+    const target = (radii[index] ?? 2) + obstacle.radius;
+    if (distance >= target) continue;
+    const normalX = distance > 0.001 ? dx / distance : 0;
+    const normalY = distance > 0.001 ? dy / distance : -1;
+    positions[offset] = point.x + normalX * target;
+    positions[offset + 1] = point.y + normalY * target;
+    const dot = (velocities[offset] ?? 0) * normalX + (velocities[offset + 1] ?? 0) * normalY;
+    if (dot < 0) {
+      velocities[offset] = (velocities[offset] ?? 0) - 1.05 * dot * normalX;
+      velocities[offset + 1] = (velocities[offset + 1] ?? 0) - 1.05 * dot * normalY;
+    }
+  }
 }
 function closest(x: number, y: number, l: WaterObstacle) {
   const dx = l.bx - l.ax, dy = l.by - l.ay, q = dx * dx + dy * dy, t = q < 0.001 ? 0 : Math.max(0, Math.min(1, ((x - l.ax) * dx + (y - l.ay) * dy) / q));
