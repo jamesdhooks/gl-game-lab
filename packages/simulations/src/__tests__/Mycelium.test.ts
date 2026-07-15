@@ -9,8 +9,8 @@ describe('Mycelium', () => {
     expect(registry.get('mycelium').modes?.map(mode => mode.id)).toEqual([
       'paint'
     ]);
-    expect(MYCELIUM_STYLE_MANIFEST.styles).toHaveLength(10);
-    expect(MYCELIUM_SETTINGS).toHaveLength(23);
+    expect(MYCELIUM_STYLE_MANIFEST.styles).toHaveLength(11);
+    expect(MYCELIUM_SETTINGS).toHaveLength(22);
   });
   it('preserves growth defaults and topology controls', () => {
     expect(createMyceliumConfig()).toEqual(MYCELIUM_DEFAULTS);
@@ -24,7 +24,7 @@ describe('Mycelium', () => {
       resolution: 512
     });
     expect(() => createMyceliumConfig({
-      growthRate: 20
+      growthRate: 25
     })).toThrow('outside its supported range');
   });
   it('uses the original full-screen organic field for Ultra', () => {

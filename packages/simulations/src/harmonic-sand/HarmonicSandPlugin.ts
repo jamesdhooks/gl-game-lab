@@ -15,7 +15,7 @@ import { HARMONIC_SAND_STYLE_MANIFEST, rgb } from './styles.js';
 const MAX_EMITTERS = 16;
 const PICK_RADIUS = 0.18;
 
-interface Emitter { x: number; y: number; frequency: number; phase: number; amplitude: number }
+export interface HarmonicSandEmitter { x: number; y: number; frequency: number; phase: number; amplitude: number }
 
 export interface HarmonicSandController extends ExperienceRuntimeController {
   readonly emitterCount: number;
@@ -35,7 +35,7 @@ export function createHarmonicSandPlugin(
   let draggingIndex: number | undefined;
   let lastTapTime = Number.NEGATIVE_INFINITY;
   let lastTapIndex: number | undefined;
-  const emitters: Emitter[] = [];
+  const emitters: HarmonicSandEmitter[] = [];
   const emitterData = new Float32Array(MAX_EMITTERS * 4);
   const amplitudes = new Float32Array(MAX_EMITTERS);
 
@@ -102,6 +102,7 @@ export function createHarmonicSandPlugin(
               uGlow: { type: '1f', value: config.rawGlow },
               uRenderMode: { type: '1i', value: config.renderStyle === 'basic' ? 0 : config.renderStyle === 'enhanced' ? 1 : 2 },
               uEmitterCount: { type: '1i', value: emitters.length },
+              uShowEmitterMarkers: { type: '1i', value: harmonicSandEmitterMarkersVisible(launch.profile) ? 1 : 0 },
               uEmitters: { type: '4fv', value: emitterData.subarray(0, emitters.length * 4) },
               uEmitterAmplitudes: { type: '1fv', value: amplitudes.subarray(0, emitters.length) },
               uPaletteA: { type: '3f', value: rgb(palette[0] ?? 0xffffff) },
@@ -148,12 +149,7 @@ export function createHarmonicSandPlugin(
   };
 
   function resetEmitters(): void {
-    emitters.splice(0, emitters.length,
-      { x: -0.44, y: -0.22, frequency: 2.6, phase: 0.2, amplitude: 1 },
-      { x: 0.36, y: -0.1, frequency: 3.1, phase: 2.4, amplitude: 1 },
-      { x: -0.02, y: 0.38, frequency: 2.2, phase: 4.1, amplitude: 0.9 },
-    );
-    emitters.splice(config.rawEmitterLimit);
+    emitters.splice(0, emitters.length, ...createHarmonicSandEmitterLayout(config, launch.profile, launch.seed));
   }
 
   function addEmitter(x: number, y: number): number {
@@ -192,6 +188,49 @@ export function createHarmonicSandPlugin(
   }
 
   function configRecord(): Readonly<Record<string, ExperienceSettingValue>> { return Object.freeze({ ...config }); }
+}
+
+export function harmonicSandEmitterMarkersVisible(profile: ExperienceLaunchOptions['profile']): boolean {
+  return profile !== 'preview' && profile !== 'demo';
+}
+
+export function createHarmonicSandEmitterLayout(
+  config: HarmonicSandConfig,
+  profile: ExperienceLaunchOptions['profile'],
+  seed = 1358409995,
+): HarmonicSandEmitter[] {
+  if (profile !== 'preview' && profile !== 'demo') {
+    return [
+      { x: -0.44, y: -0.22, frequency: 2.6, phase: 0.2, amplitude: 1 },
+      { x: 0.36, y: -0.1, frequency: 3.1, phase: 2.4, amplitude: 1 },
+      { x: -0.02, y: 0.38, frequency: 2.2, phase: 4.1, amplitude: 0.9 },
+    ].slice(0, config.rawEmitterLimit);
+  }
+
+  let state = seed >>> 0 || 0x6d2b79f5;
+  const random = (): number => {
+    state ^= state << 13;
+    state ^= state >>> 17;
+    state ^= state << 5;
+    return (state >>> 0) / 4_294_967_296;
+  };
+  const maximum = Math.max(1, Math.min(6, config.rawEmitterLimit));
+  const minimum = Math.min(3, maximum);
+  const count = minimum + Math.floor(random() * (maximum - minimum + 1));
+  const rotation = random() * Math.PI * 2;
+  const result: HarmonicSandEmitter[] = [];
+  for (let index = 0; index < count; index += 1) {
+    const angle = rotation + index / count * Math.PI * 2 + (random() - 0.5) * 0.72;
+    const radius = 0.16 + Math.sqrt(random()) * 0.62;
+    result.push({
+      x: Math.cos(angle) * radius,
+      y: Math.sin(angle) * radius,
+      frequency: config.baseFrequency * (0.68 + random() * 0.76),
+      phase: random() * Math.PI * 2,
+      amplitude: 0.72 + random() * 0.38,
+    });
+  }
+  return result;
 }
 
 function validStyle(value: string | undefined): string | undefined {

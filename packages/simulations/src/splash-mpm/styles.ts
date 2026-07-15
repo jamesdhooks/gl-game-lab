@@ -111,3 +111,20 @@ export function splashRgba(n: number): readonly [
     1
   ];
 }
+
+const SPLASH_POINT_SCALES: Readonly<Record<string, number>> = Object.freeze({
+  'clear-splash': 1,
+  'moon-pool': 1.08,
+  'green-glass': 0.94,
+  'rose-fountain': 1.04,
+  'ink-depth': 0.9,
+  'storm-surge': 1.12,
+  'amber-fizz': 1.02,
+  'violet-current': 1.06,
+  'arctic-glow': 0.96,
+  'toxic-lagoon': 1.1,
+});
+
+export function splashPointScale(styleId: string): number {
+  return SPLASH_POINT_SCALES[styleId] ?? 1;
+}

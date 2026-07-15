@@ -58,4 +58,48 @@ describe('BrowserFrameLoop', () => {
     expect(frames).toEqual([0, 0.034, 0.034]);
     expect(afterFrames).toEqual([1_000, 1_034, 1_068]);
   });
+
+  it('changes the frame cap without rebuilding the loop', () => {
+    let callback: FrameRequestCallback | undefined;
+    const driver: AnimationFrameDriver = { request: (next) => { callback = next; return 11; }, cancel: () => undefined };
+    const frames: number[] = [];
+    const loop = new BrowserFrameLoop(
+      { frame: (delta: number) => { frames.push(delta); } } as never,
+      driver,
+      undefined,
+      { maxFps: 30 },
+    );
+
+    loop.start();
+    callback?.(1_000);
+    callback?.(1_016);
+    loop.setMaxFps(60);
+    callback?.(1_017);
+    loop.stop();
+
+    expect(frames).toEqual([0, 0.017]);
+  });
+
+  it('uses rolling deadlines so 45 FPS does not collapse to 30 on a 60 Hz driver', () => {
+    let callback: FrameRequestCallback | undefined;
+    const driver: AnimationFrameDriver = { request: (next) => { callback = next; return 12; }, cancel: () => undefined };
+    const frames: number[] = [];
+    const loop = new BrowserFrameLoop(
+      { frame: (delta: number) => { frames.push(delta); } } as never,
+      driver,
+      undefined,
+      { maxFps: 45 },
+    );
+
+    loop.start();
+    callback?.(1_000);
+    callback?.(1_016);
+    callback?.(1_033);
+    callback?.(1_050);
+    callback?.(1_067);
+    callback?.(1_083);
+    loop.stop();
+
+    expect(frames).toEqual([0, 0.033, 0.017, 0.017]);
+  });
 });

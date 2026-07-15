@@ -1,6 +1,5 @@
 import type { ExperienceSetting, ExperienceSettingValue } from '@hooksjam/gl-game-lab-engine';
 export interface VascularTreeConfig {
-  readonly timeScale: number;
   readonly resolution: number;
   readonly branchBudget: number;
   readonly growthRate: number;
@@ -8,7 +7,6 @@ export interface VascularTreeConfig {
   readonly pruneRate: number;
 }
 export const VASCULAR_TREE_DEFAULTS: VascularTreeConfig = Object.freeze({
-  timeScale: 1,
   resolution: 128,
   branchBudget: 256,
   growthRate: 1.15,
@@ -16,7 +14,6 @@ export const VASCULAR_TREE_DEFAULTS: VascularTreeConfig = Object.freeze({
   pruneRate: 0.22
 });
 export const VASCULAR_TREE_SETTINGS: readonly ExperienceSetting[] = Object.freeze([
-  n('timeScale', 'Timescale', 'Simulation', 0, 2, 0.05, 1),
   {
     ...n('resolution', 'Resolution', 'Simulation', 64, 1024, 1, 128),
     numericScale: 'powerOfTwo'

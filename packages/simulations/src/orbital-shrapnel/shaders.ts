@@ -14,7 +14,6 @@ uniform float uGravity;
 uniform float uDamping;
 uniform float uMaxSpeed;
 uniform float uPlanetRadius;
-uniform float uPlanetBounce;
 uniform int uBodyCount;
 uniform float uBodyStrength;
 uniform float uBodyRadius;
@@ -111,9 +110,8 @@ void main(){
     position.xy+=velocity.xy*uDt;
     float nextR=diskLength(position.xy);
     if(nextR<uPlanetRadius){
-      vec2 radial=diskNormalize(position.xy+vec2(.0001));
-      position.xy=radial*(uPlanetRadius+.003);
-      velocity.xy=reflect(velocity.xy,normalize(radial))*uPlanetBounce;
+      velocity.xy=vec2(0.0);
+      velocity.z=0.0;
     }
     if(nextR>1.35)position.xy*=-.72;
   }

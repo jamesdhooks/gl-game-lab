@@ -126,6 +126,8 @@ export class WebGL2Renderer implements RenderBackend, Render2DService {
   private readonly frameOrchestrator: WebGL2FrameOrchestrator;
   private lastFrameDiagnostics: RendererDiagnostics | undefined;
   private renderInvalidated = true;
+  private captureRequested = false;
+  private capturedRgba: Uint8Array | undefined;
   private destroyed = false;
 
   get state(): RenderBackendState {
@@ -262,6 +264,27 @@ export class WebGL2Renderer implements RenderBackend, Render2DService {
     this.bloomOptions = normalizeBloomOptions(options);
     if (this.state === 'ready') this.bloom.configure(this.bloomOptions);
     this.renderInvalidated = true;
+  }
+
+  requestRender(): void {
+    this.assertUsable();
+    this.renderInvalidated = true;
+  }
+
+  captureRgba(presentFrame: () => void): Uint8Array {
+    this.assertUsable();
+    if (this.captureRequested) throw new Error('WebGL2 frame capture is already in progress');
+    this.captureRequested = true;
+    this.capturedRgba = undefined;
+    this.renderInvalidated = true;
+    try {
+      presentFrame();
+      if (!this.capturedRgba) throw new Error('WebGL2 frame capture did not present a frame');
+      return this.capturedRgba;
+    } finally {
+      this.captureRequested = false;
+      this.capturedRgba = undefined;
+    }
   }
 
   setPaletteBackdrop(options: PaletteBackdropOptions | undefined): void {
@@ -491,6 +514,7 @@ export class WebGL2Renderer implements RenderBackend, Render2DService {
           backdropEnabled: this.backdropOptions !== undefined,
         },
       );
+      if (this.captureRequested) this.capturedRgba = this.readRgba();
     } finally {
       this.renderInvalidated = false;
       this.pendingBufferUploadBytes = 0;

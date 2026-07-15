@@ -24,6 +24,7 @@ export const WEB_PLATFORM_PLUGIN_ID = 'gl-game-lab.platform-web';
 export interface WebPlatformPluginOptions {
   readonly storageNamespace?: string;
   readonly preventDefaultInput?: boolean;
+  readonly inputEnabled?: boolean;
   readonly audio?: AudioService;
   readonly storage?: StorageService;
   readonly workers?: WorkerService;
@@ -59,26 +60,28 @@ export function createWebPlatformPlugin(
       context.provide(EngineStorage, storage);
       context.provide(EngineWorkers, workers);
       context.provide(EngineAccessibility, accessibility);
-      input = new WebInputAdapter(canvas, {
-        input: context.get(EngineInput),
-        preventDefault: options.preventDefaultInput ?? true,
-        getViewport: () => {
-          const renderer = context.tryGet(EngineRenderer);
-          if (renderer) return { width: renderer.viewport.width, height: renderer.viewport.height };
-          const bounds = canvas.getBoundingClientRect();
-          return { width: Math.max(1, bounds.width), height: Math.max(1, bounds.height) };
-        },
-      });
-      if (typeof navigator !== 'undefined' && typeof navigator.getGamepads === 'function') {
-        removeGamepads = context.get(EngineInputSources).add(new WebGamepadInputSource(navigator));
+      if (options.inputEnabled !== false) {
+        input = new WebInputAdapter(canvas, {
+          input: context.get(EngineInput),
+          preventDefault: options.preventDefaultInput ?? true,
+          getViewport: () => {
+            const renderer = context.tryGet(EngineRenderer);
+            if (renderer) return { width: renderer.viewport.width, height: renderer.viewport.height };
+            const bounds = canvas.getBoundingClientRect();
+            return { width: Math.max(1, bounds.width), height: Math.max(1, bounds.height) };
+          },
+        });
+        if (typeof navigator !== 'undefined' && typeof navigator.getGamepads === 'function') {
+          removeGamepads = context.get(EngineInputSources).add(new WebGamepadInputSource(navigator));
+        }
+        const unlock = (): void => { void audio?.unlock().catch(() => undefined); };
+        canvas.addEventListener('pointerdown', unlock, { once: true, capture: true });
+        canvas.addEventListener('keydown', unlock, { once: true, capture: true });
+        removeUnlockListeners = () => {
+          canvas.removeEventListener('pointerdown', unlock, true);
+          canvas.removeEventListener('keydown', unlock, true);
+        };
       }
-      const unlock = (): void => { void audio?.unlock().catch(() => undefined); };
-      canvas.addEventListener('pointerdown', unlock, { once: true, capture: true });
-      canvas.addEventListener('keydown', unlock, { once: true, capture: true });
-      removeUnlockListeners = () => {
-        canvas.removeEventListener('pointerdown', unlock, true);
-        canvas.removeEventListener('keydown', unlock, true);
-      };
     },
     dispose: async () => {
       removeUnlockListeners();

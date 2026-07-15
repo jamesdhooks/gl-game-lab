@@ -56,7 +56,6 @@ export class VascularGrowthModel {
     };
     if (force)
       this.grow(Math.max(x * 2, 640), Math.max(y * 2, 480), {
-        timeScale: 1,
         resolution: 128,
         branchBudget: 1024,
         growthRate: 1,

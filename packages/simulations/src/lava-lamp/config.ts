@@ -1,4 +1,5 @@
 import type { ExperienceSetting, ExperienceSettingValue, NumberSetting } from '@hooksjam/gl-game-lab-engine';
+import { METABALL_SPLAT_DENSITY_MAX } from '../MetaballSurfaceSettings.js';
 
 export type LavaLampConfig = Readonly<Record<string, ExperienceSettingValue>>;
 
@@ -18,33 +19,33 @@ export const LAVA_LAMP_SETTINGS: readonly ExperienceSetting[] = Object.freeze([
   number('turbulence', 'Turbulence', 'Thermal Motion', 0, 4, .01, .55),
   number('verticalTurbulence', 'Vertical Turbulence', 'Thermal Motion', 0, 4, .01, 1),
   number('waxViscosity', 'Wax Viscosity', 'Thermal Motion', 0, 5, .01, .58),
-  number('thermalContrast', 'Thermal Contrast', 'Rendering', 0, 2.5, .05, 1.25),
-  render(number('enhancedQuality', 'Surface Detail', 'Enhanced Surface', .5, 2, .05, 1.15), ['enhanced', 'ultra']),
-  render(number('liquidFieldScale', 'Field Resolution', 'Enhanced Surface', .45, 1, .01, .82), ['enhanced', 'ultra']),
-  render(number('liquidParticleRadius', 'Surface Radius', 'Enhanced Surface', .35, 7.5, .01, 1), ['enhanced', 'ultra']),
-  render(number('liquidExpansion', 'Expansion Factor', 'Enhanced Surface', .25, 2.5, .01, 1), ['enhanced', 'ultra']),
-  render(number('liquidSplatDensity', 'Splat Density', 'Enhanced Surface', .35, 3.4, .01, 1.55), ['enhanced', 'ultra']),
-  render(number('liquidSurfaceThreshold', 'Surface Threshold', 'Enhanced Surface', .04, .42, .005, .11), ['enhanced', 'ultra']),
-  render(number('liquidEdgeTightness', 'Edge Tightness', 'Enhanced Surface', .15, 1, .01, .76), ['enhanced', 'ultra']),
-  render(number('liquidEdgeSoftness', 'Edge Softness', 'Enhanced Surface', 0, 2, .01, .56), ['enhanced', 'ultra']),
-  render(number('liquidRefraction', 'Refraction', 'Enhanced Surface', 0, 1, .01, .32), ['enhanced', 'ultra']),
-  render(number('liquidGloss', 'Specular Gloss', 'Enhanced Surface', 0, 1, .01, .72), ['enhanced', 'ultra']),
-  render(number('liquidThermalStrength', 'Thermal Color', 'Enhanced Surface', 0, 1, .01, .82), ['enhanced', 'ultra']),
-  render(number('liquidRimLighting', 'Rim Lighting', 'Enhanced Surface', 0, 3, .01, 1.15), ['ultra']),
-  render(number('liquidBloomStrength', 'Soft Bloom', 'Enhanced Surface', 0, 3, .01, .42), ['ultra']),
-  render(number('liquidHeatShimmer', 'Heat Shimmer', 'Enhanced Surface', 0, 2, .01, .28), ['ultra']),
-  render(number('liquidDepthDiffusion', 'Depth Diffusion', 'Enhanced Surface', 0, 1, .01, .22), ['ultra']),
+  render(number('thermalContrast', 'Thermal Contrast', 'Rendering', 0, 2.5, .05, 1.25), ['enhanced', 'ultra']),
+  render(number('enhancedQuality', 'Surface Detail', 'Rendering', .5, 2, .05, 1.15), ['enhanced', 'ultra']),
+  render(number('liquidFieldScale', 'Field Resolution', 'Rendering', .45, 1, .01, .82), ['enhanced', 'ultra']),
+  render(number('liquidParticleRadius', 'Surface Radius', 'Rendering', .35, 7.5, .01, 1), ['enhanced', 'ultra']),
+  render(number('liquidExpansion', 'Expansion Factor', 'Rendering', .25, 2.5, .01, 1), ['enhanced', 'ultra']),
+  render(number('liquidSplatDensity', 'Splat Density', 'Rendering', .35, METABALL_SPLAT_DENSITY_MAX, .01, 1.55), ['enhanced', 'ultra']),
+  render(number('liquidSurfaceThreshold', 'Surface Threshold', 'Rendering', .04, .42, .005, .11), ['enhanced', 'ultra']),
+  render(number('liquidEdgeTightness', 'Edge Tightness', 'Rendering', .15, 1, .01, .76), ['enhanced', 'ultra']),
+  render(number('liquidEdgeSoftness', 'Edge Softness', 'Rendering', 0, 2, .01, .56), ['enhanced', 'ultra']),
+  render(number('liquidRefraction', 'Refraction', 'Rendering', 0, 1, .01, .32), ['enhanced', 'ultra']),
+  render(number('liquidGloss', 'Specular Gloss', 'Rendering', 0, 1, .01, .72), ['enhanced', 'ultra']),
+  render(number('liquidThermalStrength', 'Thermal Color', 'Rendering', 0, 1, .01, .82), ['enhanced', 'ultra']),
+  render(number('liquidRimLighting', 'Rim Lighting', 'Rendering', 0, 3, .01, 1.15), ['ultra']),
+  render(number('liquidBloomStrength', 'Soft Bloom', 'Rendering', 0, 3, .01, .42), ['ultra']),
+  render(number('liquidHeatShimmer', 'Heat Shimmer', 'Rendering', 0, 2, .01, .28), ['ultra']),
+  render(number('liquidDepthDiffusion', 'Depth Diffusion', 'Rendering', 0, 1, .01, .22), ['ultra']),
   number('surfaceTension', 'Surface Tension', 'Physics', 0, 1, .01, .62),
   number('clumping', 'Clumping', 'Physics', 0, 1.5, .01, .38),
   mode(number('inputRadius', 'Input Radius', 'Input Mode', 24, 220, 2, 92), ['add', 'remove']),
   mode(number('inputLift', 'Add Lift', 'Input Mode', 40, 720, 10, 110), ['add']),
   mode(number('inputThermalRate', 'Growth Rate', 'Input Mode', .01, .28, .005, .055), ['add']),
-  number('metaballBlend', 'Metaball Blend', 'Rendering', 0, 1, .01, .86),
+  render(number('metaballBlend', 'Metaball Blend', 'Rendering', 0, 1, .01, .86), ['enhanced', 'ultra']),
   number('opacity', 'Opacity', 'Rendering', .05, 1, .01, .46),
   number('substeps', 'Substeps', 'Physics', 1, 4, 1, 2),
 ]);
 
-export const LAVA_LAMP_DEFAULTS: LavaLampConfig = Object.freeze({ timeScale: 1, ...Object.fromEntries(LAVA_LAMP_SETTINGS.map((setting) => [setting.key, setting.default])) });
+export const LAVA_LAMP_DEFAULTS: LavaLampConfig = Object.freeze(Object.fromEntries(LAVA_LAMP_SETTINGS.map((setting) => [setting.key, setting.default])));
 
 export function createLavaLampConfig(values: Readonly<Record<string, ExperienceSettingValue>> = {}): LavaLampConfig {
   const result: Record<string, ExperienceSettingValue> = { ...LAVA_LAMP_DEFAULTS };
@@ -53,10 +54,6 @@ export function createLavaLampConfig(values: Readonly<Record<string, ExperienceS
     if (setting.type === 'number' && (typeof value !== 'number' || !Number.isFinite(value) || value < setting.min || value > setting.max)) throw new Error(`Lava Lamp setting ${setting.key} is outside its supported range`);
     if (setting.type === 'select' && !setting.options.some((option) => option.value === value)) throw new Error(`Unknown Lava Lamp ${setting.label}: ${String(value)}`);
     result[setting.key] = value;
-  }
-  if (values.timeScale !== undefined) {
-    if (typeof values.timeScale !== 'number' || !Number.isFinite(values.timeScale) || values.timeScale < 0 || values.timeScale > 2) throw new Error('Lava Lamp timeScale is outside its supported range');
-    result.timeScale = values.timeScale;
   }
   return Object.freeze(result);
 }

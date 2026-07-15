@@ -69,6 +69,7 @@ export interface ParticleBatch2D {
   readonly blend?: BlendMode2D;
   readonly opacity?: number;
   readonly paletteMode?: 'hashed' | 'indexed';
+  readonly shading?: 'lit' | 'flat';
 }
 
 export interface Bloom2DOptions {
@@ -92,12 +93,15 @@ export interface SegmentBatch2D {
   readonly count: number;
   readonly segments: Float32Array;
   readonly styles: Float32Array;
+  readonly colorSeeds?: Float32Array;
+  readonly endRadii?: Float32Array;
   readonly worldWidth: number;
   readonly worldHeight: number;
   readonly palette: readonly (readonly [number, number, number])[];
   readonly radiusScale?: number;
   readonly opacity?: number;
   readonly blend?: BlendMode2D;
+  readonly paletteMode?: 'hashed' | 'indexed';
 }
 
 export interface TriangleMeshBatch2D {
@@ -105,12 +109,13 @@ export interface TriangleMeshBatch2D {
   readonly vertexCount: number;
   readonly positions: Float32Array;
   readonly colorSeeds: Float32Array;
+  readonly edgeFactors?: Float32Array;
   readonly worldWidth: number;
   readonly worldHeight: number;
   readonly palette: readonly (readonly [number, number, number])[];
   readonly opacity?: number;
   readonly blend?: BlendMode2D;
-  readonly shading?: 'flat' | 'sheen';
+  readonly shading?: 'flat' | 'sheen' | 'soft-body-skin';
 }
 
 export interface MetaballBatch2D {
@@ -129,6 +134,7 @@ export interface MetaballBatch2D {
   readonly palette: readonly (readonly [number, number, number])[];
   readonly background: readonly [number, number, number];
   readonly thermalContrast: number;
+  readonly paletteMapping?: 'thermal' | 'gradient';
   readonly refraction: number;
   readonly gloss: number;
   readonly rimLighting: number;
@@ -186,6 +192,20 @@ export interface FluidStep2DOptions {
   readonly pressureIterations: number;
   readonly ambient?: boolean;
   readonly velocitySplatsBeforeProjection?: boolean;
+  /** Selects the simulation equations used by the field. The default is the dye-oriented stable-fluid solver. */
+  readonly solverMode?: 'stable' | 'source-mapped';
+  /** Source-space grid cell size used by the source-mapped solver. */
+  readonly cellSize?: number;
+  /** Scale of the source simulation domain relative to clip space. */
+  readonly simulationScale?: number;
+  /** Per-step velocity persistence used by the source-mapped solver. */
+  readonly velocityDecay?: number;
+  /** Source-space radius of pointer force segments before simulation scaling. */
+  readonly forceRadius?: number;
+  /** Amount that force strength tapers from the current point toward its previous point. */
+  readonly forceTaper?: number;
+  /** Multiplier applied to source-segment target velocity. */
+  readonly forceStrength?: number;
 }
 
 export interface FluidDisplay2DOptions {
@@ -222,10 +242,15 @@ export interface FluidField2D {
   clear(): void;
   dispose(): void;
 }
-export interface FluidFieldCreate2DOptions { readonly simulationWidth?: number; readonly simulationHeight?: number }
+export interface FluidFieldCreate2DOptions {
+  readonly simulationWidth?: number;
+  readonly simulationHeight?: number;
+  readonly simulationPrecision?: 'half-float' | 'float';
+  readonly simulationFilter?: 'nearest' | 'linear';
+}
 
 export interface Render2DService {
-  readonly viewport: { readonly width: number; readonly height: number };
+  readonly viewport: { readonly width: number; readonly height: number; readonly pixelRatio?: number };
   createRgbaTexture(id: string, width: number, height: number, pixels: Uint8Array): Texture2DHandle;
   destroyTexture(texture: Texture2DHandle): void;
   hasTexture(id: string): boolean;

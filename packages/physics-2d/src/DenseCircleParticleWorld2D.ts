@@ -7,9 +7,12 @@ export interface DenseCircleParticleSettings {
   readonly substeps: number;
   readonly wallBounce: boolean;
   readonly boundaryRestitution: number;
+  readonly particleRestitution: number;
+  readonly velocityContactResponse: boolean;
   readonly airDrag: number;
   readonly solverDamping: number;
   readonly collisionSoftness: number;
+  readonly contactRadiusScale: number;
   readonly maxPairPush: number;
   readonly impactBounceThreshold: number;
   readonly contactFriction: number;
@@ -51,9 +54,12 @@ const DEFAULT_SETTINGS: DenseCircleParticleSettings = Object.freeze({
   substeps: 2,
   wallBounce: false,
   boundaryRestitution: 0.16,
+  particleRestitution: 0,
+  velocityContactResponse: false,
   airDrag: 0.998,
   solverDamping: 0.982,
   collisionSoftness: 1.05,
+  contactRadiusScale: 1,
   maxPairPush: 0.75,
   impactBounceThreshold: 150,
   contactFriction: 0.72,
@@ -349,19 +355,42 @@ export class DenseCircleParticleWorld2D {
   }
 
   private projectBounds(): void {
+    const velocityContacts = this.settings.velocityContactResponse;
+    const bounce = this.settings.wallBounce ? this.settings.boundaryRestitution : 0;
+    const wallFriction = Math.max(0, 1 - this.settings.contactFriction * 0.12);
     for (let index = 0; index < this.activeCount; index += 1) {
       if (floatAt(this.inverseMasses, index) <= 0) continue;
       const offset = index * 2;
       const radius = this.radii[index] ?? this.settings.radius;
       if (floatAt(this.positions, offset) < radius) {
         this.positions[offset] = radius;
+        if (velocityContacts && floatAt(this.velocities, offset) < 0) {
+          const impact = -floatAt(this.velocities, offset);
+          this.velocities[offset] = impact >= this.settings.impactBounceThreshold ? impact * bounce : 0;
+          this.velocities[offset + 1] = floatAt(this.velocities, offset + 1) * wallFriction;
+        }
       } else if (floatAt(this.positions, offset) > this.width - radius) {
         this.positions[offset] = this.width - radius;
+        if (velocityContacts && floatAt(this.velocities, offset) > 0) {
+          const impact = floatAt(this.velocities, offset);
+          this.velocities[offset] = impact >= this.settings.impactBounceThreshold ? -impact * bounce : 0;
+          this.velocities[offset + 1] = floatAt(this.velocities, offset + 1) * wallFriction;
+        }
       }
       if (!this.settings.openTop && floatAt(this.positions, offset + 1) < radius) {
         this.positions[offset + 1] = radius;
+        if (velocityContacts && floatAt(this.velocities, offset + 1) < 0) {
+          const impact = -floatAt(this.velocities, offset + 1);
+          this.velocities[offset + 1] = impact >= this.settings.impactBounceThreshold ? impact * bounce : 0;
+          this.velocities[offset] = floatAt(this.velocities, offset) * wallFriction;
+        }
       } else if (floatAt(this.positions, offset + 1) > this.height - radius) {
         this.positions[offset + 1] = this.height - radius;
+        if (velocityContacts && floatAt(this.velocities, offset + 1) > 0) {
+          const impact = floatAt(this.velocities, offset + 1);
+          this.velocities[offset + 1] = impact >= this.settings.impactBounceThreshold ? -impact * bounce : 0;
+          this.velocities[offset] = floatAt(this.velocities, offset) * wallFriction;
+        }
       }
     }
   }
@@ -429,7 +458,7 @@ export class DenseCircleParticleWorld2D {
     const rightOffset = right * 2;
     let dx = floatAt(this.positions, rightOffset) - floatAt(this.positions, leftOffset);
     let dy = floatAt(this.positions, rightOffset + 1) - floatAt(this.positions, leftOffset + 1);
-    const target = (this.radii[left] ?? 0) + (this.radii[right] ?? 0);
+    const target = ((this.radii[left] ?? 0) + (this.radii[right] ?? 0)) * this.settings.contactRadiusScale;
     const distanceSquared = dx * dx + dy * dy;
     if (distanceSquared >= target * target) return;
     let distance = Math.sqrt(Math.max(distanceSquared, 1e-12));
@@ -449,12 +478,64 @@ export class DenseCircleParticleWorld2D {
     const penetration = target - distance;
     const maximum = target * 0.5 * this.settings.maxPairPush;
     const correction = Math.min(penetration * this.settings.collisionSoftness * relaxation * Math.min(1, pairScale), maximum) / totalWeight;
+    if (this.settings.velocityContactResponse) this.solvePairVelocity(left, right);
     this.positions[leftOffset] = floatAt(this.positions, leftOffset) - dx * correction * leftWeight;
     this.positions[leftOffset + 1] = floatAt(this.positions, leftOffset + 1) - dy * correction * leftWeight;
     this.positions[rightOffset] = floatAt(this.positions, rightOffset) + dx * correction * rightWeight;
     this.positions[rightOffset + 1] = floatAt(this.positions, rightOffset + 1) + dy * correction * rightWeight;
-    this.applyContactResponse(leftOffset, rightOffset, dx, dy, leftWeight, rightWeight, totalWeight);
+    if (!this.settings.velocityContactResponse) {
+      this.applyContactResponse(leftOffset, rightOffset, dx, dy, leftWeight, rightWeight, totalWeight);
+    }
     this.collisionHits += 1;
+  }
+
+  private solvePairVelocity(left: number, right: number): void {
+    if (this.collisionFilter && !this.collisionFilter(left, right)) return;
+    const pairScale = this.collisionScale?.(left, right) ?? 1;
+    if (!Number.isFinite(pairScale) || pairScale <= 0) return;
+    const leftOffset = left * 2;
+    const rightOffset = right * 2;
+    let normalX = floatAt(this.positions, rightOffset) - floatAt(this.positions, leftOffset);
+    let normalY = floatAt(this.positions, rightOffset + 1) - floatAt(this.positions, leftOffset + 1);
+    const target = ((this.radii[left] ?? 0) + (this.radii[right] ?? 0)) * this.settings.contactRadiusScale;
+    const distanceSquared = normalX * normalX + normalY * normalY;
+    const contactDistance = target + 0.5;
+    if (distanceSquared > contactDistance * contactDistance) return;
+    const distance = Math.sqrt(Math.max(distanceSquared, 1e-12));
+    if (distance < 1e-6) {
+      const angle = (left * 12.9898 + right * 78.233) % (Math.PI * 2);
+      normalX = Math.cos(angle);
+      normalY = Math.sin(angle);
+    } else {
+      normalX /= distance;
+      normalY /= distance;
+    }
+    const leftInverseMass = floatAt(this.inverseMasses, left);
+    const rightInverseMass = floatAt(this.inverseMasses, right);
+    const inverseMass = leftInverseMass + rightInverseMass;
+    if (inverseMass <= 0) return;
+    const relativeVelocityX = floatAt(this.velocities, rightOffset) - floatAt(this.velocities, leftOffset);
+    const relativeVelocityY = floatAt(this.velocities, rightOffset + 1) - floatAt(this.velocities, leftOffset + 1);
+    const normalVelocity = relativeVelocityX * normalX + relativeVelocityY * normalY;
+    if (normalVelocity >= 0) return;
+    const restitution = -normalVelocity >= this.settings.impactBounceThreshold ? this.settings.particleRestitution : 0;
+    const responseScale = Math.min(1, pairScale);
+    const normalImpulse = -(1 + restitution) * normalVelocity / inverseMass * responseScale;
+    this.velocities[leftOffset] = floatAt(this.velocities, leftOffset) - normalX * normalImpulse * leftInverseMass;
+    this.velocities[leftOffset + 1] = floatAt(this.velocities, leftOffset + 1) - normalY * normalImpulse * leftInverseMass;
+    this.velocities[rightOffset] = floatAt(this.velocities, rightOffset) + normalX * normalImpulse * rightInverseMass;
+    this.velocities[rightOffset + 1] = floatAt(this.velocities, rightOffset + 1) + normalY * normalImpulse * rightInverseMass;
+
+    if (this.settings.contactFriction <= 0 || normalImpulse <= 0) return;
+    const tangentX = -normalY;
+    const tangentY = normalX;
+    const tangentVelocity = relativeVelocityX * tangentX + relativeVelocityY * tangentY;
+    const maximumFriction = normalImpulse * this.settings.contactFriction;
+    const frictionImpulse = clamp(-tangentVelocity / inverseMass, -maximumFriction, maximumFriction);
+    this.velocities[leftOffset] = floatAt(this.velocities, leftOffset) - tangentX * frictionImpulse * leftInverseMass;
+    this.velocities[leftOffset + 1] = floatAt(this.velocities, leftOffset + 1) - tangentY * frictionImpulse * leftInverseMass;
+    this.velocities[rightOffset] = floatAt(this.velocities, rightOffset) + tangentX * frictionImpulse * rightInverseMass;
+    this.velocities[rightOffset + 1] = floatAt(this.velocities, rightOffset + 1) + tangentY * frictionImpulse * rightInverseMass;
   }
 
   private applyContactResponse(
@@ -490,19 +571,23 @@ export class DenseCircleParticleWorld2D {
       if (floatAt(this.inverseMasses, index) <= 0) continue;
       const offset = index * 2;
       const radius = this.radii[index] ?? this.settings.radius;
-      let velocityX = (floatAt(this.positions, offset) - floatAt(this.previousPositions, offset)) / deltaSeconds * damping;
-      let velocityY = (floatAt(this.positions, offset + 1) - floatAt(this.previousPositions, offset + 1)) / deltaSeconds * damping;
-      if (floatAt(this.positions, offset) <= radius + 0.25 && velocityX < 0) {
+      let velocityX = this.settings.velocityContactResponse
+        ? floatAt(this.velocities, offset) * damping
+        : (floatAt(this.positions, offset) - floatAt(this.previousPositions, offset)) / deltaSeconds * damping;
+      let velocityY = this.settings.velocityContactResponse
+        ? floatAt(this.velocities, offset + 1) * damping
+        : (floatAt(this.positions, offset + 1) - floatAt(this.previousPositions, offset + 1)) / deltaSeconds * damping;
+      if (!this.settings.velocityContactResponse && floatAt(this.positions, offset) <= radius + 0.25 && velocityX < 0) {
         velocityX = -velocityX > this.settings.impactBounceThreshold ? -velocityX * bounce : 0;
         velocityY *= wallFriction;
-      } else if (floatAt(this.positions, offset) >= this.width - radius - 0.25 && velocityX > 0) {
+      } else if (!this.settings.velocityContactResponse && floatAt(this.positions, offset) >= this.width - radius - 0.25 && velocityX > 0) {
         velocityX = velocityX > this.settings.impactBounceThreshold ? -velocityX * bounce : 0;
         velocityY *= wallFriction;
       }
-      if (!this.settings.openTop && floatAt(this.positions, offset + 1) <= radius + 0.25 && velocityY < 0) {
+      if (!this.settings.velocityContactResponse && !this.settings.openTop && floatAt(this.positions, offset + 1) <= radius + 0.25 && velocityY < 0) {
         velocityY = -velocityY > this.settings.impactBounceThreshold ? -velocityY * bounce : 0;
         velocityX *= wallFriction;
-      } else if (floatAt(this.positions, offset + 1) >= this.height - radius - 0.25 && velocityY > 0) {
+      } else if (!this.settings.velocityContactResponse && floatAt(this.positions, offset + 1) >= this.height - radius - 0.25 && velocityY > 0) {
         velocityY = velocityY > this.settings.impactBounceThreshold ? -velocityY * bounce : 0;
         velocityX *= wallFriction;
       }
@@ -605,9 +690,12 @@ function normalizeSettings(
     substeps: integerBetween(updates.substeps ?? current.substeps, 1, 8, 'Dense substeps'),
     wallBounce: updates.wallBounce ?? current.wallBounce,
     boundaryRestitution: bounded(updates.boundaryRestitution ?? current.boundaryRestitution, 0, 1, 'Dense boundary restitution'),
+    particleRestitution: bounded(updates.particleRestitution ?? current.particleRestitution, 0, 1, 'Dense particle restitution'),
+    velocityContactResponse: updates.velocityContactResponse ?? current.velocityContactResponse,
     airDrag: bounded(updates.airDrag ?? current.airDrag, 0, 1, 'Dense air drag'),
     solverDamping: bounded(updates.solverDamping ?? current.solverDamping, 0, 1, 'Dense solver damping'),
     collisionSoftness: bounded(updates.collisionSoftness ?? current.collisionSoftness, 0.05, 1.5, 'Dense collision softness'),
+    contactRadiusScale: bounded(updates.contactRadiusScale ?? current.contactRadiusScale, 0.05, 1, 'Dense contact radius scale'),
     maxPairPush: bounded(updates.maxPairPush ?? current.maxPairPush, 0.02, 2, 'Dense maximum pair push'),
     impactBounceThreshold: nonNegativeFinite(updates.impactBounceThreshold ?? current.impactBounceThreshold, 'Dense impact threshold'),
     contactFriction: bounded(updates.contactFriction ?? current.contactFriction, 0, 2, 'Dense contact friction'),

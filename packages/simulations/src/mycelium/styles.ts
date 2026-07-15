@@ -113,7 +113,17 @@ export const MYCELIUM_STYLE_MANIFEST: ExperienceStyleManifest = Object.freeze({
       15485081,
       16361684,
       8330525
-    ], 397322)
+    ], 397322),
+    s('random', 'Random', 'A seeded full-spectrum color walk that remains coherent along each branch.', [
+      16724804,
+      16763904,
+      1507328,
+      65535,
+      22015,
+      6230271,
+      16711935,
+      16724630
+    ], 197897)
   ]
 });
 export function myceliumColor3(color: number): readonly [

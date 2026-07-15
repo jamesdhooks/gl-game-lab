@@ -1,27 +1,27 @@
-import type { ExperienceDefinition } from '@hooksjam/gl-game-lab-engine';
+import { withEngineTimeScaleSetting, type ExperienceDefinition } from '@hooksjam/gl-game-lab-engine';
 
 export async function loadDemoCatalog(): Promise<readonly ExperienceDefinition[]> {
   const [games, simulations] = await Promise.all([
     import('@hooksjam/gl-game-lab-games'),
     import('@hooksjam/gl-game-lab-simulations'),
   ]);
-  return Object.freeze([...games.GAME_REGISTRY.values(), ...simulations.SIMULATION_REGISTRY.values()]);
+  return Object.freeze([...games.GAME_REGISTRY.values(), ...simulations.SIMULATION_REGISTRY.values()].map(withEngineTimeScaleSetting));
 }
 
 export async function loadDemoExperience(id: string | null): Promise<ExperienceDefinition> {
   const normalized = id?.trim().toLowerCase() ?? 'ball-pit';
   if (normalized === 'ball-pit' || normalized === 'reference-arena') {
     const games = await import('@hooksjam/gl-game-lab-games');
-    return normalized === 'reference-arena' ? games.referenceArenaDefinition : games.ballPitDefinition;
+    return withEngineTimeScaleSetting(normalized === 'reference-arena' ? games.referenceArenaDefinition : games.ballPitDefinition);
   }
   const simulations = await import('@hooksjam/gl-game-lab-simulations');
   const simulation = simulations.SIMULATION_REGISTRY.tryGet(normalized);
-  if (simulation) return simulation;
+  if (simulation) return withEngineTimeScaleSetting(simulation);
   const games = await import('@hooksjam/gl-game-lab-games');
-  return games.ballPitDefinition;
+  return withEngineTimeScaleSetting(games.ballPitDefinition);
 }
 
 export async function loadLifecycleAlternate(selectedId: string): Promise<ExperienceDefinition> {
   const games = await import('@hooksjam/gl-game-lab-games');
-  return selectedId === 'reference-arena' ? games.ballPitDefinition : games.referenceArenaDefinition;
+  return withEngineTimeScaleSetting(selectedId === 'reference-arena' ? games.ballPitDefinition : games.referenceArenaDefinition);
 }

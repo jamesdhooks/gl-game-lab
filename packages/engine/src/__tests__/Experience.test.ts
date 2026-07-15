@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ExperienceRegistry, type ExperienceDefinition } from '../index.js';
+import { ENGINE_TIME_SCALE_SETTING, ExperienceRegistry, withEngineTimeScaleSetting, type ExperienceDefinition, type ExperienceLaunchOptions } from '../index.js';
 
 const example: ExperienceDefinition = {
   id: 'ball-pit',
@@ -32,6 +32,36 @@ const example: ExperienceDefinition = {
 };
 
 describe('ExperienceRegistry', () => {
+  it('composes one engine-owned time scale setting into every experience', () => {
+    const composed = withEngineTimeScaleSetting(example);
+    expect(composed.settings?.[0]).toBe(ENGINE_TIME_SCALE_SETTING);
+    expect(composed.settings?.filter((setting) => setting.key === 'timeScale')).toHaveLength(1);
+    expect(composed.settings?.find((setting) => setting.key === 'timeScale')).toMatchObject({
+      type: 'number', min: 0, max: 2, step: 0.05, default: 1,
+    });
+
+    const legacy = withEngineTimeScaleSetting({
+      ...example,
+      settings: [{ type: 'number', key: 'timeScale', label: 'Timescale', default: 0.5, min: 0, max: 1, step: 0.1 }],
+    });
+    expect(legacy.settings).toEqual([ENGINE_TIME_SCALE_SETTING]);
+  });
+
+  it('keeps engine-owned settings out of experience plugin configuration', () => {
+    let received: ExperienceLaunchOptions | undefined;
+    const composed = withEngineTimeScaleSetting({
+      ...example,
+      createPlugins: (options) => {
+        received = options;
+        return [];
+      },
+    });
+
+    composed.createPlugins({ settings: { timeScale: 0.5, radius: 24 } });
+
+    expect(received?.settings).toEqual({ radius: 24 });
+  });
+
   it('registers definitions and performs normalized lookups', () => {
     const registry = new ExperienceRegistry().register(example);
     expect(registry.get(' BALL-PIT ')).toBe(example);

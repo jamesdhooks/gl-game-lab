@@ -39,7 +39,6 @@ export const MYCELIUM_SETTINGS: readonly ExperienceSetting[] = Object.freeze([
       }
     ]
   },
-  n('timeScale', 'Timescale', 'Simulation', 0, 2, 0.05, 1),
   {
     ...n('resolution', 'Resolution', 'Simulation', 64, 4096, 1, 128),
     numericScale: 'powerOfTwo'
@@ -47,7 +46,7 @@ export const MYCELIUM_SETTINGS: readonly ExperienceSetting[] = Object.freeze([
   n('branchChance', 'Branch Chance', 'Growth', 0, 1, 0.01, 0.22),
   n('overwriteChance', 'Overwrite Chance', 'Growth', 0, 1, 0.01, 0.08),
   n('growthClumping', 'Growth Clumping', 'Growth', 0, 1, 0.01, 0.38),
-  n('growthRate', 'Growth Rate', 'Growth', 0.05, 8, 0.05, 0.9),
+  n('growthRate', 'Growth Rate', 'Growth', 0.05, 24, 0.05, 0.9),
   n('colorMutation', 'Color Mutation', 'Growth', 0, 1, 0.01, 0.32),
   n('colorDriftFrequency', 'Color Drift Frequency', 'Growth', 0, 1, 0.01, 0.08),
   n('branchColorSplit', 'Branch Color Split', 'Growth', 0, 1, 0.01, 0.45),
@@ -118,7 +117,7 @@ function n(key: string, label: string, section: string, min: number, max: number
 
 function ultra(key: string, label: string, min: number, max: number, step: number, defaultValue: number): ExperienceSetting {
   return Object.freeze({
-    ...n(key, label, 'Ultra Rendering', min, max, step, defaultValue),
+    ...n(key, label, 'Rendering', min, max, step, defaultValue),
     visibleRenderStyles: ['bloom'],
   });
 }

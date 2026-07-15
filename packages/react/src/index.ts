@@ -8,6 +8,7 @@ export {
   type FixedFrameCaptureResult,
   type FixedFrameInputEvent,
   type CanvasFrameCapture,
+  type CanvasFrameCaptureOptions,
   type GameCanvasHandle,
   type GameCanvasProps,
   type LogicalCanvasViewport,

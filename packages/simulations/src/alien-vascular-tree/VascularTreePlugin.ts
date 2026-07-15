@@ -76,7 +76,7 @@ export function createVascularTreePlugin(initial: VascularTreeConfig = VASCULAR_
         id: 'gl-game-lab.simulations.alien-vascular-tree.update',
         stage: 'update',
         run: ({ time }) => {
-          const width = Math.max(1, renderer.viewport.width), height = Math.max(1, renderer.viewport.height), dt = Math.min(0.05, time.deltaSeconds) * config.timeScale;
+          const width = Math.max(1, renderer.viewport.width), height = Math.max(1, renderer.viewport.height), dt = Math.min(0.05, time.deltaSeconds);
           if (pendingReset || lastWidth !== width || lastHeight !== height) {
             model.reset(width, height);
             lastWidth = width;

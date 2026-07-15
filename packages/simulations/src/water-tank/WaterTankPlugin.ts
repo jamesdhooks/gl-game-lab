@@ -3,7 +3,7 @@ import { EngineInput, EngineRender2D, EngineSchedule, type ExperienceLaunchOptio
 import { registerSimulationRuntime } from '../SimulationPluginLifecycle.js';
 import { createBuildFixture, packBuildPreview } from '../BuildFixtures.js';
 import { createWaterTankConfig, WATER_TANK_DEFAULTS, waterNumber, waterString, type WaterTankConfig } from './config.js';
-import { WaterTankModel, type WaterTankTuning } from './WaterTankModel.js';
+import { WaterTankModel, waterTankObstacleLayoutSeed, type WaterTankTuning } from './WaterTankModel.js';
 import { waterColor3, waterColor4, WATER_TANK_STYLE_MANIFEST } from './styles.js';
 export type WaterTankMode = 'pour' | 'splash' | 'build';
 export interface WaterTankController extends ExperienceRuntimeController {
@@ -18,8 +18,8 @@ type Point = {
   readonly y: number;
 };
 export function createWaterTankPlugin(initial: WaterTankConfig = WATER_TANK_DEFAULTS, launch: ExperienceLaunchOptions = {}): EnginePlugin {
-  let config = initial, mode: WaterTankMode = launch.modeId === 'splash' || launch.modeId === 'build' ? launch.modeId : 'pour', styleId = validStyle(launch.styleId) ?? WATER_TANK_STYLE_MANIFEST.defaultStyleId, width = 1, height = 1, pendingReset = true, elapsed = 0, spawnAccumulator = 0, cleanup = (): void => undefined;
-  const model = new WaterTankModel(), paths = new Map<number, Point[]>(), previous = new Map<number, Point>();
+  let config = initial, mode: WaterTankMode = launch.modeId === 'splash' || launch.modeId === 'build' ? launch.modeId : 'pour', styleId = validStyle(launch.styleId) ?? WATER_TANK_STYLE_MANIFEST.defaultStyleId, width = 1, height = 1, pendingReset = true, elapsed = 0, spawnAccumulator = 0, layoutGeneration = 0, layoutSeed = waterTankObstacleLayoutSeed(launch.seed ?? 8027693, 0), cleanup = (): void => undefined;
+  const model = new WaterTankModel(), paths = new Map<number, Point[]>(), previous = new Map<number, Point>(), pointerVelocity = new Map<number, Point>();
   return {
     id: WATER_TANK_PLUGIN_ID,
     version: '1.0.0',
@@ -58,6 +58,7 @@ export function createWaterTankPlugin(initial: WaterTankConfig = WATER_TANK_DEFA
           mode = value;
           paths.clear();
           previous.clear();
+          pointerVelocity.clear();
           spawnAccumulator = 0;
         },
         setStyle: value => {
@@ -90,9 +91,10 @@ export function createWaterTankPlugin(initial: WaterTankConfig = WATER_TANK_DEFA
           const nextWidth = Math.max(1, renderer.viewport.width), nextHeight = Math.max(1, renderer.viewport.height), dt = Math.min(1 / 30, time.deltaSeconds);
           elapsed += dt;
           if (pendingReset || nextWidth !== width || nextHeight !== height) {
+            const regenerateLayout = pendingReset;
             width = nextWidth;
             height = nextHeight;
-            reset();
+            reset(regenerateLayout);
             pendingReset = false;
           }
           for (const event of input.snapshot.events)
@@ -103,6 +105,7 @@ export function createWaterTankPlugin(initial: WaterTankConfig = WATER_TANK_DEFA
               }, prior = previous.get(event.id) ?? point, vx = (point.x - prior.x) / Math.max(0.001, dt), vy = (point.y - prior.y) / Math.max(0.001, dt);
               if (event.phase === 'down') {
                 previous.set(event.id, point);
+                pointerVelocity.set(event.id, { x: 0, y: 0 });
                 if (mode === 'build')
                   paths.set(event.id, [
                     point
@@ -112,6 +115,7 @@ export function createWaterTankPlugin(initial: WaterTankConfig = WATER_TANK_DEFA
               }
               else if (event.phase === 'move') {
                 previous.set(event.id, point);
+                pointerVelocity.set(event.id, { x: vx, y: vy });
                 if (mode === 'build') {
                   const path = paths.get(event.id);
                   if (path && distance(path[path.length - 1] ?? point, point) > 5)
@@ -131,19 +135,17 @@ export function createWaterTankPlugin(initial: WaterTankConfig = WATER_TANK_DEFA
                   }
                 }
                 previous.delete(event.id);
+                pointerVelocity.delete(event.id);
               }
             }
-          const pointer = input.snapshot.pointers[0];
+          const pointer = selectHeldWaterTankPointer(input.snapshot.pointers);
           if (mode === 'pour' && pointer) {
             spawnAccumulator = Math.min(waterNumber(config, 'pourRate'), spawnAccumulator + waterNumber(config, 'pourRate') * dt);
             const count = Math.min(260, Math.floor(spawnAccumulator));
             spawnAccumulator -= count;
-            const prior = previous.get(pointer.id) ?? pointer;
-            model.pour(pointer.x, pointer.y, count, waterNumber(config, 'pourRadius'), (pointer.x - prior.x) * 6, (pointer.y - prior.y) * 6 + 125);
-            previous.set(pointer.id, {
-              x: pointer.x,
-              y: pointer.y
-            });
+            const velocity = pointerVelocity.get(pointer.id) ?? { x: 0, y: 0 };
+            model.pour(pointer.x, pointer.y, count, waterNumber(config, 'pourRadius'), velocity.x * 0.08, velocity.y * 0.08 + 125);
+            pointerVelocity.set(pointer.id, { x: 0, y: 0 });
           }
           else
             spawnAccumulator = 0;
@@ -199,24 +201,6 @@ export function createWaterTankPlugin(initial: WaterTankConfig = WATER_TANK_DEFA
               blend: 'alpha',
               opacity: waterNumber(config, 'opacity')
             });
-          else if (renderStyle === 'ultra')
-            renderer.submitParticles({
-              id: 'water-tank-foam',
-              count: model.count,
-              positions: model.world.positions,
-              radii: model.world.radii,
-              colorSeeds: model.world.colorSeeds,
-              palette: [
-                [
-                  1,
-                  1,
-                  1,
-                  0.18
-                ]
-              ],
-              blend: 'additive',
-              opacity: 0.16
-            });
           const pegs = model.packPegs();
           renderer.submitParticles({
             id: 'water-tank-pegs',
@@ -248,21 +232,26 @@ export function createWaterTankPlugin(initial: WaterTankConfig = WATER_TANK_DEFA
           });
         }
       });
-      function reset() {
+      function reset(regenerateLayout: boolean) {
         const next = tuning(), preview = launch.profile === 'preview';
+        if (regenerateLayout) layoutSeed = waterTankObstacleLayoutSeed(launch.seed ?? 8027693, layoutGeneration++);
         model.reset(width, height, preview ? {
           ...next,
           maxParticles: Math.min(1024, next.maxParticles)
         } : next);
-        model.seedObstacles(width, height, preview ? Math.min(3, Math.floor(waterNumber(config, 'obstacleRamps'))) : Math.floor(waterNumber(config, 'obstacleRamps')), preview ? Math.min(4, Math.floor(waterNumber(config, 'obstaclePegs'))) : Math.floor(waterNumber(config, 'obstaclePegs')), waterNumber(config, 'buildRadius'));
+        const ramps = Math.floor(waterNumber(config, 'obstacleRamps'));
+        const pegs = Math.floor(waterNumber(config, 'obstaclePegs'));
+        const buildRadius = waterNumber(config, 'buildRadius');
+        model.seedObstacles(width, height, ramps, pegs, buildRadius, layoutSeed);
         const columns = Math.max(8, Math.floor(width / (next.particleRadius * 2.15)));
-        const rows = Math.max(4, Math.floor(height * (preview ? 0.28 : 0.42) / (next.particleRadius * 2.05)));
+        const rows = Math.max(4, Math.floor(height * 0.42 / (next.particleRadius * 2.05)));
         const initialCount = Math.min(next.maxParticles, columns * rows);
         model.seedReservoir(width, height, initialCount, next.particleRadius);
         spawnAccumulator = 0;
         elapsed = 0;
         paths.clear();
         previous.clear();
+        pointerVelocity.clear();
       }
       function commitBuild(path: readonly Point[]) {
         const fixture = createBuildFixture(path, waterNumber(config, 'buildRadius'));
@@ -278,6 +267,7 @@ export function createWaterTankPlugin(initial: WaterTankConfig = WATER_TANK_DEFA
           viscosity: waterNumber(config, 'viscosity'),
           viscositySigma: waterNumber(config, 'viscositySigma'),
           viscosityBeta: waterNumber(config, 'viscosityBeta'),
+          fluidity: waterNumber(config, 'fluidity'),
           supportRadiusScale: waterNumber(config, 'supportRadiusScale'),
           restDensity: waterNumber(config, 'restDensity'),
           stiffness: waterNumber(config, 'stiffness'),
@@ -321,6 +311,11 @@ export function createWaterTankPlugin(initial: WaterTankConfig = WATER_TANK_DEFA
     }
   };
 }
+
+export function selectHeldWaterTankPointer<T extends { readonly buttons: number }>(pointers: readonly T[]): T | undefined {
+  return pointers.find(pointer => pointer.buttons !== 0);
+}
+
 function distance(a: Point, b: Point) {
   return Math.hypot(a.x - b.x, a.y - b.y);
 }

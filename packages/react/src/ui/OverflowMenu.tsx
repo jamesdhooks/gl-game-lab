@@ -10,10 +10,10 @@
  * Consumers pass named `items` rather than raw children so the sheet can
  * render labelled rows with proper 44px touch targets.
  */
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { AnimatePresence, motion } from 'framer-motion';
-import { MoreHorizontal } from 'lucide-react';
+import { MoreHorizontal, type LucideIcon } from 'lucide-react';
 import { BottomSheet } from './BottomSheet.js';
 import { useViewportContext } from '../ViewportProvider.js';
 
@@ -23,7 +23,11 @@ export interface OverflowItem {
   /** Label shown in the mobile sheet row */
   label: string;
   /** Rendered as the pill control on desktop, or as the right-side control in a sheet row */
-  node: React.ReactNode;
+  node: ReactNode;
+  /** Icon shown beside the label when the item is rendered as a condensed row. */
+  compactIcon?: LucideIcon;
+  /** Activates the item from anywhere on its condensed row. */
+  onActivate?: () => void;
   /** If true, the item is hidden entirely (e.g. no quality modes defined) */
   hidden?: boolean;
   /**
@@ -83,8 +87,8 @@ export function OverflowMenu({ items, compact = false }: OverflowMenuProps) {
     );
   }
 
-  const rows = visible.map((item) =>
-    item.fullWidth ? (
+  const rows = visible.map((item) => {
+    if (item.fullWidth) return (
       <div key={item.key} className="py-1" onClickCapture={item.closeOnActivate ? () => setOpen(false) : undefined}>
         {item.sectionLabel && (
           <p className="mb-1 px-2 text-[10px] font-semibold uppercase tracking-widest text-white/35">
@@ -93,7 +97,27 @@ export function OverflowMenu({ items, compact = false }: OverflowMenuProps) {
         )}
         {item.node}
       </div>
-    ) : (
+    );
+    if (item.onActivate) {
+      const CompactIcon = item.compactIcon;
+      return (
+        <button
+          key={item.key}
+          type="button"
+          className="group flex min-h-touch w-full items-center gap-3 rounded-xl px-3 py-2 text-left text-white/65 transition-colors hover:bg-white/[0.08] hover:text-white focus-visible:bg-white/[0.08] focus-visible:text-white focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-cyan-200/45"
+          onClick={() => {
+            item.onActivate?.();
+            if (item.closeOnActivate) setOpen(false);
+          }}
+        >
+          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-white/[0.06] text-white/45 transition-colors group-hover:bg-white/[0.1] group-hover:text-white/75">
+            {CompactIcon ? <CompactIcon size={15} /> : null}
+          </span>
+          <span className="text-sm font-medium">{item.label}</span>
+        </button>
+      );
+    }
+    return (
       <div
         key={item.key}
         className="flex min-h-touch items-center justify-between gap-3 rounded-xl px-2 py-2"
@@ -102,8 +126,8 @@ export function OverflowMenu({ items, compact = false }: OverflowMenuProps) {
         <span className="text-sm font-medium text-white/70">{item.label}</span>
         <div className="flex shrink-0 items-center">{item.node}</div>
       </div>
-    ),
-  );
+    );
+  });
 
   if (!mobileSheet) {
     const openMenu = () => {

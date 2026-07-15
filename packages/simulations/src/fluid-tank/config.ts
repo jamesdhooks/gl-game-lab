@@ -103,7 +103,6 @@ export const FLUID_TANK_SETTINGS: readonly ExperienceSetting[] = Object.freeze([
   }
 ]);
 export const FLUID_TANK_DEFAULTS: FluidTankConfig = Object.freeze({
-  timescale: 1,
   ...Object.fromEntries(FLUID_TANK_SETTINGS.map(setting => [
     setting.key,
     setting.default

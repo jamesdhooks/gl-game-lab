@@ -148,6 +148,7 @@ function normalizePreviewProfile(value: unknown): Record<string, unknown> | unde
     ...(typeof profile.styleId === 'string' ? { styleId: profile.styleId } : {}),
     settings,
     variation: { intensity, lockedKeys, seed },
+    generationMode: profile.generationMode === 'exact' ? 'exact' : 'varied',
     renderPolicy,
   };
 }

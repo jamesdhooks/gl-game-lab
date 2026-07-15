@@ -90,6 +90,11 @@ export {
   type Texture2DHandle,
   type UvRect,
 } from './Render2D.js';
+export {
+  InteractionRadiusIndicator2D,
+  type InteractionIndicatorPointer2D,
+  type InteractionRadiusIndicator2DOptions,
+} from './InteractionRadiusIndicator2D.js';
 export { InputSourceRegistry, type InputSource } from './InputSourceRegistry.js';
 export {
   type Gpu2DService,
@@ -110,7 +115,9 @@ export {
 } from './Gpu2D.js';
 export {
   ExperienceRegistry,
+  ExperiencePreviewCycleControllerService,
   ExperienceRuntimeControllerService,
+  ENGINE_TIME_SCALE_SETTING,
   type BooleanSetting,
   type ExperienceCapabilities,
   type ExperienceAttribution,
@@ -121,6 +128,9 @@ export {
   type ExperienceMode,
   type ExperiencePhysicsDescriptor,
   type ExperiencePreviewProfile,
+  type ExperiencePreviewCycleController,
+  type ExperiencePreviewCycleOutcome,
+  type ExperiencePreviewCycleRequest,
   type ExperienceRuntimeController,
   type ExperienceSetting,
   type ExperienceSettingValue,
@@ -129,6 +139,7 @@ export {
   type ExperienceTutorialPage,
   type NumberSetting,
   type PreviewFallbackImage,
+  type PreviewGenerationMode,
   type PreviewRenderPolicy,
   type PreviewVariationConfig,
   type ResolvedPreviewLaunch,
@@ -137,4 +148,6 @@ export {
   createDefaultPreviewProfile,
   resolvePreviewLaunch,
   sanitizePreviewProfile,
+  withoutEngineSettings,
+  withEngineTimeScaleSetting,
 } from './Experience.js';

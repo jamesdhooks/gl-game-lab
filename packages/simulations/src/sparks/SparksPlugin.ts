@@ -119,7 +119,7 @@ export function createSparksPlugin(initial: SparksConfig = SPARKS_DEFAULTS, laun
         id: 'gl-game-lab.simulations.sparks.update',
         stage: 'update',
         run: ({ time }) => {
-          const dt = Math.min(0.05, time.deltaSeconds) * sparksNumber(config, 'timeScale');
+          const dt = Math.min(0.05, time.deltaSeconds);
           elapsed += dt;
           pendingDt += dt;
           const events = input.snapshot.events.filter((event): event is PointerInputEvent => event.kind === 'pointer');

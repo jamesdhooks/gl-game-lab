@@ -2,6 +2,7 @@ import type { ExperienceDefinition } from '@hooksjam/gl-game-lab-engine';
 import { createMyceliumConfig, MYCELIUM_DEFAULTS, MYCELIUM_SETTINGS } from './config.js';
 import { createMyceliumPlugin } from './MyceliumPlugin.js';
 import { MYCELIUM_STYLE_MANIFEST } from './styles.js';
+import { describeSimulationSettings } from '../settingDescriptions.js';
 export const myceliumDefinition: ExperienceDefinition = {
   id: 'mycelium',
   kind: 'simulation',
@@ -37,7 +38,7 @@ export const myceliumDefinition: ExperienceDefinition = {
       description: 'Paint new growth onto the surface.'
     }
   ],
-  settings: MYCELIUM_SETTINGS,
+  settings: describeSimulationSettings('mycelium', MYCELIUM_SETTINGS),
   styleManifest: MYCELIUM_STYLE_MANIFEST,
   tutorialPages: [
     {

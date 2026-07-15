@@ -2,6 +2,7 @@ import type { ExperienceDefinition } from '@hooksjam/gl-game-lab-engine';
 import { createFluidTankConfig, FLUID_TANK_DEFAULTS, FLUID_TANK_SETTINGS } from './config.js';
 import { createFluidTankPlugin } from './FluidTankPlugin.js';
 import { FLUID_TANK_STYLE_MANIFEST } from './styles.js';
+import { describeSimulationSettings } from '../settingDescriptions.js';
 export const fluidTankDefinition: ExperienceDefinition = {
   id: 'fluid-tank',
   kind: 'simulation',
@@ -45,7 +46,7 @@ export const fluidTankDefinition: ExperienceDefinition = {
       description: 'Drag to stir the fluid.'
     }
   ],
-  settings: FLUID_TANK_SETTINGS,
+  settings: describeSimulationSettings('fluid-tank', FLUID_TANK_SETTINGS),
   styleManifest: FLUID_TANK_STYLE_MANIFEST,
   attributions: [
     {

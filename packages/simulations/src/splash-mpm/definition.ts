@@ -2,6 +2,7 @@ import type { ExperienceDefinition } from '@hooksjam/gl-game-lab-engine';
 import { createSplashMpmConfig, SPLASH_MPM_DEFAULTS, SPLASH_MPM_SETTINGS } from './config.js';
 import { createSplashMpmPlugin } from './SplashMpmPlugin.js';
 import { SPLASH_MPM_STYLE_MANIFEST } from './styles.js';
+import { describeSimulationSettings } from '../settingDescriptions.js';
 export const splashMpmDefinition: ExperienceDefinition = {
   id: 'splash-mpm',
   kind: 'simulation',
@@ -51,7 +52,7 @@ export const splashMpmDefinition: ExperienceDefinition = {
       description: 'Tap for circular pegs or drag for pill-shaped collision surfaces.'
     }
   ],
-  settings: SPLASH_MPM_SETTINGS,
+  settings: describeSimulationSettings('splash-mpm', SPLASH_MPM_SETTINGS),
   styleManifest: SPLASH_MPM_STYLE_MANIFEST,
   attributions: [
     {

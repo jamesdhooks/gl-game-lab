@@ -13,6 +13,7 @@ uniform float uLineSharpness;
 uniform float uGlow;
 uniform int uRenderMode;
 uniform int uEmitterCount;
+uniform int uShowEmitterMarkers;
 uniform vec4 uEmitters[MAX_EMITTERS];
 uniform float uEmitterAmplitudes[MAX_EMITTERS];
 uniform vec3 uPaletteA;
@@ -91,11 +92,16 @@ vec4 linearField(vec2 uv, vec2 aspect, float gamma, float maxAlpha) {
 }
 
 float sourceMarker(vec2 p) {
+  if (uShowEmitterMarkers == 0) return 0.0;
   float marker = 0.0;
   for (int i = 0; i < MAX_EMITTERS; i++) {
     if (i >= uEmitterCount) break;
-    float d = length(p - uEmitters[i].xy);
-    marker += smoothstep(0.034, 0.009, d) + 0.35 * smoothstep(0.055, 0.038, abs(d - 0.046));
+    vec4 emitter = uEmitters[i];
+    float frequency = emitter.z * max(0.05, uBaseFrequency / 2.4);
+    float pulse = sin(uTime * frequency + emitter.w);
+    float radius = 0.024 * (1.0 + pulse * 0.08);
+    float disc = 1.0 - smoothstep(radius - 0.003, radius + 0.003, length(p - emitter.xy));
+    marker = max(marker, disc * (0.92 + pulse * 0.08));
   }
   return clamp(marker, 0.0, 1.0);
 }

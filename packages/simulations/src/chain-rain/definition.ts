@@ -2,6 +2,7 @@ import type { ExperienceDefinition } from '@hooksjam/gl-game-lab-engine';
 import { CHAIN_RAIN_DEFAULTS, CHAIN_RAIN_SETTINGS, createChainRainConfig } from './config.js';
 import { createChainRainPlugin } from './ChainRainPlugin.js';
 import { CHAIN_RAIN_STYLE_MANIFEST } from './styles.js';
+import { describeSimulationSettings } from '../settingDescriptions.js';
 export const chainRainDefinition: ExperienceDefinition = {
   id: 'chain-rain',
   kind: 'simulation',
@@ -49,7 +50,7 @@ export const chainRainDefinition: ExperienceDefinition = {
       description: 'Drag snakes around.'
     }
   ],
-  settings: CHAIN_RAIN_SETTINGS,
+  settings: describeSimulationSettings('chain-rain', CHAIN_RAIN_SETTINGS),
   styleManifest: CHAIN_RAIN_STYLE_MANIFEST,
   tutorialPages: [
     {

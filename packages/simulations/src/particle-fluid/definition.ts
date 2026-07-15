@@ -2,6 +2,7 @@ import type { ExperienceDefinition } from '@hooksjam/gl-game-lab-engine';
 import { createParticleFluidConfig, PARTICLE_FLUID_DEFAULTS, PARTICLE_FLUID_SETTINGS } from './config.js';
 import { createParticleFluidPlugin } from './ParticleFluidPlugin.js';
 import { PARTICLE_FLUID_STYLE_MANIFEST } from './styles.js';
+import { describeSimulationSettings } from '../settingDescriptions.js';
 export const particleFluidDefinition: ExperienceDefinition = {
   id: 'particle-fluid',
   kind: 'simulation',
@@ -29,7 +30,7 @@ export const particleFluidDefinition: ExperienceDefinition = {
   configDefaults: {
     ...PARTICLE_FLUID_DEFAULTS
   },
-  settings: PARTICLE_FLUID_SETTINGS,
+  settings: describeSimulationSettings('particle-fluid', PARTICLE_FLUID_SETTINGS),
   styleManifest: PARTICLE_FLUID_STYLE_MANIFEST,
   attributions: [
     {

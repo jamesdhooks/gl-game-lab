@@ -1,10 +1,10 @@
 import type { ExperienceSetting, ExperienceSettingValue } from '@hooksjam/gl-game-lab-engine';
 export type OrbitalShrapnelConfig = Readonly<Record<string, ExperienceSettingValue>>;
 export const ORBITAL_SHRAPNEL_SETTINGS: readonly ExperienceSetting[] = Object.freeze([
-  n('gravity', 'Planet Gravity', 'Planet', 600, 3200, 50, 1850),
+  n('gravity', 'Planet Gravity', 'Planet', 0, 3200, 50, 1850),
   n('planetRadius', 'Planet Radius', 'Planet', 22, 92, 2, 46),
   n('trailFade', 'Trail Persistence', 'Rendering', 0, 0.995, 0.005, 0.972),
-  n('debrisSize', 'Debris Size', 'Rendering', 0.05, 2.4, 0.05, 0.72),
+  n('debrisSize', 'Debris Size', 'Rendering', 0.05, 5, 0.05, 0.72),
   n('debrisOpacity', 'Debris Opacity', 'Rendering', 0, 1, 0.01, 1),
   {
     key: 'starField',
@@ -43,45 +43,9 @@ export const ORBITAL_SHRAPNEL_SETTINGS: readonly ExperienceSetting[] = Object.fr
   n('secondaryBodyRadius', 'Max Body Orbit', 'Secondary Bodies', 0.2, 1.1, 0.025, 0.72),
   n('secondaryBodySpeed', 'Body Speed', 'Secondary Bodies', 0, 1.5, 0.025, 0.25),
   {
-    key: 'rawParticleTextureSize',
-    label: 'Debris Density',
-    section: 'Rendering',
-    type: 'select',
-    default: '192',
-    advanced: true,
-    options: [
-      [
-        '64\u00B2 = 4k \u00B7 preview',
-        '64'
-      ],
-      [
-        '128\u00B2 = 16k \u00B7 light',
-        '128'
-      ],
-      [
-        '192\u00B2 = 37k \u00B7 reference',
-        '192'
-      ],
-      [
-        '256\u00B2 = 65k \u00B7 safe',
-        '256'
-      ],
-      [
-        '512\u00B2 = 262k \u00B7 high',
-        '512'
-      ],
-      [
-        '768\u00B2 = 590k \u00B7 advanced',
-        '768'
-      ],
-      [
-        '1024\u00B2 = 1.05M \u00B7 extreme',
-        '1024'
-      ]
-    ].map(([label, value]) => ({
-      label: label ?? '',
-      value: value ?? ''
-    }))
+    ...n('rawParticleTextureSize', 'Debris Density', 'Rendering', 64, 2048, 1, 256),
+    numericScale: 'powerOfTwo',
+    advanced: true
   },
   {
     ...n('rawMaxSpeed', 'Velocity Limit', 'Rendering', 0.25, 8, 0.05, 2.3),
@@ -108,7 +72,10 @@ export function createOrbitalShrapnelConfig(values: Readonly<Record<string, Expe
     ...ORBITAL_SHRAPNEL_DEFAULTS
   };
   for (const setting of ORBITAL_SHRAPNEL_SETTINGS) {
-    const value = values[setting.key] ?? setting.default;
+    const candidate = values[setting.key] ?? setting.default;
+    const value = setting.type === 'number' && setting.key === 'rawParticleTextureSize'
+      ? snapParticleTextureSize(typeof candidate === 'string' ? Number(candidate) : candidate, setting.min, setting.max)
+      : candidate;
     if (setting.type === 'number' && (typeof value !== 'number' || !Number.isFinite(value) || value < setting.min || value > setting.max))
       throw new Error(`Orbital Shrapnel setting ${setting.key} is outside its supported range`);
     if (setting.type === 'boolean' && typeof value !== 'boolean')
@@ -136,6 +103,11 @@ export function orbitalBoolean(config: OrbitalShrapnelConfig, key: string): bool
   if (typeof value !== 'boolean')
     throw new Error(`Orbital boolean setting is unavailable: ${key}`);
   return value;
+}
+function snapParticleTextureSize(value: ExperienceSettingValue, min: number, max: number): number {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < min || value > max)
+    throw new Error('Orbital Shrapnel setting rawParticleTextureSize is outside its supported range');
+  return Math.max(min, Math.min(max, 2 ** Math.round(Math.log2(value))));
 }
 function n(key: string, label: string, section: string, min: number, max: number, step: number, defaultValue: number, visibleModes?: readonly string[]) {
   return Object.freeze({

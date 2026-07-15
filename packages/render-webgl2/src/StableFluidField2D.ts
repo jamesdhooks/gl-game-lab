@@ -3,6 +3,7 @@ import { GpuFieldState } from './GpuFieldState.js';
 import type { GpuParticleRenderDestination } from './GpuParticleRenderer.js';
 import {
   FLUID_ADVECTION_SHADER,
+  FLUID_BOUNDARY_SHADER,
   FLUID_BLOOM_BLUR_SHADER,
   FLUID_BLOOM_FINAL_SHADER,
   FLUID_BLOOM_PREFILTER_SHADER,
@@ -20,6 +21,13 @@ import {
   FLUID_SUNRAYS_SHADER,
   FLUID_VORTICITY_SHADER,
 } from './FluidTankReferenceShaders.js';
+import {
+  SOURCE_MAPPED_ADVECTION_SHADER,
+  SOURCE_MAPPED_DIVERGENCE_SHADER,
+  SOURCE_MAPPED_FORCE_SHADER,
+  SOURCE_MAPPED_GRADIENT_SHADER,
+  SOURCE_MAPPED_PRESSURE_SHADER,
+} from './SourceMappedFluidShaders.js';
 
 export interface FluidSplat2D {
   readonly x: number;
@@ -46,6 +54,13 @@ export interface StableFluidStepOptions {
   readonly pressureIterations: number;
   readonly ambient?: boolean;
   readonly velocitySplatsBeforeProjection?: boolean;
+  readonly solverMode?: 'stable' | 'source-mapped';
+  readonly cellSize?: number;
+  readonly simulationScale?: number;
+  readonly velocityDecay?: number;
+  readonly forceRadius?: number;
+  readonly forceTaper?: number;
+  readonly forceStrength?: number;
 }
 
 export interface StableFluidSeedOptions {
@@ -75,11 +90,17 @@ export interface StableFluidField2DOptions {
   readonly height: number;
   readonly simulationWidth?: number;
   readonly simulationHeight?: number;
+  readonly simulationPrecision?: 'half-float' | 'float';
+  readonly simulationFilter?: 'nearest' | 'linear';
 }
 
-const CLEAR_SHADER = `#version 300 es
-precision highp float;in vec2 vUv;out vec4 outColor;uniform float value;
-void main(){outColor=vec4(value,value,value,1.0);}`;
+interface SourceMappedFluidPasses {
+  readonly advection: GpuFieldPass;
+  readonly force: GpuFieldPass;
+  readonly divergence: GpuFieldPass;
+  readonly pressure: GpuFieldPass;
+  readonly gradient: GpuFieldPass;
+}
 
 export class StableFluidField2D {
   readonly velocity: GpuFieldState;
@@ -92,10 +113,10 @@ export class StableFluidField2D {
   private readonly bloomPyramid: readonly GpuFieldState[];
   private readonly sunraysMaskTarget: GpuFieldState;
   private readonly sunraysTarget: GpuFieldState;
-  private readonly clearPass: GpuFieldPass;
   private readonly initPass: GpuFieldPass;
   private readonly splatPass: GpuFieldPass;
   private readonly advectionPass: GpuFieldPass;
+  private readonly boundaryPass: GpuFieldPass;
   private readonly divergencePass: GpuFieldPass;
   private readonly curlPass: GpuFieldPass;
   private readonly vorticityPass: GpuFieldPass;
@@ -110,15 +131,19 @@ export class StableFluidField2D {
   private readonly sunraysPass: GpuFieldPass;
   private readonly compositePass: GpuFieldPass;
   private readonly referenceDisplayPass: GpuFieldPass;
+  private sourcePasses: SourceMappedFluidPasses | undefined;
+  private readonly sourceForceSegments = new Float32Array(8 * 4);
+  private readonly sourceForceParams = new Float32Array(8 * 4);
   private disposed = false;
 
   constructor(private readonly gl: WebGL2RenderingContext, options: StableFluidField2DOptions) {
     const simulation = { width: options.simulationWidth ?? options.width, height: options.simulationHeight ?? options.height };
-    this.velocity = field(gl, simulation.width, simulation.height, 'linear');
+    const simulationPrecision = options.simulationPrecision ?? 'half-float';
+    this.velocity = field(gl, simulation.width, simulation.height, options.simulationFilter ?? 'linear', simulationPrecision);
     this.dye = field(gl, options.width, options.height, 'linear');
-    this.pressure = field(gl, simulation.width, simulation.height, 'nearest');
-    this.divergence = field(gl, simulation.width, simulation.height, 'nearest');
-    this.curlTarget = field(gl, simulation.width, simulation.height, 'nearest');
+    this.pressure = field(gl, simulation.width, simulation.height, 'nearest', simulationPrecision);
+    this.divergence = field(gl, simulation.width, simulation.height, 'nearest', simulationPrecision);
+    this.curlTarget = field(gl, simulation.width, simulation.height, 'nearest', simulationPrecision);
     this.displayTarget = field(gl, options.width, options.height, 'linear');
     const bloomSize = resolutionFor(256, options.width, options.height);
     this.bloomTarget = field(gl, bloomSize.width, bloomSize.height, 'linear');
@@ -133,10 +158,10 @@ export class StableFluidField2D {
     const raysSize = resolutionFor(clamp(Math.round(options.height * 0.18), 96, 220), options.width, options.height);
     this.sunraysMaskTarget = field(gl, raysSize.width, raysSize.height, 'linear');
     this.sunraysTarget = field(gl, raysSize.width, raysSize.height, 'linear');
-    this.clearPass = new GpuFieldPass(gl, CLEAR_SHADER, 'fluid clear');
     this.initPass = new GpuFieldPass(gl, FLUID_INIT_DYE_SHADER, 'fluid initialization');
     this.splatPass = new GpuFieldPass(gl, FLUID_SPLAT_SHADER, 'fluid splat');
     this.advectionPass = new GpuFieldPass(gl, FLUID_ADVECTION_SHADER, 'fluid advection');
+    this.boundaryPass = new GpuFieldPass(gl, FLUID_BOUNDARY_SHADER, 'fluid boundary');
     this.divergencePass = new GpuFieldPass(gl, FLUID_DIVERGENCE_SHADER, 'fluid divergence');
     this.curlPass = new GpuFieldPass(gl, FLUID_CURL_SHADER, 'fluid curl');
     this.vorticityPass = new GpuFieldPass(gl, FLUID_VORTICITY_SHADER, 'fluid vorticity');
@@ -187,6 +212,10 @@ export class StableFluidField2D {
 
   step(options: StableFluidStepOptions, splats: readonly FluidSplat2D[] = []): void {
     this.assert();
+    if (options.solverMode === 'source-mapped') {
+      this.stepSourceMapped(options, splats);
+      return;
+    }
     const dt = clamp(options.deltaSeconds, 0, 0.032);
     for (const splat of splats) {
       this.applySplat(this.velocity, splat, [splat.velocityX, splat.velocityY, 0]);
@@ -227,6 +256,11 @@ export class StableFluidField2D {
       gl.uniform2f(uniform('texelSize'), texelX, texelY);
       gl.uniform1f(uniform('dt'), dt);
       gl.uniform1f(uniform('dissipation'), clamp(options.velocityDissipation, 0, 4));
+    });
+    this.boundaryPass.step(this.velocity, (gl, uniform) => {
+      gl.uniform1i(uniform('uVelocity'), this.velocity.targets.read.attach(0));
+      gl.uniform2f(uniform('texelSize'), texelX, texelY);
+      gl.uniform1f(uniform('wallDamping'), 0);
     });
     this.advectionPass.step(this.dye, (gl, uniform) => {
       gl.uniform1i(uniform('uVelocity'), this.velocity.targets.read.attach(0));
@@ -279,7 +313,91 @@ export class StableFluidField2D {
   }
 
   private clearPressure(): void {
-    for (let i = 0; i < 2; i += 1) this.clearPass.step(this.pressure, (gl, uniform) => gl.uniform1f(uniform('value'), 0.8));
+    clearFluidPressureField(this.pressure);
+  }
+
+  private stepSourceMapped(options: StableFluidStepOptions, splats: readonly FluidSplat2D[]): void {
+    const passes = this.getSourcePasses();
+    const dt = clamp(options.deltaSeconds, 0, 1 / 30);
+    if (dt <= 0) return;
+    const safeDt = Math.max(0.0001, dt);
+    const cellSize = Math.max(1, options.cellSize ?? 32);
+    const simulationScale = Math.max(0.25, options.simulationScale ?? 1);
+    const aspect = this.velocity.width / Math.max(1, this.velocity.height);
+    const invX = 1 / this.velocity.width;
+    const invY = 1 / this.velocity.height;
+    const bindCommon = (gl: WebGL2RenderingContext, uniform: (name: string) => WebGLUniformLocation | null): void => {
+      gl.uniform2f(uniform('uInvResolution'), invX, invY);
+      gl.uniform1f(uniform('uAspectRatio'), aspect);
+      gl.uniform1f(uniform('uSimulationScale'), simulationScale);
+    };
+
+    passes.advection.step(this.velocity, (gl, uniform) => {
+      bindCommon(gl, uniform);
+      gl.uniform1i(uniform('uVelocity'), this.velocity.targets.read.attach(0));
+      gl.uniform1i(uniform('uTarget'), this.velocity.targets.read.attach(1));
+      gl.uniform1f(uniform('uDt'), dt);
+      gl.uniform1f(uniform('uRdx'), 1 / cellSize);
+    });
+
+    this.sourceForceSegments.fill(0);
+    this.sourceForceParams.fill(0);
+    const forceCount = Math.min(8, splats.length);
+    for (let index = 0; index < forceCount; index += 1) {
+      const splat = splats[index];
+      if (!splat) continue;
+      const offset = index * 4;
+      this.sourceForceSegments[offset] = (splat.x * 2 - 1) * aspect * simulationScale;
+      this.sourceForceSegments[offset + 1] = (splat.y * 2 - 1) * simulationScale;
+      this.sourceForceSegments[offset + 2] = ((splat.previousX ?? splat.x) * 2 - 1) * aspect * simulationScale;
+      this.sourceForceSegments[offset + 3] = ((splat.previousY ?? splat.y) * 2 - 1) * simulationScale;
+      this.sourceForceParams[offset] = splat.strength ?? 1;
+    }
+    passes.force.step(this.velocity, (gl, uniform) => {
+      bindCommon(gl, uniform);
+      gl.uniform1i(uniform('uVelocity'), this.velocity.targets.read.attach(0));
+      gl.uniform4fv(uniform('uForceSegments[0]'), this.sourceForceSegments);
+      gl.uniform4fv(uniform('uForceParams[0]'), this.sourceForceParams);
+      gl.uniform1i(uniform('uForceCount'), forceCount);
+      gl.uniform1f(uniform('uDt'), safeDt);
+      gl.uniform1f(uniform('uCellSize'), cellSize);
+      gl.uniform1f(uniform('uVelocityDecay'), clamp(options.velocityDecay ?? 0.999, 0, 1));
+      gl.uniform1f(uniform('uForceRadius'), Math.max(0.0001, options.forceRadius ?? 0.015) * simulationScale);
+      gl.uniform1f(uniform('uForceTaper'), clamp(options.forceTaper ?? 0.6, 0, 1));
+      gl.uniform1f(uniform('uForceStrength'), options.forceStrength ?? 1);
+      gl.uniform1f(uniform('uForceVelocityScale'), 1 / simulationScale);
+    });
+
+    passes.divergence.render(this.velocity, destination(this.divergence), (gl, uniform) => {
+      bindCommon(gl, uniform);
+      gl.uniform1i(uniform('uVelocity'), this.velocity.targets.read.attach(0));
+      gl.uniform1f(uniform('uHalfRdx'), 0.5 / cellSize);
+    });
+    const iterations = clamp(Math.floor(options.pressureIterations), 1, 48);
+    for (let index = 0; index < iterations; index += 1) passes.pressure.step(this.pressure, (gl, uniform) => {
+      bindCommon(gl, uniform);
+      gl.uniform1i(uniform('uPressure'), this.pressure.targets.read.attach(0));
+      gl.uniform1i(uniform('uDivergence'), this.divergence.targets.read.attach(1));
+      gl.uniform1f(uniform('uAlpha'), -cellSize * cellSize);
+    });
+    passes.gradient.step(this.velocity, (gl, uniform) => {
+      bindCommon(gl, uniform);
+      gl.uniform1i(uniform('uPressure'), this.pressure.targets.read.attach(0));
+      gl.uniform1i(uniform('uVelocity'), this.velocity.targets.read.attach(1));
+      gl.uniform1f(uniform('uHalfRdx'), 0.5 / cellSize);
+    });
+  }
+
+  private getSourcePasses(): SourceMappedFluidPasses {
+    if (this.sourcePasses) return this.sourcePasses;
+    this.sourcePasses = {
+      advection: new GpuFieldPass(this.gl, SOURCE_MAPPED_ADVECTION_SHADER, 'source-mapped fluid advection'),
+      force: new GpuFieldPass(this.gl, SOURCE_MAPPED_FORCE_SHADER, 'source-mapped fluid forces'),
+      divergence: new GpuFieldPass(this.gl, SOURCE_MAPPED_DIVERGENCE_SHADER, 'source-mapped fluid divergence'),
+      pressure: new GpuFieldPass(this.gl, SOURCE_MAPPED_PRESSURE_SHADER, 'source-mapped fluid pressure'),
+      gradient: new GpuFieldPass(this.gl, SOURCE_MAPPED_GRADIENT_SHADER, 'source-mapped fluid projection'),
+    };
+    return this.sourcePasses;
   }
 
   private applyBloom(source: GpuFieldState, options: StableFluidDisplayOptions): void {
@@ -344,14 +462,19 @@ export class StableFluidField2D {
   }
 
   private passes(): readonly GpuFieldPass[] {
-    return [this.clearPass, this.initPass, this.splatPass, this.advectionPass, this.divergencePass, this.curlPass, this.vorticityPass, this.pressurePass, this.gradientPass, this.displayPass, this.bloomPrefilterPass, this.bloomBlurPass, this.bloomFinalPass, this.blurPass, this.sunraysMaskPass, this.sunraysPass, this.compositePass, this.referenceDisplayPass];
+    const source = this.sourcePasses ? Object.values(this.sourcePasses) : [];
+    return [this.initPass, this.splatPass, this.advectionPass, this.boundaryPass, this.divergencePass, this.curlPass, this.vorticityPass, this.pressurePass, this.gradientPass, this.displayPass, this.bloomPrefilterPass, this.bloomBlurPass, this.bloomFinalPass, this.blurPass, this.sunraysMaskPass, this.sunraysPass, this.compositePass, this.referenceDisplayPass, ...source];
   }
 
   private assert(): void { if (this.disposed) throw new Error('Stable fluid field has been disposed'); }
 }
 
-function field(gl: WebGL2RenderingContext, width: number, height: number, filter: 'nearest' | 'linear'): GpuFieldState {
-  return new GpuFieldState(gl, { width, height, precision: 'half-float', filter });
+export function clearFluidPressureField(field: Pick<GpuFieldState, 'clear'>): void {
+  field.clear();
+}
+
+function field(gl: WebGL2RenderingContext, width: number, height: number, filter: 'nearest' | 'linear', precision: 'half-float' | 'float' = 'half-float'): GpuFieldState {
+  return new GpuFieldState(gl, { width, height, precision, filter });
 }
 
 function destination(state: GpuFieldState): GpuParticleRenderDestination {

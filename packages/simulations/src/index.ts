@@ -29,7 +29,7 @@ export { softBodyBlobDefinition } from './soft-body-blob/definition.js';
 export { SOFT_BODY_BLOB_DEFAULTS, SOFT_BODY_BLOB_SETTINGS, createSoftBodyBlobConfig, blobNumber, blobString, type SoftBodyBlobConfig } from './soft-body-blob/config.js';
 export { SOFT_BODY_BLOB_PLUGIN_ID, SoftBodyBlobControllerService, createSoftBodyBlobPlugin, type SoftBodyBlobController, type SoftBodyBlobMode } from './soft-body-blob/SoftBodyBlobPlugin.js';
 export { SOFT_BODY_BLOB_STYLE_MANIFEST } from './soft-body-blob/styles.js';
-export { SoftBodyModel, type SoftBody, type SoftBodyTuning } from './soft-body-blob/SoftBodyModel.js';
+export { SoftBodyModel, prepareSoftBodyDrawBlueprint, type SoftBody, type SoftBodyDrawBlueprint, type SoftBodyPoint, type SoftBodyTuning } from './soft-body-blob/SoftBodyModel.js';
 export { fluidTankDefinition } from './fluid-tank/definition.js';
 export { FLUID_TANK_DEFAULTS, FLUID_TANK_SETTINGS, createFluidTankConfig, fluidBoolean, fluidNumber, fluidString, type FluidTankConfig } from './fluid-tank/config.js';
 export { FLUID_TANK_PLUGIN_ID, FluidTankControllerService, createFluidTankPlugin, velocityFromScreenDelta, type FluidTankController, type FluidTankMode } from './fluid-tank/FluidTankPlugin.js';
@@ -82,8 +82,11 @@ export {
 export {
   HARMONIC_SAND_PLUGIN_ID,
   HarmonicSandControllerService,
+  createHarmonicSandEmitterLayout,
   createHarmonicSandPlugin,
+  harmonicSandEmitterMarkersVisible,
   type HarmonicSandController,
+  type HarmonicSandEmitter,
 } from './harmonic-sand/HarmonicSandPlugin.js';
 export { HARMONIC_SAND_STYLE_MANIFEST } from './harmonic-sand/styles.js';
 

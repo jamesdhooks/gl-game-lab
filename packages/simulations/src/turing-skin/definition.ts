@@ -2,6 +2,7 @@ import type { ExperienceDefinition } from '@hooksjam/gl-game-lab-engine';
 import { createTuringSkinConfig, TURING_SKIN_DEFAULTS, TURING_SKIN_SETTINGS } from './config.js';
 import { createTuringSkinPlugin } from './TuringSkinPlugin.js';
 import { TURING_SKIN_STYLE_MANIFEST } from './styles.js';
+import { describeSimulationSettings } from '../settingDescriptions.js';
 export const turingSkinDefinition: ExperienceDefinition = {
   id: 'turing-skin',
   kind: 'simulation',
@@ -43,7 +44,7 @@ export const turingSkinDefinition: ExperienceDefinition = {
       description: 'Cut holes in the pattern.'
     }
   ],
-  settings: TURING_SKIN_SETTINGS,
+  settings: describeSimulationSettings('turing-skin', TURING_SKIN_SETTINGS),
   styleManifest: TURING_SKIN_STYLE_MANIFEST,
   tutorialPages: [
     {

@@ -1,4 +1,5 @@
 import type { ExperienceSetting, ExperienceSettingValue } from '@hooksjam/gl-game-lab-engine';
+import { METABALL_SPLAT_DENSITY_MAX } from '../MetaballSurfaceSettings.js';
 export type ChainRainConfig = Readonly<Record<string, ExperienceSettingValue>>;
 const rendering = 'Rendering', physics = 'Physics';
 export const CHAIN_RAIN_SETTINGS: readonly ExperienceSetting[] = Object.freeze([
@@ -54,26 +55,26 @@ export const CHAIN_RAIN_SETTINGS: readonly ExperienceSetting[] = Object.freeze([
     ...n('collisionSoftness', 'Softness', physics, 0.05, 1.5, 0.01, 0.82),
     advanced: true
   },
-  n('skinWidth', 'Skin Width', rendering, 0.75, 2.4, 0.01, 1.08),
-  n('skinHighlightWidth', 'Highlight Width', rendering, 0, 1.4, 0.01, 0.34),
-  n('skinHighlightStrength', 'Highlight Strength', rendering, 0, 1.5, 0.01, 0.72),
-  n('skinHighlightOpacity', 'Highlight Opacity', rendering, 0, 1, 0.01, 0.42),
-  n('liquidFieldScale', 'Liquid Resolution', rendering, 0.35, 1.5, 0.01, 0.78),
-  n('liquidParticleRadius', 'Liquid Radius', rendering, 0.55, 7.5, 0.01, 1.45),
-  n('liquidFillDensity', 'Bridge Fill', rendering, 0, 3, 0.01, 1.1),
-  n('liquidSplatDensity', 'Liquid Density', rendering, 0.45, 2.5, 0.01, 1.14),
-  n('liquidSurfaceThreshold', 'Surface Threshold', rendering, 0.04, 0.42, 0.01, 0.16),
-  n('liquidEdgeTightness', 'Edge Tightness', rendering, 0, 1, 0.01, 0.76),
-  n('liquidEdgeSoftness', 'Edge Softness', rendering, 0, 1, 0.01, 0.46),
-  n('liquidRefraction', 'Refraction', rendering, 0, 1.5, 0.01, 0.58),
-  n('liquidGloss', 'Specular Gloss', rendering, 0, 1.5, 0.01, 0.68),
-  n('liquidRimLighting', 'Rim Lighting', rendering, 0, 2.5, 0.01, 0.72),
-  n('liquidFoamStrength', 'Sparkle Foam', rendering, 0, 3, 0.01, 0.34),
-  n('liquidThermalStrength', 'Palette Flow', rendering, 0, 1, 0.01, 0.42),
-  n('liquidBloomStrength', 'Bloom', rendering, 0, 3, 0.01, 0.26),
-  n('liquidHeatShimmer', 'Heat Shimmer', rendering, 0, 2, 0.01, 0.14),
-  n('liquidDepthDiffusion', 'Depth Diffusion', rendering, 0, 1, 0.01, 0.18),
-  n('opacity', 'Opacity', rendering, 0.2, 1, 0.01, 0.86),
+  render(n('skinWidth', 'Skin Width', rendering, 0.75, 2.4, 0.01, 1.08), ['enhanced']),
+  render(n('skinHighlightWidth', 'Highlight Width', rendering, 0, 1.4, 0.01, 0.34), ['enhanced']),
+  render(n('skinHighlightStrength', 'Highlight Strength', rendering, 0, 1.5, 0.01, 0.72), ['enhanced']),
+  render(n('skinHighlightOpacity', 'Highlight Opacity', rendering, 0, 1, 0.01, 0.42), ['enhanced']),
+  render(n('liquidFieldScale', 'Liquid Resolution', rendering, 0.35, 1.5, 0.01, 0.78), ['ultra']),
+  render(n('liquidParticleRadius', 'Liquid Radius', rendering, 0.55, 7.5, 0.01, 1.45), ['ultra']),
+  render(n('liquidFillDensity', 'Bridge Fill', rendering, 0, 3, 0.01, 1.1), ['ultra']),
+  render(n('liquidSplatDensity', 'Splat Density', rendering, 0.45, METABALL_SPLAT_DENSITY_MAX, 0.01, 1.14), ['ultra']),
+  render(n('liquidSurfaceThreshold', 'Surface Threshold', rendering, 0.04, 0.42, 0.01, 0.16), ['ultra']),
+  render(n('liquidEdgeTightness', 'Edge Tightness', rendering, 0, 1, 0.01, 0.76), ['ultra']),
+  render(n('liquidEdgeSoftness', 'Edge Softness', rendering, 0, 1, 0.01, 0.46), ['ultra']),
+  render(n('liquidRefraction', 'Refraction', rendering, 0, 1.5, 0.01, 0.58), ['ultra']),
+  render(n('liquidGloss', 'Specular Gloss', rendering, 0, 1.5, 0.01, 0.68), ['ultra']),
+  render(n('liquidRimLighting', 'Rim Lighting', rendering, 0, 2.5, 0.01, 0.72), ['ultra']),
+  render(n('liquidFoamStrength', 'Sparkle Foam', rendering, 0, 3, 0.01, 0.34), ['ultra']),
+  render(n('liquidThermalStrength', 'Palette Flow', rendering, 0, 1, 0.01, 0.42), ['ultra']),
+  render(n('liquidBloomStrength', 'Bloom', rendering, 0, 3, 0.01, 0.26), ['ultra']),
+  render(n('liquidHeatShimmer', 'Heat Shimmer', rendering, 0, 2, 0.01, 0.14), ['ultra']),
+  render(n('liquidDepthDiffusion', 'Depth Diffusion', rendering, 0, 1, 0.01, 0.18), ['ultra']),
+  render(n('opacity', 'Opacity', rendering, 0.2, 1, 0.01, 0.86), ['ultra']),
 ]);
 export const CHAIN_RAIN_DEFAULTS: ChainRainConfig = Object.freeze(Object.fromEntries(CHAIN_RAIN_SETTINGS.map(setting => [
   setting.key,
@@ -118,5 +119,11 @@ function n(key: string, label: string, section: string, min: number, max: number
     ...(visibleModes ? {
       visibleModes
     } : {})
+  });
+}
+function render(setting: ExperienceSetting, visibleRenderStyles: readonly string[]): ExperienceSetting {
+  return Object.freeze({
+    ...setting,
+    visibleRenderStyles
   });
 }

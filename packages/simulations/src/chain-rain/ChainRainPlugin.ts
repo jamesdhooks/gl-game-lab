@@ -1,5 +1,5 @@
 import { createExtensionToken, type EnginePlugin } from '@hooksjam/gl-game-lab-core';
-import { EngineInput, EngineRender2D, EngineSchedule, type ExperienceLaunchOptions, type ExperienceRuntimeController, type ExperienceSettingValue } from '@hooksjam/gl-game-lab-engine';
+import { EngineInput, EngineRender2D, EngineSchedule, InteractionRadiusIndicator2D, type ExperienceLaunchOptions, type ExperienceRuntimeController, type ExperienceSettingValue } from '@hooksjam/gl-game-lab-engine';
 import { registerSimulationRuntime } from '../SimulationPluginLifecycle.js';
 import { packDrawPathPreview } from '../DrawPathPreview.js';
 import { createBuildFixture, packBuildFixtures, packBuildPreview, sampleBuildFixture, type BuildFixture2D } from '../BuildFixtures.js';
@@ -13,14 +13,33 @@ export interface ChainRainController extends ExperienceRuntimeController {
 }
 export const ChainRainControllerService = createExtensionToken<ChainRainController>('gl-game-lab.simulations.chain-rain.controller');
 export const CHAIN_RAIN_PLUGIN_ID = 'gl-game-lab.simulations.chain-rain';
-type Point = {
+export type ChainRainPoint = {
   readonly x: number;
   readonly y: number;
 };
+type Point = ChainRainPoint;
 interface ChainBody { readonly indices: number[]; readonly fixture: boolean; readonly seed: number }
+export interface ChainRainAutomationPolicy {
+  readonly initialSnakeCount: number;
+  readonly maximumSnakeCount: number;
+  readonly firstSpawnDelay: number;
+  readonly spawnInterval: number;
+  readonly spawnIntervalJitter: number;
+  readonly minimumLengthScale: number;
+  readonly maximumLengthScale: number;
+}
 export function createChainRainPlugin(initial: ChainRainConfig = CHAIN_RAIN_DEFAULTS, launch: ExperienceLaunchOptions = {}): EnginePlugin {
-  let config = initial, mode: ChainRainMode = launch.modeId === 'build' || launch.modeId === 'interact' ? launch.modeId : 'draw', styleId = validStyle(launch.styleId) ?? CHAIN_RAIN_STYLE_MANIFEST.defaultStyleId, pendingReset = true, width = 1, height = 1, elapsed = 0, nextDemo = 0, randomState = (launch.seed ?? 1369948382) >>> 0, cleanup = (): void => undefined;
-  const world = new ConstrainedCircleParticleWorld2D(131072, 262144, {}, randomState), paths = new Map<number, Point[]>(), picked = new Int32Array(2048), pickedCount = new Map<number, number>(), bodies: ChainBody[] = [], buildFixtures: BuildFixture2D[] = [];
+  const automation = chainRainAutomationPolicy(launch.profile);
+  const worldCapacity = chainRainWorldCapacity(initial, launch.profile);
+  let config = initial, mode: ChainRainMode = launch.modeId === 'build' || launch.modeId === 'interact' ? launch.modeId : 'draw', styleId = validStyle(launch.styleId) ?? CHAIN_RAIN_STYLE_MANIFEST.defaultStyleId, pendingReset = true, width = 1, height = 1, elapsed = 0, nextDemo = Number.POSITIVE_INFINITY, dynamicSnakeCount = 0, paletteOffset = 0, randomState = (launch.seed ?? 1369948382) >>> 0, cleanup = (): void => undefined;
+  const world = new ConstrainedCircleParticleWorld2D(worldCapacity, worldCapacity * 2, {}, randomState), paths = new Map<number, Point[]>(), picked = new Int32Array(2048), pickedCount = new Map<number, number>(), bodies: ChainBody[] = [], buildFixtures: BuildFixture2D[] = [];
+  const linkedPrevious = new Int32Array(worldCapacity), linkedNext = new Int32Array(worldCapacity), segmentPacker = new ChainSegmentPacker();
+  const interactionIndicator = new InteractionRadiusIndicator2D('chain-rain.interaction-radius');
+  let linkedNodeHighWater = 0, packedFixtures = packBuildFixtures(buildFixtures), fixturesDirty = false;
+  world.setCollisionFilter((left, right) => {
+    if ((linkedNext[left] ?? 0) === right + 1 || (linkedPrevious[left] ?? 0) === right + 1) return false;
+    return (world.inverseMasses[left] ?? 0) > 0 || (world.inverseMasses[right] ?? 0) > 0;
+  });
   return {
     id: CHAIN_RAIN_PLUGIN_ID,
     version: '1.0.0',
@@ -50,6 +69,9 @@ export function createChainRainPlugin(initial: ChainRainConfig = CHAIN_RAIN_DEFA
         },
         get constraintCount() {
           return world.constraintCount;
+        },
+        get captureReady() {
+          return !automation || hasVisibleDynamicChain(bodies, world, width, height);
         },
         setMode: value => {
           if (value !== 'draw' && value !== 'build' && value !== 'interact')
@@ -133,9 +155,9 @@ export function createChainRainPlugin(initial: ChainRainConfig = CHAIN_RAIN_DEFA
               }
             }
           }
-          if ((launch.profile === 'preview' || launch.profile === 'demo') && elapsed >= nextDemo) {
-            spawnRainChain();
-            nextDemo = elapsed + 0.7 + random() * 0.65;
+          if (automation && elapsed >= nextDemo) {
+            if (dynamicSnakeCount < automation.maximumSnakeCount) spawnRainChain();
+            nextDemo = elapsed + automation.spawnInterval + random() * automation.spawnIntervalJitter;
           }
           world.step(dt);
         }
@@ -146,13 +168,10 @@ export function createChainRainPlugin(initial: ChainRainConfig = CHAIN_RAIN_DEFA
         run: () => {
           const style = requireStyle(), palette3 = style.palette.slice(0, 4).map(chainColor3), palette4 = style.palette.slice(0, 4).map(color => chainColor4(color, 1)), renderStyle = chainString(config, 'renderStyle'), skin = chainNumber(config, 'skinWidth');
           if (renderStyle === 'enhanced') {
-            const dynamicBodies = bodies.filter(body => !body.fixture), bodyMesh = packChainSkin(dynamicBodies, world, skin);
-            if (bodyMesh.vertexCount > 0) renderer.submitTriangleMesh({ id: 'chain-rain.skin', ...bodyMesh, worldWidth: width, worldHeight: height, palette: palette3, opacity: 1, blend: 'opaque', shading: 'flat' });
+            const bodySegments = segmentPacker.pack(bodies, world);
+            if (bodySegments.count > 0) renderer.submitSegments({ id: 'chain-rain.skin', ...bodySegments, worldWidth: width, worldHeight: height, palette: palette3, paletteMode: 'indexed', radiusScale: skin, opacity: 1, blend: 'alpha' });
             const highlightWidth = chainNumber(config, 'skinHighlightWidth'), highlightOpacity = chainNumber(config, 'skinHighlightOpacity');
-            if (highlightWidth > 0 && highlightOpacity > 0) {
-              const strength = chainNumber(config, 'skinHighlightStrength'), highlightableBodies = dynamicBodies.filter(body => body.indices.length > 1), bodyHighlight = packChainSkin(highlightableBodies, world, highlightWidth);
-              if (bodyHighlight.vertexCount > 0) renderer.submitTriangleMesh({ id: 'chain-rain.skin-highlight', ...bodyHighlight, worldWidth: width, worldHeight: height, palette: palette3.map(color => brightenColor(color, strength)), opacity: highlightOpacity, blend: 'alpha', shading: 'flat' });
-            }
+            if (bodySegments.count > 0 && highlightWidth > 0 && highlightOpacity > 0) renderer.submitSegments({ id: 'chain-rain.skin-highlight', ...bodySegments, worldWidth: width, worldHeight: height, palette: palette3.map(color => brightenColor(color, chainNumber(config, 'skinHighlightStrength'))), paletteMode: 'indexed', radiusScale: highlightWidth, opacity: highlightOpacity, blend: 'alpha' });
           } else if (renderStyle === 'ultra') {
             const liquid = packLiquidChains(bodies, world, chainNumber(config, 'liquidParticleRadius'), chainNumber(config, 'liquidFillDensity'));
             renderer.submitMetaballs({
@@ -170,38 +189,56 @@ export function createChainRainPlugin(initial: ChainRainConfig = CHAIN_RAIN_DEFA
               opacity: chainNumber(config, 'opacity'), time: elapsed, renderStyle: 'ultra'
             });
           } else {
-            const nodes = packChainParticles(bodies.filter(body => !body.fixture), world, 1);
-            renderer.submitParticles({ id: 'chain-rain-nodes', ...nodes, palette: palette4, blend: 'alpha', opacity: 1 });
+            const nodes = packChainParticles(bodies, world, 1);
+            renderer.submitParticles({ id: 'chain-rain-nodes', ...nodes, palette: palette4, paletteMode: 'indexed', blend: 'alpha', opacity: 1 });
           }
-          const fixtures = packBuildFixtures(buildFixtures);
-          if (fixtures.count > 0) renderer.submitSegments({
-            id: 'chain-rain.build-fixtures', ...fixtures, worldWidth: width, worldHeight: height,
+          if (fixturesDirty) {
+            packedFixtures = packBuildFixtures(buildFixtures);
+            fixturesDirty = false;
+          }
+          if (packedFixtures.count > 0) renderer.submitSegments({
+            id: 'chain-rain.build-fixtures', ...packedFixtures, worldWidth: width, worldHeight: height,
             palette: [[0.58, 0.58, 0.58]], opacity: 1, blend: 'alpha'
           });
-          const preview = mode === 'build'
-            ? packBuildPreview(paths.values(), chainNumber(config, 'nodeRadius') * 2.25)
-            : packDrawPathPreview(paths.values(), 'open');
-          if (preview.count > 0) renderer.submitSegments({
-            id: 'chain-rain.draw-preview', ...preview, worldWidth: width, worldHeight: height,
-            palette: [mode === 'build' ? [0.58, 0.58, 0.58] : [0.45, 0.92, 1]], opacity: 0.86, blend: 'alpha'
-          });
+          if (paths.size > 0) {
+            const preview = mode === 'build'
+              ? packBuildPreview(paths.values(), chainNumber(config, 'nodeRadius') * 2.25)
+              : packDrawPathPreview(paths.values(), 'open');
+            if (preview.count > 0) renderer.submitSegments({
+              id: 'chain-rain.draw-preview', ...preview, worldWidth: width, worldHeight: height,
+              palette: [mode === 'build' ? [0.58, 0.58, 0.58] : [0.45, 0.92, 1]], opacity: 0.86, blend: 'alpha'
+            });
+          }
+          if (mode === 'interact') {
+            interactionIndicator.submit(renderer, input.snapshot.pointers, chainNumber(config, 'interactionRadius'));
+          }
         }
       });
       function reset() {
         world.clear(randomState);
         bodies.length = 0;
         buildFixtures.length = 0;
+        linkedPrevious.fill(0, 0, linkedNodeHighWater);
+        linkedNext.fill(0, 0, linkedNodeHighWater);
+        linkedNodeHighWater = 0;
+        fixturesDirty = true;
+        dynamicSnakeCount = 0;
+        paletteOffset = Math.floor(random() * 4);
         world.setBounds(width, height);
         paths.clear();
         pickedCount.clear();
         elapsed = 0;
-        nextDemo = 0.6;
-        for (let i = 0; i < 5; i += 1)
-          spawnRainChain();
+        nextDemo = automation?.firstSpawnDelay ?? Number.POSITIVE_INFINITY;
+        if (automation) {
+          for (const fixture of createChainRainAutomationFixtures(width, height, chainNumber(config, 'nodeRadius'), random, launch.profile === 'demo' ? 'demo' : 'preview'))
+            addPreparedFixture(fixture);
+        }
+        for (let i = 0; i < (automation?.initialSnakeCount ?? 0); i += 1)
+          spawnRainChain(i * 3 + random() * 2);
       }
       function applyConfig() {
         world.configure({
-          maxParticles: Math.floor(chainNumber(config, 'maxNodes')),
+          maxParticles: Math.min(worldCapacity, Math.floor(chainNumber(config, 'maxNodes'))),
           radius: chainNumber(config, 'nodeRadius'),
           radiusVariation: Math.min(1, chainNumber(config, 'nodeVariance') * 0.55),
           gravity: chainNumber(config, 'gravity'),
@@ -240,14 +277,17 @@ export function createChainRainPlugin(initial: ChainRainConfig = CHAIN_RAIN_DEFA
           threshold: 0.58
         });
       }
-      function spawnRainChain() {
-        const radius = chainNumber(config, 'nodeRadius'), length = Math.max(4, Math.min(96, Math.round(chainNumber(config, 'chainLength') * (0.6 + random() * 1.3)))), angle = Math.PI * (0.15 + random() * 0.7), spacing = radius * 1.85, x = radius * 5 + random() * Math.max(radius * 4, width - radius * 10), points: Point[] = [];
+      function spawnRainChain(verticalGap = 0) {
+        if (!automation) return;
+        const radius = chainNumber(config, 'nodeRadius'), length = chainRainAutomatedLength(config, automation, random()), angle = Math.PI * (0.15 + random() * 0.7), spacing = radius * 1.85, x = radius * 5 + random() * Math.max(radius * 4, width - radius * 10), points: Point[] = [];
         for (let i = 0; i < length; i += 1)
           points.push({
             x: x + Math.cos(angle) * i * spacing,
             y: -radius * 3 + Math.sin(angle) * i * spacing
           });
-        addChain(points, true);
+        const clearance = chainRainAutomatedSpawnClearance(config);
+        const horizontallyFitted = fitChainWithinHorizontalBounds(points, width, Math.min(clearance, width * 0.2));
+        addChain(offsetChainAboveViewport(horizontallyFitted, clearance, verticalGap), true);
       }
       function commitPath(path: readonly Point[]) {
         if (mode === 'build')
@@ -260,7 +300,7 @@ export function createChainRainPlugin(initial: ChainRainConfig = CHAIN_RAIN_DEFA
           return;
         const stiffness = chainNumber(config, 'constraintStiffness'), base = chainNumber(config, 'nodeRadius'), phase = random() * Math.PI * 2, wavelength = chainNumber(config, 'nodeVarianceWavelength'), roughness = chainNumber(config, 'nodeVarianceRoughness'), variance = chainNumber(config, 'nodeVariance');
         let previous = -1, previousRadius = base;
-        const indices: number[] = [], seed = bodies.length + 1;
+        const indices: number[] = [], seed = chainRainPaletteIndex(paletteOffset, dynamicSnakeCount);
         for (let i = 0; i < points.length; i += 1) {
           const point = points[i];
           if (!point)
@@ -274,24 +314,34 @@ export function createChainRainPlugin(initial: ChainRainConfig = CHAIN_RAIN_DEFA
           if (node < 0)
             break;
           indices.push(node);
-          if (previous >= 0)
+          if (previous >= 0) {
             world.addDistanceConstraint(previous, node, {
               restLength: Math.max(base * 0.25, (previousRadius + nodeRadius) * 0.94),
               stiffness
             });
+            linkedNext[previous] = node + 1;
+            linkedPrevious[node] = previous + 1;
+          }
+          linkedNodeHighWater = Math.max(linkedNodeHighWater, node + 1);
           previous = node;
           previousRadius = nodeRadius;
         }
-        if (indices.length > 0) bodies.push({ indices, fixture: false, seed });
+        if (indices.length > 0) {
+          bodies.push({ indices, fixture: false, seed });
+          dynamicSnakeCount += 1;
+        }
       }
       function addFixture(path: readonly Point[]) {
         const radius = chainNumber(config, 'nodeRadius') * 2.25, fixture = createBuildFixture(path, radius);
         if (!fixture) return;
+        addPreparedFixture(fixture);
+      }
+      function addPreparedFixture(fixture: BuildFixture2D) {
         const samples = sampleBuildFixture(fixture);
         const indices: number[] = [];
         for (const point of samples) {
           const index = world.addCircle(point.x, point.y, {
-            radius,
+            radius: fixture.radius,
             inverseMass: 0,
             colorSeed: 1
           });
@@ -300,6 +350,7 @@ export function createChainRainPlugin(initial: ChainRainConfig = CHAIN_RAIN_DEFA
         if (indices.length > 0) {
           bodies.push({ indices, fixture: true, seed: 0 });
           buildFixtures.push(fixture);
+          fixturesDirty = true;
         }
       }
       function random() {
@@ -322,6 +373,202 @@ export function createChainRainPlugin(initial: ChainRainConfig = CHAIN_RAIN_DEFA
     }
   };
 }
+
+export function chainRainAutomationPolicy(
+  profile: ExperienceLaunchOptions['profile'],
+): ChainRainAutomationPolicy | undefined {
+  if (profile === 'preview') return Object.freeze({
+    initialSnakeCount: 3,
+    maximumSnakeCount: 8,
+    firstSpawnDelay: 1.1,
+    spawnInterval: 1.6,
+    spawnIntervalJitter: 0.8,
+    minimumLengthScale: 0.18,
+    maximumLengthScale: 0.38,
+  });
+  if (profile === 'demo') return Object.freeze({
+    initialSnakeCount: 4,
+    maximumSnakeCount: 10,
+    firstSpawnDelay: 0.9,
+    spawnInterval: 1.5,
+    spawnIntervalJitter: 0.7,
+    minimumLengthScale: 0.22,
+    maximumLengthScale: 0.46,
+  });
+  return undefined;
+}
+
+export function chainRainAutomatedLength(
+  config: ChainRainConfig,
+  policy: ChainRainAutomationPolicy,
+  randomValue: number,
+): number {
+  const authoredLength = chainNumber(config, 'chainLength');
+  const t = Math.max(0, Math.min(1, randomValue));
+  const scale = policy.minimumLengthScale + (policy.maximumLengthScale - policy.minimumLengthScale) * t;
+  return Math.max(4, Math.min(96, Math.round(authoredLength * scale)));
+}
+
+export function chainRainPaletteIndex(offset: number, snakeNumber: number, paletteSize = 4): number {
+  const count = Math.max(1, Math.floor(paletteSize));
+  return ((Math.floor(offset) + Math.floor(snakeNumber)) % count + count) % count;
+}
+
+export function chainRainWorldCapacity(
+  config: ChainRainConfig,
+  profile: ExperienceLaunchOptions['profile'],
+): number {
+  const requested = Math.floor(chainNumber(config, 'maxNodes'));
+  return profile === 'preview' ? Math.min(requested, 2_048) : requested;
+}
+
+export function hasVisibleDynamicChain(
+  bodies: readonly { readonly indices: readonly number[]; readonly fixture: boolean }[],
+  world: Pick<ConstrainedCircleParticleWorld2D, 'positions' | 'radii'>,
+  width: number,
+  height: number,
+): boolean {
+  for (const body of bodies) {
+    if (body.fixture) continue;
+    for (const index of body.indices) {
+      const offset = index * 2;
+      const x = world.positions[offset] ?? Number.NEGATIVE_INFINITY;
+      const y = world.positions[offset + 1] ?? Number.NEGATIVE_INFINITY;
+      const radius = Math.max(0, world.radii[index] ?? 0);
+      if (x + radius >= 0 && x - radius <= width && y + radius >= 0 && y - radius <= height) return true;
+    }
+  }
+  return false;
+}
+
+export function offsetChainAboveViewport(points: readonly ChainRainPoint[], radius: number, verticalGap = 0): readonly ChainRainPoint[] {
+  if (points.length === 0) return Object.freeze([]);
+  const maxY = points.reduce((maximum, point) => Math.max(maximum, point.y), Number.NEGATIVE_INFINITY);
+  const offsetY = -radius * (2 + Math.max(0, verticalGap)) - maxY;
+  return Object.freeze(points.map(point => Object.freeze({ x: point.x, y: point.y + offsetY })));
+}
+
+export function fitChainWithinHorizontalBounds(
+  points: readonly ChainRainPoint[],
+  width: number,
+  requestedMargin: number,
+): readonly ChainRainPoint[] {
+  if (points.length === 0) return Object.freeze([]);
+  const safeWidth = Math.max(1, width);
+  const margin = Math.max(0, Math.min(requestedMargin, safeWidth * 0.45));
+  const minimumX = points.reduce((minimum, point) => Math.min(minimum, point.x), Number.POSITIVE_INFINITY);
+  const maximumX = points.reduce((maximum, point) => Math.max(maximum, point.x), Number.NEGATIVE_INFINITY);
+  const originalCenter = (minimumX + maximumX) * 0.5;
+  const originalSpan = Math.max(0, maximumX - minimumX);
+  const availableSpan = Math.max(0, safeWidth - margin * 2);
+  const scale = originalSpan > availableSpan && originalSpan > 0 ? availableSpan / originalSpan : 1;
+  const scaledHalfSpan = originalSpan * scale * 0.5;
+  const targetCenter = Math.max(margin + scaledHalfSpan, Math.min(safeWidth - margin - scaledHalfSpan, originalCenter));
+  return Object.freeze(points.map(point => Object.freeze({
+    x: targetCenter + (point.x - originalCenter) * scale,
+    y: point.y,
+  })));
+}
+
+export function chainRainAutomatedSpawnClearance(config: ChainRainConfig): number {
+  const maximumNodeRadius = chainNumber(config, 'nodeRadius') * (1 + chainNumber(config, 'nodeVariance'));
+  const renderStyle = chainString(config, 'renderStyle');
+  if (renderStyle === 'enhanced') {
+    return maximumNodeRadius * Math.max(
+      1,
+      chainNumber(config, 'skinWidth'),
+      chainNumber(config, 'skinHighlightWidth'),
+    );
+  }
+  if (renderStyle === 'ultra') {
+    return maximumNodeRadius * Math.max(1, 0.78 + chainNumber(config, 'liquidParticleRadius') * 0.46);
+  }
+  return maximumNodeRadius;
+}
+
+export function createChainRainAutomationFixtures(
+  width: number,
+  height: number,
+  nodeRadius: number,
+  random: () => number,
+  profile: 'preview' | 'demo' = 'preview',
+): readonly BuildFixture2D[] {
+  const radius = nodeRadius * (profile === 'preview' ? 1.15 : 1.5);
+  const margin = Math.max(radius * 1.5, Math.min(width, height) * 0.06);
+  const count = (profile === 'preview' ? 3 : 4) + Math.floor(random() * 2);
+  const minimumLength = width * (profile === 'preview' ? 0.08 : 0.1);
+  const lengthRange = width * (profile === 'preview' ? 0.09 : 0.12);
+  const separation = Math.max(radius * 0.65, Math.min(width, height) * 0.018);
+  const fixtures: BuildFixture2D[] = [];
+  for (let index = 0; index < count; index += 1) {
+    const circle = index === 0 || (index > 1 && random() < 0.3);
+    for (let attempt = 0; attempt < 32; attempt += 1) {
+      const angle = (random() - 0.5) * Math.PI * 0.9;
+      const length = circle ? 0 : Math.min(minimumLength + random() * lengthRange, Math.max(0, width - margin * 2));
+      const halfX = Math.abs(Math.cos(angle) * length * 0.5);
+      const halfY = Math.abs(Math.sin(angle) * length * 0.5);
+      const minX = margin + halfX, maxX = width - margin - halfX;
+      const minY = Math.max(margin + halfY, height * 0.32), maxY = Math.min(height - margin - halfY, height * 0.84);
+      const centerX = maxX > minX ? minX + random() * (maxX - minX) : width * 0.5;
+      const centerY = maxY > minY ? minY + random() * (maxY - minY) : height * 0.58;
+      const dx = Math.cos(angle) * length * 0.5, dy = Math.sin(angle) * length * 0.5;
+      const candidate = Object.freeze({
+        ax: centerX - dx,
+        ay: centerY - dy,
+        bx: centerX + dx,
+        by: centerY + dy,
+        radius,
+      });
+      if (fixtures.some(fixture => chainRainFixturesOverlap(candidate, fixture, separation))) continue;
+      fixtures.push(candidate);
+      break;
+    }
+  }
+  return Object.freeze(fixtures);
+}
+
+export function chainRainFixturesOverlap(left: BuildFixture2D, right: BuildFixture2D, padding = 0): boolean {
+  const clearance = left.radius + right.radius + Math.max(0, padding);
+  return segmentDistanceSquared(left.ax, left.ay, left.bx, left.by, right.ax, right.ay, right.bx, right.by) < clearance * clearance;
+}
+
+function segmentDistanceSquared(ax: number, ay: number, bx: number, by: number, cx: number, cy: number, dx: number, dy: number): number {
+  if (segmentsIntersect(ax, ay, bx, by, cx, cy, dx, dy)) return 0;
+  return Math.min(
+    pointSegmentDistanceSquared(ax, ay, cx, cy, dx, dy),
+    pointSegmentDistanceSquared(bx, by, cx, cy, dx, dy),
+    pointSegmentDistanceSquared(cx, cy, ax, ay, bx, by),
+    pointSegmentDistanceSquared(dx, dy, ax, ay, bx, by),
+  );
+}
+
+function pointSegmentDistanceSquared(px: number, py: number, ax: number, ay: number, bx: number, by: number): number {
+  const dx = bx - ax, dy = by - ay, denominator = dx * dx + dy * dy;
+  const t = denominator > 0 ? Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / denominator)) : 0;
+  const offsetX = px - (ax + dx * t), offsetY = py - (ay + dy * t);
+  return offsetX * offsetX + offsetY * offsetY;
+}
+
+function segmentsIntersect(ax: number, ay: number, bx: number, by: number, cx: number, cy: number, dx: number, dy: number): boolean {
+  const abC = cross(ax, ay, bx, by, cx, cy), abD = cross(ax, ay, bx, by, dx, dy);
+  const cdA = cross(cx, cy, dx, dy, ax, ay), cdB = cross(cx, cy, dx, dy, bx, by);
+  if (((abC > 0 && abD < 0) || (abC < 0 && abD > 0)) && ((cdA > 0 && cdB < 0) || (cdA < 0 && cdB > 0))) return true;
+  const epsilon = 1e-7;
+  return (Math.abs(abC) <= epsilon && pointWithinSegmentBounds(cx, cy, ax, ay, bx, by))
+    || (Math.abs(abD) <= epsilon && pointWithinSegmentBounds(dx, dy, ax, ay, bx, by))
+    || (Math.abs(cdA) <= epsilon && pointWithinSegmentBounds(ax, ay, cx, cy, dx, dy))
+    || (Math.abs(cdB) <= epsilon && pointWithinSegmentBounds(bx, by, cx, cy, dx, dy));
+}
+
+function cross(ax: number, ay: number, bx: number, by: number, px: number, py: number): number {
+  return (bx - ax) * (py - ay) - (by - ay) * (px - ax);
+}
+
+function pointWithinSegmentBounds(px: number, py: number, ax: number, ay: number, bx: number, by: number): boolean {
+  return px >= Math.min(ax, bx) - 1e-7 && px <= Math.max(ax, bx) + 1e-7
+    && py >= Math.min(ay, by) - 1e-7 && py <= Math.max(ay, by) + 1e-7;
+}
+
 function samplePath(points: readonly Point[], spacing: number): Point[] {
   if (points.length < 2)
     return [
@@ -356,80 +603,78 @@ function distance(a: Point, b: Point) {
 }
 
 function packChainParticles(bodies: readonly ChainBody[], world: ConstrainedCircleParticleWorld2D, radiusScale: number) {
-  const count = bodies.reduce((sum, body) => sum + body.indices.length, 0), positions = new Float32Array(count * 2), radii = new Float32Array(count), colorSeeds = new Float32Array(count);
+  const count = bodies.reduce((sum, body) => sum + (body.fixture ? 0 : body.indices.length), 0), positions = new Float32Array(count * 2), radii = new Float32Array(count), colorSeeds = new Float32Array(count);
   let cursor = 0;
-  for (const body of bodies) for (const index of body.indices) {
-    positions[cursor * 2] = world.positions[index * 2] ?? 0; positions[cursor * 2 + 1] = world.positions[index * 2 + 1] ?? 0;
-    radii[cursor] = (world.radii[index] ?? 1) * radiusScale; colorSeeds[cursor] = body.seed; cursor++;
+  for (const body of bodies) {
+    if (body.fixture) continue;
+    for (const index of body.indices) {
+      positions[cursor * 2] = world.positions[index * 2] ?? 0; positions[cursor * 2 + 1] = world.positions[index * 2 + 1] ?? 0;
+      radii[cursor] = (world.radii[index] ?? 1) * radiusScale; colorSeeds[cursor] = body.seed; cursor++;
+    }
   }
   return { count, positions, radii, colorSeeds };
 }
 
-export function packChainSkin(bodies: readonly ChainBody[], world: ConstrainedCircleParticleWorld2D, widthScale: number) {
-  const visible = bodies.filter(body => body.indices.length > 0), capSegments = 20;
-  const vertexCount = visible.reduce((sum, body) => {
-    if (body.indices.length === 1) return sum + capSegments * 3;
-    const smoothPointCount = body.indices.length < 3 ? body.indices.length : (body.indices.length - 1) * skinSubdivisions(body.indices.length) + 1;
-    return sum + (smoothPointCount - 1) * 6 + capSegments * 6;
-  }, 0);
-  const positions = new Float32Array(vertexCount * 2), colorSeeds = new Float32Array(vertexCount);
-  let vertex = 0;
-  const emit = (x: number, y: number, seed: number) => { positions[vertex * 2] = x; positions[vertex * 2 + 1] = y; colorSeeds[vertex] = seed; vertex++; };
-  for (const body of visible) {
-    const points = body.indices.map(index => ({ x: world.positions[index * 2] ?? 0, y: world.positions[index * 2 + 1] ?? 0 })), seed = body.fixture ? 0 : Math.max(0, body.seed - 1);
-    let radius = 0;
-    for (const index of body.indices) radius = Math.max(radius, world.radii[index] ?? 1);
-    radius *= widthScale;
-    if (points.length === 1) {
-      emitDisk(points[0] as Point, radius, seed, capSegments, emit);
-      continue;
+export class ChainSegmentPacker {
+  private static readonly SUBDIVISIONS = 3;
+  private segments = new Float32Array(0);
+  private styles = new Float32Array(0);
+  private colorSeeds = new Float32Array(0);
+  private endRadii = new Float32Array(0);
+
+  pack(bodies: readonly ChainBody[], world: ConstrainedCircleParticleWorld2D): {
+    readonly count: number;
+    readonly segments: Float32Array;
+    readonly styles: Float32Array;
+    readonly colorSeeds: Float32Array;
+    readonly endRadii: Float32Array;
+  } {
+    const required = bodies.reduce((sum, body) => sum + (body.fixture ? 0 : Math.max(0, body.indices.length - 1) * ChainSegmentPacker.SUBDIVISIONS), 0);
+    this.ensureCapacity(required);
+    let count = 0;
+    for (const body of bodies) {
+      if (body.fixture) continue;
+      const seed = Math.max(0, body.seed);
+      for (let cursor = 1; cursor < body.indices.length; cursor += 1) {
+        const previous = body.indices[Math.max(0, cursor - 2)] as number;
+        const left = body.indices[cursor - 1] as number;
+        const right = body.indices[cursor] as number;
+        const next = body.indices[Math.min(body.indices.length - 1, cursor + 1)] as number;
+        const p0 = previous * 2, p1 = left * 2, p2 = right * 2, p3 = next * 2;
+        const leftRadius = world.radii[left] ?? 1;
+        const rightRadius = world.radii[right] ?? 1;
+        for (let subdivision = 0; subdivision < ChainSegmentPacker.SUBDIVISIONS; subdivision += 1) {
+          const start = subdivision / ChainSegmentPacker.SUBDIVISIONS;
+          const end = (subdivision + 1) / ChainSegmentPacker.SUBDIVISIONS;
+          const segmentOffset = count * 4, styleOffset = count * 2;
+          this.segments[segmentOffset] = catmullRom(world.positions[p0] ?? 0, world.positions[p1] ?? 0, world.positions[p2] ?? 0, world.positions[p3] ?? 0, start);
+          this.segments[segmentOffset + 1] = catmullRom(world.positions[p0 + 1] ?? 0, world.positions[p1 + 1] ?? 0, world.positions[p2 + 1] ?? 0, world.positions[p3 + 1] ?? 0, start);
+          this.segments[segmentOffset + 2] = catmullRom(world.positions[p0] ?? 0, world.positions[p1] ?? 0, world.positions[p2] ?? 0, world.positions[p3] ?? 0, end);
+          this.segments[segmentOffset + 3] = catmullRom(world.positions[p0 + 1] ?? 0, world.positions[p1 + 1] ?? 0, world.positions[p2 + 1] ?? 0, world.positions[p3 + 1] ?? 0, end);
+          this.styles[styleOffset] = leftRadius + (rightRadius - leftRadius) * start;
+          this.styles[styleOffset + 1] = 1;
+          this.colorSeeds[count] = seed;
+          this.endRadii[count] = leftRadius + (rightRadius - leftRadius) * end;
+          count += 1;
+        }
+      }
     }
-    const smooth = smoothOpenPath(points, skinSubdivisions(points.length));
-    for (let i = 0; i < smooth.length - 1; i++) {
-      const current = smooth[i] as Point, following = smooth[i + 1] as Point, previous = smooth[Math.max(0, i - 1)] as Point, next = smooth[Math.min(smooth.length - 1, i + 1)] as Point, afterNext = smooth[Math.min(smooth.length - 1, i + 2)] as Point;
-      const currentNormal = pathNormal(previous, next), nextNormal = pathNormal(current, afterNext);
-      const currentLeft = { x: current.x + currentNormal.x * radius, y: current.y + currentNormal.y * radius }, currentRight = { x: current.x - currentNormal.x * radius, y: current.y - currentNormal.y * radius };
-      const nextLeft = { x: following.x + nextNormal.x * radius, y: following.y + nextNormal.y * radius }, nextRight = { x: following.x - nextNormal.x * radius, y: following.y - nextNormal.y * radius };
-      emit(currentLeft.x, currentLeft.y, seed); emit(currentRight.x, currentRight.y, seed); emit(nextLeft.x, nextLeft.y, seed);
-      emit(nextLeft.x, nextLeft.y, seed); emit(currentRight.x, currentRight.y, seed); emit(nextRight.x, nextRight.y, seed);
-    }
-    emitDisk(smooth[0] as Point, radius, seed, capSegments, emit);
-    emitDisk(smooth[smooth.length - 1] as Point, radius, seed, capSegments, emit);
+    return { count, segments: this.segments, styles: this.styles, colorSeeds: this.colorSeeds, endRadii: this.endRadii };
   }
-  return { vertexCount: vertex, positions, colorSeeds };
-}
 
-function skinSubdivisions(pointCount: number) {
-  return Math.max(5, Math.min(10, Math.round(pointCount * 0.32)));
-}
-
-function smoothOpenPath(points: readonly Point[], subdivisions: number): Point[] {
-  if (points.length < 3) return [...points];
-  const smooth: Point[] = [];
-  for (let index = 0; index < points.length - 1; index++) for (let step = 0; step < subdivisions; step++) {
-    const p0 = points[Math.max(0, index - 1)] as Point, p1 = points[index] as Point, p2 = points[index + 1] as Point, p3 = points[Math.min(points.length - 1, index + 2)] as Point;
-    const t = step / subdivisions, t2 = t * t, t3 = t2 * t;
-    smooth.push({
-      x: 0.5 * (2 * p1.x + (-p0.x + p2.x) * t + (2 * p0.x - 5 * p1.x + 4 * p2.x - p3.x) * t2 + (-p0.x + 3 * p1.x - 3 * p2.x + p3.x) * t3),
-      y: 0.5 * (2 * p1.y + (-p0.y + p2.y) * t + (2 * p0.y - 5 * p1.y + 4 * p2.y - p3.y) * t2 + (-p0.y + 3 * p1.y - 3 * p2.y + p3.y) * t3)
-    });
+  private ensureCapacity(required: number): void {
+    if (this.colorSeeds.length >= required) return;
+    const capacity = Math.max(16, 2 ** Math.ceil(Math.log2(required)));
+    this.segments = new Float32Array(capacity * 4);
+    this.styles = new Float32Array(capacity * 2);
+    this.colorSeeds = new Float32Array(capacity);
+    this.endRadii = new Float32Array(capacity);
   }
-  smooth.push(points[points.length - 1] as Point);
-  return smooth;
 }
 
-function pathNormal(from: Point, to: Point): Point {
-  const dx = to.x - from.x, dy = to.y - from.y, length = Math.max(0.001, Math.hypot(dx, dy));
-  return { x: -dy / length, y: dx / length };
-}
-
-function emitDisk(center: Point, radius: number, seed: number, segments: number, emit: (x: number, y: number, seed: number) => void) {
-  for (let index = 0; index < segments; index++) {
-    const start = index / segments * Math.PI * 2, end = (index + 1) / segments * Math.PI * 2;
-    emit(center.x, center.y, seed);
-    emit(center.x + Math.cos(start) * radius, center.y + Math.sin(start) * radius, seed);
-    emit(center.x + Math.cos(end) * radius, center.y + Math.sin(end) * radius, seed);
-  }
+function catmullRom(a: number, b: number, c: number, d: number, t: number): number {
+  const t2 = t * t, t3 = t2 * t;
+  return 0.5 * (2 * b + (-a + c) * t + (2 * a - 5 * b + 4 * c - d) * t2 + (-a + 3 * b - 3 * c + d) * t3);
 }
 
 function brightenColor(color: readonly [number, number, number], amount: number): readonly [number, number, number] {
@@ -443,7 +688,7 @@ function packLiquidChains(bodies: readonly ChainBody[], world: ConstrainedCircle
   const push = (x: number, y: number, radius: number, temperature: number) => { if (count >= capacity) return; positions[count * 2] = x; positions[count * 2 + 1] = y; radii[count] = radius; temperatures[count] = temperature; count++; };
   for (const body of bodies) {
     if (body.fixture) continue;
-    const thermal = ((body.seed - 1) % 4) / 3;
+    const thermal = (body.seed % 4) / 3;
     for (let cursor = 0; cursor < body.indices.length; cursor++) {
       const index = body.indices[cursor] as number, x = world.positions[index * 2] ?? 0, y = world.positions[index * 2 + 1] ?? 0, radius = (world.radii[index] ?? 1) * visualScale;
       push(x, y, radius, thermal);

@@ -2,6 +2,7 @@ import type { ExperienceDefinition } from '@hooksjam/gl-game-lab-engine';
 import { createVascularTreeConfig, VASCULAR_TREE_DEFAULTS, VASCULAR_TREE_SETTINGS } from './config.js';
 import { createVascularTreePlugin } from './VascularTreePlugin.js';
 import { VASCULAR_TREE_STYLE_MANIFEST } from './styles.js';
+import { describeSimulationSettings } from '../settingDescriptions.js';
 export const alienVascularTreeDefinition: ExperienceDefinition = {
   id: 'alien-vascular-tree',
   kind: 'simulation',
@@ -49,7 +50,7 @@ export const alienVascularTreeDefinition: ExperienceDefinition = {
       description: 'Trim nearby branch tips.'
     }
   ],
-  settings: VASCULAR_TREE_SETTINGS,
+  settings: describeSimulationSettings('alien-vascular-tree', VASCULAR_TREE_SETTINGS),
   styleManifest: VASCULAR_TREE_STYLE_MANIFEST,
   tutorialPages: [
     {

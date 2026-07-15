@@ -13,10 +13,15 @@ describe('ParticlePointRenderQueue', () => {
       radii: new Float32Array([2, 3, 4, 99]),
       colorSeeds: new Float32Array([0, 1, 2, 99]),
       palette,
+      shading: 'flat',
     });
 
     expect(queue.count).toBe(3);
-    expect(queue.buildPlan()).toMatchObject({ particleCount: 3, drawCalls: 1 });
+    expect(queue.buildPlan()).toMatchObject({
+      particleCount: 3,
+      drawCalls: 1,
+      batches: [{ shading: 'flat' }],
+    });
     queue.clear();
     expect(queue.count).toBe(0);
   });

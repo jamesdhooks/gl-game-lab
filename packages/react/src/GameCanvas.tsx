@@ -8,6 +8,7 @@ import {
   GameEngine,
   type EngineDiagnosticsSnapshot,
   type PerformanceBudgetResult,
+  type RenderBackend,
 } from '@hooksjam/gl-game-lab-engine';
 import {
   BrowserFrameLoop,
@@ -45,8 +46,53 @@ export interface CanvasFrameCapture {
   readonly rgba: Uint8Array;
 }
 
+export interface CanvasFrameCaptureOptions {
+  /** Temporary framebuffer pixel ratio used only for this readback. */
+  readonly pixelRatio?: number;
+}
+
 export interface GameCanvasHandle {
-  captureFrame(): Promise<CanvasFrameCapture>;
+  captureFrame(options?: CanvasFrameCaptureOptions): Promise<CanvasFrameCapture>;
+}
+
+/** Two times each axis produces four times the logical viewport's pixels. */
+export const MAX_CAPTURE_PIXEL_RATIO = 2;
+
+export function captureCompletedFrame(
+  engine: Pick<GameEngine, 'frame'>,
+  renderer: Pick<RenderBackend, 'captureRgba'>,
+  width: number,
+  height: number,
+): CanvasFrameCapture {
+  const rgba = renderer.captureRgba(() => { engine.frame(0); });
+  if (width < 1 || height < 1 || rgba.byteLength !== width * height * 4) {
+    throw new Error('Captured renderer frame has invalid dimensions');
+  }
+  return Object.freeze({ width, height, rgba });
+}
+
+export function captureCanvasFrame(
+  engine: Pick<GameEngine, 'frame'>,
+  renderer: Pick<RenderBackend, 'captureRgba' | 'requestRender' | 'resize' | 'viewport'>,
+  options: CanvasFrameCaptureOptions = {},
+): CanvasFrameCapture {
+  const viewport = renderer.viewport;
+  const pixelRatio = options.pixelRatio ?? viewport.pixelRatio;
+  if (!Number.isFinite(pixelRatio) || pixelRatio <= 0 || pixelRatio > MAX_CAPTURE_PIXEL_RATIO) {
+    throw new Error(`Capture pixel ratio must be between 0 and ${MAX_CAPTURE_PIXEL_RATIO}`);
+  }
+  const width = Math.max(1, Math.round(viewport.width * pixelRatio));
+  const height = Math.max(1, Math.round(viewport.height * pixelRatio));
+  if (pixelRatio === viewport.pixelRatio) return captureCompletedFrame(engine, renderer, width, height);
+
+  renderer.resize(viewport.width, viewport.height, pixelRatio);
+  try {
+    return captureCompletedFrame(engine, renderer, width, height);
+  } finally {
+    renderer.resize(viewport.width, viewport.height, viewport.pixelRatio);
+    renderer.requestRender();
+    engine.frame(0);
+  }
 }
 
 export interface LogicalCanvasViewport {
@@ -64,13 +110,18 @@ export interface GameCanvasProps {
   readonly onError?: (error: unknown) => void;
   readonly ariaLabel?: string;
   readonly preventDefaultInput?: boolean;
+  readonly inputEnabled?: boolean;
+  readonly paused?: boolean;
   readonly fixedFrameCapture?: FixedFrameCaptureOptions;
   readonly onFixedFrameCapture?: (result: FixedFrameCaptureResult) => void;
   readonly showDiagnostics?: boolean;
   readonly maxPixels?: number;
   readonly maxFps?: number;
+  readonly timeScale?: number;
   readonly logicalViewport?: LogicalCanvasViewport;
   readonly onFrame?: (timestamp: number) => void;
+  /** Enables reliable browser readback for authoring and deterministic capture canvases. */
+  readonly frameCaptureEnabled?: boolean;
 }
 
 const EMPTY_ENGINE_PLUGINS: readonly EnginePlugin[] = Object.freeze([]);
@@ -104,9 +155,14 @@ export function createBrowserGameEngine(
   canvas: HTMLCanvasElement,
   plugins: readonly EnginePlugin[] = [],
   platform: WebPlatformPluginOptions = {},
+  frameCaptureEnabled = false,
 ): GameEngine {
   return new GameEngine({
-    plugins: [createWebGL2RendererPlugin(canvas), createWebPlatformPlugin(canvas, platform), ...plugins],
+    plugins: [
+      createWebGL2RendererPlugin(canvas, { device: { preserveDrawingBuffer: frameCaptureEnabled } }),
+      createWebPlatformPlugin(canvas, platform),
+      ...plugins,
+    ],
   });
 }
 
@@ -120,38 +176,83 @@ export const GameCanvas = forwardRef<GameCanvasHandle, GameCanvasProps>(function
   onError,
   ariaLabel = 'GLGameLab game canvas',
   preventDefaultInput = true,
+  inputEnabled = true,
+  paused = false,
   fixedFrameCapture,
   onFixedFrameCapture,
   showDiagnostics = false,
   maxPixels,
   maxFps,
+  timeScale = 1,
   logicalViewport,
   onFrame,
+  frameCaptureEnabled = false,
 }: GameCanvasProps, forwardedRef): JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const diagnosticsRef = useRef<HTMLOutputElement | null>(null);
+  const engineRef = useRef<GameEngine>();
+  const loopRef = useRef<BrowserFrameLoop>();
+  const pausedRef = useRef(paused);
+  const timeScaleRef = useRef(timeScale);
   const onReadyRef = useRef(onReady);
   const onErrorRef = useRef(onError);
   const onFixedFrameCaptureRef = useRef(onFixedFrameCapture);
   const onFrameRef = useRef(onFrame);
-  const captureWaitersRef = useRef<Array<{ resolve: (capture: CanvasFrameCapture) => void; reject: (error: Error) => void }>>([]);
+  const captureWaitersRef = useRef<Array<{ options: CanvasFrameCaptureOptions; resolve: (capture: CanvasFrameCapture) => void; reject: (error: Error) => void }>>([]);
   onReadyRef.current = onReady;
   onErrorRef.current = onError;
   onFixedFrameCaptureRef.current = onFixedFrameCapture;
   onFrameRef.current = onFrame;
+  pausedRef.current = paused;
+  timeScaleRef.current = timeScale;
 
   useImperativeHandle(forwardedRef, () => ({
-    captureFrame: () => new Promise<CanvasFrameCapture>((resolve, reject) => {
-      captureWaitersRef.current.push({ resolve, reject });
-    }),
+    captureFrame: (options = {}) => {
+      const canvas = canvasRef.current;
+      const engine = engineRef.current;
+      if (canvas && engine?.kernel.has(EngineRenderer)) {
+        try {
+          const renderer = engine.kernel.get(EngineRenderer);
+          return Promise.resolve(captureCanvasFrame(engine, renderer, options));
+        } catch (error) {
+          return Promise.reject(error instanceof Error ? error : new Error(String(error)));
+        }
+      }
+      return new Promise<CanvasFrameCapture>((resolve, reject) => {
+        captureWaitersRef.current.push({ options, resolve, reject });
+      });
+    },
   }), []);
+
+  useEffect(() => {
+    const loop = loopRef.current;
+    const canvas = canvasRef.current;
+    if (!loop || fixedFrameCapture) return;
+    if (paused) {
+      loop.stop();
+      if (canvas) canvas.dataset.engineState = 'paused';
+      return;
+    }
+    loop.start();
+    if (canvas) canvas.dataset.engineState = 'running';
+  }, [fixedFrameCapture, paused]);
+
+  useEffect(() => {
+    loopRef.current?.setMaxFps(maxFps);
+  }, [maxFps]);
+
+  useEffect(() => {
+    engineRef.current?.setTimeScale(timeScale);
+  }, [timeScale]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return undefined;
     const engine = createEngine
       ? createEngine(canvas)
-      : createBrowserGameEngine(canvas, createPlugins?.() ?? plugins, { preventDefaultInput });
+      : createBrowserGameEngine(canvas, createPlugins?.() ?? plugins, { preventDefaultInput, inputEnabled }, frameCaptureEnabled || fixedFrameCapture !== undefined);
+    engine.setTimeScale(timeScaleRef.current);
+    engineRef.current = engine;
     let disposed = false;
     let destroyFailureReported = false;
     let loop: BrowserFrameLoop | undefined;
@@ -194,7 +295,7 @@ export const GameCanvas = forwardRef<GameCanvasHandle, GameCanvasProps>(function
           return;
         }
         resize();
-        if (!engine.kernel.has(EngineAccessibility)) {
+        if (inputEnabled && !engine.kernel.has(EngineAccessibility)) {
           fallbackInput = new WebInputAdapter(canvas, {
             input: engine.input,
             preventDefault: preventDefaultInput,
@@ -233,7 +334,7 @@ export const GameCanvas = forwardRef<GameCanvasHandle, GameCanvasProps>(function
           const result = Object.freeze({
             ...capture,
             profile: profiler.summary,
-            checksum: checksumRgba(renderer.readRgba()),
+            checksum: checksumRgba(renderer.captureRgba(() => { engine.frame(0); })),
             diagnostics,
             budgets: Object.freeze([engine.diagnostics.evaluate('desktop'), engine.diagnostics.evaluate('mobile')]),
             ...(entityCount !== undefined ? { entityCount } : {}),
@@ -260,18 +361,24 @@ export const GameCanvas = forwardRef<GameCanvasHandle, GameCanvasProps>(function
               onFrameRef.current?.(timestamp);
               const waiters = captureWaitersRef.current.splice(0);
               if (waiters.length === 0) return;
-              try {
-                const renderer = engine.kernel.get(EngineRenderer);
-                const capture = Object.freeze({ width: canvas.width, height: canvas.height, rgba: renderer.readRgba() });
-                for (const waiter of waiters) waiter.resolve(capture);
-              } catch (error) {
-                const failure = error instanceof Error ? error : new Error(String(error));
-                for (const waiter of waiters) waiter.reject(failure);
+              const renderer = engine.kernel.get(EngineRenderer);
+              for (const waiter of waiters) {
+                try {
+                  waiter.resolve(captureCanvasFrame(engine, renderer, waiter.options));
+                } catch (error) {
+                  waiter.reject(error instanceof Error ? error : new Error(String(error)));
+                }
               }
             },
           });
-          loop.start();
-          canvas.dataset.engineState = 'running';
+          loopRef.current = loop;
+          if (pausedRef.current) {
+            engine.frame(0);
+            canvas.dataset.engineState = 'paused';
+          } else {
+            loop.start();
+            canvas.dataset.engineState = 'running';
+          }
         }
         if (showDiagnostics) {
           const updateDiagnostics = (): void => {
@@ -307,6 +414,8 @@ export const GameCanvas = forwardRef<GameCanvasHandle, GameCanvasProps>(function
       window.removeEventListener('resize', resize);
       fallbackInput?.destroy();
       loop?.stop();
+      if (loopRef.current === loop) loopRef.current = undefined;
+      if (engineRef.current === engine) engineRef.current = undefined;
       if (diagnosticsFrame !== undefined) cancelAnimationFrame(diagnosticsFrame);
       void destroyEngineAfterBoot(bootPromise, destroyHandle).catch((error) => {
         if (!destroyFailureReported) {
@@ -317,7 +426,7 @@ export const GameCanvas = forwardRef<GameCanvasHandle, GameCanvasProps>(function
       const waiters = captureWaitersRef.current.splice(0);
       for (const waiter of waiters) waiter.reject(new Error('Game canvas was destroyed before capture completed'));
     };
-  }, [createEngine, createPlugins, fixedFrameCapture, logicalViewport?.height, logicalViewport?.width, maxFps, maxPixels, plugins, preventDefaultInput, showDiagnostics]);
+  }, [createEngine, createPlugins, fixedFrameCapture, inputEnabled, logicalViewport?.height, logicalViewport?.width, maxPixels, plugins, preventDefaultInput, showDiagnostics]);
 
   return <Fragment>
     <canvas
@@ -325,7 +434,10 @@ export const GameCanvas = forwardRef<GameCanvasHandle, GameCanvasProps>(function
       className={className}
       style={{ ...style, display: 'block', width: '100%', height: '100%' }}
       aria-label={ariaLabel}
+      aria-disabled={!inputEnabled}
       data-engine-state="created"
+      data-max-fps={maxFps}
+      data-time-scale={timeScale}
     />
     {showDiagnostics ? <output ref={diagnosticsRef} aria-live="off" style={DIAGNOSTICS_STYLE} /> : null}
   </Fragment>;

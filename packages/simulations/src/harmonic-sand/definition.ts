@@ -2,6 +2,7 @@ import type { ExperienceDefinition } from '@hooksjam/gl-game-lab-engine';
 import { createHarmonicSandConfig, HARMONIC_SAND_DEFAULTS, HARMONIC_SAND_SETTINGS } from './config.js';
 import { createHarmonicSandPlugin } from './HarmonicSandPlugin.js';
 import { HARMONIC_SAND_STYLE_MANIFEST } from './styles.js';
+import { describeSimulationSettings } from '../settingDescriptions.js';
 
 export const harmonicSandDefinition: ExperienceDefinition = {
   id: 'harmonic-sand',
@@ -18,7 +19,7 @@ export const harmonicSandDefinition: ExperienceDefinition = {
   },
   configDefaults: { ...HARMONIC_SAND_DEFAULTS },
   modes: [{ id: 'shape', label: 'Shape', icon: '↔', description: 'Place and drag wave sources.' }],
-  settings: HARMONIC_SAND_SETTINGS,
+  settings: describeSimulationSettings('harmonic-sand', HARMONIC_SAND_SETTINGS),
   styleManifest: HARMONIC_SAND_STYLE_MANIFEST,
   tutorialPages: [
     { icon: '•', title: 'Seed Resonance', body: 'Tap an empty spot to place a new wave source on the plate.' },

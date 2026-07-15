@@ -1,9 +1,12 @@
 import { createExtensionToken, type EnginePlugin, type PointerInputEvent } from '@hooksjam/gl-game-lab-core';
 import {
   EngineInput,
+  InteractionRadiusIndicator2D,
   EngineQuality,
   EngineRender2D,
+  EngineRenderer,
   EngineSchedule,
+  ExperiencePreviewCycleControllerService,
   ExperienceRuntimeControllerService,
   type ExperienceLaunchOptions,
   type ExperienceRuntimeController,
@@ -51,9 +54,12 @@ export function createBallPitPlugin(
   let styleId = validStyleId(launch.styleId) ?? BALL_PIT_STYLE_MANIFEST.defaultStyleId;
   let spawnAccumulator = 0;
   let elapsedSeconds = 0;
+  let previewFloorDropRemaining = 0;
+  let floorDroppedLastFrame = false;
   let randomState = normalizeSeed(launch.seed);
   let pickedCount = 0;
   const pickedIndices = new Int32Array(MAX_PICKED_PARTICLES);
+  const interactionIndicator = new InteractionRadiusIndicator2D('ball-pit.interaction-radius');
 
   return {
     id: BALL_PIT_PLUGIN_ID,
@@ -64,6 +70,7 @@ export function createBallPitPlugin(
     install: (context) => {
       const world = context.get(DenseCircleParticleWorld2DService);
       const renderer = context.get(EngineRender2D);
+      const renderBackend = context.get(EngineRenderer);
       const input = context.get(EngineInput);
       const quality = context.get(EngineQuality);
       applyStyle(renderer, styleId);
@@ -95,24 +102,44 @@ export function createBallPitPlugin(
         },
         reset: () => {
           world.clear(normalizeSeed(launch.seed));
+          renderBackend.requestRender();
           pickedCount = 0;
           spawnAccumulator = 0;
           elapsedSeconds = 0;
+          previewFloorDropRemaining = 0;
+          floorDroppedLastFrame = false;
           randomState = normalizeSeed(launch.seed);
         },
       };
       context.provide(BallPitControllerService, controller);
       context.provide(ExperienceRuntimeControllerService, controller);
+      context.provide(ExperiencePreviewCycleControllerService, {
+        advancePreviewCycle: () => {
+          if (launch.profile !== 'preview') return 'restart';
+          previewFloorDropRemaining = 1.5;
+          return 'handled';
+        },
+      });
       context.get(EngineSchedule).addSystem({
         id: 'gl-game-lab.games.ball-pit.input',
         stage: 'update',
         run: ({ time }) => {
           applyQuality(false);
           elapsedSeconds += time.deltaSeconds;
+          previewFloorDropRemaining = Math.max(0, previewFloorDropRemaining - time.deltaSeconds);
           const width = renderer.viewport.width;
           const height = renderer.viewport.height;
           renderer.setCamera({ centerX: width * 0.5, centerY: height * 0.5, zoom: 1 });
-          const floorDropped = demoFloorIsDropped(launch.profile, elapsedSeconds);
+          const floorDropped = launch.profile === 'preview'
+            ? previewFloorDropRemaining > 0
+            : demoFloorIsDropped(launch.profile, elapsedSeconds);
+          if (floorDropped && !floorDroppedLastFrame) {
+            world.clear();
+            renderBackend.requestRender();
+            pickedCount = 0;
+            spawnAccumulator = 0;
+          }
+          floorDroppedLastFrame = floorDropped;
           const floorHeight = floorDropped ? height + Math.max(180, height * 1.4) : height;
           world.setBounds(width, floorHeight);
           const pointerEvents = input.snapshot.events.filter((event): event is PointerInputEvent => event.kind === 'pointer');
@@ -141,6 +168,9 @@ export function createBallPitPlugin(
             colorSeeds: world.colorSeeds,
             palette: requirePalette(styleId),
           });
+          if (mode === 'interact') {
+            interactionIndicator.submit(renderer, input.snapshot.pointers, currentConfig.interactionRadius);
+          }
         },
       });
     },
@@ -240,8 +270,10 @@ function configureWorld(world: DenseCircleParticleWorld2D, config: BallPitConfig
     gravity: config.gravity,
     solverIterations: Math.max(1, Math.floor(config.solverPasses)),
     substeps: Math.max(1, Math.floor(config.substeps)),
-    wallBounce: config.wallBounce,
+    wallBounce: true,
     boundaryRestitution: config.wallBounceAmount,
+    particleRestitution: config.wallBounceAmount,
+    velocityContactResponse: true,
     airDrag: config.airDrag,
     solverDamping: config.solverDamping,
     collisionSoftness: config.collisionSoftness,
@@ -288,8 +320,8 @@ function normalizeSeed(seed: number | undefined): number {
 }
 
 function demoFloorIsDropped(profile: ExperienceLaunchOptions['profile'], elapsedSeconds: number): boolean {
-  if (profile !== 'preview' && profile !== 'demo') return false;
-  const cycleSeconds = profile === 'preview' ? 7 : 10;
-  const dropSeconds = profile === 'preview' ? 1.5 : 2;
+  if (profile !== 'demo') return false;
+  const cycleSeconds = 10;
+  const dropSeconds = 2;
   return elapsedSeconds % cycleSeconds >= cycleSeconds - dropSeconds;
 }

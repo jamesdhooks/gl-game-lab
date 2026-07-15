@@ -62,8 +62,10 @@ export const ballPitDefinition: ExperienceDefinition = {
           gravity: effectiveConfig.gravity,
           solverIterations: effectiveConfig.solverPasses,
           substeps: effectiveConfig.substeps,
-          wallBounce: effectiveConfig.wallBounce,
+          wallBounce: true,
           boundaryRestitution: effectiveConfig.wallBounceAmount,
+          particleRestitution: effectiveConfig.wallBounceAmount,
+          velocityContactResponse: true,
           airDrag: effectiveConfig.airDrag,
           solverDamping: effectiveConfig.solverDamping,
           collisionSoftness: effectiveConfig.collisionSoftness,
@@ -73,7 +75,7 @@ export const ballPitDefinition: ExperienceDefinition = {
           openTop: true,
         },
       }),
-      createBallPitPlugin(config, options),
+      createBallPitPlugin(effectiveConfig, options),
     ];
   },
 };

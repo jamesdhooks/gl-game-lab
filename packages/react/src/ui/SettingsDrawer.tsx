@@ -7,7 +7,7 @@
  */
 import { useState, useEffect, useRef, useId, type ReactNode } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, ChevronDown, Check, RotateCcw, Save, PanelRight, PanelRightOpen, Info, Lock, LockOpen } from 'lucide-react';
+import { X, ChevronDown, Check, RotateCcw, Save, Star, PanelRight, PanelRightOpen, Info, Lock, LockOpen } from 'lucide-react';
 import type {
   ExperienceSetting as SettingsField,
   NumberSetting,
@@ -44,10 +44,15 @@ export interface SettingsDrawerProps {
   title?: string;
   saveLabel?: string;
   headerControl?: ReactNode;
+  leadingSections?: ReactNode;
   supplementalSections?: ReactNode;
   lockedKeys?: readonly string[];
   onFieldLockChange?: (key: string, locked: boolean) => void;
   onResetAll?: () => void;
+  savedValues?: Readonly<Record<string, unknown>>;
+  baselineValues?: Readonly<Record<string, unknown>>;
+  baselineLabel?: string;
+  overrideLabel?: string;
 }
 
 export function SettingsDrawer({
@@ -66,15 +71,22 @@ export function SettingsDrawer({
   title = 'Settings',
   saveLabel = 'scene defaults',
   headerControl,
+  leadingSections,
   supplementalSections,
   lockedKeys = [],
   onFieldLockChange,
   onResetAll,
+  savedValues,
+  baselineValues,
+  baselineLabel = 'defaults',
+  overrideLabel = 'Override',
 }: SettingsDrawerProps) {
   const { isMobile, isLandscape } = useViewportContext();
   const [vals, setVals] = useState<Record<string, unknown>>({});
+  const [savedVals, setSavedVals] = useState<Record<string, unknown>>({});
   const [sectionFilter, setSectionFilter] = useState<string | null>(null);
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  const savedSnapshotInitialized = useRef(false);
 
   useEffect(() => {
     if (!open) return;
@@ -83,11 +95,23 @@ export function SettingsDrawer({
       next[f.key] = settings.get(f.key);
     }
     setVals(next);
-  }, [open, fields, settings, settingsVersion]);
+    if (!savedValues && !savedSnapshotInitialized.current) {
+      savedSnapshotInitialized.current = true;
+      setSavedVals(next);
+    }
+  }, [open, fields, settings, settingsVersion, savedValues]);
+
+  useEffect(() => {
+    if (!savedValues) return;
+    const next: Record<string, unknown> = {};
+    for (const field of fields) next[field.key] = savedValues[field.key];
+    savedSnapshotInitialized.current = true;
+    setSavedVals(next);
+  }, [fields, savedValues]);
 
   const apply = (key: string, value: unknown) => {
     settings.set(key, value as string | number | boolean);
-    setVals((prev) => ({ ...prev, [key]: settings.get(key) }));
+    setVals((prev) => ({ ...prev, [key]: value }));
   };
 
   const resetVisibleSettings = () => {
@@ -122,6 +146,7 @@ export function SettingsDrawer({
         keys: fieldsToSave.map((field) => field.key),
         values,
       });
+      setSavedVals((current) => ({ ...current, ...values }));
       setSaveState('saved');
       window.setTimeout(() => setSaveState('idle'), 1200);
     } catch {
@@ -146,6 +171,19 @@ export function SettingsDrawer({
     return acc;
   }, []);
   const visibleSections = sectionFilter ? sections.filter((section) => section.label === sectionFilter) : sections;
+  const overriddenKeys = baselineValues ? fields.filter((field) => (
+    Object.prototype.hasOwnProperty.call(vals, field.key)
+    && Object.prototype.hasOwnProperty.call(baselineValues, field.key)
+    && isSettingOverride(vals[field.key], baselineValues[field.key])
+  )).map((field) => field.key) : [];
+  const dirtyKeys = fields.filter((field) => (
+    Object.prototype.hasOwnProperty.call(vals, field.key)
+    && Object.prototype.hasOwnProperty.call(savedVals, field.key)
+    && isSettingOverride(vals[field.key], savedVals[field.key])
+  )).map((field) => field.key);
+  const hasUnsavedChanges = dirtyKeys.length > 0;
+  const saveActionLabel = sectionFilter ? `Save ${sectionFilter} ${saveLabel}` : `Save ${saveLabel}`;
+  const saveActionTitle = hasUnsavedChanges ? `${saveActionLabel} (${dirtyKeys.length} unsaved)` : saveActionLabel;
 
   useEffect(() => {
     if (sectionFilter && !sections.some((section) => section.label === sectionFilter)) setSectionFilter(null);
@@ -190,6 +228,10 @@ export function SettingsDrawer({
             onChange={(v) => apply(field.key, v)}
             onReset={() => resetField(field.key)}
             locked={lockedKeys.includes(field.key)}
+            overridden={overriddenKeys.includes(field.key)}
+            dirty={dirtyKeys.includes(field.key)}
+            resetTargetLabel={baselineLabel}
+            overrideLabel={overrideLabel}
             {...(onFieldLockChange ? { onLockChange: (locked) => onFieldLockChange(field.key, locked) } : {})}
           />
         ))}
@@ -198,7 +240,13 @@ export function SettingsDrawer({
 
   const resolutionSection = (
     <section className={`rounded-lg py-1.5 ${sectionBackgroundClass(visibleSections.length)}`}>
-      <p className="px-2 pb-1 text-[9px] font-semibold uppercase tracking-[0.18em] text-white/35">Resolution</p>
+      <div className="flex items-center gap-1 px-2 pb-1">
+        <p className="text-[9px] font-semibold uppercase tracking-[0.18em] text-white/35">Resolution</p>
+        <FieldDescriptionTooltip
+          label="Resolution"
+          description="Limits the number of rendered pixels. Lower resolutions improve performance; Off uses the full available display resolution."
+        />
+      </div>
       <div className="grid grid-cols-4 gap-1 px-1 pb-0.5">
         {PIXEL_PRESETS.map(({ label, sub, value }) => (
           <button
@@ -226,17 +274,20 @@ export function SettingsDrawer({
             <button
               onClick={saveVisibleDefaults}
               disabled={saveState === 'saving'}
-              className={`rounded-lg p-1.5 transition-colors ${
+              className={`relative rounded-lg p-1.5 transition-colors ${
                 saveState === 'saved'
                   ? 'text-emerald-200'
                   : saveState === 'error'
                     ? 'text-rose-200'
-                    : 'text-white/45 hover:bg-white/10 hover:text-white'
+                    : hasUnsavedChanges
+                      ? 'bg-amber-200/10 text-amber-100 hover:bg-amber-200/15'
+                      : 'text-white/45 hover:bg-white/10 hover:text-white'
               } disabled:opacity-45`}
-              aria-label={sectionFilter ? `Save ${sectionFilter} ${saveLabel}` : `Save ${saveLabel}`}
-              title={sectionFilter ? `Save ${sectionFilter} ${saveLabel}` : `Save ${saveLabel}`}
+              aria-label={saveActionTitle}
+              title={saveActionTitle}
             >
               <Save size={15} />
+              {hasUnsavedChanges && saveState !== 'saved' && <Star aria-hidden="true" size={8} fill="currentColor" className="absolute -right-0.5 -top-0.5 text-amber-200" />}
             </button>
           )}
           <button
@@ -249,7 +300,14 @@ export function SettingsDrawer({
           </button>
         </div>
       )}
+      {leadingSections}
       {sectionFilters}
+      {baselineValues && (
+        <div className={`mx-1 flex items-center justify-between rounded-lg px-2 py-1.5 text-[10px] ${overriddenKeys.length > 0 ? 'bg-cyan-200/10 text-cyan-50 ring-1 ring-inset ring-cyan-200/15' : 'bg-white/[0.035] text-white/40'}`}>
+          <span className="font-semibold">{overriddenKeys.length === 0 ? `Using ${baselineLabel} values` : `${overriddenKeys.length} ${overrideLabel.toLowerCase()}${overriddenKeys.length === 1 ? '' : 's'}`}</span>
+          <span className="text-[9px] opacity-60">Reset restores {baselineLabel}</span>
+        </div>
+      )}
       {visibleSections.map((section, index) => renderFieldSection(section.label, section.fields, index))}
       {supplementalSections}
       {resolutionSection}
@@ -281,17 +339,20 @@ export function SettingsDrawer({
             <button
               onClick={saveVisibleDefaults}
               disabled={saveState === 'saving'}
-              className={`rounded-lg p-1 transition-colors ${
+              className={`relative rounded-lg p-1 transition-colors ${
                 saveState === 'saved'
                   ? 'text-emerald-200'
                   : saveState === 'error'
                     ? 'text-rose-200'
-                    : 'text-white/40 hover:bg-white/10 hover:text-white'
+                    : hasUnsavedChanges
+                      ? 'bg-amber-200/10 text-amber-100 hover:bg-amber-200/15'
+                      : 'text-white/40 hover:bg-white/10 hover:text-white'
               } disabled:opacity-45`}
-              aria-label={sectionFilter ? `Save ${sectionFilter} ${saveLabel}` : `Save ${saveLabel}`}
-              title={sectionFilter ? `Save ${sectionFilter} ${saveLabel}` : `Save ${saveLabel}`}
+              aria-label={saveActionTitle}
+              title={saveActionTitle}
             >
               <Save size={14} />
+              {hasUnsavedChanges && saveState !== 'saved' && <Star aria-hidden="true" size={8} fill="currentColor" className="absolute -right-0.5 -top-0.5 text-amber-200" />}
             </button>
           )}
           <button
@@ -379,6 +440,10 @@ function FieldRow({
   onReset,
   locked = false,
   onLockChange,
+  overridden = false,
+  dirty = false,
+  resetTargetLabel = 'defaults',
+  overrideLabel = 'Override',
 }: {
   field: SettingsField;
   value: unknown;
@@ -386,14 +451,29 @@ function FieldRow({
   onReset: () => void;
   locked?: boolean;
   onLockChange?: (locked: boolean) => void;
+  overridden?: boolean;
+  dirty?: boolean;
+  resetTargetLabel?: string;
+  overrideLabel?: string;
 }) {
   return (
-    <div data-experience-setting={field.key} className="group flex items-start justify-between gap-3 rounded-lg px-2 py-1.5">
+    <div
+      data-experience-setting={field.key}
+      data-setting-override={overridden ? 'true' : 'false'}
+      data-setting-dirty={dirty ? 'true' : 'false'}
+      className={`group flex items-start justify-between gap-3 rounded-lg px-2 py-1.5 transition-colors ${dirty ? 'bg-amber-200/[0.09] ring-1 ring-inset ring-amber-200/25' : overridden ? 'bg-cyan-200/[0.075] ring-1 ring-inset ring-cyan-200/15' : ''}`}
+    >
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-1.5">
           <p className="min-w-0 text-xs font-semibold text-white">{field.label}</p>
           {field.description && (
             <FieldDescriptionTooltip label={field.label} description={field.description} />
+          )}
+          {overridden && (
+            <span className="shrink-0 rounded-full bg-cyan-200/14 px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-[0.08em] text-cyan-100">{overrideLabel}</span>
+          )}
+          {dirty && (
+            <span className="shrink-0 rounded-full bg-amber-200/15 px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-[0.08em] text-amber-100">Unsaved</span>
           )}
           {onLockChange && (
             <button
@@ -408,9 +488,10 @@ function FieldRow({
           )}
           <button
             type="button"
-            aria-label={`Reset ${field.label}`}
+            aria-label={`Reset ${field.label} to ${resetTargetLabel}`}
+            title={`Reset to ${resetTargetLabel}`}
             onClick={onReset}
-            className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-white/35 opacity-0 transition hover:bg-white/10 hover:text-white/85 focus:opacity-100 focus:outline-none focus:ring-1 focus:ring-cyan-200/50 group-hover:opacity-100 group-focus-within:opacity-100"
+            className={`inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full transition hover:bg-white/10 hover:text-white/85 focus:opacity-100 focus:outline-none focus:ring-1 focus:ring-cyan-200/50 group-hover:opacity-100 group-focus-within:opacity-100 ${overridden ? 'text-cyan-100 opacity-100' : 'text-white/35 opacity-0'}`}
           >
             <RotateCcw size={10} aria-hidden="true" />
           </button>
@@ -433,6 +514,10 @@ function FieldRow({
       </div>
     </div>
   );
+}
+
+export function isSettingOverride(value: unknown, baseline: unknown): boolean {
+  return !Object.is(value, baseline);
 }
 
 function FieldDescriptionTooltip({ label, description }: { label: string; description: string }) {

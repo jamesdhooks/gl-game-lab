@@ -84,7 +84,7 @@ export function createTuringSkinPlugin(initial: TuringSkinConfig = TURING_SKIN_D
         id: 'gl-game-lab.simulations.turing-skin.update',
         stage: 'update',
         run: ({ time }) => {
-          const dt = Math.min(0.05, time.deltaSeconds) * config.timeScale;
+          const dt = Math.min(0.05, time.deltaSeconds);
           pendingDt += dt;
           elapsed += dt;
           for (const event of input.snapshot.events)

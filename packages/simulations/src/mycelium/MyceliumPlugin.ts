@@ -24,6 +24,7 @@ export const MyceliumControllerService = createExtensionToken<MyceliumController
 export const MYCELIUM_PLUGIN_ID = 'gl-game-lab.simulations.mycelium';
 export function createMyceliumPlugin(initial: MyceliumConfig = MYCELIUM_DEFAULTS, launch: ExperienceLaunchOptions = {}): EnginePlugin {
   let config = initial, styleId = validStyle(launch.styleId) ?? MYCELIUM_STYLE_MANIFEST.defaultStyleId, pendingDt = 0, elapsed = 0, randomState = seedValue(launch.seed), rebuild = false, needsSeed = true, fieldViewportWidth = 0, fieldViewportHeight = 0, paintPointerId: number | undefined, paintPointer: { x: number; y: number } | undefined, cleanup = (): void => undefined;
+  const paletteSeed = (((seedValue(launch.seed) ^ 0x9e3779b9) >>> 0) / 4294967296);
   const splats: Splat[] = [];
   const paletteData = new Float32Array(24), backgroundData = new Float32Array(3);
   return {
@@ -86,7 +87,7 @@ export function createMyceliumPlugin(initial: MyceliumConfig = MYCELIUM_DEFAULTS
         id: 'gl-game-lab.simulations.mycelium.update',
         stage: 'update',
         run: ({ time }) => {
-          const dt = Math.min(0.05, time.deltaSeconds) * myceliumNumber(config, 'timeScale');
+          const dt = Math.min(0.05, time.deltaSeconds);
           const viewportWidth = Math.max(1, renderer.viewport.width);
           const viewportHeight = Math.max(1, renderer.viewport.height);
           if (Math.abs(viewportWidth / viewportHeight - fieldViewportWidth / Math.max(1, fieldViewportHeight)) > 0.01) rebuild = true;
@@ -181,6 +182,8 @@ export function createMyceliumPlugin(initial: MyceliumConfig = MYCELIUM_DEFAULTS
                 g.uniform2f(u('uGrid'), field.width, field.height);
                 g.uniform3fv(u('uPalette[0]'), paletteData);
                 g.uniform3fv(u('uBackground'), backgroundData);
+                g.uniform1i(u('uProceduralPalette'), styleId === 'random' ? 1 : 0);
+                g.uniform1f(u('uPaletteSeed'), paletteSeed);
                 g.uniform1i(u('uVariant'), myceliumString(config, 'topology') === 'triangle' ? 0 : 1);
                 const visual = myceliumString(config, 'renderStyle');
                 g.uniform1i(u('uVisualStyle'), visual === 'basic' ? 0 : visual === 'enhanced' ? 1 : 2);

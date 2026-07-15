@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { ChevronDown, ChevronLeft, ChevronRight, ChevronUp, PanelBottom, PanelLeft, PanelRight, Pin, PinOff, Play } from 'lucide-react';
+import { Activity, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Image as ImageIcon, MonitorPlay, PanelBottom, PanelLeft, PanelRight, Pin, PinOff, Play, RefreshCw, Settings as SettingsIcon } from 'lucide-react';
 import { ExperienceRuntime, GameCanvas, PreviewTile as EnginePreviewTile, useViewport, type CanvasFrameCapture } from '@hooksjam/gl-game-lab-react';
 import { createDefaultPreviewProfile, type ExperienceDefinition, type ExperiencePreviewProfile, type ExperienceSettingValue, type GameEngine } from '@hooksjam/gl-game-lab-engine';
 import { WebGL2RendererService, type ContextCycleDiagnostics } from '@hooksjam/gl-game-lab-render-webgl2';
@@ -10,10 +10,13 @@ import './index.css';
 import { parseDemoCaptureOptions } from './captureOptions.js';
 import { ballPitCaptureInputEvents } from './ballPitCaptureScenarios.js';
 import { loadDemoCatalog, loadDemoExperience, loadLifecycleAlternate } from './experienceLoader.js';
+import { paginateGallery } from './galleryPagination.js';
 import { MobileCertificationRunner } from './MobileCertificationRunner.js';
 import { definitionSettings, normalizePreviewProfiles, type PreviewProfileMap } from './previewProfiles.js';
+import { readPreviewFrameRateMode, useAutoPreviewFrameRate, type PreviewFrameRate, type PreviewFrameRateMode } from './previewFrameRate.js';
 
 type FilterKind = 'all' | 'game' | 'simulation';
+type PreviewFidelity = 'simulation' | 'image';
 type SceneDefaultValue = string | number | boolean;
 type SceneDefaultsMap = Readonly<Record<string, Readonly<Record<string, SceneDefaultValue>>>>;
 interface SettingsDefaultsSaveRequest {
@@ -33,6 +36,7 @@ interface PreviewCaptureCandidate {
   readonly profileHash: string;
   readonly blob: Blob;
   readonly url: string;
+  readonly finish: () => void;
 }
 
 function normalizeSceneDefaults(payload: unknown): SceneDefaultsMap {
@@ -56,8 +60,10 @@ function applySceneDefaults(definition: ExperienceDefinition, defaults: Readonly
     const value = defaults[setting.key];
     if (value === undefined) return setting;
     if (setting.type === 'number') {
-      const numeric = typeof value === 'number' && Number.isFinite(value) ? value : setting.default;
-      const sanitized = Math.max(setting.min, Math.min(setting.max, numeric));
+      const parsed = typeof value === 'string' && value.trim() !== '' ? Number(value) : value;
+      const numeric = typeof parsed === 'number' && Number.isFinite(parsed) ? parsed : setting.default;
+      const scaled = setting.numericScale === 'powerOfTwo' ? 2 ** Math.round(Math.log2(Math.max(1, numeric))) : numeric;
+      const sanitized = Math.max(setting.min, Math.min(setting.max, scaled));
       sanitizedDefaults[setting.key] = sanitized;
       return { ...setting, default: sanitized };
     }
@@ -133,13 +139,24 @@ function DemoGallery(): JSX.Element {
   const [previewDrafts, setPreviewDrafts] = useState<PreviewProfileMap>({});
   const [previewAuthoringEnabled, setPreviewAuthoringEnabled] = useState(false);
   const [captureCandidate, setCaptureCandidate] = useState<PreviewCaptureCandidate>();
-  const [previewSessionSeed] = useState(() => randomSessionSeed());
+  const [previewSessionSeed, setPreviewSessionSeed] = useState(() => randomSessionSeed());
   const [active, setActive] = useState<ExperienceDefinition>();
   const [filter, setFilter] = useState<FilterKind>('all');
+  const [galleryPage, setGalleryPage] = useState(0);
   const [dark, setDark] = useState(true);
   const [previewFpsVisible, setPreviewFpsVisible] = useState(() => {
+    if (!import.meta.env.DEV) return false;
     try { return localStorage.getItem('gl-game-lab:previewFps') !== 'false'; } catch { return true; }
   });
+  const [previewFidelity, setPreviewFidelity] = useState<PreviewFidelity>(() => {
+    if (!import.meta.env.DEV) return 'simulation';
+    try { return localStorage.getItem('gl-game-lab:previewFidelity') === 'image' ? 'image' : 'simulation'; } catch { return 'simulation'; }
+  });
+  const [previewFrameRateMode, setPreviewFrameRateMode] = useState<PreviewFrameRateMode>(() => {
+    if (!import.meta.env.DEV) return 'auto';
+    try { return readPreviewFrameRateMode(localStorage.getItem('gl-game-lab:previewFrameRate')); } catch { return 'auto'; }
+  });
+  const [demoSettingsOpen, setDemoSettingsOpen] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [pickerFilter, setPickerFilter] = useState<FilterKind>('all');
   const [pickerSide, setPickerSide] = useState<'bottom' | 'left' | 'right'>('bottom');
@@ -148,6 +165,8 @@ function DemoGallery(): JSX.Element {
   const [localDemoMode, setLocalDemoMode] = useState(false);
   const [demoIndex, setDemoIndex] = useState(0);
   const [pendingLaunch, setPendingLaunch] = useState<PendingLaunch>();
+  const autoPreviewFrameRate = useAutoPreviewFrameRate(previewFrameRateMode === 'auto' && previewFidelity === 'simulation' && (!active || previewAuthoringEnabled));
+  const previewMaxFps: PreviewFrameRate = previewFrameRateMode === 'auto' ? autoPreviewFrameRate : previewFrameRateMode;
   const scrollerRef = useRef<HTMLDivElement>(null);
   const portraitMobile = isMobile && !isLandscape;
   const effectivePickerSide = portraitMobile ? 'bottom' : pickerSide;
@@ -159,10 +178,20 @@ function DemoGallery(): JSX.Element {
 
   useEffect(() => {
     let mounted = true;
-    void loadDemoCatalog().then((definitions) => {
+    void loadDemoCatalog().then(async (definitions) => {
       if (!mounted) return;
       const configured = definitions.map((definition) => applySceneDefaults(definition, INITIAL_SCENE_DEFAULTS[definition.id]));
-      const profiles = normalizePreviewProfiles(bundledPreviewProfiles, configured);
+      let previewProfileSource: unknown = bundledPreviewProfiles;
+      if (import.meta.env.DEV) {
+        try {
+          const response = await fetch(PREVIEW_PROFILES_ENDPOINT, { cache: 'no-store' });
+          if (response.ok) previewProfileSource = await response.json() as unknown;
+        } catch {
+          // The committed profiles remain a valid fallback when local persistence is unavailable.
+        }
+      }
+      if (!mounted) return;
+      const profiles = normalizePreviewProfiles(previewProfileSource, configured);
       setCatalog(configured);
       setPreviewProfiles(profiles);
       setPreviewDrafts(profiles);
@@ -196,11 +225,34 @@ function DemoGallery(): JSX.Element {
       localStorage.setItem(`gl-game-lab:scene-defaults:${definitionId}`, JSON.stringify(clean));
     }
     setSceneDefaults(nextDefaults);
-    setCatalog((definitions) => definitions.map((definition) => applySceneDefaults(definition, nextDefaults[definition.id])));
-  }, [active, sceneDefaults]);
+    const nextActive = applySceneDefaults(active, nextDefaults[definitionId]);
+    setActive(nextActive);
+    setCatalog((definitions) => definitions.map((definition) => definition.id === definitionId
+      ? nextActive
+      : applySceneDefaults(definition, nextDefaults[definition.id])));
+
+    // Profiles loaded from the original full-snapshot format are normalized to
+    // sparse overrides in memory. Persist the active normalized profile when
+    // its base changes so copied legacy values cannot reappear after reload.
+    const savedPreview = previewProfiles[definitionId];
+    if (savedPreview) {
+      try {
+        await fetch(PREVIEW_PROFILES_ENDPOINT, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ definitionId, profile: savedPreview }),
+        });
+      } catch {
+        // Scene defaults remain saved even if preview-profile compaction is unavailable.
+      }
+    }
+  }, [active, previewProfiles, sceneDefaults]);
 
   const activePreviewProfile = active
     ? previewDrafts[active.id] ?? previewProfiles[active.id] ?? createDefaultPreviewProfile(active, definitionSettings(active))
+    : undefined;
+  const activeSavedPreviewProfile = active
+    ? previewProfiles[active.id] ?? createDefaultPreviewProfile(active, definitionSettings(active))
     : undefined;
   const changePreviewProfile = useCallback((profile: ExperiencePreviewProfile): void => {
     if (!active) return;
@@ -242,34 +294,57 @@ function DemoGallery(): JSX.Element {
     setPreviewDrafts((current) => ({ ...current, [candidate.definition.id]: next[candidate.definition.id] ?? candidate.profile }));
     URL.revokeObjectURL(candidate.url);
     setCaptureCandidate(undefined);
+    candidate.finish();
   }, [catalog]);
   const capturePreview = useCallback(async (capture: CanvasFrameCapture, profile: ExperiencePreviewProfile, profileHash: string): Promise<void> => {
     if (!active) return;
     const blob = await encodePreviewWebp(capture);
-    const candidate = { definition: active, profile, profileHash, blob, url: URL.createObjectURL(blob) };
-    if (profile.image) {
+    await new Promise<void>((finish) => {
+      const candidate = { definition: active, profile, profileHash, blob, url: URL.createObjectURL(blob), finish };
       setCaptureCandidate((current) => {
-        if (current) URL.revokeObjectURL(current.url);
+        if (current) {
+          URL.revokeObjectURL(current.url);
+          current.finish();
+        }
         return candidate;
       });
-      return;
-    }
-    await persistPreviewCapture(candidate);
-  }, [active, persistPreviewCapture]);
+    });
+  }, [active]);
   const cancelCapture = useCallback((): void => {
     setCaptureCandidate((current) => {
-      if (current) URL.revokeObjectURL(current.url);
+      if (current) {
+        URL.revokeObjectURL(current.url);
+        current.finish();
+      }
       return undefined;
     });
   }, []);
 
   useEffect(() => {
+    if (!import.meta.env.DEV) return;
     try { localStorage.setItem('gl-game-lab:previewFps', String(previewFpsVisible)); } catch { /* Storage may be unavailable. */ }
   }, [previewFpsVisible]);
 
+  useEffect(() => {
+    if (!import.meta.env.DEV) return;
+    try { localStorage.setItem('gl-game-lab:previewFidelity', previewFidelity); } catch { /* Storage may be unavailable. */ }
+  }, [previewFidelity]);
+
+  useEffect(() => {
+    if (!import.meta.env.DEV) return;
+    try { localStorage.setItem('gl-game-lab:previewFrameRate', String(previewFrameRateMode)); } catch { /* Storage may be unavailable. */ }
+  }, [previewFrameRateMode]);
+
   const filtered = useMemo(() => filter === 'all' ? catalog : catalog.filter((definition) => definition.kind === filter), [catalog, filter]);
+  const gallery = useMemo(() => paginateGallery(filtered, galleryPage), [filtered, galleryPage]);
+  const galleryPageCount = gallery.pageCount;
+  const galleryItems = gallery.items;
   const pickerItems = useMemo(() => pickerFilter === 'all' ? catalog : catalog.filter((definition) => definition.kind === pickerFilter), [catalog, pickerFilter]);
   const activeIndex = active ? pickerItems.findIndex((definition) => definition.id === active.id) : -1;
+
+  useEffect(() => {
+    if (galleryPage !== gallery.page) setGalleryPage(gallery.page);
+  }, [gallery.page, galleryPage]);
 
   useEffect(() => {
     if (!pendingLaunch) return;
@@ -361,6 +436,9 @@ function DemoGallery(): JSX.Element {
                   {...(import.meta.env.DEV && activePreviewProfile ? { previewAuthoring: {
                     enabled: previewAuthoringEnabled,
                     profile: activePreviewProfile,
+                    ...(activeSavedPreviewProfile ? { savedProfile: activeSavedPreviewProfile } : {}),
+                    assetBaseUrl: import.meta.env.BASE_URL,
+                    maxFps: previewMaxFps,
                     onEnabledChange: (enabled: boolean) => {
                       setPreviewAuthoringEnabled(enabled);
                       if (enabled) { setDemoMode(false); setLocalDemoMode(false); }
@@ -384,6 +462,20 @@ function DemoGallery(): JSX.Element {
             </motion.div>
           ) : (
             <motion.div key="gallery" className="absolute inset-0 overflow-y-auto text-slate-900 dark:text-slate-100" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+              {import.meta.env.DEV && (
+                <DemoDevSettings
+                  open={demoSettingsOpen}
+                  onOpenChange={setDemoSettingsOpen}
+                  showFps={previewFpsVisible}
+                  onShowFpsChange={setPreviewFpsVisible}
+                  fidelity={previewFidelity}
+                  onFidelityChange={setPreviewFidelity}
+                  frameRateMode={previewFrameRateMode}
+                  resolvedFrameRate={previewMaxFps}
+                  onFrameRateModeChange={setPreviewFrameRateMode}
+                  onRestartPreviews={() => { setPreviewSessionSeed(randomSessionSeed()); }}
+                />
+              )}
               <main className="mx-auto max-w-5xl px-4 pb-16 pt-8 sm:px-8 sm:pb-32 sm:pt-16">
                 <div className="relative mb-5 flex justify-center sm:mb-8">
                   {LOGO_PARTICLES.map(([size, color, left, top, drift, duration, delay], index) => (
@@ -394,18 +486,26 @@ function DemoGallery(): JSX.Element {
                 <div className="mb-3 flex justify-center sm:mb-4">
                   <div className="inline-flex gap-0.5 rounded-xl bg-slate-100 p-1 dark:bg-white/[0.06] sm:rounded-2xl sm:p-1.5">
                     {(Object.keys(KIND_LABELS) as FilterKind[]).map((kind) => (
-                      <button key={kind} type="button" onClick={() => { setFilter(kind); }} className={`rounded-lg px-3 py-2 text-xs font-semibold transition-all sm:rounded-xl sm:px-6 sm:py-2.5 sm:text-sm ${filter === kind ? 'bg-white text-slate-900 shadow-md dark:bg-slate-700 dark:text-white' : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200'}`}>{KIND_LABELS[kind]}</button>
+                      <button key={kind} type="button" onClick={() => { setFilter(kind); setGalleryPage(0); }} className={`rounded-lg px-3 py-2 text-xs font-semibold transition-all sm:rounded-xl sm:px-6 sm:py-2.5 sm:text-sm ${filter === kind ? 'bg-white text-slate-900 shadow-md dark:bg-slate-700 dark:text-white' : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200'}`}>{KIND_LABELS[kind]}</button>
                     ))}
                   </div>
                 </div>
                 <div className="mb-8 flex flex-col items-center justify-center gap-3">
                   <button type="button" onClick={startDemo} className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-violet-500 via-sky-400 to-cyan-400 px-4 py-2 text-sm font-bold text-white shadow-md shadow-sky-500/20 transition-transform hover:scale-[1.02] active:scale-[0.98]"><Play size={14} />Demo mode</button>
-                  <button type="button" onClick={() => { setPreviewFpsVisible((visible) => !visible); }} className={`rounded-xl px-3 py-1.5 text-xs font-black uppercase tracking-widest transition-colors ${previewFpsVisible ? 'bg-cyan-200 text-slate-950 shadow-md shadow-cyan-400/20' : 'bg-slate-100 text-slate-500 hover:bg-slate-200 dark:bg-white/[0.07] dark:text-white/45 dark:hover:bg-white/[0.12]'}`}>Preview FPS {previewFpsVisible ? 'On' : 'Off'}</button>
                 </div>
                 {catalog.length === 0 ? <p className="py-24 text-center text-slate-400" role="status">Loading GLGameLab experiences…</p> : (
                   <div className="grid grid-cols-2 gap-x-6 gap-y-10 sm:grid-cols-3 lg:grid-cols-4">
-                    {filtered.map((definition, index) => <ExperienceCard key={definition.id} definition={definition} previewProfile={previewProfiles[definition.id] ?? createDefaultPreviewProfile(definition, definitionSettings(definition))} previewSessionSeed={previewSessionSeed} assetBaseUrl={import.meta.env.BASE_URL} index={index} onSelect={selectExperience} showPreviewFps={previewFpsVisible} previewsEnabled={!pendingLaunch} hideKindBadge={filter === 'simulation'} />)}
+                    {galleryItems.map((definition, index) => <ExperienceCard key={definition.id} definition={definition} previewProfile={previewProfiles[definition.id] ?? createDefaultPreviewProfile(definition, definitionSettings(definition))} previewSessionSeed={previewSessionSeed} assetBaseUrl={import.meta.env.BASE_URL} index={index} onSelect={selectExperience} showPreviewFps={previewFpsVisible} previewsEnabled={previewFidelity === 'simulation'} previewMaxFps={previewMaxFps} hideKindBadge={filter === 'simulation'} />)}
                   </div>
+                )}
+                {galleryPageCount > 1 && (
+                  <nav aria-label="Experience pages" className="mt-10 flex items-center justify-center gap-2">
+                    <button type="button" aria-label="Previous experience page" disabled={galleryPage === 0} onClick={() => { setGalleryPage((page) => Math.max(0, page - 1)); }} className="flex h-9 w-9 items-center justify-center rounded-lg bg-slate-100 text-slate-600 transition-colors hover:bg-slate-200 disabled:cursor-not-allowed disabled:opacity-35 dark:bg-white/[0.06] dark:text-white/60 dark:hover:bg-white/10"><ChevronLeft size={16} /></button>
+                    {Array.from({ length: galleryPageCount }, (_, page) => (
+                      <button key={page} type="button" aria-label={`Experience page ${page + 1}`} aria-current={galleryPage === page ? 'page' : undefined} onClick={() => { setGalleryPage(page); }} className={`h-9 min-w-9 rounded-lg px-3 text-xs font-semibold transition-colors ${galleryPage === page ? 'bg-cyan-300 text-slate-950' : 'bg-slate-100 text-slate-500 hover:bg-slate-200 dark:bg-white/[0.06] dark:text-white/45 dark:hover:bg-white/10'}`}>{page + 1}</button>
+                    ))}
+                    <button type="button" aria-label="Next experience page" disabled={galleryPage >= galleryPageCount - 1} onClick={() => { setGalleryPage((page) => Math.min(galleryPageCount - 1, page + 1)); }} className="flex h-9 w-9 items-center justify-center rounded-lg bg-slate-100 text-slate-600 transition-colors hover:bg-slate-200 disabled:cursor-not-allowed disabled:opacity-35 dark:bg-white/[0.06] dark:text-white/60 dark:hover:bg-white/10"><ChevronRight size={16} /></button>
+                  </nav>
                 )}
               </main>
               <footer className="pb-10 text-center text-xs text-slate-400 dark:text-slate-600">@hooksjam/gl-game-lab · GPU-first · WebGL2</footer>
@@ -444,7 +544,7 @@ function DemoGallery(): JSX.Element {
                   {pickerBottom ? (
                     portraitMobile ? (
                       <div ref={scrollerRef} className="flex items-center gap-2 overflow-x-scroll px-2 py-2 snap-x snap-mandatory" style={{ scrollbarWidth: 'none' }}>
-                        {pickerItems.map((definition, index) => <div key={definition.id} className="shrink-0 snap-start py-0.5"><CarouselTile definition={definition} previewProfile={previewProfiles[definition.id] ?? createDefaultPreviewProfile(definition, definitionSettings(definition))} previewSessionSeed={previewSessionSeed} assetBaseUrl={import.meta.env.BASE_URL} index={index} active={definition.id === active.id} onSelect={selectExperience} size={88} showPreviewFps={previewFpsVisible} /></div>)}
+                        {pickerItems.map((definition, index) => <div key={definition.id} className="shrink-0 snap-start py-0.5"><CarouselTile definition={definition} previewProfile={previewProfiles[definition.id] ?? createDefaultPreviewProfile(definition, definitionSettings(definition))} previewSessionSeed={previewSessionSeed} assetBaseUrl={import.meta.env.BASE_URL} index={index} active={definition.id === active.id} onSelect={selectExperience} size={88} showPreviewFps={previewFpsVisible} previewsEnabled={previewFidelity === 'simulation'} previewMaxFps={previewMaxFps} /></div>)}
                       </div>
                     ) : (
                       <div className="flex h-[132px] items-stretch">
@@ -453,7 +553,7 @@ function DemoGallery(): JSX.Element {
                         </div>
                         <button type="button" aria-label="Previous" onClick={() => { move(-1); }} className="flex shrink-0 items-center justify-center px-1.5 text-white/25 transition-colors hover:text-white/60"><ChevronLeft size={15} /></button>
                         <div ref={scrollerRef} className="flex flex-1 items-center gap-2 overflow-x-auto px-1" style={{ scrollbarWidth: 'none' }}>
-                          {pickerItems.map((definition, index) => <CarouselTile key={definition.id} definition={definition} previewProfile={previewProfiles[definition.id] ?? createDefaultPreviewProfile(definition, definitionSettings(definition))} previewSessionSeed={previewSessionSeed} assetBaseUrl={import.meta.env.BASE_URL} index={index} active={definition.id === active.id} onSelect={selectExperience} size={80} showPreviewFps={previewFpsVisible} />)}
+                          {pickerItems.map((definition, index) => <CarouselTile key={definition.id} definition={definition} previewProfile={previewProfiles[definition.id] ?? createDefaultPreviewProfile(definition, definitionSettings(definition))} previewSessionSeed={previewSessionSeed} assetBaseUrl={import.meta.env.BASE_URL} index={index} active={definition.id === active.id} onSelect={selectExperience} size={80} showPreviewFps={previewFpsVisible} previewsEnabled={previewFidelity === 'simulation'} previewMaxFps={previewMaxFps} />)}
                         </div>
                         <button type="button" aria-label="Next" onClick={() => { move(1); }} className="flex shrink-0 items-center justify-center px-1.5 text-white/25 transition-colors hover:text-white/60"><ChevronRight size={15} /></button>
                       </div>
@@ -465,7 +565,7 @@ function DemoGallery(): JSX.Element {
                       </div>
                       <button type="button" aria-label="Previous" onClick={() => { move(-1); }} className="py-1 text-white/25 transition-colors hover:text-white/60"><ChevronUp className="mx-auto" size={15} /></button>
                       <div ref={scrollerRef} className="flex flex-1 flex-col items-center gap-2 overflow-y-auto px-2 py-1" style={{ scrollbarWidth: 'none' }}>
-                        {pickerItems.map((definition, index) => <CarouselTile key={definition.id} definition={definition} previewProfile={previewProfiles[definition.id] ?? createDefaultPreviewProfile(definition, definitionSettings(definition))} previewSessionSeed={previewSessionSeed} assetBaseUrl={import.meta.env.BASE_URL} index={index} active={definition.id === active.id} onSelect={selectExperience} size={74} labelRight showPreviewFps={previewFpsVisible} />)}
+                        {pickerItems.map((definition, index) => <CarouselTile key={definition.id} definition={definition} previewProfile={previewProfiles[definition.id] ?? createDefaultPreviewProfile(definition, definitionSettings(definition))} previewSessionSeed={previewSessionSeed} assetBaseUrl={import.meta.env.BASE_URL} index={index} active={definition.id === active.id} onSelect={selectExperience} size={74} labelRight showPreviewFps={previewFpsVisible} previewsEnabled={previewFidelity === 'simulation'} previewMaxFps={previewMaxFps} />)}
                       </div>
                       <button type="button" aria-label="Next" onClick={() => { move(1); }} className="py-1 text-white/25 transition-colors hover:text-white/60"><ChevronDown className="mx-auto" size={15} /></button>
                     </div>
@@ -481,11 +581,94 @@ function DemoGallery(): JSX.Element {
               candidate={captureCandidate}
               assetBaseUrl={import.meta.env.BASE_URL}
               onCancel={cancelCapture}
-              onReplace={() => persistPreviewCapture(captureCandidate)}
+              onApprove={() => persistPreviewCapture(captureCandidate)}
             />
           )}
         </AnimatePresence>
       </div>
+    </div>
+  );
+}
+
+function DemoDevSettings({
+  open,
+  onOpenChange,
+  showFps,
+  onShowFpsChange,
+  fidelity,
+  onFidelityChange,
+  frameRateMode,
+  resolvedFrameRate,
+  onFrameRateModeChange,
+  onRestartPreviews,
+}: {
+  readonly open: boolean;
+  readonly onOpenChange: (open: boolean) => void;
+  readonly showFps: boolean;
+  readonly onShowFpsChange: (visible: boolean) => void;
+  readonly fidelity: PreviewFidelity;
+  readonly onFidelityChange: (fidelity: PreviewFidelity) => void;
+  readonly frameRateMode: PreviewFrameRateMode;
+  readonly resolvedFrameRate: PreviewFrameRate;
+  readonly onFrameRateModeChange: (mode: PreviewFrameRateMode) => void;
+  readonly onRestartPreviews: () => void;
+}): JSX.Element {
+  return (
+    <div className="fixed right-4 top-4 z-[80]">
+      <button
+        type="button"
+        aria-label="Demo settings"
+        aria-expanded={open}
+        onClick={() => onOpenChange(!open)}
+        className={`flex h-10 w-10 items-center justify-center rounded-xl shadow-lg ring-1 transition-colors ${open ? 'bg-cyan-200 text-slate-950 ring-cyan-100/70' : 'bg-white/90 text-slate-600 ring-slate-900/10 hover:text-slate-950 dark:bg-zinc-900/90 dark:text-white/55 dark:ring-white/12 dark:hover:text-white'}`}
+      >
+        <SettingsIcon size={17} />
+      </button>
+      <AnimatePresence>
+        {open && (
+          <motion.section
+            role="dialog"
+            aria-label="Demo development settings"
+            initial={{ opacity: 0, y: -6, scale: 0.98 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -6, scale: 0.98 }}
+            transition={{ duration: 0.14 }}
+            className="absolute right-0 mt-2 w-72 overflow-hidden rounded-2xl bg-white/95 p-2 text-slate-800 shadow-2xl ring-1 ring-slate-900/10 backdrop-blur-xl dark:bg-zinc-950/95 dark:text-white dark:ring-white/12"
+          >
+            <div className="px-2 pb-2 pt-1">
+              <p className="text-xs font-bold">Demo settings</p>
+              <p className="mt-0.5 text-[10px] text-slate-500 dark:text-white/35">Local development only. Production keeps simulated previews with FPS hidden.</p>
+            </div>
+            <button type="button" onClick={() => onShowFpsChange(!showFps)} className="flex w-full items-center gap-3 rounded-xl px-2 py-2 text-left hover:bg-slate-900/[0.05] dark:hover:bg-white/[0.06]">
+              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-cyan-500/10 text-cyan-600 dark:text-cyan-200"><Activity size={15} /></span>
+              <span className="min-w-0 flex-1"><span className="block text-xs font-semibold">Show preview FPS</span><span className="block text-[10px] text-slate-500 dark:text-white/35">Overlay engine FPS on live tiles.</span></span>
+              <span aria-hidden className={`h-5 w-9 rounded-full p-0.5 transition-colors ${showFps ? 'bg-cyan-400' : 'bg-slate-300 dark:bg-white/15'}`}><span className={`block h-4 w-4 rounded-full bg-white shadow transition-transform ${showFps ? 'translate-x-4' : ''}`} /></span>
+            </button>
+            <div className="mt-1 rounded-xl px-2 py-2">
+              <div className="mb-2 flex items-center gap-3">
+                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-200"><Activity size={15} /></span>
+                <span className="min-w-0"><span className="block text-xs font-semibold">Preview frame rate</span><span className="block text-[10px] text-slate-500 dark:text-white/35">{frameRateMode === 'auto' ? `Auto is currently using ${resolvedFrameRate} FPS.` : `Fixed at ${resolvedFrameRate} FPS.`}</span></span>
+              </div>
+              <div className="grid grid-cols-4 gap-1">
+                {(['auto', 30, 45, 60] as const).map((value) => <button key={value} type="button" aria-pressed={frameRateMode === value} onClick={() => onFrameRateModeChange(value)} className={`rounded-lg px-1 py-1.5 text-[9px] font-bold uppercase tracking-wider ${frameRateMode === value ? 'bg-cyan-200 text-slate-950' : 'bg-slate-900/[0.05] text-slate-500 hover:bg-slate-900/10 dark:bg-white/[0.05] dark:text-white/40 dark:hover:bg-white/10'}`}>{value === 'auto' ? 'Auto' : value}</button>)}
+              </div>
+            </div>
+            <div className="mt-1 rounded-xl px-2 py-2">
+              <div className="mb-2 flex items-center gap-3">
+                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-violet-500/10 text-violet-600 dark:text-violet-200">{fidelity === 'simulation' ? <MonitorPlay size={15} /> : <ImageIcon size={15} />}</span>
+                <span><span className="block text-xs font-semibold">Preview fidelity</span><span className="block text-[10px] text-slate-500 dark:text-white/35">Force live-capable or image-only tiles.</span></span>
+              </div>
+              <div className="grid grid-cols-2 gap-1">
+                {(['simulation', 'image'] as const).map((value) => <button key={value} type="button" aria-pressed={fidelity === value} onClick={() => onFidelityChange(value)} className={`rounded-lg px-2 py-1.5 text-[10px] font-bold uppercase tracking-wider ${fidelity === value ? 'bg-cyan-200 text-slate-950' : 'bg-slate-900/[0.05] text-slate-500 hover:bg-slate-900/10 dark:bg-white/[0.05] dark:text-white/40 dark:hover:bg-white/10'}`}>{value === 'simulation' ? 'Simulated' : 'Image only'}</button>)}
+              </div>
+            </div>
+            <button type="button" onClick={onRestartPreviews} className="mt-1 flex w-full items-center gap-3 rounded-xl px-2 py-2 text-left hover:bg-slate-900/[0.05] dark:hover:bg-white/[0.06]">
+              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-violet-500/10 text-violet-600 dark:text-violet-200"><RefreshCw size={15} /></span>
+              <span><span className="block text-xs font-semibold">New preview variations</span><span className="block text-[10px] text-slate-500 dark:text-white/35">Generate a fresh session seed for every tile.</span></span>
+            </button>
+          </motion.section>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
@@ -499,15 +682,16 @@ interface ExperienceCardProps {
   readonly onSelect: (definition: ExperienceDefinition) => void;
   readonly showPreviewFps?: boolean;
   readonly previewsEnabled?: boolean;
+  readonly previewMaxFps: PreviewFrameRate;
   readonly hideKindBadge?: boolean;
 }
 
-function ExperienceCard({ definition, previewProfile, previewSessionSeed, assetBaseUrl, index, onSelect, showPreviewFps = false, previewsEnabled = true, hideKindBadge = false }: ExperienceCardProps): JSX.Element {
+function ExperienceCard({ definition, previewProfile, previewSessionSeed, assetBaseUrl, index, onSelect, showPreviewFps = false, previewsEnabled = true, previewMaxFps, hideKindBadge = false }: ExperienceCardProps): JSX.Element {
   const badge = definition.kind === 'game' ? 'bg-blue-100 text-blue-600 dark:bg-blue-500/15 dark:text-blue-300' : 'bg-violet-100 text-violet-600 dark:bg-violet-500/15 dark:text-violet-300';
   return (
     <button type="button" data-demo-experience-card={definition.id} onClick={() => { onSelect(definition); }} className="group cursor-pointer select-none text-left">
       <div className="pointer-events-none relative aspect-square w-full overflow-hidden rounded-2xl bg-slate-100 transition-transform duration-200 group-hover:scale-[1.03] dark:bg-[#0d0d1e]">
-        <EnginePreviewTile definition={definition} profile={previewProfile} sessionSeed={previewSessionSeed} assetBaseUrl={assetBaseUrl} index={index} showDiagnostics={showPreviewFps} enabled={previewsEnabled} />
+        <EnginePreviewTile definition={definition} profile={previewProfile} sessionSeed={previewSessionSeed} assetBaseUrl={assetBaseUrl} index={index} showDiagnostics={showPreviewFps} enabled={previewsEnabled} eager maxFps={previewMaxFps} {...(import.meta.env.DEV && previewsEnabled ? { renderPolicyOverride: 'live' as const } : {})} />
         {!hideKindBadge && <span className={`absolute bottom-2 left-2 rounded-full px-2 py-0.5 text-[10px] font-semibold capitalize ${badge}`}>{definition.kind}</span>}
       </div>
       <p className="mt-3 text-center text-sm font-semibold leading-tight text-slate-800 dark:text-slate-200">{definition.name}</p>
@@ -526,6 +710,8 @@ function CarouselTile({
   size,
   labelRight = false,
   showPreviewFps = false,
+  previewsEnabled = true,
+  previewMaxFps,
 }: ExperienceCardProps & { readonly active: boolean; readonly size: number; readonly labelRight?: boolean }): JSX.Element {
   return (
     <div className={`flex shrink-0 cursor-pointer items-center gap-1.5 transition-all duration-150 ${labelRight ? 'w-full flex-row' : 'flex-col'}`}>
@@ -536,7 +722,7 @@ function CarouselTile({
         style={{ width: size, height: size }}
         aria-label={`Play ${definition.name}`}
       >
-        <EnginePreviewTile definition={definition} profile={previewProfile} sessionSeed={previewSessionSeed} assetBaseUrl={assetBaseUrl} index={index} showDiagnostics={showPreviewFps} />
+        <EnginePreviewTile definition={definition} profile={previewProfile} sessionSeed={previewSessionSeed} assetBaseUrl={assetBaseUrl} index={index} showDiagnostics={showPreviewFps} enabled={previewsEnabled} maxFps={previewMaxFps} {...(import.meta.env.DEV && previewsEnabled ? { renderPolicyOverride: 'live' as const } : {})} />
       </button>
       <span className={`truncate text-[9px] font-medium leading-tight text-white/50 ${labelRight ? 'min-w-0 flex-1 text-left' : 'text-center'}`} style={labelRight ? undefined : { maxWidth: size }}>{definition.name}</span>
     </div>
@@ -547,34 +733,35 @@ function PreviewCaptureComparison({
   candidate,
   assetBaseUrl,
   onCancel,
-  onReplace,
+  onApprove,
 }: {
   readonly candidate: PreviewCaptureCandidate;
   readonly assetBaseUrl: string;
   readonly onCancel: () => void;
-  readonly onReplace: () => Promise<void>;
+  readonly onApprove: () => Promise<void>;
 }): JSX.Element {
-  const [replacing, setReplacing] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const hasExistingCapture = candidate.profile.image !== undefined;
   const before = candidate.profile.image ? `${assetBaseUrl}${candidate.profile.image.src}?v=${candidate.profile.image.revision}` : undefined;
-  const replace = async (): Promise<void> => {
-    if (replacing) return;
-    setReplacing(true);
-    try { await onReplace(); } finally { setReplacing(false); }
+  const approve = async (): Promise<void> => {
+    if (saving) return;
+    setSaving(true);
+    try { await onApprove(); } finally { setSaving(false); }
   };
   return (
-    <motion.div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onMouseDown={(event) => { if (event.target === event.currentTarget && !replacing) onCancel(); }}>
-      <motion.div role="dialog" aria-modal="true" aria-label="Replace preview capture" className="w-full max-w-3xl rounded-2xl bg-zinc-950 p-4 text-white shadow-2xl ring-1 ring-white/15" initial={{ scale: 0.98, y: 8 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.98, y: 8 }}>
+    <motion.div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onMouseDown={(event) => { if (event.target === event.currentTarget && !saving) onCancel(); }}>
+      <motion.div role="dialog" aria-modal="true" aria-label={hasExistingCapture ? 'Replace preview capture' : 'Approve preview capture'} className="w-full max-w-3xl rounded-2xl bg-zinc-950 p-4 text-white shadow-2xl ring-1 ring-white/15" initial={{ scale: 0.98, y: 8 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.98, y: 8 }}>
         <div className="mb-4">
-          <h3 className="text-base font-bold">Replace {candidate.definition.name} preview?</h3>
-          <p className="mt-1 text-xs text-white/45">Compare the committed fallback with the frame currently shown in Preview mode.</p>
+          <h3 className="text-base font-bold">{hasExistingCapture ? `Replace ${candidate.definition.name} preview?` : `Approve ${candidate.definition.name} preview?`}</h3>
+          <p className="mt-1 text-xs text-white/45">{hasExistingCapture ? 'Compare the saved fallback with the frame currently shown in Preview mode.' : 'Review the captured frame before it is saved as this tile fallback.'}</p>
         </div>
-        <div className="grid grid-cols-2 gap-3">
-          <figure><figcaption className="mb-1.5 text-[10px] font-bold uppercase tracking-widest text-white/40">Before</figcaption><div className="aspect-square overflow-hidden rounded-xl bg-white/[0.05] ring-1 ring-white/10">{before ? <img src={before} alt="Existing preview" className="h-full w-full object-cover" /> : null}</div></figure>
-          <figure><figcaption className="mb-1.5 text-[10px] font-bold uppercase tracking-widest text-cyan-100/70">After</figcaption><div className="aspect-square overflow-hidden rounded-xl bg-white/[0.05] ring-1 ring-cyan-200/25"><img src={candidate.url} alt="New preview" className="h-full w-full object-cover" /></div></figure>
+        <div className={hasExistingCapture ? 'grid grid-cols-2 gap-3' : 'mx-auto w-full max-w-lg'}>
+          {hasExistingCapture && <figure><figcaption className="mb-1.5 text-[10px] font-bold uppercase tracking-widest text-white/40">Before</figcaption><div className="aspect-square overflow-hidden rounded-xl bg-white/[0.05] ring-1 ring-white/10">{before ? <img src={before} alt="Existing preview" className="h-full w-full object-cover" /> : null}</div></figure>}
+          <figure><figcaption className="mb-1.5 text-[10px] font-bold uppercase tracking-widest text-cyan-100/70">{hasExistingCapture ? 'After' : 'Captured preview'}</figcaption><div className="aspect-square overflow-hidden rounded-xl bg-white/[0.05] ring-1 ring-cyan-200/25"><img src={candidate.url} alt="New preview" className="h-full w-full object-cover" /></div></figure>
         </div>
         <div className="mt-4 flex justify-end gap-2">
-          <button type="button" disabled={replacing} onClick={onCancel} className="rounded-xl px-3 py-2 text-sm text-white/55 hover:bg-white/10 hover:text-white disabled:opacity-40">Cancel</button>
-          <button type="button" disabled={replacing} onClick={() => { void replace(); }} className="rounded-xl bg-cyan-200 px-4 py-2 text-sm font-bold text-slate-950 hover:bg-cyan-100 disabled:opacity-50">{replacing ? 'Replacing…' : 'Replace capture'}</button>
+          <button type="button" disabled={saving} onClick={onCancel} className="rounded-xl px-3 py-2 text-sm text-white/55 hover:bg-white/10 hover:text-white disabled:opacity-40">{hasExistingCapture ? 'Cancel' : 'Reject'}</button>
+          <button type="button" disabled={saving} onClick={() => { void approve(); }} className="rounded-xl bg-cyan-200 px-4 py-2 text-sm font-bold text-slate-950 hover:bg-cyan-100 disabled:opacity-50">{saving ? 'Saving…' : hasExistingCapture ? 'Replace capture' : 'Approve capture'}</button>
         </div>
       </motion.div>
     </motion.div>

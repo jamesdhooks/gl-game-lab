@@ -31,6 +31,8 @@ interface SettingBase {
   readonly description?: string;
   readonly visibleModes?: readonly string[];
   readonly visibleRenderStyles?: readonly string[];
+  /** Controls whether an unlocked preview value varies occasionally or on every seeded launch. */
+  readonly previewVariation?: 'bounded' | 'always';
 }
 
 export interface NumberSetting extends SettingBase {
@@ -104,6 +106,7 @@ export type ExperienceLaunchProfile = 'play' | 'preview' | 'demo';
 export type ExperienceSettingValue = number | boolean | string;
 
 export type PreviewRenderPolicy = 'auto' | 'live' | 'static';
+export type PreviewGenerationMode = 'exact' | 'varied';
 
 export interface PreviewVariationConfig {
   readonly intensity: number;
@@ -124,6 +127,7 @@ export interface ExperiencePreviewProfile {
   readonly styleId?: string;
   readonly settings: Readonly<Record<string, ExperienceSettingValue>>;
   readonly variation: PreviewVariationConfig;
+  readonly generationMode: PreviewGenerationMode;
   readonly renderPolicy: PreviewRenderPolicy;
   readonly image?: PreviewFallbackImage;
 }
@@ -150,6 +154,8 @@ export interface ExperienceRuntimeController {
   readonly styleId: string;
   readonly settings: Readonly<Record<string, ExperienceSettingValue>>;
   readonly entityCount?: number;
+  /** False while an automated scene has not yet produced meaningful visible capture content. */
+  readonly captureReady?: boolean;
   setMode(modeId: string): void;
   setStyle(styleId: string): void;
   setSetting(key: string, value: ExperienceSettingValue): void;
@@ -158,6 +164,21 @@ export interface ExperienceRuntimeController {
 
 export const ExperienceRuntimeControllerService = createExtensionToken<ExperienceRuntimeController>(
   'gl-game-lab.experience.runtime-controller',
+);
+
+export interface ExperiencePreviewCycleRequest {
+  readonly generation: number;
+  readonly seed: number;
+}
+
+export type ExperiencePreviewCycleOutcome = 'handled' | 'restart';
+
+export interface ExperiencePreviewCycleController {
+  advancePreviewCycle(request: ExperiencePreviewCycleRequest): ExperiencePreviewCycleOutcome;
+}
+
+export const ExperiencePreviewCycleControllerService = createExtensionToken<ExperiencePreviewCycleController>(
+  'gl-game-lab.experience.preview-cycle-controller',
 );
 
 export interface ExperienceDefinition {
@@ -180,20 +201,62 @@ export interface ExperienceDefinition {
   createPlugins(options?: ExperienceLaunchOptions): readonly EnginePlugin[];
 }
 
+export const ENGINE_TIME_SCALE_SETTING: NumberSetting = Object.freeze({
+  key: 'timeScale',
+  label: 'Time Scale',
+  section: 'Simulation',
+  description: 'Controls how quickly the entire scene advances. Use values below 1 for slow motion, 1 for real time, and values above 1 for fast-forward.',
+  type: 'number',
+  min: 0,
+  max: 2,
+  step: 0.05,
+  default: 1,
+});
+
+const ENGINE_SETTING_KEYS = new Set<string>([ENGINE_TIME_SCALE_SETTING.key]);
+const ENGINE_COMPOSED_DEFINITIONS = new WeakSet<ExperienceDefinition>();
+
+/** Removes engine-owned controls before settings cross into experience-specific code. */
+export function withoutEngineSettings(
+  settings: Readonly<Record<string, ExperienceSettingValue>> | undefined,
+): Readonly<Record<string, ExperienceSettingValue>> | undefined {
+  if (!settings || !Object.keys(settings).some((key) => ENGINE_SETTING_KEYS.has(key))) return settings;
+  return Object.freeze(Object.fromEntries(
+    Object.entries(settings).filter(([key]) => !ENGINE_SETTING_KEYS.has(key)),
+  ));
+}
+
+/** Adds the engine-owned time control while replacing legacy scene-local implementations. */
+export function withEngineTimeScaleSetting(definition: ExperienceDefinition): ExperienceDefinition {
+  if (ENGINE_COMPOSED_DEFINITIONS.has(definition)) return definition;
+  const composed = Object.freeze({
+    ...definition,
+    settings: Object.freeze([
+      ENGINE_TIME_SCALE_SETTING,
+      ...(definition.settings ?? []).filter((setting) => setting.key !== ENGINE_TIME_SCALE_SETTING.key),
+    ]),
+    createPlugins: (options?: ExperienceLaunchOptions): readonly EnginePlugin[] => {
+      if (!options) return definition.createPlugins();
+      const contentSettings = withoutEngineSettings(options.settings);
+      if (contentSettings === options.settings || contentSettings === undefined) return definition.createPlugins(options);
+      return definition.createPlugins(Object.freeze({ ...options, settings: contentSettings }));
+    },
+  });
+  ENGINE_COMPOSED_DEFINITIONS.add(composed);
+  return composed;
+}
+
 const PREVIEW_MODE_LOCK = '$mode';
 const PREVIEW_STYLE_LOCK = '$style';
 
 export function createDefaultPreviewProfile(
   definition: ExperienceDefinition,
-  settings: Readonly<Record<string, ExperienceSettingValue>> = {},
+  _settings: Readonly<Record<string, ExperienceSettingValue>> = {},
 ): ExperiencePreviewProfile {
-  const anchor: Record<string, ExperienceSettingValue> = {};
-  for (const field of definition.settings ?? []) anchor[field.key] = sanitizeSettingValue(field, settings[field.key] ?? field.default);
   return Object.freeze({
-    ...(definition.modes?.[0]?.id ? { modeId: definition.modes[0].id } : {}),
-    ...(definition.styleManifest?.defaultStyleId ? { styleId: definition.styleManifest.defaultStyleId } : {}),
-    settings: Object.freeze(anchor),
+    settings: Object.freeze({}),
     variation: Object.freeze({ intensity: 0.25, lockedKeys: Object.freeze([]), seed: hashText(definition.id) }),
+    generationMode: 'varied' as const,
     renderPolicy: 'auto' as const,
   });
 }
@@ -207,21 +270,30 @@ export function sanitizePreviewProfile(
   if (!candidate) return fallback;
   const settings: Record<string, ExperienceSettingValue> = {};
   for (const field of definition.settings ?? []) {
-    settings[field.key] = sanitizeSettingValue(field, candidate.settings[field.key] ?? fallback.settings[field.key] ?? field.default);
+    if (!Object.prototype.hasOwnProperty.call(candidate.settings, field.key)) continue;
+    const value = sanitizeSettingValue(field, candidate.settings[field.key] ?? field.default);
+    const baseline = sanitizeSettingValue(field, fallbackSettings[field.key] ?? field.default);
+    if (!Object.is(value, baseline)) settings[field.key] = value;
   }
-  const modeId = definition.modes?.some((mode) => mode.id === candidate.modeId) ? candidate.modeId : fallback.modeId;
-  const styleId = definition.styleManifest?.styles.some((style) => style.id === candidate.styleId) ? candidate.styleId : fallback.styleId;
+  const baseModeId = definition.modes?.[0]?.id;
+  const candidateModeId = definition.modes?.some((mode) => mode.id === candidate.modeId) ? candidate.modeId : undefined;
+  const modeId = candidateModeId && candidateModeId !== baseModeId ? candidateModeId : undefined;
+  const baseStyleId = definition.styleManifest?.defaultStyleId;
+  const candidateStyleId = definition.styleManifest?.styles.some((style) => style.id === candidate.styleId) ? candidate.styleId : undefined;
+  const styleId = candidateStyleId && candidateStyleId !== baseStyleId ? candidateStyleId : undefined;
   const validLocks = new Set([PREVIEW_MODE_LOCK, PREVIEW_STYLE_LOCK, ...(definition.settings ?? []).map((field) => field.key)]);
   const lockedKeys = [...new Set(candidate.variation.lockedKeys.filter((key) => validLocks.has(key)))].sort();
   const intensity = clamp(Number.isFinite(candidate.variation.intensity) ? candidate.variation.intensity : 0.25, 0, 1);
   const seed = Number.isSafeInteger(candidate.variation.seed) ? candidate.variation.seed >>> 0 : fallback.variation.seed;
   const renderPolicy: PreviewRenderPolicy = candidate.renderPolicy === 'live' || candidate.renderPolicy === 'static' ? candidate.renderPolicy : 'auto';
+  const generationMode: PreviewGenerationMode = candidate.generationMode === 'exact' ? 'exact' : 'varied';
   const image = sanitizePreviewImage(candidate.image);
   return Object.freeze({
     ...(modeId ? { modeId } : {}),
     ...(styleId ? { styleId } : {}),
     settings: Object.freeze(settings),
     variation: Object.freeze({ intensity, lockedKeys: Object.freeze(lockedKeys), seed }),
+    generationMode,
     renderPolicy,
     ...(image ? { image } : {}),
   });
@@ -236,27 +308,27 @@ export function resolvePreviewLaunch(
   const seed = mixSeed(profile.variation.seed, Number.isSafeInteger(sessionSeed) ? sessionSeed >>> 0 : 0, hashText(definition.id));
   const random = createRandom(seed);
   const locked = new Set(profile.variation.lockedKeys);
-  const intensity = profile.variation.intensity;
+  const intensity = profile.generationMode === 'exact' ? 0 : profile.variation.intensity;
   const settings: Record<string, ExperienceSettingValue> = {};
   for (const field of definition.settings ?? []) {
     const anchor = profile.settings[field.key] ?? field.default;
     settings[field.key] = locked.has(field.key) ? anchor : varySetting(field, anchor, intensity, random);
   }
   const modeId = varyChoice(
-    profile.modeId,
+    profile.modeId ?? definition.modes?.[0]?.id,
     definition.modes?.map((mode) => mode.id) ?? [],
     intensity,
     locked.has(PREVIEW_MODE_LOCK),
     random,
   );
-  const styleId = varyChoice(
-    profile.styleId,
+  const styleId = varyPreviewStyle(
+    profile.styleId ?? definition.styleManifest?.defaultStyleId,
     definition.styleManifest?.styles.filter((style) => style.id !== '__random__').map((style) => style.id) ?? [],
     intensity,
     locked.has(PREVIEW_STYLE_LOCK),
     random,
   );
-  const stable = stableStringify({ modeId, styleId, settings, seed });
+  const stable = stableStringify({ generationMode: profile.generationMode, modeId, styleId, settings, seed });
   return Object.freeze({
     profile: 'preview' as const,
     ...(modeId ? { modeId } : {}),
@@ -265,6 +337,17 @@ export function resolvePreviewLaunch(
     seed,
     hash: hashText(stable).toString(16).padStart(8, '0'),
   });
+}
+
+function varyPreviewStyle(
+  anchor: string | undefined,
+  choices: readonly string[],
+  intensity: number,
+  locked: boolean,
+  random: () => number,
+): string | undefined {
+  if (!anchor || locked || choices.length < 2 || intensity <= 0) return anchor;
+  return choices[Math.floor(random() * choices.length)] ?? anchor;
 }
 
 function varySetting(
@@ -277,6 +360,7 @@ function varySetting(
   if (field.type === 'boolean') return random() < 0.25 * intensity ? !Boolean(anchor) : Boolean(anchor);
   if (field.type === 'select') {
     const options = field.options.filter((option) => option.value !== '__random__').map((option) => option.value);
+    if (field.previewVariation === 'always') return options[Math.floor(random() * options.length)] ?? String(anchor);
     return varyChoice(String(anchor), options, intensity, false, random) ?? String(anchor);
   }
   const numeric = typeof anchor === 'number' ? anchor : field.default;

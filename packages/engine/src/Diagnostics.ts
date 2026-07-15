@@ -56,10 +56,13 @@ export const DEFAULT_PERFORMANCE_BUDGETS: Readonly<Record<PerformanceTier, Perfo
 });
 
 interface MutableSystemTiming { id: string; stage: string; calls: number; cpuMs: number }
+const FPS_HISTORY_LIMIT = 60;
 
 /** Low-overhead CPU/system profiler and machine-readable release capture. */
 export class EngineDiagnostics implements SystemProfiler {
   private readonly frameDurations: number[] = [];
+  private readonly requestedDeltaHistory: number[] = [];
+  private requestedDeltaTotal = 0;
   private readonly systems = new Map<string, MutableSystemTiming>();
   private frameStartedAt = 0;
   private requestedDeltaMs = 0;
@@ -97,12 +100,22 @@ export class EngineDiagnostics implements SystemProfiler {
     const frameCpuMs = Math.max(0, this.now() - this.frameStartedAt);
     this.frameDurations.push(frameCpuMs);
     if (this.frameDurations.length > this.historyLimit) this.frameDurations.shift();
+    if (this.requestedDeltaMs > 0) {
+      this.requestedDeltaHistory.push(this.requestedDeltaMs);
+      this.requestedDeltaTotal += this.requestedDeltaMs;
+      if (this.requestedDeltaHistory.length > Math.min(this.historyLimit, FPS_HISTORY_LIMIT)) {
+        this.requestedDeltaTotal -= this.requestedDeltaHistory.shift() ?? 0;
+      }
+    }
+    const averageRequestedDeltaMs = this.requestedDeltaHistory.length > 0
+      ? this.requestedDeltaTotal / this.requestedDeltaHistory.length
+      : 0;
     this.frameNumber += 1;
     this.current = Object.freeze({
       frame: this.frameNumber,
       frameCpuMs,
       requestedDeltaMs: this.requestedDeltaMs,
-      fps: this.requestedDeltaMs > 0 ? 1000 / this.requestedDeltaMs : 0,
+      fps: averageRequestedDeltaMs > 0 ? 1000 / averageRequestedDeltaMs : 0,
       systems: Object.freeze([...this.systems.values()].map((timing) => Object.freeze({ ...timing }))),
       assets,
       renderer: this.renderer,

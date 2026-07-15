@@ -5,6 +5,8 @@ export interface InstancedSegmentBatch {
   readonly count: number;
   readonly segments: Float32Array;
   readonly styles: Float32Array;
+  readonly colorSeeds?: Float32Array;
+  readonly endRadii?: Float32Array;
 }
 export interface InstancedSegmentRenderOptions {
   readonly worldWidth: number;
@@ -17,6 +19,7 @@ export interface InstancedSegmentRenderOptions {
   readonly radiusScale?: number;
   readonly opacity?: number;
   readonly blend?: BlendMode;
+  readonly paletteMode?: 'hashed' | 'indexed';
 }
 export function validateInstancedSegmentBatch(batch: InstancedSegmentBatch): void {
   if (!Number.isSafeInteger(batch.count) || batch.count < 0)
@@ -25,17 +28,24 @@ export function validateInstancedSegmentBatch(batch: InstancedSegmentBatch): voi
     throw new Error('Instanced segment geometry does not cover the active count');
   if (batch.styles.length < batch.count * 2)
     throw new Error('Instanced segment styles do not cover the active count');
+  if (batch.colorSeeds && batch.colorSeeds.length < batch.count)
+    throw new Error('Instanced segment color seeds do not cover the active count');
+  if (batch.endRadii && batch.endRadii.length < batch.count)
+    throw new Error('Instanced segment end radii do not cover the active count');
 }
 export class InstancedSegmentRenderer {
   private readonly program: WebGLProgram;
   private readonly vao: WebGLVertexArrayObject;
   private readonly segmentBuffer: WebGLBuffer;
   private readonly styleBuffer: WebGLBuffer;
+  private readonly colorSeedBuffer: WebGLBuffer;
+  private readonly endRadiusBuffer: WebGLBuffer;
   private readonly worldSizeLocation: WebGLUniformLocation;
   private readonly radiusScaleLocation: WebGLUniformLocation;
   private readonly opacityLocation: WebGLUniformLocation;
   private readonly paletteLocation: WebGLUniformLocation;
   private readonly paletteCountLocation: WebGLUniformLocation;
+  private readonly paletteModeLocation: WebGLUniformLocation;
   private readonly paletteData = new Float32Array(12);
   private count = 0;
   private disposed = false;
@@ -44,11 +54,14 @@ export class InstancedSegmentRenderer {
     this.vao = requireValue(gl.createVertexArray(), 'Unable to allocate segment vertex array');
     this.segmentBuffer = requireValue(gl.createBuffer(), 'Unable to allocate segment geometry buffer');
     this.styleBuffer = requireValue(gl.createBuffer(), 'Unable to allocate segment style buffer');
+    this.colorSeedBuffer = requireValue(gl.createBuffer(), 'Unable to allocate segment color seed buffer');
+    this.endRadiusBuffer = requireValue(gl.createBuffer(), 'Unable to allocate segment end radius buffer');
     this.worldSizeLocation = requireShaderUniform(gl, this.program, 'uWorldSize', 'instanced segment renderer');
     this.radiusScaleLocation = requireShaderUniform(gl, this.program, 'uRadiusScale', 'instanced segment renderer');
     this.opacityLocation = requireShaderUniform(gl, this.program, 'uOpacity', 'instanced segment renderer');
     this.paletteLocation = requireShaderUniform(gl, this.program, 'uPalette[0]', 'instanced segment renderer');
     this.paletteCountLocation = requireShaderUniform(gl, this.program, 'uPaletteCount', 'instanced segment renderer');
+    this.paletteModeLocation = requireShaderUniform(gl, this.program, 'uPaletteMode', 'instanced segment renderer');
     gl.bindVertexArray(this.vao);
     gl.bindBuffer(gl.ARRAY_BUFFER, this.segmentBuffer);
     gl.enableVertexAttribArray(0);
@@ -58,6 +71,14 @@ export class InstancedSegmentRenderer {
     gl.enableVertexAttribArray(1);
     gl.vertexAttribPointer(1, 2, gl.FLOAT, false, 0, 0);
     gl.vertexAttribDivisor(1, 1);
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.colorSeedBuffer);
+    gl.enableVertexAttribArray(2);
+    gl.vertexAttribPointer(2, 1, gl.FLOAT, false, 0, 0);
+    gl.vertexAttribDivisor(2, 1);
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.endRadiusBuffer);
+    gl.enableVertexAttribArray(3);
+    gl.vertexAttribPointer(3, 1, gl.FLOAT, false, 0, 0);
+    gl.vertexAttribDivisor(3, 1);
     gl.bindVertexArray(null);
   }
   update(batch: InstancedSegmentBatch): void {
@@ -68,6 +89,24 @@ export class InstancedSegmentRenderer {
     this.gl.bufferData(this.gl.ARRAY_BUFFER, batch.segments.subarray(0, batch.count * 4), this.gl.DYNAMIC_DRAW);
     this.gl.bindBuffer(this.gl.ARRAY_BUFFER, this.styleBuffer);
     this.gl.bufferData(this.gl.ARRAY_BUFFER, batch.styles.subarray(0, batch.count * 2), this.gl.DYNAMIC_DRAW);
+    this.gl.bindVertexArray(this.vao);
+    if (batch.colorSeeds) {
+      this.gl.enableVertexAttribArray(2);
+      this.gl.bindBuffer(this.gl.ARRAY_BUFFER, this.colorSeedBuffer);
+      this.gl.bufferData(this.gl.ARRAY_BUFFER, batch.colorSeeds.subarray(0, batch.count), this.gl.DYNAMIC_DRAW);
+    } else {
+      this.gl.disableVertexAttribArray(2);
+      this.gl.vertexAttrib1f(2, -1);
+    }
+    if (batch.endRadii) {
+      this.gl.enableVertexAttribArray(3);
+      this.gl.bindBuffer(this.gl.ARRAY_BUFFER, this.endRadiusBuffer);
+      this.gl.bufferData(this.gl.ARRAY_BUFFER, batch.endRadii.subarray(0, batch.count), this.gl.DYNAMIC_DRAW);
+    } else {
+      this.gl.disableVertexAttribArray(3);
+      this.gl.vertexAttrib1f(3, -1);
+    }
+    this.gl.bindVertexArray(null);
     this.gl.bindBuffer(this.gl.ARRAY_BUFFER, null);
   }
   render(destination: GpuParticleRenderDestination, options: InstancedSegmentRenderOptions): void {
@@ -89,6 +128,7 @@ export class InstancedSegmentRenderer {
     gl.uniform1f(this.opacityLocation, options.opacity ?? 1);
     gl.uniform3fv(this.paletteLocation, this.paletteData);
     gl.uniform1i(this.paletteCountLocation, options.palette.length);
+    gl.uniform1i(this.paletteModeLocation, options.paletteMode === 'indexed' ? 1 : 0);
     gl.drawArraysInstanced(gl.TRIANGLES, 0, 6, this.count);
     gl.bindVertexArray(null);
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
@@ -99,6 +139,8 @@ export class InstancedSegmentRenderer {
     this.disposed = true;
     this.gl.deleteBuffer(this.segmentBuffer);
     this.gl.deleteBuffer(this.styleBuffer);
+    this.gl.deleteBuffer(this.colorSeedBuffer);
+    this.gl.deleteBuffer(this.endRadiusBuffer);
     this.gl.deleteVertexArray(this.vao);
     this.gl.deleteProgram(this.program);
   }
@@ -126,6 +168,6 @@ function requireValue<T>(value: T | null, message: string): T {
   return value;
 }
 const VERTEX_SHADER = `#version 300 es
-precision highp float;layout(location=0)in vec4 aSegment;layout(location=1)in vec2 aStyle;uniform vec2 uWorldSize;uniform float uRadiusScale;out vec2 vLocal;flat out float vLength;flat out float vRadius;out float vIntensity;flat out float vSeed;void main(){const vec2 corners[6]=vec2[6](vec2(0,-1),vec2(1,-1),vec2(1,1),vec2(0,-1),vec2(1,1),vec2(0,1));vec2 corner=corners[gl_VertexID],start=aSegment.xy,end=aSegment.zw,axis=end-start;float segmentLength=length(axis),radius=max(.001,aStyle.x*uRadiusScale);vec2 direction=segmentLength>.0001?axis/segmentLength:vec2(1,0),normal=vec2(-direction.y,direction.x);float along=mix(-radius,segmentLength+radius,corner.x),across=corner.y*radius;vec2 world=start+direction*along+normal*across;gl_Position=vec4(world.x/uWorldSize.x*2.0-1.0,1.0-world.y/uWorldSize.y*2.0,0,1);vLocal=vec2(along,across);vLength=segmentLength;vRadius=radius;vIntensity=aStyle.y;vSeed=float(gl_InstanceID);}`;
+precision highp float;layout(location=0)in vec4 aSegment;layout(location=1)in vec2 aStyle;layout(location=2)in float aColorSeed;layout(location=3)in float aEndRadius;uniform vec2 uWorldSize;uniform float uRadiusScale;out vec2 vLocal;flat out float vLength;flat out float vStartRadius;flat out float vEndRadius;out float vIntensity;flat out float vSeed;void main(){const vec2 corners[6]=vec2[6](vec2(0,-1),vec2(1,-1),vec2(1,1),vec2(0,-1),vec2(1,1),vec2(0,1));vec2 corner=corners[gl_VertexID],start=aSegment.xy,end=aSegment.zw,axis=end-start;float segmentLength=length(axis),startRadius=max(.001,aStyle.x*uRadiusScale),endRadius=aEndRadius>=0.0?max(.001,aEndRadius*uRadiusScale):startRadius,boundRadius=max(startRadius,endRadius);vec2 direction=segmentLength>.0001?axis/segmentLength:vec2(1,0),normal=vec2(-direction.y,direction.x);float along=mix(-boundRadius,segmentLength+boundRadius,corner.x),across=corner.y*boundRadius;vec2 world=start+direction*along+normal*across;gl_Position=vec4(world.x/uWorldSize.x*2.0-1.0,1.0-world.y/uWorldSize.y*2.0,0,1);vLocal=vec2(along,across);vLength=segmentLength;vStartRadius=startRadius;vEndRadius=endRadius;vIntensity=aStyle.y;vSeed=aColorSeed>=0.0?aColorSeed:float(gl_InstanceID);}`;
 const FRAGMENT_SHADER = `#version 300 es
-precision highp float;in vec2 vLocal;flat in float vLength;flat in float vRadius;in float vIntensity;flat in float vSeed;uniform vec3 uPalette[4];uniform int uPaletteCount;uniform float uOpacity;out vec4 outColor;float hash(float n){return fract(sin(n*17.13)*43758.5453);}void main(){float nearest=clamp(vLocal.x,0.0,vLength),distanceToAxis=length(vec2(vLocal.x-nearest,vLocal.y));float aa=max(fwidth(distanceToAxis),.75),edge=1.0-smoothstep(vRadius-aa,vRadius,distanceToAxis);if(edge<=.001)discard;int index=int(floor(hash(vSeed)*float(max(1,uPaletteCount))))%max(1,uPaletteCount);vec3 color=uPalette[index];outColor=vec4(color*(.55+vIntensity*.55),edge*uOpacity*clamp(vIntensity,.15,1.5));}`;
+precision highp float;in vec2 vLocal;flat in float vLength;flat in float vStartRadius;flat in float vEndRadius;in float vIntensity;flat in float vSeed;uniform vec3 uPalette[4];uniform int uPaletteCount;uniform int uPaletteMode;uniform float uOpacity;out vec4 outColor;float hash(float n){return fract(sin(n*17.13)*43758.5453);}void main(){float nearest=clamp(vLocal.x,0.0,vLength),distanceToAxis=length(vec2(vLocal.x-nearest,vLocal.y)),radius=mix(vStartRadius,vEndRadius,vLength>.0001?nearest/vLength:.5);float aa=max(fwidth(distanceToAxis),.75),edge=1.0-smoothstep(radius-aa,radius,distanceToAxis);if(edge<=.001)discard;int count=max(1,uPaletteCount),directIndex=int(abs(vSeed)+.5)%count,hashedIndex=int(floor(hash(vSeed)*float(count)))%count,index=uPaletteMode==1?directIndex:hashedIndex;vec3 color=uPalette[index];outColor=vec4(color*(.55+vIntensity*.55),edge*uOpacity*clamp(vIntensity,.15,1.5));}`;

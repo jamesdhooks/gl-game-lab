@@ -16,21 +16,33 @@ const definition: ExperienceDefinition = {
 describe('normalizePreviewProfiles', () => {
   it('derives an auto profile from experience defaults when no entry exists', () => {
     const profile = normalizePreviewProfiles({}, [definition]).sample;
-    expect(profile?.settings).toEqual({ amount: 4, enabled: true });
+    expect(profile?.settings).toEqual({});
     expect(profile?.variation.intensity).toBe(0.25);
+    expect(profile?.generationMode).toBe('varied');
     expect(profile?.renderPolicy).toBe('auto');
   });
 
   it('sanitizes persisted settings, locks, policy, and fallback metadata', () => {
     const profile = normalizePreviewProfiles({ previews: { sample: {
       modeId: 'missing', styleId: 'blue', settings: { amount: 99, enabled: false, removed: 4 },
-      variation: { intensity: 2, lockedKeys: ['amount', 'removed'], seed: 7 }, renderPolicy: 'static',
+      variation: { intensity: 2, lockedKeys: ['amount', 'removed'], seed: 7 }, generationMode: 'exact', renderPolicy: 'static',
       image: { src: 'previews/sample.webp', revision: 'abcdef1234567890', width: 512, height: 512, profileHash: '1234abcd' },
     } } }, [definition]).sample;
-    expect(profile?.modeId).toBe('draw');
+    expect(profile?.modeId).toBeUndefined();
+    expect(profile?.styleId).toBeUndefined();
     expect(profile?.settings).toEqual({ amount: 10, enabled: false });
     expect(profile?.variation).toEqual({ intensity: 1, lockedKeys: ['amount'], seed: 7 });
+    expect(profile?.generationMode).toBe('exact');
     expect(profile?.renderPolicy).toBe('static');
     expect(profile?.image?.src).toBe('previews/sample.webp');
+  });
+
+  it('compacts copied legacy settings into sparse preview overrides', () => {
+    const profile = normalizePreviewProfiles({ previews: { sample: {
+      settings: { amount: 4, enabled: false },
+      variation: { intensity: 0.25, lockedKeys: [], seed: 7 },
+      generationMode: 'exact', renderPolicy: 'auto',
+    } } }, [definition]).sample;
+    expect(profile?.settings).toEqual({ enabled: false });
   });
 });

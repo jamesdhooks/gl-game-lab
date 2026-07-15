@@ -24,8 +24,8 @@ const numeric = [
   n('bounceSparkLength','Length','Spark Profile: Bounce',0,12,.01,.72), n('bounceSparkLengthVariability','Length Variability','Spark Profile: Bounce',0,2,.01,.52),
   n('bounceSparkLifespan','Lifespan','Spark Profile: Bounce',0,4,.01,.58), n('bounceSparkLifespanVariability','Lifespan Variability','Spark Profile: Bounce',0,1,.01,.44),
   n('bounceSparkSpeedScale','Speed Scale','Spark Profile: Bounce',0,3,.01,.72), n('bounceSparkSpeedVariability','Speed Variability','Spark Profile: Bounce',0,2,.01,0),
-  n('trailFade','Trail Persistence','Rendering',.72,.992,.004,.952), n('trailContinuity','Trail Continuity','Rendering',0,2,.01,.86),
-  n('bloomStrength','Bloom Strength','Rendering',.35,7.2,.05,3.85), n('heatRadius','Heat Radius','Rendering',0,130,1,72),
+  render(n('trailFade','Trail Persistence','Rendering',.72,.992,.004,.952), ['ultra']),
+  render(n('bloomStrength','Bloom Strength','Rendering',.35,7.2,.05,3.85), ['ultra']),
 ] as const;
 
 export const SPARKS_SETTINGS: readonly ExperienceSetting[] = Object.freeze([
@@ -37,7 +37,6 @@ export const SPARKS_SETTINGS: readonly ExperienceSetting[] = Object.freeze([
 
 const modernDefaults = Object.fromEntries(SPARKS_SETTINGS.map((setting) => [setting.key, setting.default]));
 export const SPARKS_DEFAULTS: SparksConfig = Object.freeze({
-  timeScale: 1,
   ...modernDefaults,
   coreFlashRate: 3.2, coreFlashSize: 1, coreFlashVariability: .56, coreIntensity: 3.65, coreAfterglow: .38,
   particleSize: 3.6, sparkLength: 1, sparkSizeVariability: .56, sparkLifespan: 1, sparkLifespanVariability: .34,
@@ -46,9 +45,6 @@ export const SPARKS_DEFAULTS: SparksConfig = Object.freeze({
 
 export function createSparksConfig(values: Readonly<Record<string, ExperienceSettingValue>> = {}): SparksConfig {
   const result: Record<string, ExperienceSettingValue> = { ...SPARKS_DEFAULTS };
-  const timeScale = values.timeScale ?? SPARKS_DEFAULTS.timeScale;
-  if (typeof timeScale !== 'number' || !Number.isFinite(timeScale) || timeScale < 0 || timeScale > 2) throw new Error('Sparks timeScale is outside its supported range');
-  result.timeScale = timeScale;
   for (const setting of SPARKS_SETTINGS) {
     const value = values[setting.key] ?? setting.default;
     if (setting.type === 'number') {
@@ -64,3 +60,4 @@ export function sparksString(config: SparksConfig, key: string): string { const 
 
 function n(key:string,label:string,section:string,min:number,max:number,step:number,defaultValue:number,visibleModes?:readonly string[]) { return Object.freeze({key,label,section,type:'number' as const,min,max,step,default:defaultValue,...(visibleModes?{visibleModes}: {})}); }
 function select(key:string,label:string,section:string,defaultValue:string,options:readonly (readonly [string,string])[]) { return Object.freeze({key,label,section,type:'select' as const,default:defaultValue,options:Object.freeze(options.map(([optionLabel,value])=>Object.freeze({label:optionLabel,value})))}); }
+function render(setting: ExperienceSetting, visibleRenderStyles: readonly string[]): ExperienceSetting { return Object.freeze({ ...setting, visibleRenderStyles }); }

@@ -92,6 +92,32 @@ describe('DenseCircleParticleWorld2D', () => {
     expect(stats.pairTests).toBeGreaterThanOrEqual(stats.collisionHits);
   });
 
+  it('supports a reduced particle contact radius without changing solid bounds', () => {
+    const world = new DenseCircleParticleWorld2D(2, {
+      maxParticles: 2,
+      gravity: 0,
+      radius: 10,
+      radiusVariation: 0,
+      solverIterations: 8,
+      substeps: 1,
+      contactRadiusScale: 0.4,
+      contactFriction: 0,
+      airDrag: 1,
+      solverDamping: 1,
+    });
+    world.setBounds(100, 100);
+    world.addCircle(48, 50, { radiusNoise: 0 });
+    world.addCircle(52, 50, { radiusNoise: 0 });
+
+    world.step(1 / 60);
+
+    const separation = Math.abs((world.positions[2] ?? 0) - (world.positions[0] ?? 0));
+    expect(separation).toBeGreaterThan(7.5);
+    expect(separation).toBeLessThan(9);
+    expect(world.positions[0]).toBeGreaterThanOrEqual(10);
+    expect(world.positions[2]).toBeLessThanOrEqual(90);
+  });
+
   it('uses frozen depth-weighted collision masses under gravity', () => {
     const world = new DenseCircleParticleWorld2D(2, {
       maxParticles: 2,
@@ -112,5 +138,57 @@ describe('DenseCircleParticleWorld2D', () => {
     const upperDisplacement = 40 - (world.positions[1] ?? 40);
     const lowerDisplacement = (world.positions[3] ?? 50) - 50;
     expect(upperDisplacement).toBeGreaterThan(lowerDisplacement);
+  });
+
+  it('uses incoming velocity for elastic impacts against solid boundaries', () => {
+    const world = new DenseCircleParticleWorld2D(1, {
+      maxParticles: 1,
+      gravity: 0,
+      radius: 10,
+      radiusVariation: 0,
+      solverIterations: 1,
+      substeps: 1,
+      wallBounce: true,
+      boundaryRestitution: 0.75,
+      particleRestitution: 0.75,
+      velocityContactResponse: true,
+      impactBounceThreshold: 0,
+      contactFriction: 0,
+      airDrag: 1,
+      solverDamping: 1,
+    });
+    world.setBounds(100, 100);
+    world.addCircle(88, 50, { radiusNoise: 0, velocityX: 200 });
+
+    world.step(1 / 60);
+
+    expect(world.positions[0]).toBe(90);
+    expect(world.velocities[0]).toBeCloseTo(-150, 4);
+  });
+
+  it('applies equal-and-opposite elastic impulses between moving circles', () => {
+    const world = new DenseCircleParticleWorld2D(2, {
+      maxParticles: 2,
+      gravity: 0,
+      radius: 10,
+      radiusVariation: 0,
+      solverIterations: 2,
+      substeps: 1,
+      particleRestitution: 1,
+      velocityContactResponse: true,
+      impactBounceThreshold: 0,
+      contactFriction: 0,
+      airDrag: 1,
+      solverDamping: 1,
+    });
+    world.setBounds(200, 100);
+    world.addCircle(90, 50, { radiusNoise: 0, velocityX: 120 });
+    world.addCircle(110, 50, { radiusNoise: 0, velocityX: -120 });
+
+    world.step(1 / 10);
+
+    expect(world.velocities[0]).toBeCloseTo(-120, 4);
+    expect(world.velocities[2]).toBeCloseTo(120, 4);
+    expect((world.velocities[0] ?? 0) + (world.velocities[2] ?? 0)).toBeCloseTo(0, 5);
   });
 });

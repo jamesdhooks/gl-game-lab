@@ -2,6 +2,7 @@ import type { ExperienceDefinition } from '@hooksjam/gl-game-lab-engine';
 import { createWaterTankConfig, WATER_TANK_DEFAULTS, WATER_TANK_SETTINGS } from './config.js';
 import { createWaterTankPlugin } from './WaterTankPlugin.js';
 import { WATER_TANK_STYLE_MANIFEST } from './styles.js';
+import { describeSimulationSettings } from '../settingDescriptions.js';
 export const waterTankDefinition: ExperienceDefinition = {
   id: 'water-tank',
   kind: 'simulation',
@@ -49,7 +50,7 @@ export const waterTankDefinition: ExperienceDefinition = {
       description: 'Tap for circular pegs or drag for pill-shaped obstacles.'
     }
   ],
-  settings: WATER_TANK_SETTINGS,
+  settings: describeSimulationSettings('water-tank', WATER_TANK_SETTINGS),
   styleManifest: WATER_TANK_STYLE_MANIFEST,
   attributions: [
     {

@@ -2,6 +2,7 @@ import type { ExperienceDefinition } from '@hooksjam/gl-game-lab-engine';
 import { createSoftBodyBlobConfig, SOFT_BODY_BLOB_DEFAULTS, SOFT_BODY_BLOB_SETTINGS } from './config.js';
 import { createSoftBodyBlobPlugin } from './SoftBodyBlobPlugin.js';
 import { SOFT_BODY_BLOB_STYLE_MANIFEST } from './styles.js';
+import { describeSimulationSettings } from '../settingDescriptions.js';
 export const softBodyBlobDefinition: ExperienceDefinition = {
   id: 'soft-body-blob',
   kind: 'simulation',
@@ -49,7 +50,7 @@ export const softBodyBlobDefinition: ExperienceDefinition = {
       description: 'Drag blobs around.'
     }
   ],
-  settings: SOFT_BODY_BLOB_SETTINGS,
+  settings: describeSimulationSettings('soft-body-blob', SOFT_BODY_BLOB_SETTINGS),
   styleManifest: SOFT_BODY_BLOB_STYLE_MANIFEST,
   tutorialPages: [
     {

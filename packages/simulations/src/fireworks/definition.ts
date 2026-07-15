@@ -2,6 +2,7 @@ import type { ExperienceDefinition } from '@hooksjam/gl-game-lab-engine';
 import { createFireworksConfig, FIREWORKS_DEFAULTS, FIREWORKS_SETTINGS } from './config.js';
 import { createFireworksPlugin } from './FireworksPlugin.js';
 import { FIREWORKS_STYLE_MANIFEST } from './styles.js';
+import { describeSimulationSettings } from '../settingDescriptions.js';
 
 export const fireworksDefinition: ExperienceDefinition = {
   id: 'fireworks', kind: 'simulation', name: 'Fireworks',
@@ -13,7 +14,7 @@ export const fireworksDefinition: ExperienceDefinition = {
     { id: 'single', label: 'Single', icon: '^', description: 'Tap to launch one firework.' },
     { id: 'stream', label: 'Stream', icon: '*', description: 'Hold or drag to keep launching fireworks.' },
   ],
-  settings: FIREWORKS_SETTINGS,
+  settings: describeSimulationSettings('fireworks', FIREWORKS_SETTINGS),
   styleManifest: FIREWORKS_STYLE_MANIFEST,
   tutorialPages: [
     { icon: '^', title: 'Single Mode', body: 'Single mode treats each press as exactly one targeted shell.' },

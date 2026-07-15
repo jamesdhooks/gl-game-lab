@@ -87,7 +87,7 @@ export function createLavaLampPlugin(initial: LavaLampConfig = LAVA_LAMP_DEFAULT
         id: 'gl-game-lab.simulations.lava-lamp.update',
         stage: 'update',
         run: ({ time }) => {
-          const nextWidth = Math.max(1, renderer.viewport.width), nextHeight = Math.max(1, renderer.viewport.height), frameDt = Math.min(1 / 30, Math.max(1 / 120, time.deltaSeconds || 1 / 60)), dt = frameDt * lavaNumber(config, 'timeScale');
+          const nextWidth = Math.max(1, renderer.viewport.width), nextHeight = Math.max(1, renderer.viewport.height), dt = Math.min(1 / 30, Math.max(0, time.deltaSeconds));
           elapsed += dt;
           if (pendingReset || width !== nextWidth || height !== nextHeight) {
             width = nextWidth;
@@ -97,7 +97,7 @@ export function createLavaLampPlugin(initial: LavaLampConfig = LAVA_LAMP_DEFAULT
           }
           for (const event of input.snapshot.events)
             if (event.kind === 'pointer')
-              routePointer(event, frameDt);
+              routePointer(event, dt);
           updateHeldWax(dt);
           if ((launch.profile === 'preview' || launch.profile === 'demo') && elapsed - lastAutoAdd > (launch.profile === 'preview' ? 0.68 : 1.1)) {
             lastAutoAdd = elapsed;
@@ -160,12 +160,7 @@ export function createLavaLampPlugin(initial: LavaLampConfig = LAVA_LAMP_DEFAULT
       });
       function reset() {
         heldWax.clear();
-        const preview = launch.profile === 'preview', base = tuning(), next = {
-          ...base,
-          maxParticles: preview ? Math.max(384, base.maxParticles) : base.maxParticles,
-          blobRadius: preview ? Math.min(18, base.blobRadius) : base.blobRadius
-        };
-        model.reset(width, height, preview ? Math.max(112, lavaNumber(config, 'initialBlobs')) : lavaNumber(config, 'initialBlobs'), next, randomState);
+        model.reset(width, height, lavaNumber(config, 'initialBlobs'), tuning(), randomState);
         lastAutoAdd = 0;
         elapsed = 0;
       }

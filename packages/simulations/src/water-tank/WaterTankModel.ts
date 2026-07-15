@@ -6,6 +6,7 @@ export interface WaterTankTuning {
   readonly viscosity: number;
   readonly viscositySigma: number;
   readonly viscosityBeta: number;
+  readonly fluidity: number;
   readonly supportRadiusScale: number;
   readonly restDensity: number;
   readonly stiffness: number;
@@ -46,6 +47,7 @@ export class WaterTankModel {
     this.configure(tuning);
   }
   configure(tuning: WaterTankTuning) {
+    const fluidity = Math.max(0, Math.min(1, tuning.fluidity));
     this.world.configure({
       maxParticles: Math.max(1, Math.min(8192, Math.floor(tuning.maxParticles))),
       radius: tuning.particleRadius,
@@ -53,8 +55,10 @@ export class WaterTankModel {
       gravity: tuning.gravity,
       solverIterations: 2,
       substeps: Math.max(1, Math.min(5, Math.floor(tuning.substeps))),
-      collisionSoftness: Math.min(1.5, 0.68 + tuning.nearStiffness * 0.18),
-      contactFriction: Math.min(2, tuning.viscosity * 0.12),
+      collisionSoftness: 1.05 - fluidity * 0.7,
+      contactRadiusScale: 1 - fluidity * 0.65,
+      maxPairPush: 0.75 - fluidity * 0.35,
+      contactFriction: Math.min(2, tuning.viscosity * 0.12 * (1 - fluidity * 0.65)),
       boundaryRestitution: tuning.collisionBounce,
       wallBounce: tuning.collisionBounce > 0,
       solverDamping: 0.992,
@@ -127,13 +131,8 @@ export class WaterTankModel {
       radius
     });
   }
-  seedObstacles(width: number, height: number, ramps: number, pegs: number, radius: number) {
-    for (let i = 0; i < pegs; i++)
-      this.addCircle(width * (0.28 + (i % 3) * 0.22), height * (0.36 + Math.floor(i / 3) * 0.18), radius);
-    for (let i = 0; i < ramps; i++) {
-      const left = i % 2 === 0, y = height * (0.3 + i * 0.12);
-      this.addSegment(width * (left ? 0.14 : 0.86), y, width * (left ? 0.48 : 0.52), y + height * 0.08, radius);
-    }
+  seedObstacles(width: number, height: number, ramps: number, pegs: number, radius: number, seed: number) {
+    this.obstacles.push(...createWaterTankObstacleLayout(width, height, ramps, pegs, radius, seed));
   }
   step(dt: number, width: number, height: number, tuning: WaterTankTuning) {
     this.world.setBounds(width, height);
@@ -141,6 +140,7 @@ export class WaterTankModel {
     this.world.step(dt);
     this.relax(dt, width, height, tuning);
     this.solveObstacles(tuning.collisionBounce);
+    this.projectSolidBounds(width, height, tuning.collisionBounce);
     for (let i = 0; i < this.world.count; i++) {
       const o = i * 2, speed = Math.hypot(this.world.velocities[o] ?? 0, this.world.velocities[o + 1] ?? 0);
       if (speed > tuning.maxFluidSpeed) {
@@ -191,6 +191,8 @@ export class WaterTankModel {
   }
   private relax(dt: number, width: number, height: number, tuning: WaterTankTuning) {
     const count = this.world.count, support = tuning.particleRadius * 2 * Math.max(1, tuning.supportRadiusScale);
+    const fluidity = Math.max(0, Math.min(1, tuning.fluidity));
+    const pressureRetention = 1 - fluidity * 0.4;
     this.buildGrid(width, height, support);
     this.density.fill(0, 0, count);
     this.nearDensity.fill(0, 0, count);
@@ -217,9 +219,11 @@ export class WaterTankModel {
       const pressureI = tuning.stiffness * ((this.density[i] ?? 0) - tuning.restDensity);
       const pressureJ = tuning.stiffness * ((this.density[j] ?? 0) - tuning.restDensity);
       const nearDensity = (this.nearDensity[i] ?? 0) + (this.nearDensity[j] ?? 0);
-      const near = tuning.nearStiffness * nearDensity * 0.5;
-      const pressure = Math.max(-0.02, (pressureI + pressureJ) * 0.5) * q;
-      const displacement = (pressure + near * q * q) * dt * dt * 55;
+      const pressure = Math.max(-0.04, Math.min(0.04, (pressureI + pressureJ) * 0.5)) * q;
+      const nearPressure = Math.min(0.05, tuning.nearStiffness * nearDensity * 0.5 * q * q);
+      const frameScale = Math.min(2, dt * 60);
+      const maximumDisplacement = tuning.particleRadius * 0.12 * frameScale;
+      const displacement = Math.max(-maximumDisplacement, Math.min(maximumDisplacement, (pressure * 4 + nearPressure * 1.5) * frameScale * pressureRetention));
       this.world.positions[io] = (this.world.positions[io] ?? 0) - nx * displacement * 0.5;
       this.world.positions[io + 1] = (this.world.positions[io + 1] ?? 0) - ny * displacement * 0.5;
       this.world.positions[jo] = (this.world.positions[jo] ?? 0) + nx * displacement * 0.5;
@@ -233,7 +237,12 @@ export class WaterTankModel {
       this.world.velocities[io + 1] = (this.world.velocities[io + 1] ?? 0) + ny * visc * 0.5;
       this.world.velocities[jo] = (this.world.velocities[jo] ?? 0) - nx * visc * 0.5;
       this.world.velocities[jo + 1] = (this.world.velocities[jo + 1] ?? 0) - ny * visc * 0.5;
-      const settle = tuning.surfaceTension * 0.000004 * q * dt;
+      const pressureVelocity = displacement / Math.max(0.001, dt) * 0.08;
+      this.world.velocities[io] = (this.world.velocities[io] ?? 0) - nx * pressureVelocity * 0.5;
+      this.world.velocities[io + 1] = (this.world.velocities[io + 1] ?? 0) - ny * pressureVelocity * 0.5;
+      this.world.velocities[jo] = (this.world.velocities[jo] ?? 0) + nx * pressureVelocity * 0.5;
+      this.world.velocities[jo + 1] = (this.world.velocities[jo + 1] ?? 0) + ny * pressureVelocity * 0.5;
+      const settle = tuning.surfaceTension * 0.00008 * q * dt;
       this.world.velocities[io] = (this.world.velocities[io] ?? 0) + nx * settle;
       this.world.velocities[io + 1] = (this.world.velocities[io + 1] ?? 0) + ny * settle;
       this.world.velocities[jo] = (this.world.velocities[jo] ?? 0) - nx * settle;
@@ -295,6 +304,128 @@ export class WaterTankModel {
         }
       }
   }
+  private projectSolidBounds(width: number, height: number, bounce: number) {
+    for (let i = 0; i < this.world.count; i++) {
+      const o = i * 2;
+      const radius = this.world.radii[i] ?? 2;
+      const left = radius, right = width - radius, floor = height - radius;
+      if ((this.world.positions[o] ?? 0) < left) {
+        this.world.positions[o] = left;
+        if ((this.world.velocities[o] ?? 0) < 0) this.world.velocities[o] = 0;
+      } else if ((this.world.positions[o] ?? 0) > right) {
+        this.world.positions[o] = right;
+        if ((this.world.velocities[o] ?? 0) > 0) this.world.velocities[o] = 0;
+      }
+      if ((this.world.positions[o + 1] ?? 0) <= floor) continue;
+      this.world.positions[o + 1] = floor;
+      const velocityY = this.world.velocities[o + 1] ?? 0;
+      if (velocityY > 0) this.world.velocities[o + 1] = velocityY > 150 ? -velocityY * bounce : 0;
+    }
+  }
+}
+
+export function createWaterTankObstacleLayout(
+  width: number,
+  height: number,
+  ramps: number,
+  pegs: number,
+  radius: number,
+  seed: number,
+): readonly WaterObstacle[] {
+  const rampCount = Math.max(0, Math.floor(ramps));
+  const pegCount = Math.max(0, Math.floor(pegs));
+  const random = seededRandom(seed);
+  const layout: WaterObstacle[] = [];
+  const safeRadius = Math.max(1, radius);
+  const clearance = Math.max(4, safeRadius * 0.3);
+  const margin = safeRadius + clearance;
+  const minDimension = Math.max(1, Math.min(width, height));
+  const attemptLimit = 240;
+
+  for (let index = 0; index < rampCount; index++) {
+    for (let attempt = 0; attempt < attemptLimit; attempt++) {
+      const length = minDimension * (0.18 + random() * 0.16);
+      const angle = (random() - 0.5) * 1.1;
+      const halfX = Math.abs(Math.cos(angle) * length * 0.5);
+      const halfY = Math.abs(Math.sin(angle) * length * 0.5);
+      const minX = margin + halfX, maxX = width - margin - halfX;
+      const minY = height * 0.2 + margin + halfY, maxY = height * 0.74 - margin - halfY;
+      if (maxX <= minX || maxY <= minY) continue;
+      const cx = minX + random() * (maxX - minX), cy = minY + random() * (maxY - minY);
+      const dx = Math.cos(angle) * length * 0.5, dy = Math.sin(angle) * length * 0.5;
+      const candidate: WaterObstacle = { kind: 'segment', ax: cx - dx, ay: cy - dy, bx: cx + dx, by: cy + dy, radius: safeRadius };
+      if (layout.every(existing => !waterTankObstaclesOverlap(existing, candidate, clearance))) {
+        layout.push(candidate);
+        break;
+      }
+    }
+  }
+
+  for (let index = 0; index < pegCount; index++) {
+    for (let attempt = 0; attempt < attemptLimit; attempt++) {
+      const minX = margin, maxX = width - margin;
+      const minY = height * 0.2 + margin, maxY = height * 0.74 - margin;
+      if (maxX <= minX || maxY <= minY) continue;
+      const x = minX + random() * (maxX - minX), y = minY + random() * (maxY - minY);
+      const candidate: WaterObstacle = { kind: 'circle', ax: x, ay: y, bx: x, by: y, radius: safeRadius };
+      if (layout.every(existing => !waterTankObstaclesOverlap(existing, candidate, clearance))) {
+        layout.push(candidate);
+        break;
+      }
+    }
+  }
+  return layout;
+}
+
+export function waterTankObstacleLayoutSeed(seed: number, generation: number): number {
+  let value = (seed ^ Math.imul(Math.max(0, Math.floor(generation)) + 1, 0x9e3779b1)) >>> 0;
+  value ^= value >>> 16;
+  value = Math.imul(value, 0x7feb352d) >>> 0;
+  value ^= value >>> 15;
+  return value >>> 0;
+}
+
+export function waterTankObstaclesOverlap(a: WaterObstacle, b: WaterObstacle, clearance = 0): boolean {
+  const minimumDistance = a.radius + b.radius + Math.max(0, clearance);
+  if (a.kind === 'circle' && b.kind === 'circle') return Math.hypot(a.ax - b.ax, a.ay - b.ay) < minimumDistance;
+  if (a.kind === 'circle') return pointSegmentDistance(a.ax, a.ay, b) < minimumDistance;
+  if (b.kind === 'circle') return pointSegmentDistance(b.ax, b.ay, a) < minimumDistance;
+  if (segmentsIntersect(a, b)) return true;
+  return Math.min(
+    pointSegmentDistance(a.ax, a.ay, b),
+    pointSegmentDistance(a.bx, a.by, b),
+    pointSegmentDistance(b.ax, b.ay, a),
+    pointSegmentDistance(b.bx, b.by, a),
+  ) < minimumDistance;
+}
+
+function pointSegmentDistance(x: number, y: number, segment: WaterObstacle): number {
+  const dx = segment.bx - segment.ax, dy = segment.by - segment.ay;
+  const lengthSquared = dx * dx + dy * dy;
+  if (lengthSquared <= 0.0001) return Math.hypot(x - segment.ax, y - segment.ay);
+  const t = Math.max(0, Math.min(1, ((x - segment.ax) * dx + (y - segment.ay) * dy) / lengthSquared));
+  return Math.hypot(x - (segment.ax + dx * t), y - (segment.ay + dy * t));
+}
+
+function segmentsIntersect(a: WaterObstacle, b: WaterObstacle): boolean {
+  const orientation = (ax: number, ay: number, bx: number, by: number, cx: number, cy: number): number =>
+    (bx - ax) * (cy - ay) - (by - ay) * (cx - ax);
+  const a1 = orientation(a.ax, a.ay, a.bx, a.by, b.ax, b.ay);
+  const a2 = orientation(a.ax, a.ay, a.bx, a.by, b.bx, b.by);
+  const b1 = orientation(b.ax, b.ay, b.bx, b.by, a.ax, a.ay);
+  const b2 = orientation(b.ax, b.ay, b.bx, b.by, a.bx, a.by);
+  return ((a1 > 0 && a2 < 0) || (a1 < 0 && a2 > 0)) && ((b1 > 0 && b2 < 0) || (b1 < 0 && b2 > 0));
+}
+
+function seededRandom(seed: number): () => number {
+  let state = seed >>> 0 || 0x6d2b79f5;
+  return () => {
+    state = (state + 0x6d2b79f5) >>> 0;
+    let value = state;
+    value = Math.imul(value ^ value >>> 15, value | 1);
+    value ^= value + Math.imul(value ^ value >>> 7, value | 61);
+    return ((value ^ value >>> 14) >>> 0) / 4_294_967_296;
+  };
 }
 function closestPoint(x: number, y: number, line: WaterObstacle) {
   const dx = line.bx - line.ax, dy = line.by - line.ay, length = dx * dx + dy * dy, t = length <= 0.001 ? 0 : Math.max(0, Math.min(1, ((x - line.ax) * dx + (y - line.ay) * dy) / length));

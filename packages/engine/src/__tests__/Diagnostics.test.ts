@@ -49,4 +49,13 @@ describe('EngineDiagnostics', () => {
     expect(diagnostics.evaluate('desktop', { minimumSamples: 3 })).toMatchObject({ passed: true, p95FrameMs: 8 });
     expect(diagnostics.evaluate('desktop', { minimumSamples: 3, p95FrameMs: 4 })).toMatchObject({ passed: false });
   });
+
+  it('reports a stable average FPS for non-divisor frame caps', () => {
+    const diagnostics = new EngineDiagnostics(() => 0);
+    for (const delta of [1 / 30, 1 / 60, 1 / 60]) {
+      diagnostics.beginFrame(delta);
+      diagnostics.endFrame(EMPTY_ASSETS);
+    }
+    expect(diagnostics.snapshot()?.fps).toBeCloseTo(45, 5);
+  });
 });

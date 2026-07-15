@@ -14,6 +14,7 @@ export interface ParticlePointBatch {
   readonly blend?: BlendMode;
   readonly opacity?: number;
   readonly paletteMode?: 'hashed' | 'indexed';
+  readonly shading?: 'lit' | 'flat';
 }
 
 export interface ParticlePointDrawPlan {
@@ -71,6 +72,7 @@ export class ParticlePointRenderer {
   private readonly paletteLocation: WebGLUniformLocation;
   private readonly paletteCountLocation: WebGLUniformLocation;
   private readonly paletteModeLocation: WebGLUniformLocation;
+  private readonly shadingLocation: WebGLUniformLocation;
   private readonly paletteData = new Float32Array(MAX_PARTICLE_PALETTE_COLORS * 4);
   private disposed = false;
 
@@ -88,6 +90,7 @@ export class ParticlePointRenderer {
     this.paletteLocation = requireShaderUniform(this.gl, this.program, 'u_palette[0]', 'particle point renderer');
     this.paletteCountLocation = requireShaderUniform(this.gl, this.program, 'u_paletteCount', 'particle point renderer');
     this.paletteModeLocation = requireShaderUniform(this.gl, this.program, 'u_paletteMode', 'particle point renderer');
+    this.shadingLocation = requireShaderUniform(this.gl, this.program, 'u_shadingMode', 'particle point renderer');
     this.configureGeometry();
   }
 
@@ -147,6 +150,7 @@ export class ParticlePointRenderer {
     gl.uniform4fv(this.paletteLocation, this.paletteData);
     gl.uniform1i(this.paletteCountLocation, batch.palette.length);
     gl.uniform1i(this.paletteModeLocation, batch.paletteMode === 'indexed' ? 1 : 0);
+    gl.uniform1i(this.shadingLocation, batch.shading === 'flat' ? 1 : 0);
     gl.uniform1f(this.opacityLocation, batch.opacity ?? 1);
     configureBlend(gl, batch.blend ?? 'alpha');
     gl.drawArrays(gl.POINTS, 0, batch.count);
@@ -173,6 +177,9 @@ function validateBatch(batch: ParticlePointBatch): void {
   }
   if (batch.opacity !== undefined && (!Number.isFinite(batch.opacity) || batch.opacity < 0 || batch.opacity > 1)) {
     throw new Error('Particle opacity must be between zero and one');
+  }
+  if (batch.shading !== undefined && batch.shading !== 'lit' && batch.shading !== 'flat') {
+    throw new Error('Particle shading must be lit or flat');
   }
 }
 
@@ -214,6 +221,7 @@ const int MAX_PALETTE = ${MAX_PARTICLE_PALETTE_COLORS};
 uniform vec4 u_palette[MAX_PALETTE];
 uniform int u_paletteCount;
 uniform int u_paletteMode;
+uniform int u_shadingMode;
 uniform float u_opacity;
 flat in float v_colorSeed;
 out vec4 outColor;
@@ -232,9 +240,13 @@ void main() {
   int paletteIndex = u_paletteMode == 1 ? directIndex : hashedIndex;
   vec4 color = u_palette[paletteIndex];
   float edge = smoothstep(1.0, 0.86, distance2);
-  float z = sqrt(max(0.0, 1.0 - distance2 * 0.45));
-  vec3 normal = normalize(vec3(centered * 0.65, z));
-  float light = 0.38 + 0.62 * max(0.0, dot(normal, normalize(vec3(-0.35, -0.55, 0.9))));
-  vec3 rim = vec3(0.18, 0.24, 0.35) * (1.0 - z) * 0.4;
-  outColor = vec4(color.rgb * light + rim, color.a * edge * u_opacity);
+  vec3 shaded = color.rgb;
+  if (u_shadingMode == 0) {
+    float z = sqrt(max(0.0, 1.0 - distance2 * 0.45));
+    vec3 normal = normalize(vec3(centered * 0.65, z));
+    float light = 0.38 + 0.62 * max(0.0, dot(normal, normalize(vec3(-0.35, -0.55, 0.9))));
+    vec3 rim = vec3(0.18, 0.24, 0.35) * (1.0 - z) * 0.4;
+    shaded = color.rgb * light + rim;
+  }
+  outColor = vec4(shaded, color.a * edge * u_opacity);
 }`;

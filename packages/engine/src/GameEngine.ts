@@ -70,6 +70,14 @@ export class GameEngine {
     return this.kernel.state;
   }
 
+  get timeScale(): number {
+    return this.runner.clock.timeScale;
+  }
+
+  setTimeScale(scale: number): void {
+    this.runner.clock.setTimeScale(scale);
+  }
+
   async initialize(): Promise<void> {
     await this.kernel.initialize();
   }

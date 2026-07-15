@@ -2,6 +2,7 @@ import type { ExperienceDefinition } from '@hooksjam/gl-game-lab-engine';
 import { createOrbitalShrapnelConfig, ORBITAL_SHRAPNEL_DEFAULTS, ORBITAL_SHRAPNEL_SETTINGS } from './config.js';
 import { createOrbitalShrapnelPlugin } from './OrbitalShrapnelPlugin.js';
 import { ORBITAL_SHRAPNEL_STYLE_MANIFEST } from './styles.js';
+import { describeSimulationSettings } from '../settingDescriptions.js';
 export const orbitalShrapnelDefinition: ExperienceDefinition = {
   id: 'orbital-shrapnel',
   kind: 'simulation',
@@ -55,7 +56,7 @@ export const orbitalShrapnelDefinition: ExperienceDefinition = {
       description: 'Drag and release to launch an asteroid.'
     }
   ],
-  settings: ORBITAL_SHRAPNEL_SETTINGS,
+  settings: describeSimulationSettings('orbital-shrapnel', ORBITAL_SHRAPNEL_SETTINGS),
   styleManifest: ORBITAL_SHRAPNEL_STYLE_MANIFEST,
   tutorialPages: [
     {

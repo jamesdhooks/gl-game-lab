@@ -1,4 +1,5 @@
 import type { ExperienceSetting, ExperienceSettingValue } from '@hooksjam/gl-game-lab-engine';
+import { METABALL_SPLAT_DENSITY_MAX } from '../MetaballSurfaceSettings.js';
 export type SoftBodyBlobConfig = Readonly<Record<string, ExperienceSettingValue>>;
 const rendering = 'Rendering', physics = 'Physics';
 export const SOFT_BODY_BLOB_SETTINGS: readonly ExperienceSetting[] = Object.freeze([
@@ -36,25 +37,27 @@ export const SOFT_BODY_BLOB_SETTINGS: readonly ExperienceSetting[] = Object.free
   n('surfaceTension', 'Surface Tension', physics, 0, 1, 0.01, 0.28),
   n('plasticFlow', 'Plastic Flow', physics, 0, 1, 0.01, 0.18),
   n('boundaryElasticity', 'Boundary Elasticity', physics, 0, 10, 0.01, 0.8),
+  n('shapeRigidity', 'Shape Rigidity', physics, 0, 20, 0.1, 1),
   n('membraneDamping', 'Membrane Damping', physics, 0, 1, 0.01, 0.28),
   n('areaPressure', 'Area Pressure', physics, 0, 2, 0.01, 1),
-  n('skinSmoothing', 'Skin Smoothing', rendering, 0, 0.85, 0.01, 0.46),
-  n('liquidFieldScale', 'Liquid Resolution', rendering, 0.35, 1.5, 0.01, 0.82),
-  n('liquidParticleRadius', 'Liquid Radius', rendering, 0.55, 7.5, 0.01, 1.35),
-  n('liquidFillDensity', 'Filler Density', rendering, 0, 3, 0.01, 1.15),
-  n('liquidSplatDensity', 'Liquid Density', rendering, 0.45, 2.5, 0.01, 1.2),
-  n('liquidSurfaceThreshold', 'Surface Threshold', rendering, 0.04, 0.42, 0.01, 0.17),
-  n('liquidEdgeTightness', 'Edge Tightness', rendering, 0, 1, 0.01, 0.72),
-  n('liquidEdgeSoftness', 'Edge Softness', rendering, 0, 1, 0.01, 0.54),
-  n('liquidRefraction', 'Refraction', rendering, 0, 1.5, 0.01, 0.64),
-  n('liquidGloss', 'Specular Gloss', rendering, 0, 1.5, 0.01, 0.72),
-  n('liquidRimLighting', 'Rim Lighting', rendering, 0, 2.5, 0.01, 0.82),
-  n('liquidFoamStrength', 'Sparkle Foam', rendering, 0, 3, 0.01, 0.38),
-  n('liquidThermalStrength', 'Palette Flow', rendering, 0, 1, 0.01, 0.48),
-  n('liquidBloomStrength', 'Bloom', rendering, 0, 3, 0.01, 0.3),
-  n('liquidHeatShimmer', 'Heat Shimmer', rendering, 0, 2, 0.01, 0.18),
-  n('liquidDepthDiffusion', 'Depth Diffusion', rendering, 0, 1, 0.01, 0.24),
-  n('opacity', 'Opacity', rendering, 0.2, 1, 0.01, 0.86),
+  render(n('skinSmoothing', 'Skin Smoothing', rendering, 0, 0.85, 0.01, 0.46), ['enhanced']),
+  render(n('liquidFieldScale', 'Liquid Resolution', rendering, 0.35, 1.5, 0.01, 0.82), ['ultra']),
+  render(n('liquidParticleRadius', 'Liquid Radius', rendering, 0.55, 7.5, 0.01, 1.35), ['ultra']),
+  render(n('liquidFillDensity', 'Filler Density', rendering, 0, 3, 0.01, 1.15), ['basic', 'ultra']),
+  render(n('fillerScale', 'Filler Scale', rendering, 0, 2, 0.01, 1), ['basic', 'ultra']),
+  render(n('liquidSplatDensity', 'Splat Density', rendering, 0.45, METABALL_SPLAT_DENSITY_MAX, 0.01, 1.2), ['ultra']),
+  render(n('liquidSurfaceThreshold', 'Surface Threshold', rendering, 0.04, 0.42, 0.01, 0.17), ['ultra']),
+  render(n('liquidEdgeTightness', 'Edge Tightness', rendering, 0, 1, 0.01, 0.72), ['ultra']),
+  render(n('liquidEdgeSoftness', 'Edge Softness', rendering, 0, 1, 0.01, 0.54), ['ultra']),
+  render(n('liquidRefraction', 'Refraction', rendering, 0, 1.5, 0.01, 0.64), ['ultra']),
+  render(n('liquidGloss', 'Specular Gloss', rendering, 0, 1.5, 0.01, 0.72), ['ultra']),
+  render(n('liquidRimLighting', 'Rim Lighting', rendering, 0, 2.5, 0.01, 0.82), ['ultra']),
+  render(n('liquidFoamStrength', 'Sparkle Foam', rendering, 0, 3, 0.01, 0.38), ['ultra']),
+  render(n('liquidThermalStrength', 'Palette Flow', rendering, 0, 1, 0.01, 0.48), ['ultra']),
+  render(n('liquidBloomStrength', 'Bloom', rendering, 0, 3, 0.01, 0.3), ['ultra']),
+  render(n('liquidHeatShimmer', 'Heat Shimmer', rendering, 0, 2, 0.01, 0.18), ['ultra']),
+  render(n('liquidDepthDiffusion', 'Depth Diffusion', rendering, 0, 1, 0.01, 0.24), ['ultra']),
+  render(n('opacity', 'Opacity', rendering, 0.2, 1, 0.01, 0.86), ['ultra']),
   n('substeps', 'Substeps', physics, 1, 5, 1, 2),
   n('constraintPasses', 'Shape Passes', physics, 2, 14, 1, 7),
   n('squishiness', 'Squishiness', physics, 0, 2, 0.01, 0.78)
@@ -102,5 +105,11 @@ function n(key: string, label: string, section: string, min: number, max: number
     ...(visibleModes ? {
       visibleModes
     } : {})
+  });
+}
+function render(setting: ExperienceSetting, visibleRenderStyles: readonly string[]): ExperienceSetting {
+  return Object.freeze({
+    ...setting,
+    visibleRenderStyles
   });
 }

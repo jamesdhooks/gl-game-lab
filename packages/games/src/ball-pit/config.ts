@@ -13,7 +13,6 @@ export interface BallPitConfig {
   readonly substeps: number;
   readonly gravity: number;
   readonly burstCount: number;
-  readonly wallBounce: boolean;
   readonly friction: number;
   readonly collisionSoftness: number;
   readonly maxPairPush: number;
@@ -34,7 +33,6 @@ export const BALL_PIT_DEFAULTS: BallPitConfig = Object.freeze({
   substeps: 2,
   gravity: 1300,
   burstCount: 5000,
-  wallBounce: false,
   friction: 0.72,
   collisionSoftness: 1.05,
   maxPairPush: 0.75,
@@ -42,6 +40,25 @@ export const BALL_PIT_DEFAULTS: BallPitConfig = Object.freeze({
   solverDamping: 0.982,
   wallBounceAmount: 0.16,
   impactBounceThreshold: 150,
+});
+
+const BALL_PIT_SETTING_DESCRIPTIONS: Readonly<Record<string, string>> = Object.freeze({
+  maxParticles: 'Limits how many balls can exist in the pit at once.',
+  radius: 'Sets the base physical and visual radius of newly created balls.',
+  radiusVariation: 'Controls random size variation between newly created balls.',
+  spawnRate: 'Controls how many balls per second Stream input creates while held.',
+  interactionRadius: 'Sets the area around the pointer used to pick up balls in Interact mode.',
+  solverPasses: 'Sets how many collision-solving passes run per physics step. More passes improve dense piles but cost performance.',
+  substeps: 'Splits each frame into smaller physics steps. More substeps improve fast collisions but cost performance.',
+  gravity: 'Controls the downward acceleration applied to every ball.',
+  burstCount: 'Controls the outward force applied by Explosion input.',
+  friction: 'Controls how strongly balls and walls resist sliding during contact.',
+  collisionSoftness: 'Controls how gradually overlapping balls are separated.',
+  maxPairPush: 'Caps the positional correction applied to a colliding pair in one solver pass.',
+  airDrag: 'Controls how quickly balls lose speed while moving through the pit.',
+  solverDamping: 'Controls how much velocity remains after each collision-solving step.',
+  wallBounceAmount: 'Controls restitution for both ball-to-wall and ball-to-ball impacts. One is fully elastic; zero removes rebound.',
+  impactBounceThreshold: 'Sets the minimum impact speed that receives elastic rebound, preventing tiny resting contacts from jittering.',
 });
 
 export const BALL_PIT_SETTINGS: readonly ExperienceSetting[] = [
@@ -54,13 +71,12 @@ export const BALL_PIT_SETTINGS: readonly ExperienceSetting[] = [
   numberSetting('substeps', 'Substeps', 2, 1, 5, 1, 'Physics'),
   numberSetting('gravity', 'Gravity', 1300, 0, 3000, 25, 'Physics'),
   { ...numberSetting('burstCount', 'Explosion Force', 5000, 100, 10_000, 100, 'Input Mode'), visibleModes: ['explosion'], advanced: true },
-  { key: 'wallBounce', label: 'Wall Bounce', section: 'Physics', type: 'boolean', default: false, advanced: true },
   { ...numberSetting('friction', 'Friction', 0.72, 0, 2, 0.05, 'Physics'), advanced: true },
   { ...numberSetting('collisionSoftness', 'Collision Softness', 1.05, 0.05, 1.5, 0.01, 'Physics'), advanced: true },
   { ...numberSetting('maxPairPush', 'Push Cap', 0.75, 0.02, 2, 0.01, 'Physics'), advanced: true },
   { ...numberSetting('airDrag', 'Air Drag', 0.998, 0.9, 1, 0.001, 'Physics'), advanced: true },
   { ...numberSetting('solverDamping', 'Solver Damping', 0.982, 0.9, 1, 0.001, 'Physics'), advanced: true },
-  { ...numberSetting('wallBounceAmount', 'Bounce Amount', 0.16, 0, 1, 0.01, 'Physics'), advanced: true },
+  { ...numberSetting('wallBounceAmount', 'Bounce', 0.16, 0, 1, 0.01, 'Physics'), advanced: true },
   { ...numberSetting('impactBounceThreshold', 'Impact Threshold', 150, 0, 500, 10, 'Physics'), advanced: true },
 ] as const;
 
@@ -100,18 +116,9 @@ export function ballPitConfigForProfile(config: BallPitConfig, profile: 'play' |
   if (profile !== 'preview') return config;
   return Object.freeze({
     ...config,
-    maxParticles: 96,
-    radius: 9,
-    radiusVariation: 0.18,
-    solverPasses: 2,
-    substeps: 1,
-    gravity: 1050,
-    airDrag: 0.994,
-    solverDamping: 0.982,
-    maxPairPush: 0.75,
-    friction: 0.72,
-    collisionSoftness: 1.05,
-    impactBounceThreshold: 150,
+    maxParticles: Math.min(config.maxParticles, 96),
+    solverPasses: Math.min(config.solverPasses, 2),
+    substeps: Math.min(config.substeps, 1),
   });
 }
 
@@ -142,5 +149,7 @@ function numberSetting(
   step: number,
   section: string,
 ): ExperienceSetting & { readonly type: 'number' } {
-  return { key, label, type: 'number', default: defaultValue, min, max, step, section };
+  const description = BALL_PIT_SETTING_DESCRIPTIONS[key];
+  if (!description) throw new Error(`Missing Ball Pit setting description: ${key}`);
+  return { key, label, type: 'number', default: defaultValue, min, max, step, section, description };
 }

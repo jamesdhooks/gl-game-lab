@@ -2,6 +2,7 @@ import type { ExperienceDefinition } from '@hooksjam/gl-game-lab-engine';
 import { createLavaLampConfig, LAVA_LAMP_DEFAULTS, LAVA_LAMP_SETTINGS } from './config.js';
 import { createLavaLampPlugin } from './LavaLampPlugin.js';
 import { LAVA_LAMP_STYLE_MANIFEST } from './styles.js';
+import { describeSimulationSettings } from '../settingDescriptions.js';
 export const lavaLampDefinition: ExperienceDefinition = {
   id: 'lava-lamp',
   kind: 'simulation',
@@ -43,7 +44,7 @@ export const lavaLampDefinition: ExperienceDefinition = {
       description: 'Remove wax from the brush.'
     }
   ],
-  settings: LAVA_LAMP_SETTINGS,
+  settings: describeSimulationSettings('lava-lamp', LAVA_LAMP_SETTINGS),
   styleManifest: LAVA_LAMP_STYLE_MANIFEST,
   attributions: [
     {

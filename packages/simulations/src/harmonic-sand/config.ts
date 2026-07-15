@@ -21,17 +21,17 @@ export const HARMONIC_SAND_DEFAULTS: HarmonicSandConfig = Object.freeze({
 });
 
 export const HARMONIC_SAND_SETTINGS: readonly ExperienceSetting[] = Object.freeze([
-  { key: 'renderStyle', label: 'Style', section: 'Rendering', type: 'select', default: 'ultra', options: [
+  { key: 'renderStyle', label: 'Style', section: 'Rendering', type: 'select', default: 'ultra', previewVariation: 'always', options: [
     { label: 'Basic', value: 'basic' }, { label: 'Enhanced', value: 'enhanced' }, { label: 'Ultra', value: 'ultra' },
   ] },
   { key: 'resolution', label: 'Resolution', section: 'Simulation', type: 'number', min: 32, max: 2048, step: 1, numericScale: 'powerOfTwo', default: 128 },
   { key: 'baseFrequency', label: 'Base Frequency', section: 'Simulation', type: 'number', min: 0.1, max: 10, step: 0.1, default: 2.4 },
   { key: 'wavePeriod', label: 'Wave Period', section: 'Simulation', type: 'number', min: 1, max: 6, step: 0.1, default: 1 },
-  { key: 'rawParticleCount', label: 'Particle Count', section: 'Rendering', type: 'number', min: 32_768, max: 2_097_152, step: 1, numericScale: 'powerOfTwo', default: 262_144 },
-  { key: 'rawParticleDensity', label: 'Particle Density', section: 'Rendering', type: 'number', min: 0.35, max: 8, step: 0.05, default: 1.25 },
+  { key: 'rawParticleCount', label: 'Particle Count', section: 'Rendering', type: 'number', min: 32_768, max: 2_097_152, step: 1, numericScale: 'powerOfTwo', default: 262_144, visibleRenderStyles: ['ultra'] },
+  { key: 'rawParticleDensity', label: 'Particle Density', section: 'Rendering', type: 'number', min: 0.35, max: 8, step: 0.05, default: 1.25, visibleRenderStyles: ['ultra'] },
   { key: 'rawEmitterLimit', label: 'Source Limit', section: 'Input Mode', type: 'number', min: 1, max: 16, step: 1, default: 10 },
-  { key: 'rawLineSharpness', label: 'Line Sharpness', section: 'Rendering', type: 'number', min: 0, max: 3.5, step: 0.05, default: 1.8 },
-  { key: 'rawGlow', label: 'Glow', section: 'Rendering', type: 'number', min: 0.25, max: 30, step: 0.05, default: 1.35 },
+  { key: 'rawLineSharpness', label: 'Line Sharpness', section: 'Rendering', type: 'number', min: 0, max: 3.5, step: 0.05, default: 1.8, visibleRenderStyles: ['ultra'] },
+  { key: 'rawGlow', label: 'Glow', section: 'Rendering', type: 'number', min: 0.25, max: 30, step: 0.05, default: 1.35, visibleRenderStyles: ['ultra'] },
 ]);
 
 export function createHarmonicSandConfig(values: Readonly<Record<string, ExperienceSettingValue>> = {}): HarmonicSandConfig {

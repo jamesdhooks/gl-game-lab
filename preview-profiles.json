@@ -1,4 +1,436 @@
 {
   "version": 1,
-  "previews": {}
+  "previews": {
+    "mycelium": {
+      "modeId": "paint",
+      "styleId": "synaptic-fungus",
+      "settings": {
+        "timeScale": 1,
+        "renderStyle": "enhanced",
+        "topology": "triangle",
+        "resolution": 128,
+        "branchChance": 0.22,
+        "overwriteChance": 0.08,
+        "growthClumping": 0.38,
+        "growthRate": 0.9,
+        "colorMutation": 0.32,
+        "colorDriftFrequency": 0.08,
+        "branchColorSplit": 0.45,
+        "substrateColorBias": 0.12,
+        "brushRadius": 0.008,
+        "fieldSpread": 2.4,
+        "ultraSurfaceThreshold": 0.72,
+        "ultraEdgeSoftness": 0.2,
+        "ultraHaloStrength": 1,
+        "ultraFiberStrength": 0.16,
+        "ultraCoreBrightness": 1,
+        "ultraRimStrength": 0.22,
+        "pruneRate": 0.18,
+        "demoSeedColonies": 0,
+        "demoSeedRadius": 0.012
+      },
+      "variation": {
+        "intensity": 0.25,
+        "lockedKeys": [],
+        "seed": 1294520087
+      },
+      "generationMode": "varied",
+      "renderPolicy": "auto",
+      "image": {
+        "src": "previews/mycelium.webp",
+        "revision": "70762cd22241f99e",
+        "width": 512,
+        "height": 512,
+        "profileHash": "664dd28a"
+      }
+    },
+    "ball-pit": {
+      "modeId": "single",
+      "styleId": "rainbow",
+      "settings": {
+        "timeScale": 1,
+        "maxParticles": 65536,
+        "radius": 19,
+        "radiusVariation": 0.54,
+        "spawnRate": 1200,
+        "interactionRadius": 56,
+        "solverPasses": 3,
+        "substeps": 2,
+        "gravity": 1325,
+        "burstCount": 5000,
+        "friction": 0.72,
+        "collisionSoftness": 1.05,
+        "maxPairPush": 0.75,
+        "airDrag": 0.998,
+        "solverDamping": 0.982,
+        "wallBounceAmount": 0.16,
+        "impactBounceThreshold": 150,
+        "screensaverMs": 60000
+      },
+      "variation": {
+        "intensity": 0.25,
+        "lockedKeys": [],
+        "seed": 2238786319
+      },
+      "generationMode": "varied",
+      "renderPolicy": "auto",
+      "image": {
+        "src": "previews/ball-pit.webp",
+        "revision": "1e937137368116c0",
+        "width": 512,
+        "height": 512,
+        "profileHash": "eeb0fd3f"
+      }
+    },
+    "chain-rain": {
+      "settings": {
+        "nodeRadius": 12,
+        "nodeVariance": 0,
+        "chainLength": 40,
+        "gravity": 750,
+        "skinWidth": 1.08,
+        "skinHighlightWidth": 0.34,
+        "skinHighlightStrength": 0.72,
+        "skinHighlightOpacity": 0.42,
+        "liquidFieldScale": 1.5,
+        "liquidParticleRadius": 2.06,
+        "liquidFillDensity": 3,
+        "liquidSplatDensity": 1.05,
+        "liquidSurfaceThreshold": 0.31,
+        "liquidEdgeTightness": 0.29,
+        "liquidEdgeSoftness": 0,
+        "liquidRefraction": 0,
+        "liquidGloss": 0,
+        "liquidRimLighting": 0,
+        "liquidFoamStrength": 0,
+        "liquidThermalStrength": 1,
+        "liquidBloomStrength": 0,
+        "liquidHeatShimmer": 0,
+        "liquidDepthDiffusion": 0,
+        "opacity": 1
+      },
+      "variation": {
+        "intensity": 0.25,
+        "lockedKeys": [
+          "nodeVariance"
+        ],
+        "seed": 2897593970
+      },
+      "generationMode": "varied",
+      "renderPolicy": "auto",
+      "image": {
+        "src": "previews/chain-rain.webp",
+        "revision": "7b9025fb6e1e12cc",
+        "width": 512,
+        "height": 512,
+        "profileHash": "442a73c2"
+      }
+    },
+    "soft-body-blob": {
+      "modeId": "draw",
+      "styleId": "ink-jelly",
+      "settings": {
+        "timeScale": 1,
+        "renderStyle": "enhanced",
+        "blobSize": 58,
+        "nodeDensity": 1.6,
+        "interactionRadius": 72,
+        "drawSmoothing": 0.51,
+        "gravity": 1525,
+        "viscosity": 0.59,
+        "surfaceTension": 1,
+        "plasticFlow": 1,
+        "boundaryElasticity": 0,
+        "shapeRigidity": 20,
+        "membraneDamping": 0.38,
+        "areaPressure": 0.44,
+        "skinSmoothing": 0.56,
+        "liquidFieldScale": 0.82,
+        "liquidParticleRadius": 1.35,
+        "liquidFillDensity": 1.15,
+        "fillerScale": 1,
+        "liquidSplatDensity": 1.2,
+        "liquidSurfaceThreshold": 0.17,
+        "liquidEdgeTightness": 0.72,
+        "liquidEdgeSoftness": 0.54,
+        "liquidRefraction": 0.64,
+        "liquidGloss": 0.72,
+        "liquidRimLighting": 0.82,
+        "liquidFoamStrength": 0.38,
+        "liquidThermalStrength": 0.48,
+        "liquidBloomStrength": 0.3,
+        "liquidHeatShimmer": 0.18,
+        "liquidDepthDiffusion": 0.24,
+        "opacity": 0.86,
+        "substeps": 2,
+        "constraintPasses": 7,
+        "squishiness": 0
+      },
+      "variation": {
+        "intensity": 0.25,
+        "lockedKeys": [],
+        "seed": 666085348
+      },
+      "generationMode": "varied",
+      "renderPolicy": "auto",
+      "image": {
+        "src": "previews/soft-body-blob.webp",
+        "revision": "1bd994a812684c58",
+        "width": 512,
+        "height": 512,
+        "profileHash": "5625f556"
+      }
+    },
+    "harmonic-sand": {
+      "modeId": "shape",
+      "styleId": "chladni-gold",
+      "settings": {
+        "timeScale": 1,
+        "renderStyle": "ultra",
+        "resolution": 128,
+        "baseFrequency": 2.4,
+        "wavePeriod": 1,
+        "rawParticleCount": 262144,
+        "rawParticleDensity": 1.25,
+        "rawEmitterLimit": 10,
+        "rawLineSharpness": 1.8,
+        "rawGlow": 1.35
+      },
+      "variation": {
+        "intensity": 0.25,
+        "lockedKeys": [],
+        "seed": 69857728
+      },
+      "generationMode": "varied",
+      "renderPolicy": "auto",
+      "image": {
+        "src": "previews/harmonic-sand.webp",
+        "revision": "f791870f4022e9ed",
+        "width": 512,
+        "height": 512,
+        "profileHash": "26c3ebb4"
+      }
+    },
+    "orbital-shrapnel": {
+      "settings": {
+        "gravity": 350,
+        "debrisSize": 2.45,
+        "debrisOpacity": 0.51,
+        "secondaryBodyCount": 1,
+        "rawParticleTextureSize": 1024
+      },
+      "variation": {
+        "intensity": 0.25,
+        "lockedKeys": [],
+        "seed": 4048438864
+      },
+      "generationMode": "varied",
+      "renderPolicy": "auto",
+      "image": {
+        "src": "previews/orbital-shrapnel.webp",
+        "revision": "6a14aba423fb3e5d",
+        "width": 512,
+        "height": 512,
+        "profileHash": "054833bf"
+      }
+    },
+    "fluid-tank": {
+      "modeId": "inject",
+      "styleId": "bounded-cyan",
+      "settings": {
+        "timeScale": 1,
+        "renderStyle": "cloud",
+        "cellSize": 1.2,
+        "viscosity": 0.22,
+        "curl": 30,
+        "velocityPersistence": 0.2,
+        "dyePersistence": 1,
+        "pressureIterations": 24,
+        "ambient": false,
+        "shadingStrength": 1,
+        "bloomStrength": 0.8,
+        "bloomThreshold": 0.6,
+        "sunraysStrength": 1,
+        "fingerForce": 18,
+        "fingerRadius": 0.05,
+        "eddyAssist": 0,
+        "injectAmount": 1,
+        "injectTurbulence": 0.45,
+        "injectPalette": "style",
+        "initImageUrl": "",
+        "screensaverMs": 60000
+      },
+      "variation": {
+        "intensity": 0.25,
+        "lockedKeys": [],
+        "seed": 3824271198
+      },
+      "generationMode": "varied",
+      "renderPolicy": "auto",
+      "image": {
+        "src": "previews/fluid-tank.webp",
+        "revision": "76661c8576ab470a",
+        "width": 512,
+        "height": 512,
+        "profileHash": "891fe0a6"
+      }
+    },
+    "particle-fluid": {
+      "modeId": "default",
+      "styleId": "haxiomic-cyan",
+      "settings": {
+        "timeScale": 1,
+        "renderStyle": "basic",
+        "maxParticles": 262144,
+        "fieldCellSize": 4,
+        "simulationScale": 1,
+        "solverIterations": 18,
+        "cellSize": 32,
+        "velocityDecay": 0.999,
+        "particleDrag": 1,
+        "forceRadius": 0.015,
+        "forceTaper": 0.6,
+        "forceStrength": 1,
+        "pointSize": 1,
+        "bloomStrength": 0.9,
+        "pulseStrength": 1,
+        "colorSpeedScale": 4
+      },
+      "variation": {
+        "intensity": 0.25,
+        "lockedKeys": [],
+        "seed": 316765387
+      },
+      "generationMode": "varied",
+      "renderPolicy": "auto",
+      "image": {
+        "src": "previews/particle-fluid.webp",
+        "revision": "474cc3332dc7d681",
+        "width": 512,
+        "height": 512,
+        "profileHash": "d23660d2"
+      }
+    },
+    "lava-lamp": {
+      "modeId": "add",
+      "styleId": "violet-magma",
+      "settings": {
+        "timeScale": 1,
+        "renderStyle": "ultra",
+        "maxParticles": 1024,
+        "initialBlobs": 32,
+        "blobRadius": 27,
+        "gravity": 290,
+        "buoyancy": 490,
+        "thermalDrive": 5,
+        "heatRegion": 0.17,
+        "coolRegion": 0.25,
+        "heatRate": 1.545,
+        "coolRate": 1.515,
+        "heatTransfer": 0,
+        "turbulence": 2.18,
+        "verticalTurbulence": 1.17,
+        "waxViscosity": 5,
+        "thermalContrast": 0.4,
+        "enhancedQuality": 0.75,
+        "liquidFieldScale": 0.66,
+        "liquidParticleRadius": 2.2,
+        "liquidExpansion": 2.21,
+        "liquidSplatDensity": 2.17,
+        "liquidSurfaceThreshold": 0.2,
+        "liquidEdgeTightness": 0.61,
+        "liquidEdgeSoftness": 0,
+        "liquidRefraction": 0.41,
+        "liquidGloss": 0.52,
+        "liquidThermalStrength": 1,
+        "liquidRimLighting": 0.14,
+        "liquidBloomStrength": 0.54,
+        "liquidHeatShimmer": 0.63,
+        "liquidDepthDiffusion": 0.49,
+        "surfaceTension": 0.71,
+        "clumping": 1.06,
+        "inputRadius": 92,
+        "inputLift": 363.6,
+        "inputThermalRate": 0.06,
+        "metaballBlend": 0.55,
+        "opacity": 1,
+        "substeps": 3
+      },
+      "variation": {
+        "intensity": 0.25,
+        "lockedKeys": [
+          "liquidEdgeSoftness"
+        ],
+        "seed": 3948041033
+      },
+      "generationMode": "varied",
+      "renderPolicy": "auto",
+      "image": {
+        "src": "previews/lava-lamp.webp",
+        "revision": "9596ec0a0e2bf741",
+        "width": 512,
+        "height": 512,
+        "profileHash": "8ed9a38b"
+      }
+    },
+    "water-tank": {
+      "modeId": "pour",
+      "styleId": "clear-lagoon",
+      "settings": {
+        "timeScale": 1,
+        "renderStyle": "enhanced",
+        "maxParticles": 8192,
+        "particleRadius": 4.8,
+        "gravity": 1450,
+        "viscosity": 0.18,
+        "viscositySigma": 0.9,
+        "viscosityBeta": 0.3,
+        "supportRadiusScale": 1.35,
+        "fluidGridResolution": 512,
+        "restDensity": 0.72,
+        "stiffness": 0.028,
+        "nearStiffness": 1.15,
+        "neighborPairBudget": 65536,
+        "surfaceTension": 900,
+        "collisionBounce": 0.04,
+        "maxFluidSpeed": 2400,
+        "obstacleRamps": 4,
+        "obstaclePegs": 3,
+        "pourRate": 500,
+        "pourRadius": 22,
+        "buildRadius": 18,
+        "interactionRadius": 76,
+        "interactionStrength": 18,
+        "metaballBlend": 0.76,
+        "liquidFieldScale": 0.78,
+        "liquidSurfaceThreshold": 0.18,
+        "liquidEdgeTightness": 0.82,
+        "liquidEdgeSoftness": 0.46,
+        "liquidSplatDensity": 1.28,
+        "liquidParticleRadius": 1.2,
+        "liquidRefraction": 0.58,
+        "liquidGloss": 0.78,
+        "liquidFoamStrength": 2.4,
+        "liquidBloomStrength": 0.34,
+        "liquidHeatShimmer": 0.16,
+        "liquidDepthDiffusion": 0.18,
+        "opacity": 0.34,
+        "substeps": 2
+      },
+      "variation": {
+        "intensity": 0.25,
+        "lockedKeys": [],
+        "seed": 3391492608
+      },
+      "generationMode": "varied",
+      "renderPolicy": "auto",
+      "image": {
+        "src": "previews/water-tank.webp",
+        "revision": "1fb4bd2e1636e928",
+        "width": 512,
+        "height": 512,
+        "profileHash": "6e875bb1"
+      }
+    }
+  }
 }

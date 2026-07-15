@@ -14,9 +14,6 @@ import { fluidColor3, FLUID_TANK_STYLE_MANIFEST } from './styles.js';
 
 const PUBLIC_RANDOM_IMAGE_URL_BASE = 'https://picsum.photos';
 const MAX_VELOCITY_CELLS = 36;
-const PREVIEW_FINGER_RADIUS = 0.026;
-const PREVIEW_INJECT_AMOUNT = 0.62;
-const PREVIEW_INJECT_TURBULENCE = 0.32;
 
 interface PointerTrailPoint {
   readonly x: number;
@@ -149,7 +146,7 @@ export function createFluidTankPlugin(initial: FluidTankConfig = FLUID_TANK_DEFA
         id: 'gl-game-lab.simulations.fluid-tank.update',
         stage: 'update',
         run: ({ time }) => {
-          const dt = Math.min(1 / 30, Math.max(1 / 120, time.deltaSeconds || 1 / 60)) * Math.max(0, fluidNumber(config, 'timescale'));
+          const dt = Math.min(1 / 30, Math.max(0, time.deltaSeconds));
           pendingDt += dt;
           elapsed += dt;
           const currentAspect = renderer.viewport.height / Math.max(1, renderer.viewport.width);
@@ -342,14 +339,16 @@ export function createFluidTankPlugin(initial: FluidTankConfig = FLUID_TANK_DEFA
       }
 
       function createField() {
-        const effectiveCell = launch.profile === 'preview' ? Math.max(1.85, fluidNumber(config, 'cellSize')) : fluidNumber(config, 'cellSize');
+        const cellSize = fluidNumber(config, 'cellSize');
         aspect = renderer.viewport.height / Math.max(1, renderer.viewport.width);
         const screenAspect = renderer.viewport.width / Math.max(1, renderer.viewport.height);
         const dimensions = (base: number) => screenAspect >= 1
           ? { width: Math.round(base * screenAspect), height: Math.round(base) }
           : { width: Math.round(base), height: Math.round(base / screenAspect) };
-        const dye = dimensions(Math.max(300, Math.min(1200, Math.round(950 / effectiveCell))));
-        const simulation = dimensions(Math.max(90, Math.min(260, Math.round(220 / effectiveCell))));
+        const dyeLimit = launch.profile === 'preview' ? 600 : 1200;
+        const simulationLimit = launch.profile === 'preview' ? 128 : 260;
+        const dye = dimensions(Math.max(300, Math.min(dyeLimit, Math.round(950 / cellSize))));
+        const simulation = dimensions(Math.max(90, Math.min(simulationLimit, Math.round(220 / cellSize))));
         return renderer.createFluidField('fluid-tank.field', dye.width, dye.height, { simulationWidth: simulation.width, simulationHeight: simulation.height });
       }
 
@@ -361,7 +360,7 @@ export function createFluidTankPlugin(initial: FluidTankConfig = FLUID_TANK_DEFA
         const seedOptions = {
           palette: style.palette.slice(0, 4).map(fluidColor3),
           paletteStrength: options.paletteStrength,
-          cellSize: launch.profile === 'preview' ? Math.max(1.85, fluidNumber(config, 'cellSize')) : fluidNumber(config, 'cellSize'),
+          cellSize: fluidNumber(config, 'cellSize'),
         };
         const initMode = effectiveInitMode();
         if (initMode === 'image') {
@@ -433,25 +432,24 @@ export function createFluidTankPlugin(initial: FluidTankConfig = FLUID_TANK_DEFA
       }
 
       function effectiveInitMode(): 'blank' | 'random' | 'voronoi' | 'cloud' | 'image' {
-        if (launch.profile === 'preview') return 'blank';
         const value = fluidString(config, 'renderStyle');
         return value === 'blank' || value === 'random' || value === 'voronoi' || value === 'image' ? value : 'cloud';
       }
 
       function effectiveFingerForce(): number {
-        return launch.profile === 'preview' ? Math.min(9, fluidNumber(config, 'fingerForce')) : fluidNumber(config, 'fingerForce');
+        return fluidNumber(config, 'fingerForce');
       }
 
       function effectiveFingerRadius(): number {
-        return launch.profile === 'preview' ? PREVIEW_FINGER_RADIUS : fluidNumber(config, 'fingerRadius');
+        return fluidNumber(config, 'fingerRadius');
       }
 
       function effectiveInjectAmount(): number {
-        return launch.profile === 'preview' ? PREVIEW_INJECT_AMOUNT : fluidNumber(config, 'injectAmount');
+        return fluidNumber(config, 'injectAmount');
       }
 
       function effectiveInjectTurbulence(): number {
-        return launch.profile === 'preview' ? PREVIEW_INJECT_TURBULENCE : fluidNumber(config, 'injectTurbulence');
+        return fluidNumber(config, 'injectTurbulence');
       }
 
       function applyStyle(): void {

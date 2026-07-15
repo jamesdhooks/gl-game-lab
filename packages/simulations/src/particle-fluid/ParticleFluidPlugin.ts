@@ -3,6 +3,7 @@ import { EngineGpu2D, EngineInput, EngineRender2D, EngineSchedule, type Experien
 import { registerSimulationRuntime } from '../SimulationPluginLifecycle.js';
 import { createParticleFluidConfig, PARTICLE_FLUID_DEFAULTS, particleFluidNumber, particleFluidString, type ParticleFluidConfig } from './config.js';
 import { PARTICLE_FLUID_FRAGMENT_SHADER, PARTICLE_FLUID_STEP_SHADER, PARTICLE_FLUID_VERTEX_SHADER } from './shaders.js';
+import { particleFluidFieldSize, particleFluidFlowScale, particleFluidSeedPosition, particleFluidUvToSimulation } from './motion.js';
 import { particleFluidColor3, PARTICLE_FLUID_STYLE_MANIFEST } from './styles.js';
 export interface ParticleFluidController extends ExperienceRuntimeController {
   readonly particleCapacity: number;
@@ -11,7 +12,7 @@ export interface ParticleFluidController extends ExperienceRuntimeController {
 export const ParticleFluidControllerService = createExtensionToken<ParticleFluidController>('gl-game-lab.simulations.particle-fluid.controller');
 export const PARTICLE_FLUID_PLUGIN_ID = 'gl-game-lab.simulations.particle-fluid';
 export function createParticleFluidPlugin(initial: ParticleFluidConfig = PARTICLE_FLUID_DEFAULTS, launch: ExperienceLaunchOptions = {}): EnginePlugin {
-  let config = initial, styleId = validStyle(launch.styleId) ?? PARTICLE_FLUID_STYLE_MANIFEST.defaultStyleId, pendingDt = 0, autoAngle = 0, rebuildParticles = false, rebuildField = false, pointerActive = false, pulseX = 0.5, pulseY = 0.5, pulsePreviousX = 0.5, pulsePreviousY = 0.5, pulseAge = 999, pulseSpeed = 0, pulseStrength = 0, colorCacheKey = '', colorCache: ParticleRenderColors | undefined, randomState = (launch.seed ?? 260706) >>> 0, cleanup = (): void => undefined;
+  let config = initial, styleId = validStyle(launch.styleId) ?? PARTICLE_FLUID_STYLE_MANIFEST.defaultStyleId, pendingDt = 0, autoAngle = 0, rebuildParticles = false, rebuildField = false, pointerActive = false, pulseX = 0, pulseY = 0, pulsePreviousX = 0, pulsePreviousY = 0, pulseAge = 999, pulseSpeed = 0, pulseStrength = 0, colorCacheKey = '', colorCache: ParticleRenderColors | undefined, cleanup = (): void => undefined;
   const splats: FluidSplat2D[] = [], previous = new Map<number, {
     x: number;
     y: number;
@@ -22,7 +23,7 @@ export function createParticleFluidPlugin(initial: ParticleFluidConfig = PARTICL
     dependencies: [{ id: 'gl-game-lab.runtime' }],
     install: context => {
       const renderer = context.get(EngineRender2D), gpu = context.get(EngineGpu2D), input = context.get(EngineInput);
-      let aspect = viewportAspect();
+      let aspect = viewportAspect(), fieldViewportWidth = 0, fieldViewportHeight = 0;
       let particles = createParticles(), flow = createFlow(), observedGeneration = particles.generation;
       cleanup = () => { particles.dispose(); flow.dispose(); };
       applyStyle();
@@ -59,13 +60,15 @@ export function createParticleFluidPlugin(initial: ParticleFluidConfig = PARTICL
           applyStyle();
         },
         setSetting: (key, value) => {
-          const oldParticles = particleFluidNumber(config, 'maxParticles'), oldCell = particleFluidNumber(config, 'fieldCellSize');
           config = createParticleFluidConfig({
             ...record(),
             [key]: value
           });
-          rebuildParticles ||= oldParticles !== particleFluidNumber(config, 'maxParticles');
-          rebuildField ||= oldCell !== particleFluidNumber(config, 'fieldCellSize');
+          if (!PARTICLE_FLUID_VISUAL_SETTINGS.has(key)) {
+            rebuildParticles = true;
+            rebuildField = true;
+            resetCpuState();
+          }
           applyStyle();
         },
         reset: resetSimulation
@@ -86,8 +89,9 @@ export function createParticleFluidPlugin(initial: ParticleFluidConfig = PARTICL
           for (const event of input.snapshot.events)
             if (event.kind === 'pointer')
               routePointer(event, dt);
-          const nextAspect = viewportAspect();
-          if (Math.abs(nextAspect - aspect) > 0.04)
+          const pixelRatio = renderer.viewport.pixelRatio ?? 1;
+          const viewportWidth = renderer.viewport.width * pixelRatio, viewportHeight = renderer.viewport.height * pixelRatio;
+          if (viewportWidth !== fieldViewportWidth || viewportHeight !== fieldViewportHeight)
             rebuildField = true;
           if (!pointerActive && dt > 0) {
             autoAngle += dt * 1.1;
@@ -100,7 +104,7 @@ export function createParticleFluidPlugin(initial: ParticleFluidConfig = PARTICL
         id: 'gl-game-lab.simulations.particle-fluid.render',
         stage: 'renderExtract',
         run: () => gpu.submit('particle-fluid.gpu-advection', destination => {
-            if (particles.generation !== observedGeneration) { observedGeneration = particles.generation; randomState = (launch.seed ?? 260706) >>> 0; resetCpuState(); }
+            if (particles.generation !== observedGeneration) { observedGeneration = particles.generation; resetCpuState(); }
             if (rebuildParticles) {
               particles.dispose();
               particles = createParticles();
@@ -110,7 +114,6 @@ export function createParticleFluidPlugin(initial: ParticleFluidConfig = PARTICL
             if (rebuildField) {
               flow.dispose();
               flow = createFlow();
-              aspect = viewportAspect();
               rebuildField = false;
             }
             const dt = pendingDt;
@@ -120,18 +123,26 @@ export function createParticleFluidPlugin(initial: ParticleFluidConfig = PARTICL
                 deltaSeconds: dt,
                 viscosity: 0,
                 curl: 0,
-                velocityDissipation: (1 - particleFluidNumber(config, 'velocityDecay')) * 60,
+                velocityDissipation: 0,
                 dyeDissipation: 2,
-                pressureIterations: launch.profile === 'preview' ? Math.min(10, particleFluidNumber(config, 'solverIterations')) : particleFluidNumber(config, 'solverIterations'),
+                pressureIterations: particleFluidNumber(config, 'solverIterations'),
                 ambient: false,
-                velocitySplatsBeforeProjection: true
+                velocitySplatsBeforeProjection: true,
+                solverMode: 'source-mapped',
+                cellSize: particleFluidNumber(config, 'cellSize'),
+                simulationScale: particleFluidNumber(config, 'simulationScale'),
+                velocityDecay: particleFluidNumber(config, 'velocityDecay'),
+                forceRadius: particleFluidNumber(config, 'forceRadius'),
+                forceTaper: particleFluidNumber(config, 'forceTaper'),
+                forceStrength: particleFluidNumber(config, 'forceStrength')
               }, splats.splice(0));
               particles.step((g, u) => {
                 g.uniformTexture(u('uFlowField'), flow.texture('velocity'), 2);
                 g.uniform1i(u('uCapacity'), particles.capacity);
                 g.uniform1f(u('uDt'), dt);
                 g.uniform1f(u('uParticleDrag'), particleFluidNumber(config, 'particleDrag'));
-                g.uniform1f(u('uSimulationScale'), particleFluidNumber(config, 'simulationScale'));
+                const flowScale = particleFluidFlowScale(particleFluidNumber(config, 'cellSize'), aspect, particleFluidNumber(config, 'simulationScale'));
+                g.uniform2f(u('uFlowScale'), flowScale[0], flowScale[1]);
               });
             }
             const style = requireStyle(), enhanced = particleFluidString(config, 'renderStyle') === 'enhanced', scale = destination.height / Math.max(1, renderer.viewport.height), nextColorKey = `${styleId}:${enhanced ? 'enhanced' : 'basic'}`;
@@ -172,30 +183,31 @@ export function createParticleFluidPlugin(initial: ParticleFluidConfig = PARTICL
         queueForce(x, y, prior.x / width, 1 - prior.y / height, 1, dt);
       }
       function queueForce(x: number, y: number, priorX: number, priorY: number, strength: number, dt: number) {
-        const safeDt = Math.max(0.0001, dt), force = particleFluidNumber(config, 'forceStrength');
+        const safeDt = Math.max(0.0001, dt);
         splats.push({
           x,
           y,
           previousX: priorX,
           previousY: priorY,
-          radius: particleFluidNumber(config, 'forceRadius') * 0.5,
+          radius: particleFluidNumber(config, 'forceRadius'),
           aspectRatio: aspect,
           taper: particleFluidNumber(config, 'forceTaper'),
           strength,
           velocityMode: 'target',
-          velocityX: (x - priorX) / safeDt * force,
-          velocityY: (y - priorY) / safeDt * force,
+          velocityX: (x - priorX) / safeDt,
+          velocityY: (y - priorY) / safeDt,
           dye: [0, 0, 0],
           amount: 0
         });
-        const dx = (x - priorX) * 2 * aspect, dy = (y - priorY) * 2;
-        pulseX = x; pulseY = y; pulsePreviousX = priorX; pulsePreviousY = priorY;
-        pulseSpeed = Math.hypot(dx, dy) / safeDt * strength;
+        const simulationScale = particleFluidNumber(config, 'simulationScale');
+        const current = particleFluidUvToSimulation(x, y, aspect, simulationScale), prior = particleFluidUvToSimulation(priorX, priorY, aspect, simulationScale);
+        pulseX = current[0]; pulseY = current[1]; pulsePreviousX = prior[0]; pulsePreviousY = prior[1];
+        pulseSpeed = Math.hypot((current[0] - prior[0]) / simulationScale, (current[1] - prior[1]) / simulationScale) / safeDt * strength;
         pulseStrength = Math.max(0, Math.min(2, strength));
         pulseAge = 0;
       }
       function createParticles(): GpuParticleSystem2D {
-        const requested = Math.round(particleFluidNumber(config, 'maxParticles')), capacity = launch.profile === 'preview' ? Math.min(65536, requested) : requested, next = gpu.createParticleSystem(`${PARTICLE_FLUID_PLUGIN_ID}.particles`, {
+        const requested = Math.round(particleFluidNumber(config, 'maxParticles')), capacity = launch.profile === 'preview' ? Math.min(8192, requested) : requested, next = gpu.createParticleSystem(`${PARTICLE_FLUID_PLUGIN_ID}.particles`, {
           capacity,
           precision: 'float',
           simulationFragmentSource: PARTICLE_FLUID_STEP_SHADER,
@@ -204,15 +216,15 @@ export function createParticleFluidPlugin(initial: ParticleFluidConfig = PARTICL
           blend: 'additive',
         }), positions = new Float32Array(next.width * next.height * 4), velocities = new Float32Array(positions.length);
         for (let i = 0; i < next.capacity; i++) {
-          const o = i * 4, grid = Math.ceil(Math.sqrt(next.capacity)), column = i % grid, row = Math.floor(i / grid);
-          positions[o] = (column + 0.5) / grid;
-          positions[o + 1] = (row + 0.5) / grid;
+          const o = i * 4, position = particleFluidSeedPosition(i, next.capacity);
+          positions[o] = position[0];
+          positions[o + 1] = position[1];
           positions[o + 2] = 0;
-          positions[o + 3] = random() * 10000;
+          positions[o + 3] = 1;
           velocities[o] = 0;
           velocities[o + 1] = 0;
-          velocities[o + 2] = 1;
-          velocities[o + 3] = positions[o + 3] ?? 0;
+          velocities[o + 2] = 0;
+          velocities[o + 3] = 1;
         }
         next.uploadSeed({
           positions,
@@ -221,13 +233,19 @@ export function createParticleFluidPlugin(initial: ParticleFluidConfig = PARTICL
         return next;
       }
       function createFlow(): FluidField2D {
-        const width = Math.max(64, Math.min(512, Math.round(renderer.viewport.width / particleFluidNumber(config, 'fieldCellSize')))), resolved = launch.profile === 'preview' ? Math.min(128, width) : width, height = Math.max(48, Math.round(resolved / viewportAspect()));
-        return renderer.createFluidField(`${PARTICLE_FLUID_PLUGIN_ID}.flow`, resolved, height);
+        const pixelRatio = renderer.viewport.pixelRatio ?? 1;
+        fieldViewportWidth = renderer.viewport.width * pixelRatio;
+        fieldViewportHeight = renderer.viewport.height * pixelRatio;
+        const size = particleFluidFieldSize(fieldViewportWidth, fieldViewportHeight, particleFluidNumber(config, 'fieldCellSize'), launch.profile === 'preview');
+        aspect = size[0] / Math.max(1, size[1]);
+        return renderer.createFluidField(`${PARTICLE_FLUID_PLUGIN_ID}.flow`, size[0], size[1], {
+          simulationPrecision: 'float',
+          simulationFilter: 'nearest'
+        });
       }
       function resetSimulation() {
         particles.dispose();
         flow.dispose();
-        randomState = (launch.seed ?? 260706) >>> 0;
         particles = createParticles();
         flow = createFlow();
         observedGeneration = particles.generation;
@@ -239,7 +257,7 @@ export function createParticleFluidPlugin(initial: ParticleFluidConfig = PARTICL
         pendingDt = 0;
         autoAngle = 0;
         pointerActive = false;
-        pulseX = 0.5; pulseY = 0.5; pulsePreviousX = 0.5; pulsePreviousY = 0.5;
+        pulseX = 0; pulseY = 0; pulsePreviousX = 0; pulsePreviousY = 0;
         pulseAge = 999; pulseSpeed = 0; pulseStrength = 0;
       }
       function applyStyle() {
@@ -262,12 +280,6 @@ export function createParticleFluidPlugin(initial: ParticleFluidConfig = PARTICL
       function viewportAspect() {
         return renderer.viewport.width / Math.max(1, renderer.viewport.height);
       }
-      function random() {
-        randomState ^= randomState << 13;
-        randomState ^= randomState >>> 17;
-        randomState ^= randomState << 5;
-        return (randomState >>> 0) / 4294967296;
-      }
       function record(): Readonly<Record<string, ExperienceSettingValue>> {
         return Object.freeze({
           ...config
@@ -280,6 +292,7 @@ function validStyle(value: string | undefined) {
   return value && PARTICLE_FLUID_STYLE_MANIFEST.styles.some(style => style.id === value) ? value : undefined;
 }
 interface ParticleRenderColors { readonly slow: Float32Array; readonly fast: Float32Array; readonly hot: Float32Array; readonly pulse: Float32Array }
+const PARTICLE_FLUID_VISUAL_SETTINGS = new Set(['renderStyle', 'bloomStrength', 'pulseStrength', 'pointSize', 'colorSpeedScale']);
 function particleRenderColors(palette: readonly number[], enhanced: boolean): ParticleRenderColors {
   const color = (index: number) => particleFluidColor3(palette[index] ?? palette[palette.length - 1] ?? 0xffffff);
   const readable = (source: readonly [number, number, number], minimumLuma: number, boost: number) => {

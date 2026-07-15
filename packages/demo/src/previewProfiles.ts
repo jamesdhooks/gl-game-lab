@@ -18,7 +18,7 @@ export function normalizePreviewProfiles(
   for (const definition of definitions) {
     const fallback = createDefaultPreviewProfile(definition, definitionSettings(definition));
     const raw = records[definition.id];
-    profiles[definition.id] = sanitizePreviewProfile(definition, readProfile(raw, fallback), fallback.settings);
+    profiles[definition.id] = sanitizePreviewProfile(definition, readProfile(raw, fallback), definitionSettings(definition));
   }
   return Object.freeze(profiles);
 }
@@ -52,6 +52,7 @@ function readProfile(value: unknown, fallback: ExperiencePreviewProfile): Experi
       lockedKeys,
       seed: typeof variation.seed === 'number' ? variation.seed : fallback.variation.seed,
     },
+    generationMode: value.generationMode === 'exact' ? 'exact' : 'varied',
     renderPolicy: value.renderPolicy === 'live' || value.renderPolicy === 'static' ? value.renderPolicy : 'auto',
     ...(image ? { image } : {}),
   };

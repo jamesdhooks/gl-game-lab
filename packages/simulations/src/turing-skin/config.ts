@@ -1,7 +1,6 @@
 import type { ExperienceSetting, ExperienceSettingValue } from '@hooksjam/gl-game-lab-engine';
 export interface TuringSkinConfig {
   readonly renderStyle: 'spots' | 'bands';
-  readonly timeScale: number;
   readonly resolution: number;
   readonly feedRate: number;
   readonly killRate: number;
@@ -11,7 +10,6 @@ export interface TuringSkinConfig {
 }
 export const TURING_SKIN_DEFAULTS: TuringSkinConfig = Object.freeze({
   renderStyle: 'spots',
-  timeScale: 1,
   resolution: 128,
   feedRate: 0.044,
   killRate: 0.06,
@@ -37,7 +35,6 @@ export const TURING_SKIN_SETTINGS: readonly ExperienceSetting[] = Object.freeze(
       }
     ]
   },
-  n('timeScale', 'Timescale', 'Simulation', 0, 2, 0.05, 1),
   {
     ...n('resolution', 'Resolution', 'Simulation', 64, 4096, 1, 128),
     numericScale: 'powerOfTwo'

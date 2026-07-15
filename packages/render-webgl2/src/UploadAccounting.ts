@@ -7,11 +7,11 @@ import type {
 const FLOAT_BYTES = Float32Array.BYTES_PER_ELEMENT;
 
 export function segmentUploadBytes(batch: SegmentBatch2D): number {
-  return batch.count * 6 * FLOAT_BYTES;
+  return batch.count * (6 + (batch.colorSeeds ? 1 : 0) + (batch.endRadii ? 1 : 0)) * FLOAT_BYTES;
 }
 
 export function triangleMeshUploadBytes(batch: TriangleMeshBatch2D): number {
-  return batch.vertexCount * 3 * FLOAT_BYTES;
+  return batch.vertexCount * (3 + (batch.edgeFactors ? 1 : 0)) * FLOAT_BYTES;
 }
 
 export function metaballUploadBytes(batch: MetaballBatch2D): number {

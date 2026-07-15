@@ -53,6 +53,10 @@ export interface RenderBackend {
   readonly viewport: RenderViewport;
   readonly capabilities: RenderBackendCapabilities;
   resize(cssWidth: number, cssHeight: number, pixelRatio?: number): void;
+  /** Requests one presentation even when the next frame contains no visual submissions. */
+  requestRender(): void;
+  /** Presents and reads a frame before the browser can discard its default framebuffer. */
+  captureRgba(presentFrame: () => void): Uint8Array;
   readRgba(): Uint8Array;
 }
 

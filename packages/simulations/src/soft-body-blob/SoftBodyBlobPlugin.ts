@@ -1,10 +1,10 @@
 import { createExtensionToken, type EnginePlugin } from '@hooksjam/gl-game-lab-core';
-import { EngineInput, EngineRender2D, EngineSchedule, type ExperienceLaunchOptions, type ExperienceRuntimeController, type ExperienceSettingValue } from '@hooksjam/gl-game-lab-engine';
+import { EngineInput, EngineRender2D, EngineSchedule, InteractionRadiusIndicator2D, type ExperienceLaunchOptions, type ExperienceRuntimeController, type ExperienceSettingValue } from '@hooksjam/gl-game-lab-engine';
 import { registerSimulationRuntime } from '../SimulationPluginLifecycle.js';
 import { packDrawPathPreview } from '../DrawPathPreview.js';
 import { packBuildPreview } from '../BuildFixtures.js';
 import { blobNumber, blobString, createSoftBodyBlobConfig, SOFT_BODY_BLOB_DEFAULTS, type SoftBodyBlobConfig } from './config.js';
-import { SoftBodyModel } from './SoftBodyModel.js';
+import { prepareSoftBodyDrawBlueprint, softBodyNodeRadiusForDensity, SoftBodyModel, type SoftBodyDragForce } from './SoftBodyModel.js';
 import { blobColor3, blobColor4, SOFT_BODY_BLOB_STYLE_MANIFEST } from './styles.js';
 export type SoftBodyBlobMode = 'draw' | 'build' | 'interact';
 export interface SoftBodyBlobController extends ExperienceRuntimeController {
@@ -19,7 +19,9 @@ type Point = {
 };
 export function createSoftBodyBlobPlugin(initial: SoftBodyBlobConfig = SOFT_BODY_BLOB_DEFAULTS, launch: ExperienceLaunchOptions = {}): EnginePlugin {
   let config = initial, mode: SoftBodyBlobMode = launch.modeId === 'build' || launch.modeId === 'interact' ? launch.modeId : 'draw', styleId = validStyle(launch.styleId) ?? SOFT_BODY_BLOB_STYLE_MANIFEST.defaultStyleId, pendingReset = true, width = 1, height = 1, elapsed = 0, nextDemo = 0, randomState = (launch.seed ?? 1358409995) >>> 0, cleanup = (): void => undefined;
-  const model = new SoftBodyModel(), paths = new Map<number, Point[]>(), picked = new Int32Array(2048), pickedCounts = new Map<number, number>();
+  const model = new SoftBodyModel(launch.profile === 'preview'), paths = new Map<number, Point[]>();
+  const grabbedBodies = new Map<number, readonly number[]>(), dragPoints = new Map<number, Point>(), previousDragPoints = new Map<number, Point>();
+  const interactionIndicator = new InteractionRadiusIndicator2D('soft-body-blob.interaction-radius');
   return {
     id: SOFT_BODY_BLOB_PLUGIN_ID,
     version: '1.0.0',
@@ -55,7 +57,9 @@ export function createSoftBodyBlobPlugin(initial: SoftBodyBlobConfig = SOFT_BODY
             throw new Error(`Unknown Soft Body Blob mode: ${value}`);
           mode = value;
           paths.clear();
-          pickedCounts.clear();
+          grabbedBodies.clear();
+          dragPoints.clear();
+          previousDragPoints.clear();
         },
         setStyle: value => {
           const next = validStyle(value);
@@ -98,9 +102,9 @@ export function createSoftBodyBlobPlugin(initial: SoftBodyBlobConfig = SOFT_BODY
             };
             if (event.phase === 'down') {
               if (mode === 'interact') {
-                const count = model.world.pickNearby(point.x, point.y, blobNumber(config, 'interactionRadius'), picked);
-                pickedCounts.set(event.id, count);
-                model.world.dragPicked(picked, count, point.x, point.y, dt);
+                grabbedBodies.set(event.id, model.pickBodies(point.x, point.y, blobNumber(config, 'interactionRadius')));
+                dragPoints.set(event.id, point);
+                previousDragPoints.set(event.id, point);
               }
               else
                 paths.set(event.id, [
@@ -108,25 +112,23 @@ export function createSoftBodyBlobPlugin(initial: SoftBodyBlobConfig = SOFT_BODY
                 ]);
             }
             else if (event.phase === 'move') {
-              if (mode === 'interact')
-                model.world.dragPicked(picked, pickedCounts.get(event.id) ?? 0, point.x, point.y, dt);
-              else {
+              if (mode === 'interact') {
+                dragPoints.set(event.id, point);
+              } else {
                 const path = paths.get(event.id);
-                if (path && distance(path[path.length - 1] ?? point, point) > 4) {
+                if (path && distance(path[path.length - 1] ?? point, point) > 5) {
                   path.push(point);
-                  if (path.length > 256)
-                    path.shift();
                 }
               }
             }
             else {
-              if (mode === 'interact')
-                pickedCounts.delete(event.id);
-              else {
+              if (mode === 'interact') {
+                grabbedBodies.delete(event.id);
+                dragPoints.delete(event.id);
+                previousDragPoints.delete(event.id);
+              } else {
                 const path = paths.get(event.id);
                 if (path) {
-                  if (distance(path[path.length - 1] ?? point, point) > 2)
-                    path.push(point);
                   commit(path);
                   paths.delete(event.id);
                 }
@@ -137,15 +139,30 @@ export function createSoftBodyBlobPlugin(initial: SoftBodyBlobConfig = SOFT_BODY
             spawnDemoBlob();
             nextDemo = elapsed + 0.48 + random() * 0.36;
           }
+          const dragForces: SoftBodyDragForce[] = [];
+          for (const [id, point] of dragPoints) {
+            const previous = previousDragPoints.get(id) ?? point;
+            dragForces.push({
+              bodyIndices: grabbedBodies.get(id) ?? [],
+              x: point.x,
+              y: point.y,
+              moveX: point.x - previous.x,
+              moveY: point.y - previous.y,
+              radius: blobNumber(config, 'interactionRadius'),
+            });
+          }
           model.step(dt, {
+            blobSize: blobNumber(config, 'blobSize'),
             squishiness: effectiveSquish(),
             surfaceTension: blobNumber(config, 'surfaceTension'),
             areaPressure: blobNumber(config, 'areaPressure'),
             plasticFlow: blobNumber(config, 'plasticFlow'),
             boundaryElasticity: blobNumber(config, 'boundaryElasticity'),
+            shapeRigidity: blobNumber(config, 'shapeRigidity'),
             membraneDamping: blobNumber(config, 'membraneDamping'),
             constraintPasses: blobNumber(config, 'constraintPasses')
-          });
+          }, dragForces);
+          for (const [id, point] of dragPoints) previousDragPoints.set(id, point);
         }
       });
       context.get(EngineSchedule).addSystem({
@@ -153,15 +170,15 @@ export function createSoftBodyBlobPlugin(initial: SoftBodyBlobConfig = SOFT_BODY
         stage: 'renderExtract',
         run: () => {
           const style = requireStyle(), palette3 = style.palette.slice(0, 4).map(blobColor3), palette4 = style.palette.slice(0, 4).map(color => blobColor4(color)), renderStyle = blobString(config, 'renderStyle');
-          if (renderStyle !== 'basic') {
+          if (renderStyle === 'enhanced') {
             const packed = model.packMesh(blobNumber(config, 'skinSmoothing'));
-            if (renderStyle === 'enhanced') renderer.submitTriangleMesh({
+            renderer.submitTriangleMesh({
               id: 'soft-body-blob.mesh', ...packed, worldWidth: width, worldHeight: height,
-              palette: palette3, opacity: 0.72, blend: 'alpha'
+              palette: palette3, opacity: 1, blend: 'opaque', shading: 'soft-body-skin'
             });
           }
           if (renderStyle === 'ultra') {
-            const visual = model.packVisualPoints(blobNumber(config, 'liquidFillDensity')), scale = 0.78 + blobNumber(config, 'liquidParticleRadius') * 0.46, radii = new Float32Array(visual.count);
+            const visual = model.packVisualPoints(blobNumber(config, 'liquidFillDensity'), palette3.length, blobNumber(config, 'fillerScale')), scale = 0.78 + blobNumber(config, 'liquidParticleRadius') * 0.46, radii = new Float32Array(visual.count);
             for (let i = 0; i < visual.count; i++) radii[i] = (visual.radii[i] ?? 1) * scale;
             renderer.submitMetaballs({
               id: 'soft-body-blob-liquid-surface', count: visual.count, positions: visual.positions,
@@ -169,7 +186,7 @@ export function createSoftBodyBlobPlugin(initial: SoftBodyBlobConfig = SOFT_BODY
               fieldScale: blobNumber(config, 'liquidFieldScale'), particleRadiusScale: blobNumber(config, 'liquidSplatDensity'),
               threshold: blobNumber(config, 'liquidSurfaceThreshold'), edgeSoftness: blobNumber(config, 'liquidEdgeSoftness'),
               edgeTightness: blobNumber(config, 'liquidEdgeTightness'), palette: palette3, background: blobColor3(style.background),
-              thermalContrast: 1, thermalStrength: blobNumber(config, 'liquidThermalStrength'),
+              thermalContrast: 1, thermalStrength: blobNumber(config, 'liquidThermalStrength'), paletteMapping: 'gradient',
               refraction: blobNumber(config, 'liquidRefraction'), gloss: blobNumber(config, 'liquidGloss'),
               rimLighting: blobNumber(config, 'liquidRimLighting'), foamStrength: blobNumber(config, 'liquidFoamStrength'),
               bloomStrength: blobNumber(config, 'liquidBloomStrength'), heatShimmer: blobNumber(config, 'liquidHeatShimmer'),
@@ -178,7 +195,7 @@ export function createSoftBodyBlobPlugin(initial: SoftBodyBlobConfig = SOFT_BODY
             });
           }
           if (renderStyle === 'basic') {
-            const layers = model.packBasicVisualLayers(blobNumber(config, 'liquidFillDensity'));
+            const layers = model.packBasicVisualLayers(blobNumber(config, 'liquidFillDensity'), blobNumber(config, 'fillerScale'));
             if (layers.nodes.count > 0) renderer.submitParticles({ id: 'soft-body-blob-nodes', count: layers.nodes.count, positions: layers.nodes.positions, radii: layers.nodes.radii, colorSeeds: layers.nodes.seeds, palette: palette4, paletteMode: 'indexed', blend: 'alpha', opacity: 0.76 });
             if (layers.fillers.count > 0) renderer.submitParticles({ id: 'soft-body-blob-fillers', count: layers.fillers.count, positions: layers.fillers.positions, radii: layers.fillers.radii, colorSeeds: layers.fillers.seeds, palette: [[1, 1, 1, 1]], paletteMode: 'indexed', blend: 'alpha', opacity: 0.18 });
           }
@@ -188,42 +205,33 @@ export function createSoftBodyBlobPlugin(initial: SoftBodyBlobConfig = SOFT_BODY
             palette: [[0.58, 0.58, 0.58]], opacity: 1, blend: 'alpha'
           });
           const preview = mode === 'build'
-            ? packBuildPreview(paths.values(), Math.max(5, blobNumber(config, 'blobSize') * 0.18))
+            ? packBuildPreview(paths.values(), softBodyNodeRadiusForDensity(blobNumber(config, 'nodeDensity')))
             : packDrawPathPreview(paths.values(), 'closed');
           if (preview.count > 0) renderer.submitSegments({
             id: 'soft-body-blob.draw-preview', ...preview, worldWidth: width, worldHeight: height,
             palette: [mode === 'build' ? [0.58, 0.58, 0.58] : [1, 0.42, 0.78]], opacity: 0.86, blend: 'alpha'
           });
+          if (mode === 'interact') {
+            interactionIndicator.submit(renderer, input.snapshot.pointers, blobNumber(config, 'interactionRadius'));
+          }
         }
       });
       function reset() {
         model.reset(width, height, randomState);
         paths.clear();
-        pickedCounts.clear();
+        grabbedBodies.clear();
+        dragPoints.clear();
+        previousDragPoints.clear();
         elapsed = 0;
         nextDemo = 0.5;
-        for (let i = 0; i < 4; i++)
-          spawnDemoBlob();
       }
       function applyConfig() {
-        const viscosity = blobNumber(config, 'viscosity'), squish = effectiveSquish(), surface = blobNumber(config, 'surfaceTension'), preview = launch.profile === 'preview';
-        const densityT = Math.max(0, Math.min(1, (blobNumber(config, 'nodeDensity') - 0.35) / (2.5 - 0.35)));
-        const nodeRadius = 22 + (8.5 - 22) * Math.sqrt(densityT);
         model.configure({
           maxParticles: 65536,
-          radius: nodeRadius,
-          radiusVariation: 0,
           gravity: blobNumber(config, 'gravity'),
-          solverIterations: 2,
           substeps: Math.floor(blobNumber(config, 'substeps')),
-          constraintPasses: Math.floor(blobNumber(config, 'constraintPasses')),
-          constraintStiffnessScale: (0.48 + surface * 0.5) / (1 + squish * 0.74) * (preview ? 0.42 : 1),
-          collisionSoftness: Math.min(1.5, 0.64 + squish * 0.22),
-          contactFriction: viscosity,
-          solverDamping: Math.max(0.82, 0.998 - blobNumber(config, 'membraneDamping') * 0.05),
-          airDrag: Math.max(0.9, 0.999 - viscosity * 0.025),
-          openTop: true,
-          wallBounce: false
+          contactFriction: blobNumber(config, 'viscosity'),
+          maxFrameDelta: 1 / 30
         });
       }
       function applyStyle() {
@@ -254,41 +262,23 @@ export function createSoftBodyBlobPlugin(initial: SoftBodyBlobConfig = SOFT_BODY
       }
       function commit(path: readonly Point[]) {
         if (mode === 'build') {
-          const radius = Math.max(5, blobNumber(config, 'blobSize') * 0.18), samples = sampleOpen(path, radius * 1.35);
+          const radius = softBodyNodeRadiusForDensity(blobNumber(config, 'nodeDensity')), samples = sampleOpen(path, radius * 1.55);
           model.addFixture(samples.length ? samples : [
             path[0] as Point
           ], radius);
           return;
         }
-        if (path.length < 8) {
-          const point = path[0];
-          if (point)
-            model.addBlob(point.x, point.y, blobNumber(config, 'blobSize'), blobNumber(config, 'nodeDensity'));
-          return;
-        }
-        const outline = smoothClosed(path, blobNumber(config, 'drawSmoothing'));
-        let cx = 0, cy = 0;
-        for (const point of outline) {
-          cx += point.x;
-          cy += point.y;
-        }
-        cx /= outline.length;
-        cy /= outline.length;
-        let radius = 0;
-        for (const point of outline)
-          radius += distance(point, {
-            x: cx,
-            y: cy
-          });
-        radius /= outline.length;
-        model.addBlob(cx, cy, Math.max(18, radius), blobNumber(config, 'nodeDensity'), outline);
+        if (path.length < 5) return;
+        const density = blobNumber(config, 'nodeDensity');
+        const blueprint = prepareSoftBodyDrawBlueprint(path, blobNumber(config, 'drawSmoothing'), density, width, height);
+        if (blueprint) model.addBlob(blueprint.centerX, blueprint.centerY, blueprint.radius, density, blueprint.outline, blueprint.restArea);
       }
       function spawnDemoBlob() {
-        const size = blobNumber(config, 'blobSize') * (launch.profile === 'preview' ? 0.48 : 0.75 + random() * 0.45), x = size + random() * Math.max(1, width - size * 2), y = -size * 0.4 - random() * size;
+        const size = blobNumber(config, 'blobSize') * (0.75 + random() * 0.45), x = size + random() * Math.max(1, width - size * 2), y = -size * 0.4 - random() * size;
         model.addBlob(x, y, Math.max(12, size), blobNumber(config, 'nodeDensity'));
       }
       function effectiveSquish() {
-        return Math.min(2, blobNumber(config, 'squishiness') + (launch.profile === 'preview' ? 0.9 : 0));
+        return Math.min(2, blobNumber(config, 'squishiness'));
       }
       function random() {
         randomState ^= randomState << 13;
@@ -309,20 +299,6 @@ export function createSoftBodyBlobPlugin(initial: SoftBodyBlobConfig = SOFT_BODY
       }
     }
   };
-}
-function smoothClosed(points: readonly Point[], amount: number): Point[] {
-  let result = points.filter((_, i) => i % Math.max(1, Math.ceil(points.length / 96)) === 0).map(point => ({
-    ...point
-  }));
-  for (let pass = 0; pass < 3; pass++)
-    result = result.map((point, i) => {
-      const previous = result[(i - 1 + result.length) % result.length] ?? point, next = result[(i + 1) % result.length] ?? point;
-      return {
-        x: point.x * (1 - amount * 0.5) + (previous.x + next.x) * amount * 0.25,
-        y: point.y * (1 - amount * 0.5) + (previous.y + next.y) * amount * 0.25
-      };
-    });
-  return result;
 }
 function sampleOpen(points: readonly Point[], spacing: number) {
   if (points.length < 2)

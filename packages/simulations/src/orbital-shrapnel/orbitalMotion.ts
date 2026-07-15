@@ -11,6 +11,11 @@ export function orbitalGravityWorld(gravity: number): number {
   return gravity * GRAVITY_SCALE;
 }
 
+export function debrisSpawnCount(capacity: number, volume: number): number {
+  const safeCapacity = Math.max(1, Math.floor(capacity));
+  return Math.max(1, Math.min(safeCapacity, Math.round(safeCapacity * Math.max(0, volume))));
+}
+
 export function stableOrbitalVelocity(
   x: number,
   y: number,

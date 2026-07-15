@@ -1,6 +1,7 @@
 import type { ExperienceSetting, ExperienceSettingValue, NumberSetting } from '@hooksjam/gl-game-lab-engine';
+import { METABALL_SPLAT_DENSITY_MAX } from '../MetaballSurfaceSettings.js';
 export type SplashMpmConfig = Readonly<Record<string, ExperienceSettingValue>>;
-const s = 'Simulation', r = 'Rendering', e = 'Enhanced Surface';
+const s = 'Simulation', r = 'Rendering';
 export const SPLASH_MPM_SETTINGS: readonly ExperienceSetting[] = Object.freeze([
   {
     key: 'renderStyle',
@@ -38,66 +39,69 @@ export const SPLASH_MPM_SETTINGS: readonly ExperienceSetting[] = Object.freeze([
   n('flipness', 'FLIP Blend', s, 0, 1, 0.01, 0.88),
   n('gravity', 'Gravity', s, 80, 1900, 20, 920),
   n('particleRadius', 'Droplet Size', s, 1, 64, 0.1, 4.2),
-  n('surfaceSmoothing', 'Surface Smoothing', r, 0, 1, 0.01, 0.72),
+  v(n('surfaceSmoothing', 'Surface Smoothing', r, 0, 1, 0.01, 0.72), [
+    'enhanced',
+    'ultra'
+  ]),
   n('opacity', 'Opacity', r, 0.18, 1, 0.01, 0.82),
-  v(n('enhancedQuality', 'Surface Detail', e, 0.5, 2, 0.05, 1.25), [
+  v(n('enhancedQuality', 'Surface Detail', r, 0.5, 2, 0.05, 1.25), [
     'enhanced',
     'ultra'
   ]),
-  v(n('enhancedSplatSize', 'Surface Kernel', e, 0.65, 3.4, 0.05, 1.85), [
+  v(n('enhancedSplatSize', 'Surface Kernel', r, 0.65, 3.4, 0.05, 1.85), [
     'enhanced',
     'ultra'
   ]),
-  v(n('enhancedDepth', 'Palette Depth', e, 0, 1, 0.01, 0.62), [
+  v(n('enhancedDepth', 'Palette Depth', r, 0, 1, 0.01, 0.62), [
     'enhanced',
     'ultra'
   ]),
-  v(n('enhancedEdge', 'Edge Definition', e, 0, 1, 0.01, 0.58), [
+  v(n('enhancedEdge', 'Edge Definition', r, 0, 1, 0.01, 0.58), [
     'enhanced',
     'ultra'
   ]),
-  v(n('liquidFieldScale', 'Field Resolution', e, 0.45, 1, 0.01, 0.78), [
+  v(n('liquidFieldScale', 'Field Resolution', r, 0.45, 1, 0.01, 0.78), [
     'enhanced',
     'ultra'
   ]),
-  v(n('liquidSurfaceThreshold', 'Surface Threshold', e, 0.04, 0.72, 0.005, 0.1), [
+  v(n('liquidSurfaceThreshold', 'Surface Threshold', r, 0.04, 0.72, 0.005, 0.1), [
     'enhanced',
     'ultra'
   ]),
-  v(n('liquidEdgeTightness', 'Edge Tightness', e, 0.15, 1, 0.01, 0.82), [
+  v(n('liquidEdgeTightness', 'Edge Tightness', r, 0.15, 1, 0.01, 0.82), [
     'enhanced',
     'ultra'
   ]),
-  v(n('liquidEdgeSoftness', 'Edge Softness', e, 0, 2, 0.01, 0.46), [
+  v(n('liquidEdgeSoftness', 'Edge Softness', r, 0, 2, 0.01, 0.46), [
     'enhanced',
     'ultra'
   ]),
-  v(n('liquidSplatDensity', 'Splat Density', e, 0.45, 3.4, 0.01, 2.1), [
+  v(n('liquidSplatDensity', 'Splat Density', r, 0.45, METABALL_SPLAT_DENSITY_MAX, 0.01, 2.1), [
     'enhanced',
     'ultra'
   ]),
-  v(n('liquidParticleRadius', 'Surface Radius', e, 0.7, 3.4, 0.01, 1.95), [
+  v(n('liquidParticleRadius', 'Surface Radius', r, 0.7, 3.4, 0.01, 1.95), [
     'enhanced',
     'ultra'
   ]),
-  v(n('liquidRefraction', 'Refraction', e, 0, 1, 0.01, 0.58), [
+  v(n('liquidRefraction', 'Refraction', r, 0, 1, 0.01, 0.58), [
     'enhanced',
     'ultra'
   ]),
-  v(n('liquidGloss', 'Specular Gloss', e, 0, 1, 0.01, 0.78), [
+  v(n('liquidGloss', 'Specular Gloss', r, 0, 1, 0.01, 0.78), [
     'enhanced',
     'ultra'
   ]),
-  v(n('liquidFoamStrength', 'Foam Bloom', e, 0, 6, 0.01, 2.4), [
+  v(n('liquidFoamStrength', 'Foam Bloom', r, 0, 6, 0.01, 2.4), [
     'ultra'
   ]),
-  v(n('liquidBloomStrength', 'Soft Bloom', e, 0, 3, 0.01, 0.34), [
+  v(n('liquidBloomStrength', 'Soft Bloom', r, 0, 3, 0.01, 0.34), [
     'ultra'
   ]),
-  v(n('liquidHeatShimmer', 'Heat Shimmer', e, 0, 2, 0.01, 0.16), [
+  v(n('liquidHeatShimmer', 'Heat Shimmer', r, 0, 2, 0.01, 0.16), [
     'ultra'
   ]),
-  v(n('liquidDepthDiffusion', 'Depth Diffusion', e, 0, 1, 0.01, 0.18), [
+  v(n('liquidDepthDiffusion', 'Depth Diffusion', r, 0, 1, 0.01, 0.18), [
     'ultra'
   ]),
   m(n('inputRadius', 'Splash Radius', 'Input Mode', 18, 160, 2, 62), [

@@ -52,6 +52,34 @@ describe('GameEngine', () => {
     expect(() => engine.assets.createGroup('after-destroy')).toThrow('destroyed');
   });
 
+  it('applies one engine time scale to scheduled scene updates', async () => {
+    const deltas: number[] = [];
+    const engine = new GameEngine({
+      plugins: [{
+        id: 'game.scaled-time-observer',
+        version: '1.0.0',
+        dependencies: [{ id: GAME_ENGINE_RUNTIME_PLUGIN_ID }],
+        install: (context) => {
+          context.get(EngineSchedule).addSystem({
+            id: 'game.scaled-time-observer.update',
+            stage: 'update',
+            run: ({ time }) => { deltas.push(time.deltaSeconds); },
+          });
+        },
+      }],
+    });
+    engine.setTimeScale(0.25);
+    await engine.initialize();
+    await engine.start();
+    engine.frame(0.2);
+    expect(engine.timeScale).toBe(0.25);
+    expect(deltas).toEqual([0.05]);
+    engine.setTimeScale(0);
+    engine.frame(0.2);
+    expect(deltas).toEqual([0.05, 0]);
+    await engine.destroy();
+  });
+
   it('attempts every runtime cleanup when a never-initialized engine fails disposal', async () => {
     const engine = new GameEngine();
     const unload = vi.spyOn(engine.scenes, 'unloadAll').mockRejectedValue(new Error('scene failed'));

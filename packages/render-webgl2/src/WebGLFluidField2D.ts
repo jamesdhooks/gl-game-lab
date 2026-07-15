@@ -50,7 +50,8 @@ export class WebGLFluidField2D implements FluidField2D {
   get simulationHeight(): number { return this.owner.value.velocity.height; }
   step(options: FluidStep2DOptions, splats: readonly FluidSplat2D[] = []): void {
     this.owner.value.step(options, splats);
-    this.recordWork(5 + Math.max(1, Math.min(48, Math.floor(options.pressureIterations))) + splats.length * 2);
+    const pressurePasses = Math.max(1, Math.min(48, Math.floor(options.pressureIterations)));
+    this.recordWork(options.solverMode === 'source-mapped' ? 4 + pressurePasses : 5 + pressurePasses + splats.length * 2);
   }
   seed(kind: 'blank' | 'random' | 'voronoi' | 'cloud', seed: number, options?: FluidSeed2DOptions): void {
     this.lastSeed = { kind, seed, ...(options ? { options } : {}) };

@@ -2,6 +2,7 @@ import type { ExperienceDefinition } from '@hooksjam/gl-game-lab-engine';
 import { createSparksConfig, SPARKS_DEFAULTS, SPARKS_SETTINGS } from './config.js';
 import { createSparksPlugin } from './SparksPlugin.js';
 import { SPARKS_STYLE_MANIFEST } from './styles.js';
+import { describeSimulationSettings } from '../settingDescriptions.js';
 export const sparksDefinition: ExperienceDefinition = {
   id: 'sparks',
   kind: 'simulation',
@@ -56,7 +57,7 @@ export const sparksDefinition: ExperienceDefinition = {
       description: 'Tap for a circular peg or drag to draw a pill-shaped rail.'
     }
   ],
-  settings: SPARKS_SETTINGS,
+  settings: describeSimulationSettings('sparks', SPARKS_SETTINGS),
   styleManifest: SPARKS_STYLE_MANIFEST,
   tutorialPages: [
     {

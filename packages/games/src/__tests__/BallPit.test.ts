@@ -3,10 +3,13 @@ import { DENSE_CIRCLE_PARTICLE_PLUGIN_ID, DenseCircleParticleWorld2DService } fr
 import {
   DEFAULT_FONT_2D_ID,
   EngineRender2D,
+  EngineRenderer,
+  ExperiencePreviewCycleControllerService,
   GameEngine,
   type BitmapFont2DHandle,
   type Camera2DState,
   type ParticleBatch2D,
+  type RenderBackend,
   type Render2DService,
   type Sprite2DDraw,
   type Text2DDraw,
@@ -31,7 +34,7 @@ describe('Ball Pit experience', () => {
     expect(GAME_REGISTRY.get('ball-pit')).toBe(ballPitDefinition);
     expect(ballPitDefinition.kind).toBe('game');
     expect(ballPitDefinition.modes?.map(({ id }) => id)).toEqual(['single', 'stream', 'interact', 'explosion']);
-    expect(ballPitDefinition.settings).toHaveLength(17);
+    expect(ballPitDefinition.settings).toHaveLength(16);
     expect(BALL_PIT_SETTINGS.map((setting) => [
       setting.key,
       setting.type,
@@ -52,7 +55,6 @@ describe('Ball Pit experience', () => {
       ['substeps', 'number', 2, 1, 5, 1, 'linear', false, ''],
       ['gravity', 'number', 1300, 0, 3000, 25, 'linear', false, ''],
       ['burstCount', 'number', 5000, 100, 10_000, 100, 'linear', true, 'explosion'],
-      ['wallBounce', 'boolean', false, null, null, null, null, true, ''],
       ['friction', 'number', 0.72, 0, 2, 0.05, 'linear', true, ''],
       ['collisionSoftness', 'number', 1.05, 0.05, 1.5, 0.01, 'linear', true, ''],
       ['maxPairPush', 'number', 0.75, 0.02, 2, 0.01, 'linear', true, ''],
@@ -62,6 +64,8 @@ describe('Ball Pit experience', () => {
       ['impactBounceThreshold', 'number', 150, 0, 500, 10, 'linear', true, ''],
     ]);
     expect(ballPitDefinition.styleManifest).toBe(BALL_PIT_STYLE_MANIFEST);
+    expect(BALL_PIT_SETTINGS.find(({ key }) => key === 'wallBounceAmount')?.label).toBe('Bounce');
+    expect(BALL_PIT_SETTINGS.some(({ key }) => key === 'wallBounce')).toBe(false);
     expect(BALL_PIT_STYLE_MANIFEST.styles.map(({ id }) => id)).toEqual([
       'rainbow', 'pastel', 'neon', 'ocean', 'candy', 'rubber-room', 'soda-pop', 'moon-gym', 'jungle-bounce', 'monochrome-pop',
     ]);
@@ -84,16 +88,33 @@ describe('Ball Pit experience', () => {
     ]);
   });
 
-  it('normalizes scaled settings and preserves the frozen preview profile', () => {
+  it('normalizes scaled settings and caps only preview performance costs', () => {
     expect(createBallPitConfig({ maxParticles: 2000 }).maxParticles).toBe(2048);
     expect(createBallPitConfig({ gravity: 1312 }).gravity).toBe(1300);
-    expect(ballPitConfigForProfile(BALL_PIT_DEFAULTS, 'preview')).toMatchObject({
+    expect(ballPitConfigForProfile(createBallPitConfig({
+      maxParticles: 2048,
+      radius: 32,
+      radiusVariation: 0.4,
+      solverPasses: 5,
+      substeps: 4,
+      gravity: 2000,
+      airDrag: 0.96,
+    }), 'preview')).toMatchObject({
       maxParticles: 96,
-      radius: 9,
-      radiusVariation: 0.18,
+      radius: 32,
+      radiusVariation: 0.4,
       solverPasses: 2,
       substeps: 1,
-      gravity: 1050,
+      gravity: 2000,
+      airDrag: 0.96,
+    });
+    expect(ballPitConfigForProfile(BALL_PIT_DEFAULTS, 'preview')).toMatchObject({
+      maxParticles: 96,
+      radius: 12,
+      radiusVariation: 0.15,
+      solverPasses: 2,
+      substeps: 1,
+      gravity: 1300,
     });
     expect(ballPitConfigForQuality(BALL_PIT_DEFAULTS, 'mobile', 'demo')).toMatchObject({
       maxParticles: 2048,
@@ -116,7 +137,10 @@ describe('Ball Pit experience', () => {
       id: 'test.render-2d',
       version: '1.0.0',
       dependencies: [{ id: 'gl-game-lab.runtime' }],
-      install: (context: import('@hooksjam/gl-game-lab-core').PluginInstallContext) => { context.provide(EngineRender2D, renderer); },
+      install: (context: import('@hooksjam/gl-game-lab-core').PluginInstallContext) => {
+        context.provide(EngineRender2D, renderer);
+        context.provide(EngineRenderer, renderer);
+      },
     };
     const engine = new GameEngine({ plugins: [fakeRendererPlugin, ...ballPitDefinition.createPlugins()] });
     await engine.initialize();
@@ -124,6 +148,16 @@ describe('Ball Pit experience', () => {
 
     engine.frame(1 / 60);
     const controller = engine.kernel.get(BallPitControllerService);
+    const world = engine.kernel.get(DenseCircleParticleWorld2DService);
+    expect(world.activeSettings).toMatchObject({
+      wallBounce: true,
+      boundaryRestitution: BALL_PIT_DEFAULTS.wallBounceAmount,
+      particleRestitution: BALL_PIT_DEFAULTS.wallBounceAmount,
+      velocityContactResponse: true,
+    });
+    controller.setSetting('wallBounceAmount', 0.9);
+    expect(world.activeSettings.boundaryRestitution).toBe(0.9);
+    expect(world.activeSettings.particleRestitution).toBe(0.9);
     expect(controller.bodyCount).toBe(0);
     expect(renderer.particleCount).toBe(0);
     engine.input.ingest({ kind: 'pointer', phase: 'down', id: 1, x: 400, y: 100, buttons: 1 });
@@ -142,6 +176,7 @@ describe('Ball Pit experience', () => {
     expect(controller.settings.spawnRate).toBe(50);
     controller.reset();
     expect(controller.bodyCount).toBe(0);
+    expect(renderer.renderRequests).toBe(1);
 
     controller.setMode('stream');
     engine.input.ingest({ kind: 'pointer', phase: 'down', id: 2, x: 400, y: 90, buttons: 1 });
@@ -156,7 +191,6 @@ describe('Ball Pit experience', () => {
     engine.frame(1 / 60);
     engine.input.ingest({ kind: 'pointer', phase: 'up', id: 3, x: 400, y: 300, buttons: 0 });
     engine.frame(1 / 60);
-    const world = engine.kernel.get(DenseCircleParticleWorld2DService);
     const beforeDragX = world.positions[0] ?? 0;
     const beforeDragY = world.positions[1] ?? 0;
     const beforeDragVelocityX = world.velocities[0] ?? 0;
@@ -186,13 +220,24 @@ describe('Ball Pit experience', () => {
       id: 'test.render-2d',
       version: '1.0.0',
       dependencies: [{ id: 'gl-game-lab.runtime' }],
-      install: (context: import('@hooksjam/gl-game-lab-core').PluginInstallContext) => { context.provide(EngineRender2D, renderer); },
+      install: (context: import('@hooksjam/gl-game-lab-core').PluginInstallContext) => {
+        context.provide(EngineRender2D, renderer);
+        context.provide(EngineRenderer, renderer);
+      },
     };
     const engine = new GameEngine({ plugins: [fakeRendererPlugin, ...ballPitDefinition.createPlugins({ profile: 'preview', seed: 7 })] });
     await engine.initialize();
     await engine.start();
     engine.frame(0.25);
     expect(engine.kernel.get(BallPitControllerService).bodyCount).toBe(3);
+    expect(engine.kernel.get(ExperiencePreviewCycleControllerService).advancePreviewCycle({ generation: 1, seed: 11 })).toBe('handled');
+    engine.frame(1 / 60);
+    expect(engine.kernel.get(BallPitControllerService).bodyCount).toBe(0);
+    for (let frame = 0; frame < 60; frame += 1) engine.frame(1 / 60);
+    expect(engine.kernel.get(BallPitControllerService).bodyCount).toBe(0);
+    for (let frame = 0; frame < 40; frame += 1) engine.frame(1 / 60);
+    expect(engine.kernel.get(BallPitControllerService).bodyCount).toBeGreaterThan(0);
+    expect(engine.kernel.get(DenseCircleParticleWorld2DService).positions[1]).toBeLessThan(0);
     await engine.destroy();
 
     const demoEngine = new GameEngine({ plugins: [fakeRendererPlugin, ...ballPitDefinition.createPlugins({ profile: 'demo', seed: 7 })] });
@@ -205,14 +250,22 @@ describe('Ball Pit experience', () => {
   });
 });
 
-class FakeRender2D implements Render2DService {
-  readonly viewport = { width: 800, height: 600 };
+class FakeRender2D implements Render2DService, RenderBackend {
+  readonly id = 'test.render-backend';
+  readonly state = 'ready' as const;
+  readonly capabilities = { api: 'headless', gpuSimulation: false, renderTargets: false, instancing: false } as const;
+  readonly viewport = { width: 800, height: 600, pixelRatio: 1 };
   readonly batches: ParticleBatch2D[] = [];
+  renderRequests = 0;
   constructor(
     private readonly onClear: (color: readonly number[]) => void = () => undefined,
     private readonly onBloom: (enabled: boolean) => void = () => undefined,
   ) {}
   get particleCount(): number { return this.batches.at(-1)?.count ?? 0; }
+  resize(): void {}
+  requestRender(): void { this.renderRequests += 1; }
+  captureRgba(presentFrame: () => void): Uint8Array { presentFrame(); return this.readRgba(); }
+  readRgba(): Uint8Array { return new Uint8Array(this.viewport.width * this.viewport.height * 4); }
   createRgbaTexture(): Texture2DHandle { throw new Error('not used'); }
   destroyTexture(): void {}
   hasTexture(): boolean { return false; }
