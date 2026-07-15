@@ -8,6 +8,8 @@ import type {
   GpuParticleGridSnapshot2D,
   GpuParticleGridSystem2D,
   GpuParticleGridSystem2DOptions,
+  GpuParticleGridTransfer2D,
+  GpuParticleGridTransferOptions2D,
   GpuParticleSystem2D,
   GpuParticleSystem2DOptions,
   Gpu2DCapabilities,
@@ -238,6 +240,10 @@ class WebGLGpuParticleGridSystem implements GpuParticleGridSystem2D {
 
   debugReadback(): GpuParticleGridSnapshot2D {
     return this.owner.value.state.debugReadback();
+  }
+
+  debugComputeParticleToGrid(options: GpuParticleGridTransferOptions2D): GpuParticleGridTransfer2D {
+    return this.owner.value.state.debugComputeParticleToGrid(options);
   }
 
   dispose(): void {

@@ -61,6 +61,34 @@ export interface SplashPicFlipMetricDelta {
   readonly occupiedGridRelativeError: number;
 }
 
+export interface SplashPicFlipParticleToGridInput {
+  readonly count: number;
+  readonly positions: Float32Array;
+  readonly velocities: Float32Array;
+  readonly affine: Float32Array;
+  readonly columns: number;
+  readonly rows: number;
+  readonly cell: number;
+  readonly radius: number;
+  readonly output?: SplashPicFlipParticleToGridOutput;
+}
+
+export interface SplashPicFlipParticleToGridOutput {
+  readonly mass: Float32Array;
+  readonly momentumX: Float32Array;
+  readonly momentumY: Float32Array;
+}
+
+export interface SplashPicFlipParticleToGridTransfer {
+  readonly columns: number;
+  readonly rows: number;
+  readonly cell: number;
+  readonly support: number;
+  readonly mass: Float32Array;
+  readonly momentumX: Float32Array;
+  readonly momentumY: Float32Array;
+}
+
 export class SplashPicFlipModel {
   readonly world = new DenseCircleParticleWorld2D(SPLASH_PIC_FLIP_CAPACITY, {
     maxParticles: SPLASH_PIC_FLIP_CAPACITY,
@@ -77,10 +105,6 @@ export class SplashPicFlipModel {
   private nextVx = new Float32Array(1);
   private nextVy = new Float32Array(1);
   private readonly affine = new Float32Array(SPLASH_PIC_FLIP_CAPACITY * 4);
-  private readonly neighborIndices = new Int32Array(512);
-  private readonly neighborDx = new Float32Array(512);
-  private readonly neighborDy = new Float32Array(512);
-  private readonly neighborWeights = new Float32Array(512);
   private readonly sampleScratch = new Float64Array(8);
   private columns = 1;
   private rows = 1;
@@ -207,41 +231,22 @@ export class SplashPicFlipModel {
     this.configure(t);
     this.world.setBounds(width, height);
     this.ensureGrid(width, height, t.resolution);
-    this.mass.fill(0);
-    this.vx.fill(0);
-    this.vy.fill(0);
-    const support = Math.max(0.65, Math.min(8, t.radius / this.cell));
-    const supportCells = Math.ceil(support) + 1;
-    const inverseSupportSquared = 1 / (support * support);
-    for (let i = 0; i < this.count; i++) {
-      const o = i * 2, ao = i * 4, gx = (this.world.positions[o] ?? 0) / this.cell, gy = (this.world.positions[o + 1] ?? 0) / this.cell;
-      let neighborCount = 0, weightSum = 0;
-      for (let yy = Math.floor(gy - supportCells); yy <= Math.ceil(gy + supportCells); yy++)
-        for (let xx = Math.floor(gx - supportCells); xx <= Math.ceil(gx + supportCells); xx++) {
-          const dx = xx - gx, dy = yy - gy;
-          const normalizedDistanceSquared = (dx * dx + dy * dy) * inverseSupportSquared;
-          if (normalizedDistanceSquared >= 1) continue;
-          const core = 1 - normalizedDistanceSquared;
-          const weight = core * core * (0.56 + core * 0.44);
-          this.neighborIndices[neighborCount] = this.gridIndex(xx, yy);
-          this.neighborDx[neighborCount] = dx;
-          this.neighborDy[neighborCount] = dy;
-          this.neighborWeights[neighborCount] = weight;
-          neighborCount++;
-          weightSum += weight;
-        }
-      if (weightSum <= 0.000001) continue;
-      const invWeight = Math.max(1.05, Math.min(42, 1.05 + support * support * 0.88)) / weightSum;
-      for (let neighbor = 0; neighbor < neighborCount; neighbor++) {
-        const dx = this.neighborDx[neighbor] ?? 0, dy = this.neighborDy[neighbor] ?? 0;
-        const weight = (this.neighborWeights[neighbor] ?? 0) * invWeight, c = this.neighborIndices[neighbor] ?? 0;
-        const affineX = (this.affine[ao] ?? 0) * dx + (this.affine[ao + 1] ?? 0) * dy;
-        const affineY = (this.affine[ao + 2] ?? 0) * dx + (this.affine[ao + 3] ?? 0) * dy;
-        this.mass[c] = (this.mass[c] ?? 0) + weight;
-        this.vx[c] = (this.vx[c] ?? 0) + ((this.world.velocities[o] ?? 0) + affineX) * weight;
-        this.vy[c] = (this.vy[c] ?? 0) + ((this.world.velocities[o + 1] ?? 0) + affineY) * weight;
-      }
-    }
+    const transfer = computeSplashPicFlipParticleToGrid({
+      count: this.count,
+      positions: this.world.positions,
+      velocities: this.world.velocities,
+      affine: this.affine,
+      columns: this.columns,
+      rows: this.rows,
+      cell: this.cell,
+      radius: t.radius,
+      output: {
+        mass: this.mass,
+        momentumX: this.vx,
+        momentumY: this.vy,
+      },
+    });
+    const support = transfer.support;
     for (let c = 0; c < this.mass.length; c++) {
       const m = this.mass[c] ?? 0;
       if (m <= 0) {
@@ -425,7 +430,7 @@ export class SplashPicFlipModel {
     }
   }
   private gridIndex(x: number, y: number) {
-    return Math.max(0, Math.min(this.rows - 1, y)) * this.columns + Math.max(0, Math.min(this.columns - 1, x));
+    return splashPicFlipGridIndex(x, y, this.columns, this.rows);
   }
   private sample(values: Float32Array, x: number, y: number) {
     const gx = x / Math.max(1, this.cell), gy = y / Math.max(1, this.cell);
@@ -525,6 +530,80 @@ export class SplashPicFlipModel {
 
 /** @deprecated Compatibility alias; the implementation is PIC/FLIP, not MPM. */
 export { SplashPicFlipModel as SplashMpmModel };
+
+export function computeSplashPicFlipParticleToGrid(input: SplashPicFlipParticleToGridInput): SplashPicFlipParticleToGridTransfer {
+  if (!Number.isSafeInteger(input.count) || input.count < 0) throw new Error('Splash PIC/FLIP particle count must be a non-negative integer');
+  if (!Number.isSafeInteger(input.columns) || input.columns < 1) throw new Error('Splash PIC/FLIP grid columns must be positive');
+  if (!Number.isSafeInteger(input.rows) || input.rows < 1) throw new Error('Splash PIC/FLIP grid rows must be positive');
+  if (!Number.isFinite(input.cell) || input.cell <= 0) throw new Error('Splash PIC/FLIP grid cell must be positive');
+  if (!Number.isFinite(input.radius) || input.radius <= 0) throw new Error('Splash PIC/FLIP particle radius must be positive');
+  if (input.positions.length < input.count * 2 || input.velocities.length < input.count * 2 || input.affine.length < input.count * 4) {
+    throw new Error('Splash PIC/FLIP particle-to-grid input arrays are too short');
+  }
+  const cellCount = input.columns * input.rows;
+  const mass = input.output?.mass ?? new Float32Array(cellCount);
+  const momentumX = input.output?.momentumX ?? new Float32Array(cellCount);
+  const momentumY = input.output?.momentumY ?? new Float32Array(cellCount);
+  if (mass.length < cellCount || momentumX.length < cellCount || momentumY.length < cellCount) {
+    throw new Error('Splash PIC/FLIP particle-to-grid output arrays are too short');
+  }
+  mass.fill(0, 0, cellCount);
+  momentumX.fill(0, 0, cellCount);
+  momentumY.fill(0, 0, cellCount);
+  const support = Math.max(0.65, Math.min(8, input.radius / input.cell));
+  const supportCells = Math.ceil(support) + 1;
+  const inverseSupportSquared = 1 / (support * support);
+  for (let particle = 0; particle < input.count; particle += 1) {
+    const offset = particle * 2;
+    const affineOffset = particle * 4;
+    const gx = (input.positions[offset] ?? 0) / input.cell;
+    const gy = (input.positions[offset + 1] ?? 0) / input.cell;
+    const minY = Math.floor(gy - supportCells);
+    const maxY = Math.ceil(gy + supportCells);
+    const minX = Math.floor(gx - supportCells);
+    const maxX = Math.ceil(gx + supportCells);
+    let weightSum = 0;
+    for (let yy = minY; yy <= maxY; yy += 1) {
+      for (let xx = minX; xx <= maxX; xx += 1) {
+        const dx = xx - gx;
+        const dy = yy - gy;
+        const normalizedDistanceSquared = (dx * dx + dy * dy) * inverseSupportSquared;
+        if (normalizedDistanceSquared >= 1) continue;
+        const core = 1 - normalizedDistanceSquared;
+        const weight = core * core * (0.56 + core * 0.44);
+        weightSum += weight;
+      }
+    }
+    if (weightSum <= 0.000001) continue;
+    const invWeight = Math.max(1.05, Math.min(42, 1.05 + support * support * 0.88)) / weightSum;
+    for (let yy = minY; yy <= maxY; yy += 1) {
+      for (let xx = minX; xx <= maxX; xx += 1) {
+        const dx = xx - gx;
+        const dy = yy - gy;
+        const normalizedDistanceSquared = (dx * dx + dy * dy) * inverseSupportSquared;
+        if (normalizedDistanceSquared >= 1) continue;
+        const core = 1 - normalizedDistanceSquared;
+        const weight = core * core * (0.56 + core * 0.44) * invWeight;
+        const cell = splashPicFlipGridIndex(xx, yy, input.columns, input.rows);
+        const affineX = (input.affine[affineOffset] ?? 0) * dx + (input.affine[affineOffset + 1] ?? 0) * dy;
+        const affineY = (input.affine[affineOffset + 2] ?? 0) * dx + (input.affine[affineOffset + 3] ?? 0) * dy;
+        mass[cell] = (mass[cell] ?? 0) + weight;
+        momentumX[cell] = (momentumX[cell] ?? 0) + ((input.velocities[offset] ?? 0) + affineX) * weight;
+        momentumY[cell] = (momentumY[cell] ?? 0) + ((input.velocities[offset + 1] ?? 0) + affineY) * weight;
+      }
+    }
+  }
+  return Object.freeze({
+    columns: input.columns,
+    rows: input.rows,
+    cell: input.cell,
+    support,
+    mass,
+    momentumX,
+    momentumY,
+  });
+}
+
 export function measureSplashPicFlipSnapshot(snapshot: SplashPicFlipStateSnapshot): SplashPicFlipMetrics {
   let sumX = 0, sumY = 0, momentumX = 0, momentumY = 0, kineticEnergy = 0, foamCount = 0, finite = true;
   for (let index = 0; index < snapshot.count; index += 1) {
@@ -579,6 +658,9 @@ export function compareSplashPicFlipMetrics(reference: SplashPicFlipMetrics, can
 
 function relativeError(reference: number, candidate: number): number {
   return Math.abs(reference - candidate) / Math.max(0.000001, Math.abs(reference));
+}
+function splashPicFlipGridIndex(x: number, y: number, columns: number, rows: number) {
+  return Math.max(0, Math.min(rows - 1, y)) * columns + Math.max(0, Math.min(columns - 1, x));
 }
 function closest(x: number, y: number, l: WaterObstacle) {
   const dx = l.bx - l.ax, dy = l.by - l.ay, q = dx * dx + dy * dy, t = q < 0.001 ? 0 : Math.max(0, Math.min(1, ((x - l.ax) * dx + (y - l.ay) * dy) / q));

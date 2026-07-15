@@ -4,6 +4,7 @@ import { Activity, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Image as I
 import { ExperienceRuntime, GameCanvas, PreviewTile as EnginePreviewTile, useViewport, type CanvasFrameCapture } from '@hooksjam/gl-game-lab-react';
 import { createDefaultPreviewProfile, type ExperienceDefinition, type ExperiencePreviewProfile, type ExperienceSettingValue, type GameEngine, type GpuParticleGridValidation2D } from '@hooksjam/gl-game-lab-engine';
 import { WebGL2RendererService, type ContextCycleDiagnostics } from '@hooksjam/gl-game-lab-render-webgl2';
+import { computeSplashPicFlipParticleToGrid } from '@hooksjam/gl-game-lab-simulations';
 import bundledSceneDefaults from 'virtual:gl-game-lab-scene-defaults';
 import bundledPreviewProfiles from 'virtual:gl-game-lab-preview-profiles';
 import './index.css';
@@ -813,12 +814,23 @@ function nearly(value: number | undefined, expected: number): boolean {
   return Math.abs((value ?? Number.NaN) - expected) <= 0.001;
 }
 
+function maxAbsDifference(a: Float32Array, b: Float32Array): number {
+  if (a.length !== b.length) return Number.POSITIVE_INFINITY;
+  let maximum = 0;
+  for (let index = 0; index < a.length; index += 1) {
+    maximum = Math.max(maximum, Math.abs((a[index] ?? 0) - (b[index] ?? 0)));
+  }
+  return maximum;
+}
+
 function DiagnosticExperienceHost(): JSX.Element {
   const [runtimeError, setRuntimeError] = useState<string>();
   const [diagnosticStatus, setDiagnosticStatus] = useState('idle');
   const [contextResult, setContextResult] = useState<ContextCycleDiagnostics>();
   const [gpuGridValidation, setGpuGridValidation] = useState<GpuParticleGridValidation2D>();
   const [gpuGridSeedRoundTrip, setGpuGridSeedRoundTrip] = useState<boolean>();
+  const [gpuGridP2GParity, setGpuGridP2GParity] = useState<boolean>();
+  const [gpuGridP2GMaxError, setGpuGridP2GMaxError] = useState<number>();
   const [lifecycleAlternate, setLifecycleAlternate] = useState(false);
   const [selectedExperience, setSelectedExperience] = useState<ExperienceDefinition>();
   const [alternateExperience, setAlternateExperience] = useState<ExperienceDefinition>();
@@ -882,33 +894,68 @@ function DiagnosticExperienceHost(): JSX.Element {
             gridHeight: 2,
           });
           try {
-            particleGrid.uploadSeed({
+            const seed = {
               count: 2,
-              positions: new Float32Array([12, 24, 48, 96]),
+              positions: new Float32Array([4, 4, 10, 11]),
               velocities: new Float32Array([1.5, -2.5, 3.5, -4.5]),
               radii: new Float32Array([5, 6]),
               colorSeeds: new Float32Array([7, 8]),
               foam: new Float32Array([0.25, 0.75]),
               affine: new Float32Array([1, 2, 3, 4, 5, 6, 7, 8]),
+            };
+            particleGrid.uploadSeed({
+              count: seed.count,
+              positions: seed.positions,
+              velocities: seed.velocities,
+              radii: seed.radii,
+              colorSeeds: seed.colorSeeds,
+              foam: seed.foam,
+              affine: seed.affine,
             });
             const snapshot = particleGrid.debugReadback();
             setGpuGridSeedRoundTrip(
               snapshot.count === 2
-              && nearly(snapshot.positions[0], 12) && nearly(snapshot.positions[3], 96)
+              && nearly(snapshot.positions[0], 4) && nearly(snapshot.positions[3], 11)
               && nearly(snapshot.velocities[0], 1.5) && nearly(snapshot.velocities[3], -4.5)
               && nearly(snapshot.radii[1], 6)
               && nearly(snapshot.colorSeeds[1], 8)
               && nearly(snapshot.foam[0], 0.25) && nearly(snapshot.foam[1], 0.75)
               && nearly(snapshot.affine[7], 8),
             );
+            const cell = 8;
+            const radius = 4;
+            const gpuTransfer = particleGrid.debugComputeParticleToGrid({ cell, radius });
+            const cpuTransfer = computeSplashPicFlipParticleToGrid({
+              count: seed.count,
+              positions: seed.positions,
+              velocities: seed.velocities,
+              affine: seed.affine,
+              columns: particleGrid.gridWidth,
+              rows: particleGrid.gridHeight,
+              cell,
+              radius,
+            });
+            const maxError = Math.max(
+              maxAbsDifference(gpuTransfer.mass, cpuTransfer.mass),
+              maxAbsDifference(gpuTransfer.momentumX, cpuTransfer.momentumX),
+              maxAbsDifference(gpuTransfer.momentumY, cpuTransfer.momentumY),
+            );
+            setGpuGridP2GMaxError(maxError);
+            setGpuGridP2GParity(Number.isFinite(maxError) && maxError <= 0.002);
           } finally {
             particleGrid.dispose();
           }
-        } else setGpuGridSeedRoundTrip(false);
+        } else {
+          setGpuGridSeedRoundTrip(false);
+          setGpuGridP2GParity(false);
+          setGpuGridP2GMaxError(undefined);
+        }
         setDiagnosticStatus('gpu-probed');
       } catch (error) {
         setGpuGridValidation({ supported: false, reason: error instanceof Error ? error.message : String(error) });
         setGpuGridSeedRoundTrip(false);
+        setGpuGridP2GParity(false);
+        setGpuGridP2GMaxError(undefined);
         setDiagnosticStatus('gpu-probe-error');
       }
     }
@@ -1002,6 +1049,8 @@ function DiagnosticExperienceHost(): JSX.Element {
           data-gpu-particle-grid-supported={gpuGridValidation?.supported}
           data-gpu-particle-grid-reason={gpuGridValidation?.reason}
           data-gpu-particle-grid-seed-roundtrip={gpuGridSeedRoundTrip}
+          data-gpu-particle-grid-p2g-parity={gpuGridP2GParity}
+          data-gpu-particle-grid-p2g-max-error={gpuGridP2GMaxError}
           data-input-pointers={inputPointers}
           data-input-pointer-events={inputPointers}
           data-input-gamepads={inputGamepads}

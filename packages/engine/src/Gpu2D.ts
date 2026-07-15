@@ -122,6 +122,19 @@ export interface GpuParticleGridSnapshot2D {
   readonly affine: Float32Array;
 }
 
+export interface GpuParticleGridTransferOptions2D {
+  readonly cell: number;
+  readonly radius: number;
+}
+
+export interface GpuParticleGridTransfer2D {
+  readonly columns: number;
+  readonly rows: number;
+  readonly mass: Float32Array;
+  readonly momentumX: Float32Array;
+  readonly momentumY: Float32Array;
+}
+
 export interface GpuParticleGridSystem2D {
   readonly capacity: number;
   readonly width: number;
@@ -133,6 +146,7 @@ export interface GpuParticleGridSystem2D {
   clear(): void;
   uploadSeed(seed: GpuParticleGridSeed2D): void;
   debugReadback(): GpuParticleGridSnapshot2D;
+  debugComputeParticleToGrid(options: GpuParticleGridTransferOptions2D): GpuParticleGridTransfer2D;
   dispose(): void;
 }
 

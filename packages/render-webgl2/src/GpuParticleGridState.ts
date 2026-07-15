@@ -2,8 +2,13 @@ import type {
   GpuParticleGridSeed2D,
   GpuParticleGridSnapshot2D,
   GpuParticleGridSystem2DOptions,
+  GpuParticleGridTransfer2D,
+  GpuParticleGridTransferOptions2D,
 } from '@hooksjam/gl-game-lab-engine';
 import { createGpuDoubleRenderTarget, type GpuDoubleRenderTarget } from './GpuRenderTarget.js';
+import { createShaderProgram } from './ShaderProgram.js';
+
+const DEBUG_P2G_MAX_PARTICLES = 64;
 
 export interface GpuParticleGridStateSize {
   readonly capacity: number;
@@ -37,6 +42,9 @@ export class GpuParticleGridState {
   readonly scratch: GpuDoubleRenderTarget;
   private scratchUpload = new Float32Array(0);
   private scratchReadback = new Float32Array(0);
+  private debugP2GProgram: WebGLProgram | undefined;
+  private debugP2GVao: WebGLVertexArrayObject | undefined;
+  private readonly uniforms = new Map<string, WebGLUniformLocation | null>();
   private activeCount = 0;
   private disposed = false;
 
@@ -125,6 +133,51 @@ export class GpuParticleGridState {
     return Object.freeze({ count, positions, velocities, radii, colorSeeds, foam, affine });
   }
 
+  debugComputeParticleToGrid(options: GpuParticleGridTransferOptions2D): GpuParticleGridTransfer2D {
+    this.assertUsable();
+    if (this.activeCount > DEBUG_P2G_MAX_PARTICLES) throw new Error(`GPU particle-grid debug P2G supports at most ${DEBUG_P2G_MAX_PARTICLES} particles`);
+    if (!Number.isFinite(options.cell) || options.cell <= 0) throw new Error('GPU particle-grid debug P2G cell must be positive');
+    if (!Number.isFinite(options.radius) || options.radius <= 0) throw new Error('GPU particle-grid debug P2G radius must be positive');
+    const gl = this.gl;
+    const program = this.ensureDebugP2GProgram();
+    const vao = this.ensureDebugP2GVao();
+    gl.bindFramebuffer(gl.FRAMEBUFFER, this.accumulation.write.framebuffer);
+    gl.viewport(0, 0, this.gridWidth, this.gridHeight);
+    gl.disable(gl.BLEND);
+    gl.useProgram(program);
+    gl.bindVertexArray(vao);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, this.particleA.read.texture);
+    gl.uniform1i(this.uniform('uParticleA'), 0);
+    gl.activeTexture(gl.TEXTURE1);
+    gl.bindTexture(gl.TEXTURE_2D, this.particleB.read.texture);
+    gl.uniform1i(this.uniform('uParticleB'), 1);
+    gl.activeTexture(gl.TEXTURE2);
+    gl.bindTexture(gl.TEXTURE_2D, this.particleC.read.texture);
+    gl.uniform1i(this.uniform('uParticleC'), 2);
+    gl.uniform1i(this.uniform('uParticleCount'), this.activeCount);
+    gl.uniform2i(this.uniform('uParticleStateSize'), this.width, this.height);
+    gl.uniform2i(this.uniform('uGridSize'), this.gridWidth, this.gridHeight);
+    gl.uniform1f(this.uniform('uCell'), options.cell);
+    gl.uniform1f(this.uniform('uRadius'), options.radius);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+    gl.bindVertexArray(null);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    this.accumulation.swap();
+    const grid = this.read(this.accumulation);
+    const cellCount = this.gridWidth * this.gridHeight;
+    const mass = new Float32Array(cellCount);
+    const momentumX = new Float32Array(cellCount);
+    const momentumY = new Float32Array(cellCount);
+    for (let index = 0; index < cellCount; index += 1) {
+      const offset = index * 4;
+      mass[index] = grid[offset] ?? 0;
+      momentumX[index] = grid[offset + 1] ?? 0;
+      momentumY[index] = grid[offset + 2] ?? 0;
+    }
+    return Object.freeze({ columns: this.gridWidth, rows: this.gridHeight, mass, momentumX, momentumY });
+  }
+
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
@@ -135,6 +188,9 @@ export class GpuParticleGridState {
     this.working.dispose();
     this.previous.dispose();
     this.scratch.dispose();
+    if (this.debugP2GProgram) this.gl.deleteProgram(this.debugP2GProgram);
+    if (this.debugP2GVao) this.gl.deleteVertexArray(this.debugP2GVao);
+    this.uniforms.clear();
   }
 
   private upload(target: GpuDoubleRenderTarget, data: Float32Array): void {
@@ -167,6 +223,32 @@ export class GpuParticleGridState {
 
   private assertUsable(): void {
     if (this.disposed) throw new Error('GPU particle-grid state has been disposed');
+  }
+
+  private ensureDebugP2GProgram(): WebGLProgram {
+    if (!this.debugP2GProgram) {
+      this.debugP2GProgram = createShaderProgram(this.gl, {
+        label: 'GPU particle-grid debug P2G',
+        vertexSource: FULLSCREEN_VERTEX_SHADER,
+        fragmentSource: DEBUG_P2G_FRAGMENT_SHADER,
+      });
+    }
+    return this.debugP2GProgram;
+  }
+
+  private ensureDebugP2GVao(): WebGLVertexArrayObject {
+    if (!this.debugP2GVao) {
+      const vao = this.gl.createVertexArray();
+      if (!vao) throw new Error('Unable to allocate GPU particle-grid debug P2G vertex array');
+      this.debugP2GVao = vao;
+    }
+    return this.debugP2GVao;
+  }
+
+  private uniform(name: string): WebGLUniformLocation | null {
+    const program = this.ensureDebugP2GProgram();
+    if (!this.uniforms.has(name)) this.uniforms.set(name, this.gl.getUniformLocation(program, name));
+    return this.uniforms.get(name) ?? null;
   }
 }
 
@@ -220,3 +302,86 @@ function positive(value: number, label: string): number {
   if (!Number.isSafeInteger(value) || value < 1) throw new Error(`${label} must be a positive integer`);
   return value;
 }
+
+const FULLSCREEN_VERTEX_SHADER = `#version 300 es
+const vec2 POSITIONS[3] = vec2[3](vec2(-1.0, -1.0), vec2(3.0, -1.0), vec2(-1.0, 3.0));
+void main() {
+  gl_Position = vec4(POSITIONS[gl_VertexID], 0.0, 1.0);
+}`;
+
+const DEBUG_P2G_FRAGMENT_SHADER = `#version 300 es
+precision highp float;
+precision highp int;
+uniform sampler2D uParticleA;
+uniform sampler2D uParticleB;
+uniform sampler2D uParticleC;
+uniform int uParticleCount;
+uniform ivec2 uParticleStateSize;
+uniform ivec2 uGridSize;
+uniform float uCell;
+uniform float uRadius;
+out vec4 outGrid;
+
+ivec2 particleTexel(int index) {
+  return ivec2(index % uParticleStateSize.x, index / uParticleStateSize.x);
+}
+
+int gridIndex(ivec2 cell) {
+  return cell.y * uGridSize.x + cell.x;
+}
+
+void main() {
+  ivec2 current = ivec2(gl_FragCoord.xy);
+  float support = clamp(uRadius / uCell, 0.65, 8.0);
+  int supportCells = int(ceil(support)) + 1;
+  float inverseSupportSquared = 1.0 / (support * support);
+  vec3 total = vec3(0.0);
+  for (int particle = 0; particle < ${DEBUG_P2G_MAX_PARTICLES}; particle += 1) {
+    if (particle >= uParticleCount) break;
+    ivec2 texel = particleTexel(particle);
+    vec4 a = texelFetch(uParticleA, texel, 0);
+    if (a.w <= 0.0) continue;
+    vec4 b = texelFetch(uParticleB, texel, 0);
+    vec4 c = texelFetch(uParticleC, texel, 0);
+    vec2 gridPosition = a.xy / uCell;
+    int minY = int(floor(gridPosition.y - float(supportCells)));
+    int maxY = int(ceil(gridPosition.y + float(supportCells)));
+    int minX = int(floor(gridPosition.x - float(supportCells)));
+    int maxX = int(ceil(gridPosition.x + float(supportCells)));
+    float weightSum = 0.0;
+    for (int yyOffset = -10; yyOffset <= 10; yyOffset += 1) {
+      int yy = minY + yyOffset;
+      if (yy > maxY) continue;
+      for (int xxOffset = -10; xxOffset <= 10; xxOffset += 1) {
+        int xx = minX + xxOffset;
+        if (xx > maxX) continue;
+        vec2 delta = vec2(float(xx), float(yy)) - gridPosition;
+        float normalizedDistanceSquared = dot(delta, delta) * inverseSupportSquared;
+        if (normalizedDistanceSquared >= 1.0) continue;
+        float core = 1.0 - normalizedDistanceSquared;
+        weightSum += core * core * (0.56 + core * 0.44);
+      }
+    }
+    if (weightSum <= 0.000001) continue;
+    float invWeight = clamp(1.05 + support * support * 0.88, 1.05, 42.0) / weightSum;
+    for (int yyOffset = -10; yyOffset <= 10; yyOffset += 1) {
+      int yy = minY + yyOffset;
+      if (yy > maxY) continue;
+      for (int xxOffset = -10; xxOffset <= 10; xxOffset += 1) {
+        int xx = minX + xxOffset;
+        if (xx > maxX) continue;
+        ivec2 clamped = ivec2(clamp(xx, 0, uGridSize.x - 1), clamp(yy, 0, uGridSize.y - 1));
+        if (gridIndex(clamped) != gridIndex(current)) continue;
+        vec2 delta = vec2(float(xx), float(yy)) - gridPosition;
+        float normalizedDistanceSquared = dot(delta, delta) * inverseSupportSquared;
+        if (normalizedDistanceSquared >= 1.0) continue;
+        float core = 1.0 - normalizedDistanceSquared;
+        float weight = core * core * (0.56 + core * 0.44) * invWeight;
+        float affineX = c.x * delta.x + c.y * delta.y;
+        float affineY = c.z * delta.x + c.w * delta.y;
+        total += vec3(weight, (b.x + affineX) * weight, (b.y + affineY) * weight);
+      }
+    }
+  }
+  outGrid = vec4(total, 0.0);
+}`;

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { createSplashMpmConfig, SPLASH_MPM_DEFAULTS, SPLASH_MPM_SETTINGS, splashMpmDefinition, SPLASH_MPM_STYLE_MANIFEST, SplashMpmModel } from '../index.js';
+import { computeSplashPicFlipParticleToGrid, createSplashMpmConfig, SPLASH_MPM_DEFAULTS, SPLASH_MPM_SETTINGS, splashMpmDefinition, SPLASH_MPM_STYLE_MANIFEST, SplashMpmModel } from '../index.js';
 import { resolveSplashPicFlipBackend, splashSnapshotToGpuParticleGridSeed } from '../splash-mpm/SplashPicFlipBackend.js';
 import { resolveSplashSurfaceParameters, selectHeldSplashPointer } from '../splash-mpm/SplashMpmPlugin.js';
 import { compareSplashPicFlipMetrics, type SplashMpmTuning } from '../splash-mpm/SplashMpmModel.js';
@@ -23,6 +23,18 @@ function simulatedHash(overrides: Partial<SplashMpmTuning>): string {
   model.seed(320, 240, tuning);
   for (let step = 0; step < 6; step++) model.step(1 / 60, 320, 240, tuning);
   return model.world.stateHash();
+}
+
+function sum(values: Float32Array): number {
+  let total = 0;
+  for (const value of values) total += value;
+  return total;
+}
+
+function sumAbs(values: Float32Array): number {
+  let total = 0;
+  for (const value of values) total += Math.abs(value);
+  return total;
 }
 
 describe('Splash MPM', () => {
@@ -92,6 +104,34 @@ describe('Splash MPM', () => {
     expect(seed.foam).toEqual(snapshot.foam);
     expect(seed.affine).toEqual(snapshot.affine);
     expect(seed.positions).not.toBe(snapshot.positions);
+  });
+  it('computes the reusable CPU particle-to-grid transfer without per-frame allocations', () => {
+    const model = new SplashMpmModel();
+    model.reset(320, 240, BASE_TUNING);
+    model.seed(320, 240, BASE_TUNING);
+    const snapshot = model.snapshot();
+    const cellCount = snapshot.grid.columns * snapshot.grid.rows;
+    const mass = new Float32Array(cellCount);
+    const momentumX = new Float32Array(cellCount);
+    const momentumY = new Float32Array(cellCount);
+    const transfer = computeSplashPicFlipParticleToGrid({
+      count: snapshot.count,
+      positions: snapshot.positions,
+      velocities: snapshot.velocities,
+      affine: snapshot.affine,
+      columns: snapshot.grid.columns,
+      rows: snapshot.grid.rows,
+      cell: snapshot.grid.cell,
+      radius: BASE_TUNING.radius,
+      output: { mass, momentumX, momentumY },
+    });
+    expect(transfer.mass).toBe(mass);
+    expect(transfer.momentumX).toBe(momentumX);
+    expect(transfer.momentumY).toBe(momentumY);
+    expect(transfer.support).toBeGreaterThan(0);
+    expect(sum(transfer.mass)).toBeGreaterThan(snapshot.count);
+    expect(sumAbs(transfer.momentumX)).toBeGreaterThan(0);
+    expect(sumAbs(transfer.momentumY)).toBeGreaterThan(0);
   });
   it('reports divergent trajectories through parity metrics', () => {
     const reference = new SplashMpmModel();
