@@ -4,7 +4,7 @@ import { Activity, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Image as I
 import { ExperienceRuntime, GameCanvas, PreviewTile as EnginePreviewTile, useViewport, type CanvasFrameCapture } from '@hooksjam/gl-game-lab-react';
 import { createDefaultPreviewProfile, type ExperienceDefinition, type ExperiencePreviewProfile, type ExperienceSettingValue, type GameEngine, type GpuParticleGridValidation2D } from '@hooksjam/gl-game-lab-engine';
 import { WebGL2RendererService, type ContextCycleDiagnostics } from '@hooksjam/gl-game-lab-render-webgl2';
-import { computeSplashPicFlipGridUpdate, computeSplashPicFlipParticleToGrid, computeSplashPicFlipParticleUpdate } from '@hooksjam/gl-game-lab-simulations';
+import { validateSplashPicFlipGpuParity } from '@hooksjam/gl-game-lab-simulations';
 import bundledSceneDefaults from 'virtual:gl-game-lab-scene-defaults';
 import bundledPreviewProfiles from 'virtual:gl-game-lab-preview-profiles';
 import './index.css';
@@ -810,19 +810,6 @@ function randomSessionSeed(): number {
   return Date.now() >>> 0;
 }
 
-function nearly(value: number | undefined, expected: number): boolean {
-  return Math.abs((value ?? Number.NaN) - expected) <= 0.001;
-}
-
-function maxAbsDifference(a: Float32Array, b: Float32Array): number {
-  if (a.length !== b.length) return Number.POSITIVE_INFINITY;
-  let maximum = 0;
-  for (let index = 0; index < a.length; index += 1) {
-    maximum = Math.max(maximum, Math.abs((a[index] ?? 0) - (b[index] ?? 0)));
-  }
-  return maximum;
-}
-
 function DiagnosticExperienceHost(): JSX.Element {
   const [runtimeError, setRuntimeError] = useState<string>();
   const [diagnosticStatus, setDiagnosticStatus] = useState('idle');
@@ -889,152 +876,15 @@ function DiagnosticExperienceHost(): JSX.Element {
         const gpu2D = engine.kernel.get(WebGL2RendererService).gpu2D;
         const validation = gpu2D.validateParticleGridSupport();
         setGpuGridValidation(validation);
-        if (validation.supported) {
-          const particleGrid = gpu2D.createParticleGridSystem('diagnostic-seed-roundtrip', {
-            capacity: 2,
-            width: 2,
-            height: 1,
-            gridWidth: 2,
-            gridHeight: 2,
-          });
-          try {
-            const seed = {
-              count: 2,
-              positions: new Float32Array([4, 4, 10, 11]),
-              velocities: new Float32Array([1.5, -2.5, 3.5, -4.5]),
-              radii: new Float32Array([5, 6]),
-              colorSeeds: new Float32Array([7, 8]),
-              foam: new Float32Array([0.25, 0.75]),
-              affine: new Float32Array([1, 2, 3, 4, 5, 6, 7, 8]),
-            };
-            particleGrid.uploadSeed({
-              count: seed.count,
-              positions: seed.positions,
-              velocities: seed.velocities,
-              radii: seed.radii,
-              colorSeeds: seed.colorSeeds,
-              foam: seed.foam,
-              affine: seed.affine,
-            });
-            const snapshot = particleGrid.debugReadback();
-            setGpuGridSeedRoundTrip(
-              snapshot.count === 2
-              && nearly(snapshot.positions[0], 4) && nearly(snapshot.positions[3], 11)
-              && nearly(snapshot.velocities[0], 1.5) && nearly(snapshot.velocities[3], -4.5)
-              && nearly(snapshot.radii[1], 6)
-              && nearly(snapshot.colorSeeds[1], 8)
-              && nearly(snapshot.foam[0], 0.25) && nearly(snapshot.foam[1], 0.75)
-              && nearly(snapshot.affine[7], 8),
-            );
-            const cell = 8;
-            const radius = 4;
-            const gpuTransfer = particleGrid.debugComputeParticleToGrid({ cell, radius });
-            const cpuTransfer = computeSplashPicFlipParticleToGrid({
-              count: seed.count,
-              positions: seed.positions,
-              velocities: seed.velocities,
-              affine: seed.affine,
-              columns: particleGrid.gridWidth,
-              rows: particleGrid.gridHeight,
-              cell,
-              radius,
-            });
-            const maxError = Math.max(
-              maxAbsDifference(gpuTransfer.mass, cpuTransfer.mass),
-              maxAbsDifference(gpuTransfer.momentumX, cpuTransfer.momentumX),
-              maxAbsDifference(gpuTransfer.momentumY, cpuTransfer.momentumY),
-            );
-            setGpuGridP2GMaxError(maxError);
-            setGpuGridP2GParity(Number.isFinite(maxError) && maxError <= 0.002);
-            const updateOptions = {
-              cell,
-              radius,
-              dt: 1 / 60,
-              stiffness: 86,
-              restDensity: 3.2,
-              separation: 0.7,
-              viscosity: 0.18,
-              gravity: 920,
-            };
-            const gpuUpdate = particleGrid.debugComputeGridUpdate(updateOptions);
-            const cpuUpdate = computeSplashPicFlipGridUpdate({
-              columns: particleGrid.gridWidth,
-              rows: particleGrid.gridHeight,
-              support: Math.max(0.65, Math.min(8, radius / cell)),
-              mass: cpuTransfer.mass,
-              momentumX: cpuTransfer.momentumX,
-              momentumY: cpuTransfer.momentumY,
-              ...updateOptions,
-            });
-            const updateMaxError = Math.max(
-              maxAbsDifference(gpuUpdate.velocityX, cpuUpdate.velocityX),
-              maxAbsDifference(gpuUpdate.velocityY, cpuUpdate.velocityY),
-              maxAbsDifference(gpuUpdate.previousVelocityX, cpuUpdate.previousVelocityX),
-              maxAbsDifference(gpuUpdate.previousVelocityY, cpuUpdate.previousVelocityY),
-              maxAbsDifference(gpuUpdate.pressure, cpuUpdate.pressure),
-            );
-            setGpuGridUpdateMaxError(updateMaxError);
-            setGpuGridUpdateParity(Number.isFinite(updateMaxError) && updateMaxError <= 0.004);
-            const cpuPositions = seed.positions.slice();
-            const cpuVelocities = seed.velocities.slice();
-            const cpuFoam = seed.foam.slice();
-            const cpuAffine = seed.affine.slice();
-            const diagnosticObstacles = [
-              Object.freeze({ kind: 'circle' as const, ax: 15, ay: 11, bx: 15, by: 11, radius: 5 }),
-              Object.freeze({ kind: 'segment' as const, ax: 2, ay: 24, bx: 22, by: 24, radius: 4 }),
-            ];
-            const cpuParticle = computeSplashPicFlipParticleUpdate({
-              count: seed.count,
-              positions: cpuPositions,
-              velocities: cpuVelocities,
-              radii: seed.radii,
-              foam: cpuFoam,
-              affine: cpuAffine,
-              obstacles: diagnosticObstacles,
-              columns: particleGrid.gridWidth,
-              rows: particleGrid.gridHeight,
-              cell,
-              mass: cpuTransfer.mass,
-              velocityX: cpuUpdate.velocityX,
-              velocityY: cpuUpdate.velocityY,
-              previousVelocityX: cpuUpdate.previousVelocityX,
-              previousVelocityY: cpuUpdate.previousVelocityY,
-              dt: updateOptions.dt,
-              width: 64,
-              height: 64,
-              flipness: 0.88,
-              foamFrame: 0,
-            });
-            const gpuParticle = particleGrid.debugComputeParticleUpdate({
-              ...updateOptions,
-              width: 64,
-              height: 64,
-              flipness: 0.88,
-              foamFrame: 0,
-              circleObstacles: new Float32Array([15, 11, 5, 0]),
-              segmentObstacles: new Float32Array([2, 24, 22, 24, 4, 0, 0, 0]),
-            });
-            const particleMaxError = Math.max(
-              maxAbsDifference(gpuParticle.positions, cpuParticle.positions),
-              maxAbsDifference(gpuParticle.velocities, cpuParticle.velocities),
-              maxAbsDifference(gpuParticle.foam, cpuParticle.foam),
-              maxAbsDifference(gpuParticle.affine, cpuParticle.affine),
-            );
-            setGpuGridParticleMaxError(particleMaxError);
-            setGpuGridParticleParity(Number.isFinite(particleMaxError) && particleMaxError <= 0.006);
-          } finally {
-            particleGrid.dispose();
-          }
-        } else {
-          setGpuGridSeedRoundTrip(false);
-          setGpuGridP2GParity(false);
-          setGpuGridP2GMaxError(undefined);
-          setGpuGridUpdateParity(false);
-          setGpuGridUpdateMaxError(undefined);
-          setGpuGridParticleParity(false);
-          setGpuGridParticleMaxError(undefined);
-        }
-        setDiagnosticStatus('gpu-probed');
+        const parity = validateSplashPicFlipGpuParity(gpu2D);
+        setGpuGridSeedRoundTrip(parity.seedRoundTrip);
+        setGpuGridP2GParity(parity.particleToGrid);
+        setGpuGridP2GMaxError(parity.maxParticleToGridError);
+        setGpuGridUpdateParity(parity.gridUpdate);
+        setGpuGridUpdateMaxError(parity.maxGridUpdateError);
+        setGpuGridParticleParity(parity.particleUpdate);
+        setGpuGridParticleMaxError(parity.maxParticleUpdateError);
+        setDiagnosticStatus(parity.reasons.length === 0 ? 'gpu-probed' : `gpu-probe-failed:${parity.reasons[0]}`);
       } catch (error) {
         setGpuGridValidation({ supported: false, reason: error instanceof Error ? error.message : String(error) });
         setGpuGridSeedRoundTrip(false);

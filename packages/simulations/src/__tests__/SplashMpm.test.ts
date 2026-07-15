@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
-import { computeSplashPicFlipGridUpdate, computeSplashPicFlipParticleToGrid, computeSplashPicFlipParticleUpdate, createSplashMpmConfig, SPLASH_MPM_DEFAULTS, SPLASH_MPM_SETTINGS, splashMpmDefinition, SPLASH_MPM_STYLE_MANIFEST, SplashMpmModel } from '../index.js';
+import type { Gpu2DService, GpuFieldSystem2DOptions, GpuParticleGridSystem2DOptions, GpuParticleSystem2DOptions } from '@hooksjam/gl-game-lab-engine';
+import { computeSplashPicFlipGridUpdate, computeSplashPicFlipParticleToGrid, computeSplashPicFlipParticleUpdate, createSplashMpmConfig, SPLASH_MPM_DEFAULTS, SPLASH_MPM_SETTINGS, splashMpmDefinition, SPLASH_MPM_STYLE_MANIFEST, SplashMpmModel, validateSplashPicFlipGpuParity } from '../index.js';
 import { resolveSplashPicFlipBackend, splashSnapshotToGpuParticleGridSeed } from '../splash-mpm/SplashPicFlipBackend.js';
 import { resolveSplashSurfaceParameters, selectHeldSplashPointer } from '../splash-mpm/SplashMpmPlugin.js';
 import { compareSplashPicFlipMetrics, type SplashMpmTuning } from '../splash-mpm/SplashMpmModel.js';
@@ -338,6 +339,34 @@ describe('Splash MPM', () => {
       backend: 'cpu',
       gpuEligible: false,
     });
+  });
+  it('reports GPU parity validation as unsupported when particle-grid support is unavailable', () => {
+    const unsupportedGpu: Gpu2DService = {
+      capabilities: {
+        particleGrid: {
+          supported: false,
+          floatRenderTargets: false,
+          floatBlend: false,
+          multipleRenderTargets: false,
+          vertexTextureFetch: false,
+          maxDrawBuffers: 0,
+          maxColorAttachments: 0,
+          maxVertexTextureImageUnits: 0,
+        },
+      },
+      validateParticleGridSupport: () => ({ supported: false, reason: 'test unavailable' }),
+      createFieldSystem: (_id: string, _options: GpuFieldSystem2DOptions) => { throw new Error('unexpected field system creation'); },
+      createParticleSystem: (_id: string, _options: GpuParticleSystem2DOptions) => { throw new Error('unexpected particle system creation'); },
+      createParticleGridSystem: (_id: string, _options: GpuParticleGridSystem2DOptions) => { throw new Error('unexpected particle-grid system creation'); },
+      submit: () => undefined,
+    };
+    const result = validateSplashPicFlipGpuParity(unsupportedGpu);
+    expect(result.supported).toBe(false);
+    expect(result.seedRoundTrip).toBe(false);
+    expect(result.particleToGrid).toBe(false);
+    expect(result.gridUpdate).toBe(false);
+    expect(result.particleUpdate).toBe(false);
+    expect(result.reasons).toEqual(['test unavailable']);
   });
   it('validates maintained defaults', () => {
     expect(SPLASH_MPM_SETTINGS.length).toBeGreaterThan(25);

@@ -51,6 +51,7 @@ export { WaterTankModel, type WaterObstacle, type WaterTankTuning } from './wate
 export { splashMpmDefinition } from './splash-mpm/definition.js';
 export { SPLASH_MPM_DEFAULTS, SPLASH_MPM_SETTINGS, createSplashMpmConfig, splashNumber, splashString, type SplashMpmConfig } from './splash-mpm/config.js';
 export { resolveSplashPicFlipBackend, splashSnapshotToGpuParticleGridSeed, type SplashPicFlipBackendDecision, type SplashPicFlipBackendKind, type SplashPicFlipBackendOptions, type SplashPicFlipBackendRequest } from './splash-mpm/SplashPicFlipBackend.js';
+export { validateSplashPicFlipGpuParity, type SplashPicFlipGpuParityResult } from './splash-mpm/SplashPicFlipGpuParity.js';
 export { SPLASH_MPM_PLUGIN_ID, SplashMpmControllerService, createSplashMpmPlugin, type SplashMpmController, type SplashMpmMode } from './splash-mpm/SplashMpmPlugin.js';
 export { SPLASH_MPM_STYLE_MANIFEST } from './splash-mpm/styles.js';
 export { SPLASH_PIC_FLIP_CAPACITY, SplashPicFlipModel, SplashMpmModel, computeSplashPicFlipGridUpdate, computeSplashPicFlipParticleToGrid, computeSplashPicFlipParticleUpdate, type SplashMpmTuning, type SplashPicFlipGridUpdate, type SplashPicFlipGridUpdateInput, type SplashPicFlipGridUpdateOutput, type SplashPicFlipParticleToGridInput, type SplashPicFlipParticleToGridOutput, type SplashPicFlipParticleToGridTransfer, type SplashPicFlipParticleUpdate, type SplashPicFlipParticleUpdateInput } from './splash-mpm/SplashMpmModel.js';
