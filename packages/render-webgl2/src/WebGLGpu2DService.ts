@@ -208,6 +208,7 @@ class WebGLGpuParticleGridSystem implements GpuParticleGridSystem2D {
     options: GpuParticleGridSystem2DOptions,
     private readonly onDispose: () => void,
     private readonly countUpload: (bytes: number) => void,
+    private readonly countDraw: (drawCalls: number) => void,
   ) {
     this.owner = device.ownContextResource({
       id,
@@ -239,6 +240,11 @@ class WebGLGpuParticleGridSystem implements GpuParticleGridSystem2D {
     this.retainedSeed = cloneParticleGridSeed(seed);
     this.owner.value.state.uploadSeed(this.retainedSeed);
     this.countUpload(particleGridSeedBytes(seed));
+  }
+
+  step(options: GpuParticleGridParticleUpdateOptions2D): void {
+    this.owner.value.state.step(options);
+    this.countDraw(5);
   }
 
   debugReadback(): GpuParticleGridSnapshot2D {
@@ -336,6 +342,7 @@ export class WebGLGpu2DService implements Gpu2DService {
       options,
       () => { if (particleGrid) this.particleGrids.delete(particleGrid); },
       (bytes) => { this.pendingUploadBytes += bytes; },
+      (drawCalls) => { this.frameDrawCalls += drawCalls; },
     );
     this.particleGridId += 1;
     this.particleGrids.add(particleGrid);

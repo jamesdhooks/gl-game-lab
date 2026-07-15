@@ -1,5 +1,6 @@
-import type { Gpu2DCapabilities, GpuParticleGridSeed2D } from '@hooksjam/gl-game-lab-engine';
-import type { SplashPicFlipStateSnapshot } from './SplashMpmModel.js';
+import type { Gpu2DCapabilities, GpuParticleGridParticleUpdateOptions2D, GpuParticleGridSeed2D } from '@hooksjam/gl-game-lab-engine';
+import type { WaterObstacle } from '../water-tank/WaterTankModel.js';
+import type { SplashMpmTuning, SplashPicFlipStateSnapshot } from './SplashMpmModel.js';
 
 export type SplashPicFlipBackendKind = 'cpu' | 'gpu';
 export type SplashPicFlipBackendRequest = 'auto' | 'cpu' | 'gpu';
@@ -72,5 +73,49 @@ export function splashSnapshotToGpuParticleGridSeed(snapshot: SplashPicFlipState
     colorSeeds: snapshot.colorSeeds.slice(),
     foam: snapshot.foam.slice(),
     affine: snapshot.affine.slice(),
+  });
+}
+
+export function splashObstaclesToGpuArrays(obstacles: readonly WaterObstacle[]): {
+  readonly circleObstacles: Float32Array;
+  readonly segmentObstacles: Float32Array;
+} {
+  const circles = obstacles.filter(obstacle => obstacle.kind === 'circle');
+  const segments = obstacles.filter(obstacle => obstacle.kind === 'segment');
+  const circleObstacles = new Float32Array(circles.length * 4);
+  const segmentObstacles = new Float32Array(segments.length * 8);
+  circles.forEach((obstacle, index) => {
+    circleObstacles.set([obstacle.ax, obstacle.ay, obstacle.radius, 0], index * 4);
+  });
+  segments.forEach((obstacle, index) => {
+    segmentObstacles.set([obstacle.ax, obstacle.ay, obstacle.bx, obstacle.by, obstacle.radius, 0, 0, 0], index * 8);
+  });
+  return Object.freeze({ circleObstacles, segmentObstacles });
+}
+
+export function splashSnapshotToGpuParticleGridStep(
+  snapshot: SplashPicFlipStateSnapshot,
+  tuning: SplashMpmTuning,
+  dt: number,
+  width: number,
+  height: number,
+  foamFrame: number,
+): GpuParticleGridParticleUpdateOptions2D {
+  const obstacles = splashObstaclesToGpuArrays(snapshot.obstacles);
+  return Object.freeze({
+    cell: snapshot.grid.cell,
+    radius: tuning.radius,
+    dt,
+    stiffness: tuning.stiffness,
+    restDensity: tuning.restDensity,
+    separation: tuning.separation,
+    viscosity: tuning.viscosity,
+    gravity: tuning.gravity,
+    width,
+    height,
+    flipness: tuning.flipness,
+    foamFrame,
+    circleObstacles: obstacles.circleObstacles,
+    segmentObstacles: obstacles.segmentObstacles,
   });
 }

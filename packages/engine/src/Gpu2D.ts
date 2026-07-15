@@ -173,6 +173,8 @@ export interface GpuParticleGridSystem2D {
   readonly generation: number;
   clear(): void;
   uploadSeed(seed: GpuParticleGridSeed2D): void;
+  /** Advances particle-grid simulation state entirely on the active GPU backend. */
+  step(options: GpuParticleGridParticleUpdateOptions2D): void;
   debugReadback(): GpuParticleGridSnapshot2D;
   debugComputeParticleToGrid(options: GpuParticleGridTransferOptions2D): GpuParticleGridTransfer2D;
   debugComputeGridUpdate(options: GpuParticleGridUpdateOptions2D): GpuParticleGridUpdate2D;

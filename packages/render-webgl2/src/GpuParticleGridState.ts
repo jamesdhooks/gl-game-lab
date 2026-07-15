@@ -144,35 +144,7 @@ export class GpuParticleGridState {
 
   debugComputeParticleToGrid(options: GpuParticleGridTransferOptions2D): GpuParticleGridTransfer2D {
     this.assertUsable();
-    if (this.activeCount > DEBUG_P2G_MAX_PARTICLES) throw new Error(`GPU particle-grid debug P2G supports at most ${DEBUG_P2G_MAX_PARTICLES} particles`);
-    if (!Number.isFinite(options.cell) || options.cell <= 0) throw new Error('GPU particle-grid debug P2G cell must be positive');
-    if (!Number.isFinite(options.radius) || options.radius <= 0) throw new Error('GPU particle-grid debug P2G radius must be positive');
-    const gl = this.gl;
-    const program = this.ensureDebugP2GProgram();
-    const vao = this.ensureDebugP2GVao();
-    gl.bindFramebuffer(gl.FRAMEBUFFER, this.accumulation.write.framebuffer);
-    gl.viewport(0, 0, this.gridWidth, this.gridHeight);
-    gl.disable(gl.BLEND);
-    gl.useProgram(program);
-    gl.bindVertexArray(vao);
-    gl.activeTexture(gl.TEXTURE0);
-    gl.bindTexture(gl.TEXTURE_2D, this.particleA.read.texture);
-    gl.uniform1i(this.uniform(program, 'uParticleA'), 0);
-    gl.activeTexture(gl.TEXTURE1);
-    gl.bindTexture(gl.TEXTURE_2D, this.particleB.read.texture);
-    gl.uniform1i(this.uniform(program, 'uParticleB'), 1);
-    gl.activeTexture(gl.TEXTURE2);
-    gl.bindTexture(gl.TEXTURE_2D, this.particleC.read.texture);
-    gl.uniform1i(this.uniform(program, 'uParticleC'), 2);
-    gl.uniform1i(this.uniform(program, 'uParticleCount'), this.activeCount);
-    gl.uniform2i(this.uniform(program, 'uParticleStateSize'), this.width, this.height);
-    gl.uniform2i(this.uniform(program, 'uGridSize'), this.gridWidth, this.gridHeight);
-    gl.uniform1f(this.uniform(program, 'uCell'), options.cell);
-    gl.uniform1f(this.uniform(program, 'uRadius'), options.radius);
-    gl.drawArrays(gl.TRIANGLES, 0, 3);
-    gl.bindVertexArray(null);
-    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-    this.accumulation.swap();
+    this.runParticleToGridPass(options);
     const grid = this.read(this.accumulation);
     const cellCount = this.gridWidth * this.gridHeight;
     const mass = new Float32Array(cellCount);
@@ -189,20 +161,7 @@ export class GpuParticleGridState {
 
   debugComputeGridUpdate(options: GpuParticleGridUpdateOptions2D): GpuParticleGridUpdate2D {
     this.assertUsable();
-    if (!Number.isFinite(options.dt) || options.dt < 0) throw new Error('GPU particle-grid debug update dt must be non-negative');
-    for (const [value, label] of [
-      [options.stiffness, 'stiffness'],
-      [options.restDensity, 'rest density'],
-      [options.separation, 'separation'],
-      [options.viscosity, 'viscosity'],
-      [options.gravity, 'gravity'],
-    ] as const) {
-      if (!Number.isFinite(value)) throw new Error(`GPU particle-grid debug update ${label} must be finite`);
-    }
-    this.debugComputeParticleToGrid(options);
-    this.runNormalizePressurePass(options);
-    this.runForcePass(options);
-    this.runViscosityPass(options);
+    this.runGridUpdatePasses(options);
     const pressureGrid = this.read(this.working);
     const velocityGrid = this.read(this.scratch);
     const cellCount = this.gridWidth * this.gridHeight;
@@ -223,6 +182,11 @@ export class GpuParticleGridState {
   }
 
   debugComputeParticleUpdate(options: GpuParticleGridParticleUpdateOptions2D): GpuParticleGridSnapshot2D {
+    this.step(options);
+    return this.debugReadback();
+  }
+
+  step(options: GpuParticleGridParticleUpdateOptions2D): void {
     this.assertUsable();
     if (!Number.isFinite(options.width) || options.width <= 0 || !Number.isFinite(options.height) || options.height <= 0) {
       throw new Error('GPU particle-grid debug particle update bounds must be positive');
@@ -231,12 +195,11 @@ export class GpuParticleGridState {
     const segmentCount = Math.floor((options.segmentObstacles?.length ?? 0) / 8);
     if (circleCount > DEBUG_PARTICLE_UPDATE_MAX_CIRCLES) throw new Error(`GPU particle-grid debug particle update supports at most ${DEBUG_PARTICLE_UPDATE_MAX_CIRCLES} circle obstacles`);
     if (segmentCount > DEBUG_PARTICLE_UPDATE_MAX_SEGMENTS) throw new Error(`GPU particle-grid debug particle update supports at most ${DEBUG_PARTICLE_UPDATE_MAX_SEGMENTS} segment obstacles`);
-    this.debugComputeGridUpdate(options);
+    this.runGridUpdatePasses(options);
     this.runParticleUpdatePass(options);
     this.particleA.swap();
     this.particleB.swap();
     this.particleC.swap();
-    return this.debugReadback();
   }
 
   dispose(): void {
@@ -362,6 +325,55 @@ export class GpuParticleGridState {
     }
     if (!uniforms.has(name)) uniforms.set(name, this.gl.getUniformLocation(program, name));
     return uniforms.get(name) ?? null;
+  }
+
+  private runParticleToGridPass(options: GpuParticleGridTransferOptions2D): void {
+    if (this.activeCount > DEBUG_P2G_MAX_PARTICLES) throw new Error(`GPU particle-grid debug P2G supports at most ${DEBUG_P2G_MAX_PARTICLES} particles`);
+    if (!Number.isFinite(options.cell) || options.cell <= 0) throw new Error('GPU particle-grid debug P2G cell must be positive');
+    if (!Number.isFinite(options.radius) || options.radius <= 0) throw new Error('GPU particle-grid debug P2G radius must be positive');
+    const gl = this.gl;
+    const program = this.ensureDebugP2GProgram();
+    const vao = this.ensureDebugP2GVao();
+    gl.bindFramebuffer(gl.FRAMEBUFFER, this.accumulation.write.framebuffer);
+    gl.viewport(0, 0, this.gridWidth, this.gridHeight);
+    gl.disable(gl.BLEND);
+    gl.useProgram(program);
+    gl.bindVertexArray(vao);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, this.particleA.read.texture);
+    gl.uniform1i(this.uniform(program, 'uParticleA'), 0);
+    gl.activeTexture(gl.TEXTURE1);
+    gl.bindTexture(gl.TEXTURE_2D, this.particleB.read.texture);
+    gl.uniform1i(this.uniform(program, 'uParticleB'), 1);
+    gl.activeTexture(gl.TEXTURE2);
+    gl.bindTexture(gl.TEXTURE_2D, this.particleC.read.texture);
+    gl.uniform1i(this.uniform(program, 'uParticleC'), 2);
+    gl.uniform1i(this.uniform(program, 'uParticleCount'), this.activeCount);
+    gl.uniform2i(this.uniform(program, 'uParticleStateSize'), this.width, this.height);
+    gl.uniform2i(this.uniform(program, 'uGridSize'), this.gridWidth, this.gridHeight);
+    gl.uniform1f(this.uniform(program, 'uCell'), options.cell);
+    gl.uniform1f(this.uniform(program, 'uRadius'), options.radius);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+    gl.bindVertexArray(null);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    this.accumulation.swap();
+  }
+
+  private runGridUpdatePasses(options: GpuParticleGridUpdateOptions2D): void {
+    if (!Number.isFinite(options.dt) || options.dt < 0) throw new Error('GPU particle-grid debug update dt must be non-negative');
+    for (const [value, label] of [
+      [options.stiffness, 'stiffness'],
+      [options.restDensity, 'rest density'],
+      [options.separation, 'separation'],
+      [options.viscosity, 'viscosity'],
+      [options.gravity, 'gravity'],
+    ] as const) {
+      if (!Number.isFinite(value)) throw new Error(`GPU particle-grid debug update ${label} must be finite`);
+    }
+    this.runParticleToGridPass(options);
+    this.runNormalizePressurePass(options);
+    this.runForcePass(options);
+    this.runViscosityPass(options);
   }
 
   private runNormalizePressurePass(options: GpuParticleGridUpdateOptions2D): void {

@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { Gpu2DService, GpuFieldSystem2DOptions, GpuParticleGridSystem2DOptions, GpuParticleSystem2DOptions } from '@hooksjam/gl-game-lab-engine';
 import { computeSplashPicFlipGridUpdate, computeSplashPicFlipParticleToGrid, computeSplashPicFlipParticleUpdate, createSplashMpmConfig, SPLASH_MPM_DEFAULTS, SPLASH_MPM_SETTINGS, splashMpmDefinition, SPLASH_MPM_STYLE_MANIFEST, SplashMpmModel, validateSplashPicFlipGpuParity } from '../index.js';
-import { resolveSplashPicFlipBackend, splashSnapshotToGpuParticleGridSeed } from '../splash-mpm/SplashPicFlipBackend.js';
+import { resolveSplashPicFlipBackend, splashObstaclesToGpuArrays, splashSnapshotToGpuParticleGridSeed, splashSnapshotToGpuParticleGridStep } from '../splash-mpm/SplashPicFlipBackend.js';
 import { resolveSplashSurfaceParameters, selectHeldSplashPointer } from '../splash-mpm/SplashMpmPlugin.js';
 import { compareSplashPicFlipMetrics, type SplashMpmTuning } from '../splash-mpm/SplashMpmModel.js';
 
@@ -112,6 +112,36 @@ describe('Splash MPM', () => {
     expect(seed.foam).toEqual(snapshot.foam);
     expect(seed.affine).toEqual(snapshot.affine);
     expect(seed.positions).not.toBe(snapshot.positions);
+  });
+  it('converts CPU snapshots and obstacles into GPU particle-grid step options', () => {
+    const model = new SplashMpmModel();
+    const t = BASE_TUNING;
+    model.reset(128, 96, t);
+    model.seed(128, 96, t);
+    model.addCircle(20, 30, 6);
+    model.addSegment(30, 40, 70, 60, 5);
+    model.step(1 / 60, 128, 96, t);
+    const snapshot = model.snapshot();
+    const obstacles = splashObstaclesToGpuArrays(snapshot.obstacles);
+    expect(Array.from(obstacles.circleObstacles)).toEqual([20, 30, 6, 0]);
+    expect(Array.from(obstacles.segmentObstacles)).toEqual([30, 40, 70, 60, 5, 0, 0, 0]);
+
+    const options = splashSnapshotToGpuParticleGridStep(snapshot, t, 1 / 60, 128, 96, 7);
+    expect(options).toMatchObject({
+      cell: snapshot.grid.cell,
+      radius: t.radius,
+      stiffness: t.stiffness,
+      restDensity: t.restDensity,
+      separation: t.separation,
+      viscosity: t.viscosity,
+      gravity: t.gravity,
+      width: 128,
+      height: 96,
+      flipness: t.flipness,
+      foamFrame: 7,
+    });
+    expect(options.circleObstacles).toEqual(obstacles.circleObstacles);
+    expect(options.segmentObstacles).toEqual(obstacles.segmentObstacles);
   });
   it('computes the reusable CPU particle-to-grid transfer without per-frame allocations', () => {
     const model = new SplashMpmModel();
