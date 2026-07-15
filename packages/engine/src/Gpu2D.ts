@@ -164,6 +164,11 @@ export interface GpuParticleGridParticleUpdateOptions2D extends GpuParticleGridU
   readonly foamFrame: number;
   readonly circleObstacles?: Float32Array;
   readonly segmentObstacles?: Float32Array;
+  /**
+   * Packed segment impulses, 8 floats per command:
+   * startX, startY, endX, endY, radius, force, deltaX, deltaY.
+   */
+  readonly impulses?: Float32Array;
 }
 
 export interface GpuParticleGridMetaballOptions2D {

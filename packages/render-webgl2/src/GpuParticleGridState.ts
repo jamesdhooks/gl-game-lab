@@ -15,6 +15,7 @@ import { createShaderProgram } from './ShaderProgram.js';
 const DEBUG_P2G_MAX_PARTICLES = 64;
 const DEBUG_PARTICLE_UPDATE_MAX_CIRCLES = 8;
 const DEBUG_PARTICLE_UPDATE_MAX_SEGMENTS = 8;
+const DEBUG_PARTICLE_UPDATE_MAX_IMPULSES = 4;
 
 export interface GpuParticleGridStateSize {
   readonly capacity: number;
@@ -219,8 +220,10 @@ export class GpuParticleGridState {
     }
     const circleCount = Math.floor((options.circleObstacles?.length ?? 0) / 4);
     const segmentCount = Math.floor((options.segmentObstacles?.length ?? 0) / 8);
+    const impulseCount = Math.floor((options.impulses?.length ?? 0) / 8);
     if (circleCount > DEBUG_PARTICLE_UPDATE_MAX_CIRCLES) throw new Error(`GPU particle-grid debug particle update supports at most ${DEBUG_PARTICLE_UPDATE_MAX_CIRCLES} circle obstacles`);
     if (segmentCount > DEBUG_PARTICLE_UPDATE_MAX_SEGMENTS) throw new Error(`GPU particle-grid debug particle update supports at most ${DEBUG_PARTICLE_UPDATE_MAX_SEGMENTS} segment obstacles`);
+    if (impulseCount > DEBUG_PARTICLE_UPDATE_MAX_IMPULSES) throw new Error(`GPU particle-grid debug particle update supports at most ${DEBUG_PARTICLE_UPDATE_MAX_IMPULSES} impulses`);
     this.runGridUpdatePasses(options);
     this.runParticleUpdatePass(options);
     this.particleA.swap();
@@ -571,6 +574,7 @@ export class GpuParticleGridState {
     gl.uniform1f(this.uniform(program, 'uFlipness'), Math.max(0, Math.min(1, options.flipness)));
     gl.uniform1i(this.uniform(program, 'uFoamParity'), options.foamFrame & 1);
     this.setObstacleUniforms(program, options);
+    this.setImpulseUniforms(program, options);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
     gl.bindVertexArray(null);
     gl.drawBuffers([gl.COLOR_ATTACHMENT0]);
@@ -603,6 +607,30 @@ export class GpuParticleGridState {
     gl.uniform4fv(this.uniform(program, 'uCircleObstacles'), circles);
     gl.uniform4fv(this.uniform(program, 'uSegmentObstacleA'), segmentsA);
     gl.uniform4fv(this.uniform(program, 'uSegmentObstacleB'), segmentsB);
+  }
+
+  private setImpulseUniforms(program: WebGLProgram, options: GpuParticleGridParticleUpdateOptions2D): void {
+    const gl = this.gl;
+    const impulseCount = Math.floor((options.impulses?.length ?? 0) / 8);
+    const impulsesA = new Float32Array(DEBUG_PARTICLE_UPDATE_MAX_IMPULSES * 4);
+    const impulsesB = new Float32Array(DEBUG_PARTICLE_UPDATE_MAX_IMPULSES * 4);
+    if (options.impulses) {
+      for (let index = 0; index < impulseCount; index += 1) {
+        const source = index * 8;
+        const target = index * 4;
+        impulsesA[target] = options.impulses[source] ?? 0;
+        impulsesA[target + 1] = options.impulses[source + 1] ?? 0;
+        impulsesA[target + 2] = options.impulses[source + 2] ?? 0;
+        impulsesA[target + 3] = options.impulses[source + 3] ?? 0;
+        impulsesB[target] = options.impulses[source + 4] ?? 0;
+        impulsesB[target + 1] = options.impulses[source + 5] ?? 0;
+        impulsesB[target + 2] = options.impulses[source + 6] ?? 0;
+        impulsesB[target + 3] = options.impulses[source + 7] ?? 0;
+      }
+    }
+    gl.uniform1i(this.uniform(program, 'uImpulseCount'), impulseCount);
+    gl.uniform4fv(this.uniform(program, 'uImpulsesA'), impulsesA);
+    gl.uniform4fv(this.uniform(program, 'uImpulsesB'), impulsesB);
   }
 }
 
@@ -968,9 +996,12 @@ uniform float uFlipness;
 uniform int uFoamParity;
 uniform int uCircleObstacleCount;
 uniform int uSegmentObstacleCount;
+uniform int uImpulseCount;
 uniform vec4 uCircleObstacles[${DEBUG_PARTICLE_UPDATE_MAX_CIRCLES}];
 uniform vec4 uSegmentObstacleA[${DEBUG_PARTICLE_UPDATE_MAX_SEGMENTS}];
 uniform vec4 uSegmentObstacleB[${DEBUG_PARTICLE_UPDATE_MAX_SEGMENTS}];
+uniform vec4 uImpulsesA[${DEBUG_PARTICLE_UPDATE_MAX_IMPULSES}];
+uniform vec4 uImpulsesB[${DEBUG_PARTICLE_UPDATE_MAX_IMPULSES}];
 layout(location = 0) out vec4 outParticleA;
 layout(location = 1) out vec4 outParticleB;
 layout(location = 2) out vec4 outParticleC;
@@ -1033,6 +1064,37 @@ void resolveObstacle(vec2 point, float obstacleRadius, inout vec2 position, inou
   if (projection < 0.0) velocity -= 1.05 * projection * normal;
 }
 
+float distanceToSegment(vec2 point, vec2 a, vec2 b, out vec2 nearest) {
+  vec2 delta = b - a;
+  float lengthSquared = dot(delta, delta);
+  float t = lengthSquared > 0.0001 ? clamp(dot(point - a, delta) / lengthSquared, 0.0, 1.0) : 1.0;
+  nearest = a + delta * t;
+  return length(point - nearest);
+}
+
+void applyImpulse(inout vec2 velocity, inout float foam, vec2 position) {
+  for (int impulse = 0; impulse < ${DEBUG_PARTICLE_UPDATE_MAX_IMPULSES}; impulse += 1) {
+    if (impulse >= uImpulseCount) break;
+    vec4 segment = uImpulsesA[impulse];
+    vec4 params = uImpulsesB[impulse];
+    float radius = params.x;
+    float force = params.y;
+    if (radius <= 0.0 || force == 0.0) continue;
+    vec2 nearest;
+    float distance = distanceToSegment(position, segment.xy, segment.zw, nearest);
+    if (distance > radius) continue;
+    float falloff = pow(1.0 - distance * distance / max(0.0001, radius * radius), 2.0);
+    vec2 offset = position - nearest;
+    float inverseDistance = 1.0 / max(1.0, length(offset));
+    vec2 delta = params.zw;
+    velocity += vec2(
+      delta.x * force * 4.8 - offset.y * inverseDistance * force * 12.0,
+      delta.y * force * 4.8 + offset.x * inverseDistance * force * 12.0
+    ) * falloff;
+    foam = min(1.0, foam + falloff * 0.34);
+  }
+}
+
 void main() {
   ivec2 texel = ivec2(gl_FragCoord.xy);
   int index = particleIndex(texel);
@@ -1049,6 +1111,8 @@ void main() {
   vec2 pic = sampled.xy;
   vec2 previous = sampled.zw;
   vec2 velocity = pic * (1.0 - uFlipness) + (b.xy + (pic - previous)) * uFlipness;
+  float foam = a.z;
+  applyImpulse(velocity, foam, a.xy);
   vec2 position = a.xy + velocity * uDt;
   float particleRadius = max(0.5, b.z * 0.45);
   if (position.x < particleRadius) {
@@ -1085,7 +1149,6 @@ void main() {
   vec2 below = sampleGrid(uVelocityGrid, position + vec2(0.0, eps)).xy;
   vec2 above = sampleGrid(uVelocityGrid, position - vec2(0.0, eps)).xy;
   vec4 affine = vec4((right.x - left.x) * 0.5, (below.x - above.x) * 0.5, (right.y - left.y) * 0.5, (below.y - above.y) * 0.5);
-  float foam = a.z;
   if ((index & 1) == uFoamParity) {
     float localMass = sampleGrid(uMassGrid, position).x;
     float massAbove = sampleGrid(uMassGrid, position - vec2(0.0, eps)).x;

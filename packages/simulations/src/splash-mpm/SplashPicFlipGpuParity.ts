@@ -4,6 +4,7 @@ import {
   computeSplashPicFlipParticleToGrid,
   computeSplashPicFlipParticleUpdate,
 } from './SplashMpmModel.js';
+import { createSplashGpuImpulse } from './SplashPicFlipBackend.js';
 
 export interface SplashPicFlipGpuParityResult {
   readonly supported: boolean;
@@ -118,12 +119,17 @@ export function validateSplashPicFlipGpuParity(gpu2D: Gpu2DService): SplashPicFl
       Object.freeze({ kind: 'circle' as const, ax: 15, ay: 11, bx: 15, by: 11, radius: 5 }),
       Object.freeze({ kind: 'segment' as const, ax: 2, ay: 24, bx: 22, by: 24, radius: 4 }),
     ];
+    const cpuParticlePositions = seed.positions.slice();
+    const cpuParticleVelocities = seed.velocities.slice();
+    const cpuParticleFoam = seed.foam.slice();
+    const diagnosticImpulse = createSplashGpuImpulse(10, 8, 7, 1.5, 2, 1);
+    applyPackedImpulse(cpuParticlePositions, cpuParticleVelocities, cpuParticleFoam, seed.count, diagnosticImpulse);
     const cpuParticle = computeSplashPicFlipParticleUpdate({
       count: seed.count,
-      positions: seed.positions.slice(),
-      velocities: seed.velocities.slice(),
+      positions: cpuParticlePositions,
+      velocities: cpuParticleVelocities,
       radii: seed.radii,
-      foam: seed.foam.slice(),
+      foam: cpuParticleFoam,
       affine: seed.affine.slice(),
       obstacles: diagnosticObstacles,
       columns: particleGrid.gridWidth,
@@ -146,6 +152,7 @@ export function validateSplashPicFlipGpuParity(gpu2D: Gpu2DService): SplashPicFl
       height: 64,
       flipness: 0.88,
       foamFrame: 0,
+      impulses: diagnosticImpulse,
       circleObstacles: new Float32Array([15, 11, 5, 0]),
       segmentObstacles: new Float32Array([2, 24, 22, 24, 4, 0, 0, 0]),
     });
@@ -206,4 +213,51 @@ function maxAbsDifference(a: Float32Array, b: Float32Array): number {
   let maximum = 0;
   for (let index = 0; index < a.length; index += 1) maximum = Math.max(maximum, Math.abs((a[index] ?? 0) - (b[index] ?? 0)));
   return maximum;
+}
+
+function applyPackedImpulse(
+  positions: Float32Array,
+  velocities: Float32Array,
+  foam: Float32Array,
+  count: number,
+  impulse: Float32Array,
+): void {
+  const startX = impulse[0] ?? 0;
+  const startY = impulse[1] ?? 0;
+  const x = impulse[2] ?? 0;
+  const y = impulse[3] ?? 0;
+  const radius = impulse[4] ?? 0;
+  const force = impulse[5] ?? 0;
+  const dx = impulse[6] ?? 0;
+  const dy = impulse[7] ?? 0;
+  const radiusSquared = radius * radius;
+  for (let index = 0; index < count; index += 1) {
+    const offset = index * 2;
+    const [distance, nearestX, nearestY] = distanceToSegment(
+      positions[offset] ?? 0,
+      positions[offset + 1] ?? 0,
+      startX,
+      startY,
+      x,
+      y,
+    );
+    if (distance > radius) continue;
+    const falloff = (1 - distance * distance / radiusSquared) ** 2;
+    const offsetX = (positions[offset] ?? 0) - nearestX;
+    const offsetY = (positions[offset + 1] ?? 0) - nearestY;
+    const inverseDistance = 1 / Math.max(1, Math.hypot(offsetX, offsetY));
+    velocities[offset] = (velocities[offset] ?? 0) + (dx * force * 4.8 - offsetY * inverseDistance * force * 12) * falloff;
+    velocities[offset + 1] = (velocities[offset + 1] ?? 0) + (dy * force * 4.8 + offsetX * inverseDistance * force * 12) * falloff;
+    foam[index] = Math.min(1, (foam[index] ?? 0) + falloff * 0.34);
+  }
+}
+
+function distanceToSegment(px: number, py: number, ax: number, ay: number, bx: number, by: number): readonly [number, number, number] {
+  const dx = bx - ax;
+  const dy = by - ay;
+  const lengthSquared = dx * dx + dy * dy;
+  const t = lengthSquared > 0.0001 ? Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / lengthSquared)) : 1;
+  const x = ax + dx * t;
+  const y = ay + dy * t;
+  return [Math.hypot(px - x, py - y), x, y];
 }

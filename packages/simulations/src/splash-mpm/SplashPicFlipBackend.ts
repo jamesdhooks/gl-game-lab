@@ -120,6 +120,17 @@ export function splashSnapshotToGpuParticleGridStep(
   });
 }
 
+export function createSplashGpuImpulse(
+  x: number,
+  y: number,
+  radius: number,
+  force: number,
+  dx: number,
+  dy: number,
+): Float32Array {
+  return new Float32Array([x - dx, y - dy, x, y, radius, force, dx, dy]);
+}
+
 export function createSplashGpuPourBatch(
   activeCount: number,
   particleRadius: number,
