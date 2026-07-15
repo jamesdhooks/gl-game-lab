@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { Gpu2DService, GpuFieldSystem2DOptions, GpuParticleGridSystem2DOptions, GpuParticleSystem2DOptions } from '@hooksjam/gl-game-lab-engine';
+import type { Gpu2DService, GpuFieldSystem2D, GpuFieldSystem2DOptions, GpuParticleGridEmit2D, GpuParticleGridMetaballOptions2D, GpuParticleGridObstacles2D, GpuParticleGridParticleUpdateOptions2D, GpuParticleGridSeed2D, GpuParticleGridSnapshot2D, GpuParticleGridSystem2D, GpuParticleGridSystem2DOptions, GpuParticleGridTransfer2D, GpuParticleGridTransferOptions2D, GpuParticleGridUpdate2D, GpuParticleGridUpdateOptions2D, GpuParticleSystem2D, GpuParticleSystem2DOptions, GpuRenderTarget2D } from '@hooksjam/gl-game-lab-engine';
 import { computeSplashPicFlipGridUpdate, computeSplashPicFlipParticleToGrid, computeSplashPicFlipParticleUpdate, createSplashMpmConfig, SPLASH_MPM_DEFAULTS, SPLASH_MPM_SETTINGS, splashMpmDefinition, SPLASH_MPM_STYLE_MANIFEST, SplashMpmModel, validateSplashPicFlipGpuParity } from '../index.js';
-import { createSplashGpuImpulse, createSplashGpuObstacles, createSplashGpuPourBatch, resolveSplashPicFlipBackend, splashObstaclesToGpuArrays, splashSnapshotToGpuParticleGridSeed, splashSnapshotToGpuParticleGridStep } from '../splash-mpm/SplashPicFlipBackend.js';
+import { createSplashGpuImpulse, createSplashGpuObstacles, createSplashGpuPourBatch, resolveSplashPicFlipBackend, SplashPicFlipGpuRuntime, splashObstaclesToGpuArrays, splashSnapshotToGpuParticleGridSeed, splashSnapshotToGpuParticleGridStep } from '../splash-mpm/SplashPicFlipBackend.js';
 import { resolveSplashSurfaceParameters, selectHeldSplashPointer } from '../splash-mpm/SplashMpmPlugin.js';
 import { compareSplashPicFlipMetrics, type SplashMpmTuning } from '../splash-mpm/SplashMpmModel.js';
 
@@ -43,6 +43,118 @@ function maxDiff(a: Float32Array, b: Float32Array): number {
   let maximum = 0;
   for (let index = 0; index < a.length; index += 1) maximum = Math.max(maximum, Math.abs((a[index] ?? 0) - (b[index] ?? 0)));
   return maximum;
+}
+
+class FakeParticleGridSystem implements GpuParticleGridSystem2D {
+  readonly generation = 1;
+  count = 0;
+  readonly uploadedSeeds: GpuParticleGridSeed2D[] = [];
+  readonly emittedBatches: GpuParticleGridEmit2D[] = [];
+  readonly obstacleUploads: GpuParticleGridObstacles2D[] = [];
+  readonly steps: GpuParticleGridParticleUpdateOptions2D[] = [];
+  readonly metaballRenders: { readonly target: GpuRenderTarget2D; readonly options: GpuParticleGridMetaballOptions2D }[] = [];
+  disposed = false;
+
+  constructor(
+    readonly capacity: number,
+    readonly width: number,
+    readonly height: number,
+    readonly gridWidth: number,
+    readonly gridHeight: number,
+  ) {}
+
+  clear(): void {
+    this.count = 0;
+  }
+
+  uploadSeed(seed: GpuParticleGridSeed2D): void {
+    this.uploadedSeeds.push(seed);
+    this.count = seed.count;
+  }
+
+  emit(batch: GpuParticleGridEmit2D): number {
+    this.emittedBatches.push(batch);
+    const accepted = Math.min(batch.count, this.capacity - this.count);
+    this.count += accepted;
+    return accepted;
+  }
+
+  setObstacles(obstacles: GpuParticleGridObstacles2D): void {
+    this.obstacleUploads.push(obstacles);
+  }
+
+  step(options: GpuParticleGridParticleUpdateOptions2D): void {
+    this.steps.push(options);
+  }
+
+  renderMetaballs(target: GpuRenderTarget2D, options: GpuParticleGridMetaballOptions2D): void {
+    this.metaballRenders.push({ target, options });
+  }
+
+  debugReadback(): GpuParticleGridSnapshot2D {
+    throw new Error('unexpected particle-grid readback');
+  }
+
+  debugComputeParticleToGrid(_options: GpuParticleGridTransferOptions2D): GpuParticleGridTransfer2D {
+    throw new Error('unexpected particle-grid transfer');
+  }
+
+  debugComputeGridUpdate(_options: GpuParticleGridUpdateOptions2D): GpuParticleGridUpdate2D {
+    throw new Error('unexpected particle-grid grid update');
+  }
+
+  debugComputeParticleUpdate(_options: GpuParticleGridParticleUpdateOptions2D): GpuParticleGridSnapshot2D {
+    throw new Error('unexpected particle-grid particle update');
+  }
+
+  dispose(): void {
+    this.disposed = true;
+  }
+}
+
+class FakeGpu2DService implements Gpu2DService {
+  readonly capabilities: Gpu2DService['capabilities'] = {
+    particleGrid: {
+      supported: true,
+      floatRenderTargets: true,
+      floatBlend: true,
+      multipleRenderTargets: true,
+      vertexTextureFetch: true,
+      maxDrawBuffers: 4,
+      maxColorAttachments: 4,
+      maxVertexTextureImageUnits: 8,
+    },
+  };
+  readonly particleGridOptions: GpuParticleGridSystem2DOptions[] = [];
+  lastParticleGrid: FakeParticleGridSystem | undefined;
+
+  validateParticleGridSupport() {
+    return { supported: true };
+  }
+
+  createFieldSystem(_id: string, _options: GpuFieldSystem2DOptions): GpuFieldSystem2D {
+    throw new Error('unexpected field system creation');
+  }
+
+  createParticleSystem(_id: string, _options: GpuParticleSystem2DOptions): GpuParticleSystem2D {
+    throw new Error('unexpected particle system creation');
+  }
+
+  createParticleGridSystem(_id: string, options: GpuParticleGridSystem2DOptions): GpuParticleGridSystem2D {
+    this.particleGridOptions.push(options);
+    this.lastParticleGrid = new FakeParticleGridSystem(
+      options.capacity,
+      options.width ?? Math.ceil(Math.sqrt(options.capacity)),
+      options.height ?? Math.ceil(options.capacity / Math.ceil(Math.sqrt(options.capacity))),
+      options.gridWidth,
+      options.gridHeight,
+    );
+    return this.lastParticleGrid;
+  }
+
+  submit(_id: string, _execute: (target: GpuRenderTarget2D) => void): void {
+    throw new Error('unexpected gpu submit');
+  }
 }
 
 describe('Splash MPM', () => {
@@ -163,6 +275,87 @@ describe('Splash MPM', () => {
     expect(Array.from(createSplashGpuImpulse(120, 100, 30, 17, 40, -8))).toEqual([
       80, 108, 120, 100, 30, 17, 40, -8
     ]);
+  });
+  it('routes GPU runtime commands through retained particle-grid state without readback', () => {
+    const model = new SplashMpmModel();
+    model.reset(192, 128, BASE_TUNING);
+    model.seed(192, 128, BASE_TUNING);
+    model.addCircle(92, 96, 12);
+    model.addSegment(32, 112, 160, 108, 7);
+    const snapshot = model.snapshot();
+    const gpu = new FakeGpu2DService();
+    const runtime = new SplashPicFlipGpuRuntime(gpu, 'splash-test', { particleToGridMode: 'debug-gather' });
+
+    runtime.resetFromSnapshot(snapshot, BASE_TUNING);
+
+    const grid = gpu.lastParticleGrid;
+    expect(grid).toBeDefined();
+    if (!grid) throw new Error('expected fake particle grid');
+    expect(gpu.particleGridOptions).toHaveLength(1);
+    expect(gpu.particleGridOptions[0]).toMatchObject({
+      capacity: BASE_TUNING.maxParticles,
+      gridWidth: snapshot.grid.columns,
+      gridHeight: snapshot.grid.rows,
+    });
+    expect(grid.uploadedSeeds).toHaveLength(1);
+    expect(grid.uploadedSeeds[0]).toEqual(splashSnapshotToGpuParticleGridSeed(snapshot));
+    expect(grid.obstacleUploads).toHaveLength(1);
+    expect(grid.obstacleUploads[0]).toEqual(createSplashGpuObstacles(snapshot.obstacles, 0));
+    expect(runtime.count).toBe(snapshot.count);
+
+    expect(runtime.pour(80, 24, 5, 18, BASE_TUNING.radius, 3, 4)).toBe(5);
+    expect(grid.emittedBatches).toHaveLength(1);
+    expect(grid.emittedBatches[0]).toEqual(createSplashGpuPourBatch(snapshot.count, BASE_TUNING.radius, 80, 24, 5, 18, 3, 4));
+
+    runtime.setObstacles(snapshot.obstacles, 7);
+    runtime.setObstacles(snapshot.obstacles, 7);
+    expect(grid.obstacleUploads).toHaveLength(2);
+    expect(grid.obstacleUploads[1]).toEqual(createSplashGpuObstacles(snapshot.obstacles, 7));
+
+    runtime.splash(120, 90, 36, 14, 8, -6);
+    runtime.step(1 / 60, BASE_TUNING, 192, 128);
+    expect(grid.steps).toHaveLength(1);
+    expect(grid.steps[0]).toMatchObject({
+      cell: snapshot.grid.cell,
+      radius: BASE_TUNING.radius,
+      dt: 1 / 60,
+      stiffness: BASE_TUNING.stiffness,
+      restDensity: BASE_TUNING.restDensity,
+      separation: BASE_TUNING.separation,
+      viscosity: BASE_TUNING.viscosity,
+      gravity: BASE_TUNING.gravity,
+      width: 192,
+      height: 128,
+      flipness: BASE_TUNING.flipness,
+      foamFrame: 0,
+      particleToGridMode: 'debug-gather',
+    });
+    expect(grid.steps[0]?.impulses).toEqual(createSplashGpuImpulse(120, 90, 36, 14, 8, -6));
+    runtime.step(1 / 60, BASE_TUNING, 192, 128);
+    expect(grid.steps[1]?.impulses).toBeUndefined();
+    expect(grid.steps[1]?.foamFrame).toBe(1);
+
+    const target: GpuRenderTarget2D = { width: 192, height: 128 };
+    const metaballs: GpuParticleGridMetaballOptions2D = {
+      worldWidth: 192,
+      worldHeight: 128,
+      fieldScale: 0.5,
+      particleRadiusScale: 1.2,
+      threshold: 0.48,
+      edgeSoftness: 0.12,
+      palette: [[1, 0, 0]],
+      background: [0, 0, 0],
+      thermalContrast: 0.6,
+      refraction: 0.2,
+      gloss: 0.5,
+      rimLighting: 0.4,
+      opacity: 1,
+    };
+    runtime.renderMetaballs(target, metaballs);
+    expect(grid.metaballRenders).toEqual([{ target, options: metaballs }]);
+    runtime.dispose();
+    expect(grid.disposed).toBe(true);
+    expect(runtime.available).toBe(false);
   });
   it('computes the reusable CPU particle-to-grid transfer without per-frame allocations', () => {
     const model = new SplashMpmModel();

@@ -1,4 +1,14 @@
-import type { Gpu2DCapabilities, GpuParticleGridEmit2D, GpuParticleGridObstacles2D, GpuParticleGridParticleUpdateOptions2D, GpuParticleGridSeed2D } from '@hooksjam/gl-game-lab-engine';
+import type {
+  Gpu2DCapabilities,
+  Gpu2DService,
+  GpuParticleGridEmit2D,
+  GpuParticleGridMetaballOptions2D,
+  GpuParticleGridObstacles2D,
+  GpuParticleGridParticleUpdateOptions2D,
+  GpuParticleGridSystem2D,
+  GpuParticleGridSeed2D,
+  GpuRenderTarget2D,
+} from '@hooksjam/gl-game-lab-engine';
 import type { WaterObstacle } from '../water-tank/WaterTankModel.js';
 import type { SplashMpmTuning, SplashPicFlipStateSnapshot } from './SplashMpmModel.js';
 
@@ -16,6 +26,131 @@ export interface SplashPicFlipBackendOptions {
   readonly request?: SplashPicFlipBackendRequest;
   readonly gpuImplemented?: boolean;
   readonly parityValidated?: boolean;
+}
+
+export interface SplashPicFlipGpuRuntimeOptions {
+  readonly particleToGridMode?: 'debug-gather' | 'instanced-splat';
+}
+
+export class SplashPicFlipGpuRuntime {
+  private particleGrid: GpuParticleGridSystem2D | undefined;
+  private gridColumns = 0;
+  private gridRows = 0;
+  private particleCapacity = 0;
+  private stateWidth = 0;
+  private stateHeight = 0;
+  private cell = 1;
+  private foamFrame = 0;
+  private obstacleRevision = -1;
+  private readonly pendingImpulses: Float32Array[] = [];
+
+  constructor(
+    private readonly gpu2D: Gpu2DService,
+    private readonly id: string,
+    private readonly options: SplashPicFlipGpuRuntimeOptions = {},
+  ) {}
+
+  get count(): number {
+    return this.particleGrid?.count ?? 0;
+  }
+
+  get available(): boolean {
+    return this.particleGrid !== undefined;
+  }
+
+  resetFromSnapshot(snapshot: SplashPicFlipStateSnapshot, tuning: SplashMpmTuning): void {
+    this.cell = snapshot.grid.cell;
+    this.foamFrame = 0;
+    this.pendingImpulses.length = 0;
+    this.ensureParticleGrid(Math.floor(tuning.maxParticles), snapshot.grid.columns, snapshot.grid.rows);
+    const particleGrid = this.requireParticleGrid();
+    particleGrid.uploadSeed(splashSnapshotToGpuParticleGridSeed(snapshot));
+    this.setObstacles(snapshot.obstacles, 0);
+  }
+
+  pour(
+    x: number,
+    y: number,
+    count: number,
+    radius: number,
+    particleRadius: number,
+    dx = 0,
+    dy = 0,
+  ): number {
+    const particleGrid = this.requireParticleGrid();
+    return particleGrid.emit(createSplashGpuPourBatch(particleGrid.count, particleRadius, x, y, count, radius, dx, dy));
+  }
+
+  splash(x: number, y: number, radius: number, force: number, dx: number, dy: number): void {
+    this.pendingImpulses.push(createSplashGpuImpulse(x, y, radius, force, dx, dy));
+  }
+
+  setObstacles(obstacles: readonly WaterObstacle[], revision: number): void {
+    if (revision === this.obstacleRevision) return;
+    this.requireParticleGrid().setObstacles(createSplashGpuObstacles(obstacles, revision));
+    this.obstacleRevision = revision;
+  }
+
+  step(dt: number, tuning: SplashMpmTuning, width: number, height: number): void {
+    const particleGrid = this.requireParticleGrid();
+    const impulses = packImpulses(this.pendingImpulses);
+    this.pendingImpulses.length = 0;
+    particleGrid.step(Object.freeze({
+      cell: this.cell,
+      radius: tuning.radius,
+      dt,
+      stiffness: tuning.stiffness,
+      restDensity: tuning.restDensity,
+      separation: tuning.separation,
+      viscosity: tuning.viscosity,
+      gravity: tuning.gravity,
+      width,
+      height,
+      flipness: tuning.flipness,
+      foamFrame: this.foamFrame,
+      particleToGridMode: this.options.particleToGridMode ?? 'instanced-splat',
+      ...(impulses.length > 0 ? { impulses } : {}),
+    }));
+    this.foamFrame += 1;
+  }
+
+  renderMetaballs(target: GpuRenderTarget2D, options: GpuParticleGridMetaballOptions2D): void {
+    this.requireParticleGrid().renderMetaballs(target, options);
+  }
+
+  dispose(): void {
+    this.particleGrid?.dispose();
+    this.particleGrid = undefined;
+    this.pendingImpulses.length = 0;
+  }
+
+  private ensureParticleGrid(capacity: number, gridColumns: number, gridRows: number): void {
+    const stateWidth = Math.max(1, Math.ceil(Math.sqrt(Math.max(1, capacity))));
+    const stateHeight = Math.max(1, Math.ceil(Math.max(1, capacity) / stateWidth));
+    if (this.particleGrid && this.particleCapacity === capacity && this.gridColumns === gridColumns
+      && this.gridRows === gridRows && this.stateWidth === stateWidth && this.stateHeight === stateHeight) {
+      return;
+    }
+    this.particleGrid?.dispose();
+    this.particleGrid = this.gpu2D.createParticleGridSystem(this.id, {
+      capacity,
+      width: stateWidth,
+      height: stateHeight,
+      gridWidth: gridColumns,
+      gridHeight: gridRows,
+    });
+    this.particleCapacity = capacity;
+    this.gridColumns = gridColumns;
+    this.gridRows = gridRows;
+    this.stateWidth = stateWidth;
+    this.stateHeight = stateHeight;
+    this.obstacleRevision = -1;
+  }
+
+  private requireParticleGrid(): GpuParticleGridSystem2D {
+    if (!this.particleGrid) throw new Error('Splash GPU runtime has not been reset');
+    return this.particleGrid;
+  }
 }
 
 export function resolveSplashPicFlipBackend(
@@ -182,4 +317,13 @@ export function createSplashGpuPourBatch(
 
 function splashHash(v: number) {
   return Math.abs(Math.sin(v * 12.9898) * 43758.5453) % 1;
+}
+
+function packImpulses(impulses: readonly Float32Array[]): Float32Array {
+  if (impulses.length === 0) return new Float32Array(0);
+  const output = new Float32Array(impulses.length * 8);
+  impulses.forEach((impulse, index) => {
+    output.set(impulse.subarray(0, 8), index * 8);
+  });
+  return output;
 }
