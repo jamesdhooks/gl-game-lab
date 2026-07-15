@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createSplashMpmConfig, SPLASH_MPM_DEFAULTS, SPLASH_MPM_SETTINGS, splashMpmDefinition, SPLASH_MPM_STYLE_MANIFEST, SplashMpmModel } from '../index.js';
 import { resolveSplashSurfaceParameters, selectHeldSplashPointer } from '../splash-mpm/SplashMpmPlugin.js';
-import type { SplashMpmTuning } from '../splash-mpm/SplashMpmModel.js';
+import { compareSplashPicFlipMetrics, type SplashMpmTuning } from '../splash-mpm/SplashMpmModel.js';
 
 const BASE_TUNING: SplashMpmTuning = Object.freeze({
   maxParticles: 2048,
@@ -55,6 +55,37 @@ describe('Splash MPM', () => {
     expect(configure).not.toHaveBeenCalled();
     model.configure({ ...BASE_TUNING, radius: BASE_TUNING.radius + 1 });
     expect(configure).toHaveBeenCalledTimes(1);
+  });
+  it('round-trips deterministic state snapshots for CPU fallback and parity comparisons', () => {
+    const original = new SplashMpmModel();
+    original.reset(320, 240, BASE_TUNING);
+    original.seed(320, 240, BASE_TUNING);
+    original.addCircle(160, 150, 14);
+    original.addSegment(80, 190, 220, 170, 9);
+    original.splash(160, 120, 48, 12, 18, -5);
+    for (let step = 0; step < 4; step += 1) original.step(1 / 60, 320, 240, BASE_TUNING);
+
+    const restored = new SplashMpmModel();
+    restored.restore(original.snapshot(), 320, 240, BASE_TUNING);
+    const delta = compareSplashPicFlipMetrics(original.metrics(), restored.metrics());
+    expect(delta.countEqual).toBe(true);
+    expect(delta.finite).toBe(true);
+    expect(delta.centerDistance).toBeLessThan(0.0001);
+    expect(delta.momentumRelativeError).toBeLessThan(0.0001);
+    expect(delta.kineticEnergyRelativeError).toBeLessThan(0.0001);
+    expect(delta.foamCoverageError).toBe(0);
+    expect(restored.obstacles).toEqual(original.obstacles);
+  });
+  it('reports divergent trajectories through parity metrics', () => {
+    const reference = new SplashMpmModel();
+    reference.reset(320, 240, BASE_TUNING);
+    reference.pour(120, 80, 12, 18, 2, 4);
+    const candidate = new SplashMpmModel();
+    candidate.restore(reference.snapshot(), 320, 240, BASE_TUNING);
+    candidate.splash(120, 80, 60, 20, 30, 0);
+    const delta = compareSplashPicFlipMetrics(reference.metrics(), candidate.metrics());
+    expect(delta.countEqual).toBe(true);
+    expect(delta.momentumRelativeError).toBeGreaterThan(0.1);
   });
   it('validates maintained defaults', () => {
     expect(SPLASH_MPM_SETTINGS.length).toBeGreaterThan(25);

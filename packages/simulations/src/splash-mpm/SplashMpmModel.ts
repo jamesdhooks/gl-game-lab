@@ -13,6 +13,54 @@ export interface SplashMpmTuning {
 }
 export const SPLASH_PIC_FLIP_CAPACITY = 131_072;
 
+export interface SplashPicFlipStateSnapshot {
+  readonly count: number;
+  readonly positions: Float32Array;
+  readonly velocities: Float32Array;
+  readonly radii: Float32Array;
+  readonly colorSeeds: Float32Array;
+  readonly foam: Float32Array;
+  readonly affine: Float32Array;
+  readonly obstacles: readonly WaterObstacle[];
+  readonly grid: SplashPicFlipGridSnapshot;
+}
+
+export interface SplashPicFlipGridSnapshot {
+  readonly columns: number;
+  readonly rows: number;
+  readonly cell: number;
+  readonly mass: Float32Array;
+  readonly velocityX: Float32Array;
+  readonly velocityY: Float32Array;
+  readonly previousVelocityX: Float32Array;
+  readonly previousVelocityY: Float32Array;
+  readonly pressure: Float32Array;
+}
+
+export interface SplashPicFlipMetrics {
+  readonly count: number;
+  readonly finite: boolean;
+  readonly centerX: number;
+  readonly centerY: number;
+  readonly momentumX: number;
+  readonly momentumY: number;
+  readonly kineticEnergy: number;
+  readonly foamCoverage: number;
+  readonly gridMass: number;
+  readonly occupiedGridCells: number;
+}
+
+export interface SplashPicFlipMetricDelta {
+  readonly countEqual: boolean;
+  readonly finite: boolean;
+  readonly centerDistance: number;
+  readonly momentumRelativeError: number;
+  readonly kineticEnergyRelativeError: number;
+  readonly foamCoverageError: number;
+  readonly gridMassRelativeError: number;
+  readonly occupiedGridRelativeError: number;
+}
+
 export class SplashPicFlipModel {
   readonly world = new DenseCircleParticleWorld2D(SPLASH_PIC_FLIP_CAPACITY, {
     maxParticles: SPLASH_PIC_FLIP_CAPACITY,
@@ -268,6 +316,57 @@ export class SplashPicFlipModel {
     }
     this.foamFrame++;
   }
+  snapshot(): SplashPicFlipStateSnapshot {
+    const count = this.count;
+    const gridLength = this.columns * this.rows;
+    return Object.freeze({
+      count,
+      positions: this.world.positions.slice(0, count * 2),
+      velocities: this.world.velocities.slice(0, count * 2),
+      radii: this.world.radii.slice(0, count),
+      colorSeeds: this.world.colorSeeds.slice(0, count),
+      foam: this.foam.slice(0, count),
+      affine: this.affine.slice(0, count * 4),
+      obstacles: Object.freeze(this.obstacles.map((obstacle) => Object.freeze({ ...obstacle }))),
+      grid: Object.freeze({
+        columns: this.columns,
+        rows: this.rows,
+        cell: this.cell,
+        mass: this.mass.slice(0, gridLength),
+        velocityX: this.vx.slice(0, gridLength),
+        velocityY: this.vy.slice(0, gridLength),
+        previousVelocityX: this.oldVx.slice(0, gridLength),
+        previousVelocityY: this.oldVy.slice(0, gridLength),
+        pressure: this.pressure.slice(0, gridLength),
+      }),
+    });
+  }
+  restore(snapshot: SplashPicFlipStateSnapshot, width: number, height: number, tuning: SplashMpmTuning): void {
+    if (snapshot.count > SPLASH_PIC_FLIP_CAPACITY || snapshot.positions.length < snapshot.count * 2
+      || snapshot.velocities.length < snapshot.count * 2 || snapshot.radii.length < snapshot.count
+      || snapshot.colorSeeds.length < snapshot.count || snapshot.foam.length < snapshot.count
+      || snapshot.affine.length < snapshot.count * 4) {
+      throw new Error('Invalid Splash PIC/FLIP state snapshot');
+    }
+    this.reset(width, height, tuning);
+    for (let index = 0; index < snapshot.count; index += 1) {
+      const offset = index * 2;
+      const added = this.world.addCircle(snapshot.positions[offset] ?? 0, snapshot.positions[offset + 1] ?? 0, {
+        radius: snapshot.radii[index] ?? tuning.radius,
+        velocityX: snapshot.velocities[offset] ?? 0,
+        velocityY: snapshot.velocities[offset + 1] ?? 0,
+        colorSeed: snapshot.colorSeeds[index] ?? index,
+      });
+      if (added < 0) throw new Error('Splash PIC/FLIP snapshot exceeds configured particle capacity');
+      this.foam[added] = snapshot.foam[index] ?? 0;
+      const affineOffset = index * 4;
+      this.affine.set(snapshot.affine.subarray(affineOffset, affineOffset + 4), affineOffset);
+    }
+    this.obstacles.push(...snapshot.obstacles.map((obstacle) => ({ ...obstacle })));
+  }
+  metrics(): SplashPicFlipMetrics {
+    return measureSplashPicFlipSnapshot(this.snapshot());
+  }
   get count() {
     return this.world.count;
   }
@@ -426,6 +525,61 @@ export class SplashPicFlipModel {
 
 /** @deprecated Compatibility alias; the implementation is PIC/FLIP, not MPM. */
 export { SplashPicFlipModel as SplashMpmModel };
+export function measureSplashPicFlipSnapshot(snapshot: SplashPicFlipStateSnapshot): SplashPicFlipMetrics {
+  let sumX = 0, sumY = 0, momentumX = 0, momentumY = 0, kineticEnergy = 0, foamCount = 0, finite = true;
+  for (let index = 0; index < snapshot.count; index += 1) {
+    const offset = index * 2;
+    const x = snapshot.positions[offset] ?? 0, y = snapshot.positions[offset + 1] ?? 0;
+    const velocityX = snapshot.velocities[offset] ?? 0, velocityY = snapshot.velocities[offset + 1] ?? 0;
+    const foam = snapshot.foam[index] ?? 0;
+    finite = finite && Number.isFinite(x) && Number.isFinite(y) && Number.isFinite(velocityX)
+      && Number.isFinite(velocityY) && Number.isFinite(foam);
+    sumX += x;
+    sumY += y;
+    momentumX += velocityX;
+    momentumY += velocityY;
+    kineticEnergy += 0.5 * (velocityX * velocityX + velocityY * velocityY);
+    if (foam >= 0.08) foamCount += 1;
+  }
+  let gridMass = 0, occupiedGridCells = 0;
+  for (const mass of snapshot.grid.mass) {
+    finite = finite && Number.isFinite(mass);
+    gridMass += mass;
+    if (mass > 0.000001) occupiedGridCells += 1;
+  }
+  const divisor = Math.max(1, snapshot.count);
+  return Object.freeze({
+    count: snapshot.count,
+    finite,
+    centerX: sumX / divisor,
+    centerY: sumY / divisor,
+    momentumX,
+    momentumY,
+    kineticEnergy,
+    foamCoverage: foamCount / divisor,
+    gridMass,
+    occupiedGridCells,
+  });
+}
+
+export function compareSplashPicFlipMetrics(reference: SplashPicFlipMetrics, candidate: SplashPicFlipMetrics): SplashPicFlipMetricDelta {
+  const momentumMagnitude = Math.hypot(reference.momentumX, reference.momentumY);
+  return Object.freeze({
+    countEqual: reference.count === candidate.count,
+    finite: reference.finite && candidate.finite,
+    centerDistance: Math.hypot(reference.centerX - candidate.centerX, reference.centerY - candidate.centerY),
+    momentumRelativeError: Math.hypot(reference.momentumX - candidate.momentumX, reference.momentumY - candidate.momentumY)
+      / Math.max(0.000001, momentumMagnitude),
+    kineticEnergyRelativeError: relativeError(reference.kineticEnergy, candidate.kineticEnergy),
+    foamCoverageError: Math.abs(reference.foamCoverage - candidate.foamCoverage),
+    gridMassRelativeError: relativeError(reference.gridMass, candidate.gridMass),
+    occupiedGridRelativeError: relativeError(reference.occupiedGridCells, candidate.occupiedGridCells),
+  });
+}
+
+function relativeError(reference: number, candidate: number): number {
+  return Math.abs(reference - candidate) / Math.max(0.000001, Math.abs(reference));
+}
 function closest(x: number, y: number, l: WaterObstacle) {
   const dx = l.bx - l.ax, dy = l.by - l.ay, q = dx * dx + dy * dy, t = q < 0.001 ? 0 : Math.max(0, Math.min(1, ((x - l.ax) * dx + (y - l.ay) * dy) / q));
   return {
