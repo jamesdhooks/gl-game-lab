@@ -69,16 +69,19 @@ describe('ParticleEffects2D', () => {
 
   it('packs commands into a stable allocation-free 16-float batch', () => {
     const queue = new ParticleCommandQueue2D(definition);
+    queue.setCapacity(128);
     expect(queue.enqueue({
       archetypeId: 'primary', count: 24, position: [10, 20], inheritedVelocity: [2, 3],
       direction: 1, spread: 2, power: 300, seed: 7, paletteSeed: 9,
+      shape: 'spiral', lifetimeScale: 3.5, lifetimeVariability: 0.4,
     })).toBe(true);
     const first = queue.drain();
     expect(first.count).toBe(1);
     expect(first.particleCount).toBe(24);
-    expect(first.data.slice(0, 14)).toEqual(new Float32Array([0, 0, 24, 6, 10, 20, 2, 3, 1, 2, 300, 2, 7, 9]));
+    expect(first.data.slice(0, 15)).toEqual(new Float32Array([0, 0, 24, 7, 10, 20, 2, 3, 1, 2, 300, 3.5, 7, 9, 0.4]));
     queue.enqueue({ archetypeId: 'sparkle', count: 4, position: [0, 0], inheritedVelocity: [0, 0], direction: 0, spread: 1, power: 4, seed: 1, paletteSeed: 2 });
     expect(queue.drain()).toBe(first);
+    expect(() => queue.setCapacity(64)).toThrow('outside the effect policy');
   });
 
   it('resolves render recipes and validates contextual setting bindings', () => {

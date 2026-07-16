@@ -139,6 +139,9 @@ export interface ParticleSpawnCommand2D {
   readonly power: number;
   readonly seed: number;
   readonly paletteSeed: number;
+  readonly shape?: ParticleSpawnShape2D;
+  readonly lifetimeScale?: number;
+  readonly lifetimeVariability?: number;
 }
 
 export type ParticleEffectParameters2D = Readonly<Record<string, ParticleSettingValue2D>>;
@@ -191,6 +194,7 @@ export class ParticleCommandQueue2D {
   private drainCount = 0;
   private drainParticles = 0;
   private cursor = 0;
+  private activeCapacity: number;
   private droppedCommands = 0;
   private droppedParticles = 0;
 
@@ -198,6 +202,7 @@ export class ParticleCommandQueue2D {
     validateParticleEffectDefinition2D(definition);
     const commandCapacity = definition.capacity.commandCapacity ?? PARTICLE_EFFECT_COMMAND_CAPACITY;
     this.data = new Float32Array(commandCapacity * 16);
+    this.activeCapacity = definition.capacity.default;
     definition.archetypes.forEach((archetype, index) => { this.archetypeIds.set(archetype.id, index); });
     const queue = this;
     this.stableBatch = Object.freeze({
@@ -212,6 +217,12 @@ export class ParticleCommandQueue2D {
   get totalDroppedCommands(): number { return this.droppedCommands; }
   get totalDroppedParticles(): number { return this.droppedParticles; }
 
+  setCapacity(capacity: number): void {
+    if (!Number.isSafeInteger(capacity) || capacity < this.definition.capacity.min || capacity > this.definition.capacity.max) throw new Error('Particle command queue capacity is outside the effect policy');
+    this.activeCapacity = capacity;
+    this.cursor %= capacity;
+  }
+
   enqueue(command: ParticleSpawnCommand2D): boolean {
     const archetypeId = this.archetypeIds.get(command.archetypeId);
     if (archetypeId === undefined) throw new Error(`Unknown particle archetype: ${command.archetypeId}`);
@@ -221,12 +232,12 @@ export class ParticleCommandQueue2D {
       this.droppedParticles += command.count;
       return false;
     }
-    const count = Math.min(command.count, this.definition.capacity.max);
+    const count = Math.min(command.count, this.activeCapacity);
     const offset = this.queued * 16;
     this.data[offset] = archetypeId;
     this.data[offset + 1] = this.cursor;
     this.data[offset + 2] = count;
-    this.data[offset + 3] = particleSpawnShapeCode2D(this.definition.archetypes[archetypeId]!.spawn.shape);
+    this.data[offset + 3] = particleSpawnShapeCode2D(command.shape ?? this.definition.archetypes[archetypeId]!.spawn.shape);
     this.data[offset + 4] = command.position[0];
     this.data[offset + 5] = command.position[1];
     this.data[offset + 6] = command.inheritedVelocity[0];
@@ -234,12 +245,12 @@ export class ParticleCommandQueue2D {
     this.data[offset + 8] = command.direction;
     this.data[offset + 9] = command.spread;
     this.data[offset + 10] = command.power;
-    this.data[offset + 11] = this.definition.archetypes[archetypeId]!.lifecycle.lifetime;
+    this.data[offset + 11] = command.lifetimeScale ?? this.definition.archetypes[archetypeId]!.lifecycle.lifetime;
     this.data[offset + 12] = command.seed;
     this.data[offset + 13] = command.paletteSeed;
-    this.data[offset + 14] = 0;
+    this.data[offset + 14] = command.lifetimeVariability ?? this.definition.archetypes[archetypeId]!.lifecycle.lifetimeVariability ?? 0;
     this.data[offset + 15] = 0;
-    this.cursor = (this.cursor + count) % this.definition.capacity.max;
+    this.cursor = (this.cursor + count) % this.activeCapacity;
     this.queued += 1;
     this.queuedParticles += count;
     return true;

@@ -1,9 +1,10 @@
 import { createExtensionToken, type EnginePlugin, type PointerInputEvent } from '@hooksjam/gl-game-lab-core';
-import { EngineGpu2D, EngineInput, EngineRender2D, EngineSchedule, ExperiencePreviewCycleControllerService, type ExperienceLaunchOptions, type ExperiencePreviewCycleRequest, type ExperienceRuntimeController, type ExperienceSettingValue, type GpuParticleSystem2D, type GpuUniformEncoder2D, type GpuUniformLookup2D } from '@hooksjam/gl-game-lab-engine';
+import { EngineGpu2D, EngineInput, EngineRender2D, EngineSchedule, ExperiencePreviewCycleControllerService, ParticleCommandQueue2D, type ExperienceLaunchOptions, type ExperiencePreviewCycleRequest, type ExperienceRuntimeController, type ExperienceSettingValue, type GpuParticleSystem2D, type GpuUniformEncoder2D, type GpuUniformLookup2D } from '@hooksjam/gl-game-lab-engine';
 import { registerSimulationRuntime } from '../SimulationPluginLifecycle.js';
 import { createSparksConfig, SPARKS_DEFAULTS, sparksNumber, sparksString, type SparksConfig } from './config.js';
 import { SPARKS_POINT_FRAGMENT_SHADER, SPARKS_POINT_VERTEX_SHADER, SPARKS_RAIL_SHADER, SPARKS_STEP_SHADER, SPARKS_TRAIL_FRAGMENT_SHADER, SPARKS_TRAIL_VERTEX_SHADER } from './shaders.js';
 import { sparksColor3, SPARKS_STYLE_MANIFEST } from './styles.js';
+import { SPARKS_PARTICLE_EFFECT } from './effect.js';
 export type SparksMode = 'welding' | 'pinwheel' | 'shower' | 'build';
 export interface Rail {
   x1: number;
@@ -50,7 +51,7 @@ export function createSparksPlugin(initial: SparksConfig = SPARKS_DEFAULTS, laun
   let lastSetting = 'initial';
   let mode = autonomousPreview ? autonomousSparksMode(validMode(launch.modeId), normalizeSeed(launch.seed)) : validMode(launch.modeId) ?? 'welding';
   let styleId = validStyle(launch.styleId) ?? SPARKS_STYLE_MANIFEST.defaultStyleId;
-  let elapsed = 0, pendingDt = 0, emissionAccumulator = 0, cursor = 0, randomState = normalizeSeed(launch.seed), rebuildState = false;
+  let elapsed = 0, pendingDt = 0, emissionAccumulator = 0, randomState = normalizeSeed(launch.seed), rebuildState = false;
   let buildStart: {
     x: number;
     y: number;
@@ -58,6 +59,7 @@ export function createSparksPlugin(initial: SparksConfig = SPARKS_DEFAULTS, laun
   let previewRail: Rail | undefined;
   let cleanup = (): void => undefined;
   const commands: SpawnCommand[] = [];
+  const commandQueue = new ParticleCommandQueue2D(SPARKS_PARTICLE_EFFECT);
   const rails: Rail[] = [];
   const contacts = new Map<number, TorchContact>();
   const previousPointers = new Map<number, {
@@ -71,6 +73,7 @@ export function createSparksPlugin(initial: SparksConfig = SPARKS_DEFAULTS, laun
     install: context => {
       const renderer = context.get(EngineRender2D), gpu = context.get(EngineGpu2D), input = context.get(EngineInput);
       let particles = createParticles(), observedGeneration = particles.generation;
+      commandQueue.setCapacity(particles.capacity);
       cleanup = () => { particles.dispose(); };
       applyStyle();
       ensureDefaultRails();
@@ -216,16 +219,16 @@ export function createSparksPlugin(initial: SparksConfig = SPARKS_DEFAULTS, laun
                 particles.dispose();
                 particles = createParticles();
                 observedGeneration = particles.generation;
-                cursor = 0;
+                commandQueue.setCapacity(particles.capacity);
+                commandQueue.reset();
                 rebuildState = false;
                 particles.clearTrails();
               }
               const dt = pendingDt;
               pendingDt = 0;
-              if (commands.length === 0)
-                runStep(dt);
-              else
-                commands.splice(0, 16).forEach((command, index) => runStep(index === 0 ? dt : 0, command));
+              const pendingCommands = commands.splice(0, commandQueue.commandCapacity);
+              for (const command of pendingCommands) enqueueSpawnCommand(command);
+              runStep(dt);
               const renderStyle = sparksString(config, 'renderStyle');
               const palette = paletteData();
               const bindSparkRender = (
@@ -382,12 +385,26 @@ export function createSparksPlugin(initial: SparksConfig = SPARKS_DEFAULTS, laun
           }
         }
       }
-      function runStep(dt: number, spawn?: SpawnCommand): void {
-        const count = spawn ? Math.min(spawn.count, particles.capacity) : 0, start = cursor;
-        if (spawn)
-          cursor = (cursor + count) % particles.capacity;
+      function enqueueSpawnCommand(spawn: SpawnCommand): void {
+        const shape = spawn.pattern > 1.5 ? 'shower' as const : spawn.pattern > 0.5 ? 'pinwheel' as const : undefined;
+        commandQueue.enqueue({
+          archetypeId: spawn.kind < 0.5 ? 'core' : spawn.kind < 1.5 ? 'primary' : 'bounce',
+          count: spawn.count,
+          position: [spawn.x, spawn.y],
+          inheritedVelocity: [spawn.vx, spawn.vy],
+          direction: -Math.PI * 0.5,
+          spread: Math.PI * 0.9,
+          power: spawn.power,
+          seed: spawn.seed,
+          paletteSeed: spawn.paletteSeed,
+          ...(shape ? { shape } : {}),
+          lifetimeScale: spawn.life,
+          lifetimeVariability: spawn.lifeVariation,
+        });
+      }
+      function runStep(dt: number): void {
         const railData = writeRails(false);
-        particles.step((g, u) => {
+        particles.stepBatch(commandQueue.drain(), (g, u) => {
           g.uniform1i(u('uCapacity'), particles.capacity);
           g.uniform1f(u('uDt'), dt);
           g.uniform1f(u('uGravity'), sparksNumber(config, 'gravity'));
@@ -413,19 +430,7 @@ export function createSparksPlugin(initial: SparksConfig = SPARKS_DEFAULTS, laun
           g.uniform1f(u('uSimDepth'), simDepthNumber(sparksString(config, 'simDepth')));
           g.uniform1i(u('uBuildSurfaceCount'), Math.min(13, rails.length));
           g.uniform4fv(u('uBuildSurfaces[0]'), railData);
-          g.uniform1f(u('uSpawnActive'), spawn ? 1 : 0);
-          g.uniform1i(u('uSpawnStart'), start);
-          g.uniform1i(u('uSpawnCount'), count);
-          g.uniform2f(u('uSpawnPosition'), spawn?.x ?? 0, spawn?.y ?? 0);
-          g.uniform2f(u('uSpawnVelocity'), spawn?.vx ?? 0, spawn?.vy ?? 0);
-          g.uniform1f(u('uSpawnKind'), spawn?.kind ?? 0);
-          g.uniform1f(u('uSpawnSeed'), spawn?.seed ?? 0);
-          g.uniform1f(u('uSpawnPaletteSeed'), spawn?.paletteSeed ?? 0);
-          g.uniform1f(u('uSpawnPower'), spawn?.power ?? 0);
-          g.uniform1f(u('uSpawnPattern'), spawn?.pattern ?? 0);
           g.uniform1f(u('uDirectionChaos'), sparksNumber(config, 'sparkDirectionChaos'));
-          g.uniform1f(u('uLifeScale'), spawn?.life ?? 1);
-          g.uniform1f(u('uLifeVariability'), spawn?.lifeVariation ?? 0);
         });
       }
       function createParticles(): GpuParticleSystem2D {
@@ -448,6 +453,7 @@ export function createSparksPlugin(initial: SparksConfig = SPARKS_DEFAULTS, laun
           },
           blend: 'additive',
           trails: true,
+          commandCapacity: SPARKS_PARTICLE_EFFECT.capacity.commandCapacity ?? 64,
         });
       }
       function applyStyle(): void {
@@ -479,7 +485,7 @@ export function createSparksPlugin(initial: SparksConfig = SPARKS_DEFAULTS, laun
         elapsed = 0;
         pendingDt = 0;
         emissionAccumulator = 0;
-        cursor = 0;
+        commandQueue.reset();
         randomState = normalizeSeed(launch.seed);
       }
       function ensureDefaultRails(): void {

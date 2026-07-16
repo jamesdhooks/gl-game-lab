@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { ExperienceRegistry } from '@hooksjam/gl-game-lab-engine';
-import { createSparksConfig, createSparksDefaultRails, createSparksPreviewRails, SPARKS_DEFAULTS, SPARKS_SETTINGS, SPARKS_STYLE_MANIFEST, sparksDefinition } from '../index.js';
+import { createSparksConfig, createSparksDefaultRails, createSparksPreviewRails, SPARKS_DEFAULTS, SPARKS_PARTICLE_EFFECT, SPARKS_PARTICLE_SETTING_BINDINGS, SPARKS_SETTINGS, SPARKS_STYLE_MANIFEST, sparksDefinition } from '../index.js';
 import { SPARKS_POINT_FRAGMENT_SHADER, SPARKS_POINT_VERTEX_SHADER, SPARKS_STEP_SHADER, SPARKS_TRAIL_VERTEX_SHADER } from '../sparks/shaders.js';
 describe('Sparks', () => {
   it('registers four interaction modes and six styles', () => {
@@ -70,5 +70,15 @@ describe('Sparks', () => {
     expect(SPARKS_STEP_SHADER).toContain('uBounceBurstChance');
     expect(SPARKS_STEP_SHADER).toContain('uBounceBurstCount');
     expect(SPARKS_STEP_SHADER).toContain('parentGeneration>=1.0&&parentGeneration<1.5');
+  });
+
+  it('uses the shared batched particle-effect contract without discarding saved keys', () => {
+    expect(SPARKS_PARTICLE_EFFECT.archetypes.map((archetype) => archetype.id)).toEqual(['core', 'primary', 'bounce']);
+    expect(SPARKS_PARTICLE_EFFECT.capacity.commandCapacity).toBe(64);
+    expect(SPARKS_PARTICLE_EFFECT.renderRecipes.recipes.map((recipe) => recipe.tier)).toEqual(['basic', 'enhanced', 'ultra']);
+    expect(SPARKS_PARTICLE_SETTING_BINDINGS.map((binding) => binding.persistedKey)).toContain('primarySparkLength');
+    expect(SPARKS_STEP_SHADER).toContain('uParticleCommandData');
+    expect(SPARKS_STEP_SHADER).toContain('commandIndex<64');
+    expect(SPARKS_STEP_SHADER).not.toContain('uSpawnActive');
   });
 });
