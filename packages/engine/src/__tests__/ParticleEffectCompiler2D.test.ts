@@ -33,10 +33,12 @@ describe('ParticleEffectCompiler2D', () => {
     expect(program.webgl2.simulation.source).toContain('stateB.xy += vec2');
     expect(program.webgl2.simulation.source).toContain('iteration < 6');
     expect(program.webgl2.simulation.source).not.toContain('commandIndex = 0; commandIndex < 64');
+    expect(program.webgl2.simulation.source).toContain('shape == 8');
     expect(program.webgl2.event?.source).toContain('uMetadataState');
     expect(program.webgpu.simulation.source).toContain('@compute @workgroup_size(256)');
     expect(program.webgpu.simulation.source).toContain('iteration < 6u');
     expect(program.webgpu.simulation.source).toContain('archetypeMotion[archetype]');
+    expect(program.webgpu.simulation.source).toContain('shape == 9u');
     expect(program.reflection).toMatchObject({ stateTargets: 3, usesCollisions: true, usesEvents: true, usesTurbulence: true });
     expect(program.renderPasses.ultra.map((entry) => entry.kind)).toEqual(['points', 'streaks', 'trails', 'bloom']);
   });

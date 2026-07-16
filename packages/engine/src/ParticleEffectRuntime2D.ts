@@ -34,6 +34,7 @@ export interface ParticleEmissionOverride2D {
   readonly spread?: number;
   readonly power?: number;
   readonly seed?: number;
+  readonly inheritedVelocity?: readonly [number, number];
 }
 
 /** Reusable command writer for allocation-free emission in frame loops. */
@@ -72,6 +73,8 @@ export interface ParticleRuntimeEmission2D {
   readonly power: number;
   readonly seed: number;
   readonly importance: number;
+  readonly inheritedVelocityX?: number;
+  readonly inheritedVelocityY?: number;
 }
 
 export interface ParticleEffectBackendDiagnostics2D extends ParticleEffectDiagnostics2D {
@@ -317,7 +320,7 @@ export class EngineParticleEffects2D implements ParticleEffects2D {
 }
 
 class MutableEmission implements ParticleRuntimeEmission2D {
-  instanceId = 0; emitterIndex = 0; count = 0; positionX = 0; positionY = 0; direction = 0; spread = 0; power = 0; seed = 0; importance = 0;
+  instanceId = 0; emitterIndex = 0; count = 0; positionX = 0; positionY = 0; direction = 0; spread = 0; power = 0; seed = 0; importance = 0; inheritedVelocityX = 0; inheritedVelocityY = 0;
 }
 
 class EmitterRuntime {
@@ -335,9 +338,9 @@ class EmitterRuntime {
 }
 
 class MutableEmissionOverride implements ParticleEmissionOverride2D {
-  count?: number; position?: readonly [number, number]; direction?: number; spread?: number; power?: number; seed?: number;
+  count?: number; position?: readonly [number, number]; direction?: number; spread?: number; power?: number; seed?: number; inheritedVelocity?: readonly [number, number];
   readonly point: [number, number] = [0, 0];
-  clear(): void { delete this.count; delete this.position; delete this.direction; delete this.spread; delete this.power; delete this.seed; }
+  clear(): void { delete this.count; delete this.position; delete this.direction; delete this.spread; delete this.power; delete this.seed; delete this.inheritedVelocity; }
 }
 
 class RuntimeParticleEmitterHandle2D implements ParticleEmitterHandle2D, ParticleEmissionWriter2D {
@@ -516,6 +519,8 @@ class RuntimeParticleEffectInstance2D implements ParticleEffectInstance2D {
     emission.power = override.power ?? sourceNumber(emitter.definition.initialization?.power, this.parameters, this.seed, emitter.index, 1);
     emission.seed = override.seed ?? mixSeed(this.seed, emitter.index + Math.round(this.elapsed * 1000));
     emission.importance = importanceCode(emitter.definition.limits.importance);
+    emission.inheritedVelocityX = override.inheritedVelocity?.[0] ?? 0;
+    emission.inheritedVelocityY = override.inheritedVelocity?.[1] ?? 0;
     this.backend.emit(emission);
     const archetype = this.program.effect.source.archetypes[this.program.effect.archetypeIds[emitter.definition.archetypeId] ?? -1];
     if (archetype) this.drainRemaining = Math.max(this.drainRemaining, archetype.lifecycle.lifetime * (1 + (archetype.lifecycle.lifetimeVariability ?? 0)));

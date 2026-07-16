@@ -43,6 +43,7 @@ class WebGLParticleEffectResource2D implements ParticleEffectBackendResource2D {
   private readonly commands = new Float32Array(COMMAND_CAPACITY * COMMAND_FLOATS);
   private readonly commandImportance = new Int8Array(COMMAND_CAPACITY);
   private readonly archetypeMotion: Float32Array;
+  private readonly emitterSource: Float32Array;
   private readonly palette = new Float32Array(MAX_PALETTE * 3);
   private readonly batch: GpuParticleCommandBatch2D;
   private commandCount = 0;
@@ -86,11 +87,19 @@ class WebGLParticleEffectResource2D implements ParticleEffectBackendResource2D {
       metadata: program.reflection.stateTargets === 3,
     });
     this.archetypeMotion = new Float32Array(Math.max(1, program.effect.source.archetypes.length) * 4);
+    this.emitterSource = new Float32Array(Math.max(1, program.effect.source.emitters.length) * 4);
     program.effect.source.archetypes.forEach((archetype, index) => {
       this.archetypeMotion[index * 4] = archetype.motion.gravity;
       this.archetypeMotion[index * 4 + 1] = archetype.motion.drag;
       this.archetypeMotion[index * 4 + 2] = archetype.motion.turbulence ?? 0;
       this.archetypeMotion[index * 4 + 3] = archetype.motion.angularVelocity ?? 0;
+    });
+    program.effect.source.emitters.forEach((emitter, index) => {
+      const source = emitter.source;
+      this.emitterSource[index * 4] = 'radius' in source ? source.radius ?? 0 : 'width' in source ? source.width * 0.5 : 0;
+      this.emitterSource[index * 4 + 1] = 'length' in source ? source.length ?? 0 : 'height' in source ? source.height * 0.5 : 0;
+      this.emitterSource[index * 4 + 2] = 'arc' in source ? source.arc ?? Math.PI * 2 : Math.PI * 2;
+      this.emitterSource[index * 4 + 3] = 'spread' in source ? source.spread ?? 0 : 0;
     });
     this.palette.set([1, 1, 1]);
     const owner = this;
@@ -135,8 +144,8 @@ class WebGLParticleEffectResource2D implements ParticleEffectBackendResource2D {
     this.commands[offset + 3] = spawnShapeCode(emitter.source.kind);
     this.commands[offset + 4] = emission.positionX;
     this.commands[offset + 5] = emission.positionY;
-    this.commands[offset + 6] = 0;
-    this.commands[offset + 7] = 0;
+    this.commands[offset + 6] = emission.inheritedVelocityX ?? 0;
+    this.commands[offset + 7] = emission.inheritedVelocityY ?? 0;
     this.commands[offset + 8] = emission.direction;
     this.commands[offset + 9] = emission.spread || archetype.spawn.spread;
     this.commands[offset + 10] = emission.power;
@@ -144,7 +153,7 @@ class WebGLParticleEffectResource2D implements ParticleEffectBackendResource2D {
     this.commands[offset + 12] = emission.seed;
     this.commands[offset + 13] = emission.seed / 0x1_0000_0000;
     this.commands[offset + 14] = archetype.lifecycle.lifetimeVariability ?? 0;
-    this.commands[offset + 15] = 0;
+    this.commands[offset + 15] = emission.emitterIndex;
     this.particleCount += count - replacedCount;
     this.droppedParticles += emission.count - count;
     if (count < emission.count) this.truncatedCommands += 1;
@@ -243,6 +252,7 @@ class WebGLParticleEffectResource2D implements ParticleEffectBackendResource2D {
     gl.uniform1f(uniform('uDt'), delta);
     gl.uniform2f(uniform('uCanvasSize'), this.viewportWidth, this.viewportHeight);
     gl.uniform4fv(uniform('uArchetypeMotion[0]'), this.archetypeMotion);
+    gl.uniform4fv(uniform('uEmitterSource[0]'), this.emitterSource);
     gl.uniform1i(uniform('uParticleCommandFrameStart'), this.frameStart);
   }
 

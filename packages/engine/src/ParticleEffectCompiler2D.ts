@@ -129,6 +129,7 @@ uniform int uParticleCommandFrameStart;
 uniform float uDt;
 uniform vec2 uCanvasSize;
 uniform vec4 uArchetypeMotion[${Math.max(1, effect.source.archetypes.length)}];
+uniform vec4 uEmitterSource[${Math.max(1, effect.source.emitters.length)}];
 layout(location=0) out vec4 outPosition;
 layout(location=1) out vec4 outVelocity;
 ${targets === 3 ? 'layout(location=2) out vec4 outMetadata;' : ''}
@@ -176,9 +177,21 @@ void main() {
   }
   vec4 commandA=vec4(0), commandB=vec4(0), commandC=vec4(0), commandD=vec4(0); int relative=0;
   if (id < uCapacity && readCommand(id, commandA, commandB, commandC, commandD, relative)) {
-    float angle = commandC.x + (hash21(vec2(commandD.x + float(relative), 1.0)) - .5) * commandC.y;
+    float randomA = hash21(vec2(commandD.x + float(relative), 1.0));
+    float randomB = hash21(vec2(commandD.x + float(relative), 5.0));
+    int shape = int(commandA.w + .5), emitter = clamp(int(commandD.w + .5), 0, ${Math.max(0, effect.source.emitters.length - 1)});
+    vec4 source = uEmitterSource[emitter];
+    float angle = commandC.x + (randomA - .5) * commandC.y;
+    vec2 offset = vec2(0.0);
+    if (shape == 1) { float a=randomA*6.2831853; offset=vec2(cos(a),sin(a))*sqrt(randomB)*source.x; }
+    else if (shape == 2) { offset=vec2(cos(commandC.x),sin(commandC.x))*(randomA-.5)*source.y; }
+    else if (shape == 4 || shape == 5) { angle=commandC.x+(randomA-.5)*(shape==5?6.2831853:source.z); offset=vec2(cos(angle),sin(angle))*source.x; }
+    else if (shape == 6) { angle=commandC.x+randomA*6.2831853; }
+    else if (shape == 7) { angle=commandC.x+6.2831853*(float(relative)/max(1.0,commandA.z))*max(1.0,source.z/6.2831853)+(randomB-.5)*commandC.y; }
+    else if (shape == 8) { angle=commandC.x+float(relative%4)*1.5707963+float(relative)*.075+(randomA-.5)*commandC.y; }
+    else if (shape == 9) { offset=vec2((randomA-.5)*source.y,0.0); angle=commandC.x+(randomB-.5)*commandC.y; }
     float power = commandC.z * mix(.72, 1.28, hash21(vec2(commandD.x + float(relative), 2.0)));
-    stateA = vec4(commandB.xy, 0.0, commandC.w * mix(max(.05, 1.0-commandD.z), 1.0+commandD.z, hash21(vec2(commandD.x + float(relative), 3.0))));
+    stateA = vec4(commandB.xy+offset, 0.0, commandC.w * mix(max(.05, 1.0-commandD.z), 1.0+commandD.z, hash21(vec2(commandD.x + float(relative), 3.0))));
     stateB = vec4(commandB.zw + vec2(cos(angle), sin(angle)) * power, 0.0, 0.0);
     stateC = vec4(commandA.x, 0.0, commandD.y + hash21(vec2(commandD.x + float(relative), 4.0)), 0.0);
   }
@@ -268,6 +281,7 @@ struct Frame { delta: f32, capacity: u32, viewport: vec2<f32>, commandCount: u32
 @group(0) @binding(3) var<uniform> frame: Frame;
 @group(0) @binding(4) var<storage, read> commandData: array<vec4<f32>>;
 @group(0) @binding(5) var<storage, read> archetypeMotion: array<vec4<f32>>;
+@group(0) @binding(6) var<storage, read> emitterSource: array<vec4<f32>>;
 fn hash11(value: f32) -> f32 { return fract(sin(value * 91.3458 + 17.123) * 47453.5453); }
 @compute @workgroup_size(256)
 fn simulate(@builtin(global_invocation_id) gid: vec3<u32>) {
@@ -298,10 +312,18 @@ fn simulate(@builtin(global_invocation_id) gid: vec3<u32>) {
       let relative = candidate - u32(a.y + 0.5); let count = u32(a.z + 0.5);
       if (relative < count) {
       let b = commandData[offset + 1u]; let c = commandData[offset + 2u]; let d = commandData[offset + 3u];
-      let seed = d.x + f32(relative) * 1.6180339;
-      let angle = c.x + (hash11(seed) - 0.5) * c.y;
+      let seed = d.x + f32(relative) * 1.6180339; let randomA = hash11(seed); let randomB = hash11(seed + 5.0);
+      let shape = u32(a.w + 0.5); let emitter = min(u32(d.w + 0.5), ${Math.max(0, effect.source.emitters.length - 1)}u); let source = emitterSource[emitter];
+      var angle = c.x + (randomA - 0.5) * c.y; var offsetPosition = vec2<f32>(0.0);
+      if (shape == 1u) { let arc=randomA*6.2831853; offsetPosition=vec2<f32>(cos(arc),sin(arc))*sqrt(randomB)*source.x; }
+      else if (shape == 2u) { offsetPosition=vec2<f32>(cos(c.x),sin(c.x))*(randomA-0.5)*source.y; }
+      else if (shape == 4u || shape == 5u) { angle=c.x+(randomA-0.5)*select(source.z,6.2831853,shape==5u); offsetPosition=vec2<f32>(cos(angle),sin(angle))*source.x; }
+      else if (shape == 6u) { angle=c.x+randomA*6.2831853; }
+      else if (shape == 7u) { angle=c.x+6.2831853*(f32(relative)/max(1.0,a.z))*max(1.0,source.z/6.2831853)+(randomB-0.5)*c.y; }
+      else if (shape == 8u) { angle=c.x+f32(relative%4u)*1.5707963+f32(relative)*0.075+(randomA-0.5)*c.y; }
+      else if (shape == 9u) { offsetPosition=vec2<f32>((randomA-0.5)*source.y,0.0); angle=c.x+(randomB-0.5)*c.y; }
       let power = c.z * mix(0.72, 1.28, hash11(seed + 2.0));
-      stateA[i] = ParticleA(b.xy, 0.0, c.w * mix(max(0.05, 1.0-d.z), 1.0+d.z, hash11(seed+3.0)));
+      stateA[i] = ParticleA(b.xy+offsetPosition, 0.0, c.w * mix(max(0.05, 1.0-d.z), 1.0+d.z, hash11(seed+3.0)));
       stateB[i] = ParticleB(b.zw + vec2<f32>(cos(angle), sin(angle)) * power, 0.0, 0.0);
       stateC[i] = ParticleC(a.x, 0.0, d.y + hash11(seed+4.0), 0.0);
       }
@@ -340,6 +362,7 @@ function baseBindings(targets: 2 | 3, collisions: boolean, events: boolean, exte
     { name: 'uDt', kind: 'uniform', dataType: 'f32', required: true },
     { name: 'uCanvasSize', kind: 'uniform', dataType: 'vec2', required: true },
     { name: 'uArchetypeMotion', kind: 'uniform', dataType: 'vec4[]', required: true },
+    { name: 'uEmitterSource', kind: 'uniform', dataType: 'vec4[]', required: true },
     { name: 'uPalette', kind: 'uniform', dataType: 'vec3[8]', required: true },
   ];
   if (targets === 3) bindings.push({ name: 'uMetadataState', kind: 'texture', dataType: 'rgba32f', required: true });
