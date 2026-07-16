@@ -1,17 +1,18 @@
 import { createExtensionToken, type EnginePlugin, type PointerInputEvent } from '@hooksjam/gl-game-lab-core';
-import { EngineGpu2D, EngineInput, EngineRender2D, EngineSchedule, type ExperienceLaunchOptions, type ExperienceRuntimeController, type ExperienceSettingValue, type GpuParticleSystem2D, type GpuUniformEncoder2D, type GpuUniformLookup2D } from '@hooksjam/gl-game-lab-engine';
+import { EngineGpu2D, EngineInput, EngineRender2D, EngineSchedule, ExperiencePreviewCycleControllerService, type ExperienceLaunchOptions, type ExperiencePreviewCycleRequest, type ExperienceRuntimeController, type ExperienceSettingValue, type GpuParticleSystem2D, type GpuUniformEncoder2D, type GpuUniformLookup2D } from '@hooksjam/gl-game-lab-engine';
 import { registerSimulationRuntime } from '../SimulationPluginLifecycle.js';
 import { createSparksConfig, SPARKS_DEFAULTS, sparksNumber, sparksString, type SparksConfig } from './config.js';
 import { SPARKS_POINT_FRAGMENT_SHADER, SPARKS_POINT_VERTEX_SHADER, SPARKS_RAIL_SHADER, SPARKS_STEP_SHADER, SPARKS_TRAIL_FRAGMENT_SHADER, SPARKS_TRAIL_VERTEX_SHADER } from './shaders.js';
 import { sparksColor3, SPARKS_STYLE_MANIFEST } from './styles.js';
 export type SparksMode = 'welding' | 'pinwheel' | 'shower' | 'build';
-interface Rail {
+export interface Rail {
   x1: number;
   y1: number;
   x2: number;
   y2: number;
 }
 interface SpawnCommand {
+  sourceId: number | undefined;
   x: number;
   y: number;
   vx: number;
@@ -26,6 +27,7 @@ interface SpawnCommand {
   paletteSeed: number;
 }
 interface TorchContact {
+  id: number;
   x: number;
   y: number;
   dx: number;
@@ -42,8 +44,11 @@ export interface SparksController extends ExperienceRuntimeController {
 export const SparksControllerService = createExtensionToken<SparksController>('gl-game-lab.simulations.sparks.controller');
 export const SPARKS_PLUGIN_ID = 'gl-game-lab.simulations.sparks';
 export function createSparksPlugin(initial: SparksConfig = SPARKS_DEFAULTS, launch: ExperienceLaunchOptions = {}): EnginePlugin {
-  let config = initial;
-  let mode = validMode(launch.modeId) ?? 'welding';
+  const autonomousPreview = launch.profile === 'preview' || launch.profile === 'demo';
+  let config = autonomousPreview ? createPreviewSparksConfig(initial) : initial;
+  let settingRevision = 0;
+  let lastSetting = 'initial';
+  let mode = autonomousPreview ? autonomousSparksMode(validMode(launch.modeId), normalizeSeed(launch.seed)) : validMode(launch.modeId) ?? 'welding';
   let styleId = validStyle(launch.styleId) ?? SPARKS_STYLE_MANIFEST.defaultStyleId;
   let elapsed = 0, pendingDt = 0, emissionAccumulator = 0, cursor = 0, randomState = normalizeSeed(launch.seed), rebuildState = false;
   let buildStart: {
@@ -68,6 +73,8 @@ export function createSparksPlugin(initial: SparksConfig = SPARKS_DEFAULTS, laun
       let particles = createParticles(), observedGeneration = particles.generation;
       cleanup = () => { particles.dispose(); };
       applyStyle();
+      ensureDefaultRails();
+      if (autonomousPreview) queuePreviewWarmStart();
       const controller: SparksController = {
         get mode() {
           return mode;
@@ -92,11 +99,20 @@ export function createSparksPlugin(initial: SparksConfig = SPARKS_DEFAULTS, laun
         get entityCount() {
           return particles.capacity;
         },
+        get runtimeDiagnostics() {
+          return Object.freeze({
+            settingRevision,
+            lastSetting,
+            primarySparkSize: sparksNumber(config, 'primarySparkSize'),
+            primarySparkLength: sparksNumber(config, 'primarySparkLength'),
+            renderStyle: sparksString(config, 'renderStyle'),
+          });
+        },
         setMode: value => {
           const next = validMode(value);
           if (!next)
             throw new Error(`Unknown Sparks mode: ${value}`);
-          mode = next;
+          mode = autonomousPreview ? autonomousSparksMode(next, randomState) : next;
           buildStart = undefined;
           previewRail = undefined;
           emissionAccumulator = 0;
@@ -111,10 +127,13 @@ export function createSparksPlugin(initial: SparksConfig = SPARKS_DEFAULTS, laun
         },
         setSetting: (key, value) => {
           const oldSize = sparksString(config, 'rawParticleTextureSize');
-          config = createSparksConfig({
+          const nextConfig = createSparksConfig({
             ...configRecord(),
             [key]: value
           });
+          config = autonomousPreview ? createPreviewSparksConfig(nextConfig) : nextConfig;
+          settingRevision += 1;
+          lastSetting = `${key}=${String(value)}`;
           rebuildState ||= oldSize !== sparksString(config, 'rawParticleTextureSize');
         },
         reset: resetSimulation
@@ -126,11 +145,28 @@ export function createSparksPlugin(initial: SparksConfig = SPARKS_DEFAULTS, laun
         contacts.clear();
         previousPointers.clear();
       });
+      if (autonomousPreview) {
+        context.provide(ExperiencePreviewCycleControllerService, {
+          advancePreviewCycle: (request: ExperiencePreviewCycleRequest) => {
+            randomState = normalizeSeed(request.seed);
+            mode = autonomousSparksMode(validMode(launch.modeId), randomState);
+            commands.length = 0;
+            contacts.clear();
+            previousPointers.clear();
+            rails.length = 0;
+            seedDefaultRails();
+            emissionAccumulator = 0;
+            queuePreviewWarmStart();
+            return 'handled';
+          }
+        });
+      }
       context.get(EngineSchedule).addSystem({
         id: 'gl-game-lab.simulations.sparks.update',
         stage: 'update',
         run: ({ time }) => {
           const dt = Math.min(0.05, time.deltaSeconds);
+          ensureDefaultRails();
           elapsed += dt;
           pendingDt += dt;
           const events = input.snapshot.events.filter((event): event is PointerInputEvent => event.kind === 'pointer');
@@ -155,11 +191,17 @@ export function createSparksPlugin(initial: SparksConfig = SPARKS_DEFAULTS, laun
             }
           }
           else if ((launch.profile === 'preview' || launch.profile === 'demo') && mode !== 'build') {
-            emissionAccumulator += dt * (launch.profile === 'preview' ? 4.5 : 7.5);
-            while (emissionAccumulator >= 1) {
-              const x = renderer.viewport.width * (0.5 + Math.sin(elapsed * 0.7) * 0.28), y = renderer.viewport.height * (0.58 + Math.cos(elapsed * 0.9) * 0.12);
-              queueContact(x, y, Math.cos(elapsed * 2) * 120, Math.sin(elapsed * 1.7) * 80, 1, false);
-              emissionAccumulator -= 1;
+            emissionAccumulator += dt * (launch.profile === 'preview' ? 7.5 : 10);
+            let emitted = 0;
+            while ((emissionAccumulator >= 1 || (commands.length === 0 && emitted === 0)) && emitted < 3) {
+              const sweep = elapsed * (mode === 'pinwheel' ? 1.15 : 0.82) + emitted * 0.71;
+              const x = renderer.viewport.width * (0.5 + Math.sin(sweep) * 0.32);
+              const y = renderer.viewport.height * (mode === 'shower' ? 0.16 : 0.38 + Math.cos(sweep * 1.31) * 0.13);
+              const vx = mode === 'shower' ? 0 : Math.cos(sweep * 1.7) * 260;
+              const vy = mode === 'shower' ? 520 : Math.sin(sweep * 1.3) * 160;
+              queueContact(x, y, vx, vy, 1.18, emitted === 0, undefined, launch.profile === 'preview' ? 1.35 : 1.8);
+              emissionAccumulator = Math.max(0, emissionAccumulator - 1);
+              emitted += 1;
             }
           }
         }
@@ -186,7 +228,12 @@ export function createSparksPlugin(initial: SparksConfig = SPARKS_DEFAULTS, laun
                 commands.splice(0, 16).forEach((command, index) => runStep(index === 0 ? dt : 0, command));
               const renderStyle = sparksString(config, 'renderStyle');
               const palette = paletteData();
-              const bindSparkRender = (g: GpuUniformEncoder2D, u: GpuUniformLookup2D): void => {
+              const bindSparkRender = (
+                renderTier: number,
+                glowBias: number,
+                primarySizeScale = 1,
+                coreAlpha = 1,
+              ) => (g: GpuUniformEncoder2D, u: GpuUniformLookup2D): void => {
                 // Particle state is expressed in the renderer's logical CSS-pixel
                 // world. The destination is DPR-scaled and must only control the
                 // raster viewport, otherwise DPR 2 compresses the simulation into
@@ -203,23 +250,31 @@ export function createSparksPlugin(initial: SparksConfig = SPARKS_DEFAULTS, laun
                 g.uniform1f(u('uBounceLength'), sparksNumber(config, 'bounceSparkLength'));
                 g.uniform1f(u('uBounceSizeVariability'), sparksNumber(config, 'bounceSparkSizeVariability'));
                 g.uniform1f(u('uBounceLengthVariability'), sparksNumber(config, 'bounceSparkLengthVariability'));
-                g.uniform1f(u('uRenderTier'), renderStyle === 'basic' ? 0 : renderStyle === 'enhanced' ? 1 : 2);
+                g.uniform1f(u('uTrailContinuity'), sparksNumber(config, 'trailContinuity'));
+                g.uniform1f(u('uRenderTier'), renderTier);
                 g.uniform1f(u('uSimDepth'), simDepthNumber(sparksString(config, 'simDepth')));
                 g.uniform1f(u('uCoreIntensity'), sparksNumber(config, 'coreSparkIntensity'));
-                g.uniform1f(u('uGlowBias'), 1.18);
+                g.uniform1f(u('uCoreAfterglow'), sparksNumber(config, 'coreSparkAfterglow'));
+                g.uniform1f(u('uPrimarySizeScale'), primarySizeScale);
+                g.uniform1f(u('uCoreAlpha'), coreAlpha);
+                g.uniform1f(u('uGlowBias'), glowBias);
+                g.uniform1f(u('uTime'), elapsed);
                 g.uniform3fv(u('uPalette[0]'), palette.data);
                 g.uniform1i(u('uPaletteCount'), palette.count);
               };
               if (renderStyle === 'basic') {
-                particles.render(destination, bindSparkRender);
+                particles.render(destination, bindSparkRender(0, 1));
               } else if (renderStyle === 'enhanced') {
-                particles.renderPass('streaks', destination, bindSparkRender);
-                particles.render(destination, bindSparkRender);
+                particles.renderPass('streaks', destination, bindSparkRender(0.5, 0.9));
+                particles.render(destination, bindSparkRender(0.46, 0.82, 1.08, 0.82));
               } else {
                 const trailDestination = particles.beginTrails(destination.width, destination.height, sparksNumber(config, 'trailFade'));
-                particles.renderPass('streaks', trailDestination, bindSparkRender);
-                particles.render(trailDestination, bindSparkRender);
+                particles.renderPass('streaks', trailDestination, bindSparkRender(0.88, 1.45));
+                particles.render(trailDestination, bindSparkRender(0.46, 0.34, 1.05, 0.22));
+                particles.renderPass('streaks', trailDestination, bindSparkRender(0.36, 0.52));
+                particles.render(trailDestination, bindSparkRender(0.2, 0.16, 1.4, 0.12));
                 particles.compositeTrails(destination, sparksColor3(requireStyle().background), sparksNumber(config, 'bloomStrength'));
+                particles.render(destination, bindSparkRender(0.72, 1.08, 1.45));
               }
           });
           const surfaceData = writeRails();
@@ -295,6 +350,7 @@ export function createSparksPlugin(initial: SparksConfig = SPARKS_DEFAULTS, laun
         }
         if (event.phase === 'down') {
           contacts.set(event.id, {
+            id: event.id,
             x: event.x,
             y: event.y,
             dx: 0,
@@ -303,11 +359,12 @@ export function createSparksPlugin(initial: SparksConfig = SPARKS_DEFAULTS, laun
             accumulator: 220,
             coreAccumulator: 0,
           });
-          queueContact(event.x, event.y, 0, 0, event.pressure || 1, true);
+          queueContact(event.x, event.y, 0, 0, event.pressure || 1, true, event.id);
         }
         if (event.phase === 'up' || event.phase === 'cancel') {
           contacts.delete(event.id);
           previousPointers.delete(event.id);
+          flushPointerCommands(event.id);
         }
         else {
           const previous = previousPointers.get(event.id);
@@ -411,17 +468,38 @@ export function createSparksPlugin(initial: SparksConfig = SPARKS_DEFAULTS, laun
         particles.clear();
         particles.clearTrails();
         resetCpuState();
+        if (autonomousPreview) queuePreviewWarmStart();
       }
       function resetCpuState(): void {
         commands.length = 0;
         contacts.clear();
         previousPointers.clear();
         rails.length = 0;
+        seedDefaultRails();
         elapsed = 0;
         pendingDt = 0;
         emissionAccumulator = 0;
         cursor = 0;
         randomState = normalizeSeed(launch.seed);
+      }
+      function ensureDefaultRails(): void {
+        if (rails.length > 0) return;
+        seedDefaultRails();
+      }
+      function seedDefaultRails(): void {
+        rails.push(...(autonomousPreview ? createSparksPreviewRails(renderer.viewport.width, renderer.viewport.height, randomState) : createSparksDefaultRails(renderer.viewport.width, renderer.viewport.height)));
+      }
+      function queuePreviewWarmStart(): void {
+        const width = Math.max(1, renderer.viewport.width);
+        const height = Math.max(1, renderer.viewport.height);
+        for (let index = 0; index < 4; index += 1) {
+          const phase = index / 4;
+          const x = width * (0.18 + phase * 0.64);
+          const y = height * (mode === 'shower' ? 0.12 : 0.28 + Math.sin(phase * Math.PI * 2 + randomState * 0.0001) * 0.09);
+          const vx = mode === 'shower' ? 0 : (phase - 0.5) * 520;
+          const vy = mode === 'shower' ? 620 : 120;
+          queueContact(x, y, vx, vy, 1.35, true, undefined, 2.2);
+        }
       }
     }
   };
@@ -432,8 +510,7 @@ export function createSparksPlugin(initial: SparksConfig = SPARKS_DEFAULTS, laun
       const bursts = Math.min(18, Math.floor(contact.accumulator / 220));
       if (bursts <= 0) continue;
       contact.accumulator -= bursts * 220;
-      for (let index = 0; index < bursts; index += 1)
-        queueContact(contact.x, contact.y, contact.dx, contact.dy, contact.strength, false);
+      queueContact(contact.x, contact.y, contact.dx, contact.dy, contact.strength, false, contact.id, bursts);
     }
   }
   function advanceCoreAccumulator(contact: TorchContact, dt: number): number {
@@ -449,10 +526,10 @@ export function createSparksPlugin(initial: SparksConfig = SPARKS_DEFAULTS, laun
       flashes += 1;
     }
     for (let index = 0; index < flashes; index += 1)
-      queueCore(contact.x, contact.y, contact.dx, contact.dy, contact.strength * 0.82);
+      queueCore(contact.x, contact.y, contact.dx, contact.dy, contact.strength * 0.82, contact.id);
     return Math.min(4, next);
   }
-  function queueCore(x: number, y: number, vx: number, vy: number, strength: number): void {
+  function queueCore(x: number, y: number, vx: number, vy: number, strength: number, sourceId?: number): void {
     const variability = clamp(sparksNumber(config, 'coreSparkSizeVariability'), 0, 1);
     const flashVariation = mix(1, mix(0.42, 2.18, nextRandom()), variability);
     const heat = Math.max(0, sparksNumber(config, 'contactHeat')) * clamp(strength, 0.3, 2.8);
@@ -463,6 +540,7 @@ export function createSparksPlugin(initial: SparksConfig = SPARKS_DEFAULTS, laun
     const radius = jitter * Math.pow(nextRandom(), 1.85);
     const positionVariability = mode === 'welding' ? clamp(sparksNumber(config, 'coreSparkTorchPositionVariability'), 0, 50) : 0;
     commands.push({
+      sourceId,
       x: x + Math.cos(angle) * radius + (nextRandom() * 2 - 1) * positionVariability,
       y: y + Math.sin(angle) * radius + (nextRandom() * 2 - 1) * positionVariability,
       vx: vx * 0.08,
@@ -477,15 +555,16 @@ export function createSparksPlugin(initial: SparksConfig = SPARKS_DEFAULTS, laun
       paletteSeed: nextRandom() * 50000
     });
   }
-  function queueContact(x: number, y: number, vx: number, vy: number, strength: number, burst: boolean): void {
+  function queueContact(x: number, y: number, vx: number, vy: number, strength: number, burst: boolean, sourceId?: number, burstMultiplier = 1): void {
     const heat = sparksNumber(config, 'contactHeat'), pattern = mode === 'pinwheel' ? 1 : mode === 'shower' ? 2 : 0;
     const scaledHeat = Math.max(0, heat) * clamp(strength, 0.3, 2.2);
-    const primaryCount = Math.max(0, Math.round((burst ? 34 : 10) * scaledHeat));
+    const primaryCount = Math.max(0, Math.round((burst ? 34 : 10) * scaledHeat * Math.max(1, burstMultiplier)));
     if (primaryCount <= 0) return;
     const power = sparksNumber(config, 'sparkPower') * sparksNumber(config, 'primarySparkSpeedScale');
     const inheritedVx = mode === 'shower' ? 0 : vx * (burst ? 0.62 : 0.32);
     const inheritedVy = mode === 'shower' ? 0 : vy * (burst ? 0.62 : 0.32);
     commands.push({
+      sourceId,
       x,
       y,
       vx: inheritedVx,
@@ -499,8 +578,14 @@ export function createSparksPlugin(initial: SparksConfig = SPARKS_DEFAULTS, laun
       seed: nextRandom() * 10000,
       paletteSeed: nextRandom() * 50000
     });
-    const coreFlashes = burst ? Math.max(1, Math.round(sparksNumber(config, 'coreSparkRate') * 0.5)) : 1;
-    for (let index = 0; index < coreFlashes; index += 1) queueCore(x, y, vx, vy, strength * (burst ? 1.35 : 0.82));
+    const coreFlashes = burst ? Math.max(1, Math.round(sparksNumber(config, 'coreSparkRate') * 0.5)) : Math.min(4, Math.max(1, Math.round(Math.sqrt(Math.max(1, burstMultiplier)))));
+    for (let index = 0; index < coreFlashes; index += 1) queueCore(x, y, vx, vy, strength * (burst ? 1.35 : 0.82), sourceId);
+  }
+  function flushPointerCommands(pointerId: number): void {
+    for (let index = commands.length - 1; index >= 0; index -= 1) {
+      if (commands[index]?.sourceId === pointerId)
+        commands.splice(index, 1);
+    }
   }
   function clamp(value: number, min: number, max: number): number { return Math.max(min, Math.min(max, value)); }
   function writeRails(includePreview = true): Float32Array {
@@ -562,4 +647,100 @@ function normalizeSeed(seed: number | undefined): number {
   if (!Number.isSafeInteger(value))
     throw new Error('Sparks seed must be a safe integer');
   return (value >>> 0) || 760431;
+}
+export function createSparksDefaultRails(width: number, height: number): readonly Rail[] {
+  if (!Number.isFinite(width) || !Number.isFinite(height) || width < 64 || height < 64) return Object.freeze([]);
+  const margin = clampDefaultRail(width * 0.08, 20, 96);
+  const bottom = height - clampDefaultRail(height * 0.12, 38, 92);
+  const midY = height * 0.58;
+  const upperY = height * 0.42;
+  const pegX = width * 0.5;
+  const pegY = height * 0.66;
+  return Object.freeze([
+    Object.freeze({ x1: margin, y1: bottom, x2: width - margin, y2: bottom }),
+    Object.freeze({ x1: width * 0.12, y1: midY, x2: width * 0.4, y2: midY + height * 0.1 }),
+    Object.freeze({ x1: width * 0.6, y1: upperY + height * 0.08, x2: width * 0.88, y2: upperY - height * 0.05 }),
+    Object.freeze({ x1: pegX, y1: pegY, x2: pegX, y2: pegY }),
+  ]);
+}
+export function createSparksPreviewRails(width: number, height: number, seed: number): readonly Rail[] {
+  if (!Number.isFinite(width) || !Number.isFinite(height) || width < 64 || height < 64) return Object.freeze([]);
+  let state = normalizeSeed(seed);
+  const random = (): number => {
+    state ^= state << 13;
+    state ^= state >>> 17;
+    state ^= state << 5;
+    return (state >>> 0) / 4294967296;
+  };
+  const rails: Rail[] = [
+    {
+      x1: width * 0.08,
+      y1: height * previewMix(0.76, 0.86, random()),
+      x2: width * 0.92,
+      y2: height * previewMix(0.76, 0.86, random()),
+    },
+  ];
+  const railCount = 2 + Math.floor(random() * 2);
+  for (let index = 0; index < railCount; index += 1) {
+    const centerX = width * previewMix(0.22, 0.78, random());
+    const centerY = height * previewMix(0.36, 0.7, random());
+    const length = Math.min(width, height) * previewMix(0.24, 0.42, random());
+    const angle = previewMix(-0.72, 0.72, random()) + (index % 2 === 0 ? 0.18 : -0.18);
+    const halfX = Math.cos(angle) * length * 0.5;
+    const halfY = Math.sin(angle) * length * 0.5;
+    rails.push({
+      x1: clampDefaultRail(centerX - halfX, width * 0.08, width * 0.92),
+      y1: clampDefaultRail(centerY - halfY, height * 0.24, height * 0.86),
+      x2: clampDefaultRail(centerX + halfX, width * 0.08, width * 0.92),
+      y2: clampDefaultRail(centerY + halfY, height * 0.24, height * 0.86),
+    });
+  }
+  const pegCount = 1 + Math.floor(random() * 3);
+  for (let index = 0; index < pegCount; index += 1) {
+    const x = width * previewMix(0.18, 0.82, random());
+    const y = height * previewMix(0.42, 0.72, random());
+    rails.push({ x1: x, y1: y, x2: x, y2: y });
+  }
+  return Object.freeze(rails.slice(0, 7).map((rail) => Object.freeze(rail)));
+}
+function autonomousSparksMode(requested: SparksMode | undefined, seed: number): SparksMode {
+  if (requested && requested !== 'build') return requested;
+  const modes: readonly SparksMode[] = ['welding', 'pinwheel', 'shower'];
+  return modes[normalizeSeed(seed) % modes.length] ?? 'welding';
+}
+function createPreviewSparksConfig(config: SparksConfig): SparksConfig {
+  return createSparksConfig({
+    ...config,
+    emissionRate: clampPreviewNumber(config, 'emissionRate', 9_000, 32_000),
+    contactHeat: clampPreviewNumber(config, 'contactHeat', 4.2, 10),
+    sparkPower: clampPreviewNumber(config, 'sparkPower', 1_800, 4_200),
+    sparkDirectionChaos: clampPreviewNumber(config, 'sparkDirectionChaos', 0.32, 0.9),
+    gravity: clampPreviewNumber(config, 'gravity', 720, 1_180),
+    airDrag: clampPreviewNumber(config, 'airDrag', 0.55, 1.45),
+    coreSparkRate: clampPreviewNumber(config, 'coreSparkRate', 3.5, 9),
+    coreSparkSize: clampPreviewNumber(config, 'coreSparkSize', 0.82, 2.4),
+    coreSparkLifespan: clampPreviewNumber(config, 'coreSparkLifespan', 0.32, 1.25),
+    primarySparkSize: clampPreviewNumber(config, 'primarySparkSize', 0.16, 0.9),
+    primarySparkLength: clampPreviewNumber(config, 'primarySparkLength', 3.5, 9.5),
+    primarySparkLifespan: clampPreviewNumber(config, 'primarySparkLifespan', 0.75, 1.65),
+    primarySparkSpeedScale: clampPreviewNumber(config, 'primarySparkSpeedScale', 0.72, 1.8),
+    bounceSparkSize: clampPreviewNumber(config, 'bounceSparkSize', 0.12, 0.62),
+    bounceSparkLength: clampPreviewNumber(config, 'bounceSparkLength', 2.5, 8),
+    bounceSparkSpeedScale: clampPreviewNumber(config, 'bounceSparkSpeedScale', 0.35, 1.4),
+    bounceBurstChance: clampPreviewNumber(config, 'bounceBurstChance', 0.28, 0.82),
+    bounceBurstCount: clampPreviewNumber(config, 'bounceBurstCount', 6, 20),
+    buildRadius: clampPreviewNumber(config, 'buildRadius', 14, 24),
+    heatRadius: clampPreviewNumber(config, 'heatRadius', 60, 110),
+    rawParticleTextureSize: '256',
+    renderStyle: sparksString(config, 'renderStyle') === 'basic' ? 'basic' : 'enhanced',
+  });
+}
+function clampPreviewNumber(config: SparksConfig, key: string, min: number, max: number): number {
+  return Math.max(min, Math.min(max, sparksNumber(config, key)));
+}
+function clampDefaultRail(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
+}
+function previewMix(from: number, to: number, amount: number): number {
+  return from + (to - from) * amount;
 }

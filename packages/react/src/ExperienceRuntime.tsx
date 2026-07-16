@@ -118,6 +118,7 @@ export interface ExperienceRuntimeProps {
   readonly onDemoExit?: () => void;
   readonly onLocalDemoChange?: (active: boolean) => void;
   readonly onSaveDefaults?: (request: SettingsDefaultsSaveRequest) => Promise<void> | void;
+  readonly useLocalSceneDefaults?: boolean;
   readonly previewAuthoring?: PreviewAuthoringOptions;
 }
 
@@ -254,10 +255,11 @@ function EmbeddedExperienceRuntime({
   onFixedFrameCapture,
   showDiagnostics = false,
   maxPixels,
+  useLocalSceneDefaults = true,
 }: ExperienceRuntimeProps): JSX.Element {
   const defaultModeId = initialModeId ?? definition.modes?.[0]?.id ?? 'default';
   const defaultStyleId = initialStyleId ?? definition.styleManifest?.defaultStyleId ?? 'default';
-  const initialSettings = useMemo(() => settingDefaults(definition), [definition]);
+  const initialSettings = useMemo(() => settingDefaults(definition, useLocalSceneDefaults), [definition, useLocalSceneDefaults]);
   const createPlugins = useCallback(() => definition.createPlugins({
     profile,
     modeId: defaultModeId,
@@ -311,17 +313,24 @@ function ImmersiveExperienceRuntime({
   onDemoExit,
   onLocalDemoChange,
   onSaveDefaults,
+  useLocalSceneDefaults = true,
   previewAuthoring,
 }: ExperienceRuntimeProps): JSX.Element {
   const { isMobile, isLandscape } = useViewportContext();
   const mobilePortrait = isMobile && !isLandscape;
   const previewEnabled = previewAuthoring?.enabled === true;
-  const sceneSettings = useMemo(() => settingDefaults(definition), [definition]);
+  const sceneSettings = useMemo(() => settingDefaults(definition, useLocalSceneDefaults), [definition, useLocalSceneDefaults]);
   const playDefaultModeId = initialModeId ?? definition.modes?.[0]?.id ?? 'default';
   const playDefaultStyleId = initialStyleId ?? definition.styleManifest?.defaultStyleId ?? 'default';
   const defaultModeId = previewEnabled ? previewAuthoring.profile.modeId ?? definition.modes?.[0]?.id ?? 'default' : playDefaultModeId;
   const defaultStyleId = previewEnabled ? previewAuthoring.profile.styleId ?? definition.styleManifest?.defaultStyleId ?? 'default' : playDefaultStyleId;
-  const initialSettings = previewEnabled ? Object.freeze({ ...sceneSettings, ...previewAuthoring.profile.settings }) : sceneSettings;
+  const previewProfile = previewAuthoring?.profile;
+  const initialSettings = useMemo(
+    () => previewEnabled && previewProfile
+      ? Object.freeze({ ...sceneSettings, ...previewProfile.settings })
+      : sceneSettings,
+    [previewEnabled, previewProfile, sceneSettings],
+  );
   const savedSettings = useMemo<Readonly<Record<string, ExperienceSettingValue>>>(() => {
     if (!previewEnabled) return sceneSettings;
     return Object.freeze({ ...sceneSettings, ...(previewAuthoring?.savedProfile ?? previewAuthoring?.profile).settings });
@@ -361,6 +370,8 @@ function ImmersiveExperienceRuntime({
   const wasPreviewEnabledRef = useRef(previewEnabled);
   const playStateRef = useRef<RuntimeSelectionState>({ modeId: playDefaultModeId, styleId: playDefaultStyleId, settings: sceneSettings });
   const playStateExperienceIdRef = useRef(definition.id);
+  const previewInitialSelectionRef = useRef<RuntimeSelectionState>({ modeId: defaultModeId, styleId: defaultStyleId, settings: initialSettings });
+  previewInitialSelectionRef.current = { modeId: defaultModeId, styleId: defaultStyleId, settings: initialSettings };
   onReadyRef.current = onReady;
 
   useEffect(() => {
@@ -374,7 +385,7 @@ function ImmersiveExperienceRuntime({
       previewEnabled,
       { modeId, styleId, settings },
       playStateRef.current,
-      { modeId: defaultModeId, styleId: defaultStyleId, settings: initialSettings },
+      previewInitialSelectionRef.current,
     );
     playStateRef.current = transition.savedPlay;
     wasPreviewEnabledRef.current = previewEnabled;
@@ -402,7 +413,15 @@ function ImmersiveExperienceRuntime({
       previewRestartTimerRef.current = undefined;
     }
     setRuntimeKey((value) => value + 1);
-  }, [definition.id, previewEnabled, profile, showIntroCard]);
+  }, [
+    definition.id,
+    playDefaultModeId,
+    playDefaultStyleId,
+    previewEnabled,
+    profile,
+    sceneSettings,
+    showIntroCard,
+  ]);
 
   useEffect(() => {
     writeStoredBoolean(SETTINGS_OPEN_STORAGE_KEY, settingsOpen);
@@ -1227,23 +1246,25 @@ function fluidInjectChipStyle(value: string): CSSProperties {
   return { background: 'linear-gradient(135deg, #22d3ee, #8b5cf6, #f472b6)' };
 }
 
-function settingDefaults(definition: ExperienceDefinition): Readonly<Record<string, ExperienceSettingValue>> {
+function settingDefaults(definition: ExperienceDefinition, includeLocalSceneDefaults = true): Readonly<Record<string, ExperienceSettingValue>> {
   const values: Record<string, ExperienceSettingValue> = {};
   for (const setting of definition.settings ?? []) values[setting.key] = setting.default;
   for (const [key, value] of Object.entries(definition.configDefaults ?? {})) {
     if (typeof value === 'number' || typeof value === 'boolean' || typeof value === 'string') values[key] = value;
   }
-  try {
-    const stored = localStorage.getItem(`gl-game-lab:scene-defaults:${definition.id}`);
-    if (stored) {
-      const parsed = JSON.parse(stored) as Record<string, unknown>;
-      for (const setting of definition.settings ?? []) {
-        const value = parsed[setting.key];
-        if (typeof value === 'number' || typeof value === 'boolean' || typeof value === 'string') values[setting.key] = value;
+  if (includeLocalSceneDefaults) {
+    try {
+      const stored = localStorage.getItem(`gl-game-lab:scene-defaults:${definition.id}`);
+      if (stored) {
+        const parsed = JSON.parse(stored) as Record<string, unknown>;
+        for (const setting of definition.settings ?? []) {
+          const value = parsed[setting.key];
+          if (typeof value === 'number' || typeof value === 'boolean' || typeof value === 'string') values[setting.key] = value;
+        }
       }
+    } catch {
+      // Storage can be unavailable in private or sandboxed contexts.
     }
-  } catch {
-    // Storage can be unavailable in private or sandboxed contexts.
   }
   return Object.freeze(values);
 }

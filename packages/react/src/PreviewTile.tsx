@@ -26,7 +26,7 @@ const PREVIEW_MEASURE_MS = 2_000;
 const PREVIEW_MIN_FPS = 20;
 const PREVIEW_INIT_TIMEOUT_MS = 4_000;
 const PREVIEW_STABILIZE_MS = 750;
-export const PREVIEW_CONTEXT_LIMIT = 16;
+export const PREVIEW_CONTEXT_LIMIT = 4;
 let cachedWebGl2Support: boolean | undefined;
 
 export interface PreviewTileProps {
@@ -124,13 +124,17 @@ export function PreviewTile({
     () => resolvePreviewCycleLaunch(runtimeDefinition, profile, sessionSeed, restartGeneration),
     [profile, restartGeneration, runtimeDefinition, sessionSeed],
   );
-  const createPlugins = useCallback(() => runtimeDefinition.createPlugins({
+  const runtimeDefinitionRef = useRef(runtimeDefinition);
+  const runtimeResolvedRef = useRef(runtimeResolved);
+  runtimeDefinitionRef.current = runtimeDefinition;
+  runtimeResolvedRef.current = runtimeResolved;
+  const createPlugins = useCallback(() => runtimeDefinitionRef.current.createPlugins({
     profile: 'preview',
-    ...(runtimeResolved.modeId ? { modeId: runtimeResolved.modeId } : {}),
-    ...(runtimeResolved.styleId ? { styleId: runtimeResolved.styleId } : {}),
-    settings: runtimeResolved.settings,
-    seed: runtimeResolved.seed,
-  }), [runtimeDefinition, runtimeResolved]);
+    ...(runtimeResolvedRef.current.modeId ? { modeId: runtimeResolvedRef.current.modeId } : {}),
+    ...(runtimeResolvedRef.current.styleId ? { styleId: runtimeResolvedRef.current.styleId } : {}),
+    settings: runtimeResolvedRef.current.settings,
+    seed: runtimeResolvedRef.current.seed,
+  }), []);
   const imageUrl = useMemo(() => profile.image ? resolvePreviewImageUrl(assetBaseUrl, profile.image.src, profile.image.revision) : undefined, [assetBaseUrl, profile.image]);
   const policy = renderPolicyOverride ?? profile.renderPolicy;
   const reducedMotion = prefersReducedMotion();
@@ -167,7 +171,7 @@ export function PreviewTile({
     setRestartGeneration(0);
     previewCycleControllerRef.current = undefined;
     measurementRef.current = undefined;
-  }, [definition.id, resolved.hash, policy]);
+  }, [definition.id, policy]);
 
   useEffect(() => {
     if (!shouldAttemptLive) {
@@ -217,8 +221,6 @@ export function PreviewTile({
         return;
       }
       measurementRef.current = undefined;
-      setReady(false);
-      setRevealed(false);
       setRestartGeneration((generation) => generation + 1);
     },
   });
@@ -306,7 +308,10 @@ function distanceFromViewport(element: HTMLElement | null): number {
 }
 
 function previewContextLimit(): number {
-  return PREVIEW_CONTEXT_LIMIT;
+  if (typeof navigator === 'undefined') return PREVIEW_CONTEXT_LIMIT;
+  const mobile = typeof window !== 'undefined' && window.matchMedia('(pointer: coarse)').matches;
+  const cores = typeof navigator.hardwareConcurrency === 'number' ? navigator.hardwareConcurrency : PREVIEW_CONTEXT_LIMIT;
+  return Math.max(1, Math.min(mobile ? 2 : PREVIEW_CONTEXT_LIMIT, Math.floor(cores / 2) || 1));
 }
 
 function prefersReducedMotion(): boolean {

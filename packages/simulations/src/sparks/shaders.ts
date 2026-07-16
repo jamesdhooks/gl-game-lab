@@ -46,7 +46,7 @@ void main(){
     if(uSpawnPattern>1.5){dir=normalize(vec2(signedHash(spawnSeed+18.0)*mix(.01,.24,chaos),1.0));side=vec2(signedHash(spawnSeed+12.0),hash(spawnSeed+14.0)*.18);}
     else if(uSpawnPattern>.5){float wheelAngle=t*PI*8.0+uTime*7.5+hash(uSpawnSeed+13.0)*PI*2.0;float wheelSign=signedHash(uSpawnSeed+29.0)<0.0?-1.0:1.0;vec2 radial=direction(wheelAngle),tangent=vec2(-radial.y,radial.x)*wheelSign;dir=normalize(radial*mix(.22,.52,hash(spawnSeed+16.0))+tangent*mix(.86,1.42,hash(spawnSeed+19.0)));side=radial;}
     kind=uSpawnKind;seed=uSpawnPaletteSeed*100000.0+spawnSeed;age=0.0;
-    if(kind<.5){life=mix(.14,.32,hash(spawnSeed+22.0))*uLifeScale*lifeVariation(spawnSeed+37.0,uLifeVariability);position.xy=uSpawnPosition+side*mix(0.0,max(8.0,uSpawnPower*1.35),hash(spawnSeed+5.0));velocity.xy=uSpawnVelocity*.018+side*mix(.35,9.0,hash(spawnSeed+9.0));}
+    if(kind<.5){life=mix(.72,1.36,hash(spawnSeed+22.0))*uLifeScale*lifeVariation(spawnSeed+37.0,uLifeVariability);position.xy=uSpawnPosition+side*mix(0.0,max(8.0,uSpawnPower*1.35),hash(spawnSeed+5.0));velocity.xy=uSpawnVelocity*.018+side*mix(.35,9.0,hash(spawnSeed+9.0));}
     else{float fan=smoothstep(0.0,1.0,t);float speed=uSpawnPower*mix(.24,.92,hash(spawnSeed+21.0));speed*=mix(.62,1.32,sin(fan*PI));float jitter=uSpawnPattern>1.5?mix(0.0,7.0,hash(spawnSeed+31.0)):mix(0.0,12.0,hash(spawnSeed+31.0));position.xy=uSpawnPosition+side*jitter;vec2 inherited=uSpawnPattern>1.5?vec2(0):uSpawnVelocity*mix(.08,.22,hash(spawnSeed+41.0));velocity.xy=inherited+dir*speed;if(uSpawnPattern<=1.5){velocity.xy+=direction(hash(spawnSeed+49.0)*PI*2.0)*uSpawnPower*chaos*mix(.02,.34,hash(spawnSeed+52.0));velocity.x+=signedHash(spawnSeed+52.0)*uSpawnPower*mix(.06,.3,chaos);velocity.y+=signedHash(spawnSeed+61.0)*uSpawnPower*mix(.02,.12,chaos);}life=mix(.85,2.15,hash(spawnSeed+71.0))*uLifeScale*lifeVariation(spawnSeed+73.0,uLifeVariability);if(kind>=2.0){life*=.86;velocity.xy*=mix(1.18,1.82,hash(spawnSeed+81.0));}}
   }
   if(life<=0.0&&uBounceBurstChance>0.0&&uBounceBurstCount>0.0){int capacity=uStateSize.x*uStateSize.y;float base=max(0.0,min(48.0,uBounceBurstCount));for(int attempt=0;attempt<48;attempt++){if(float(attempt)>=base)continue;int parentIndex=(id-4099*(attempt+1))%capacity;if(parentIndex<0)parentIndex+=capacity;ivec2 pc=ivec2(parentIndex%uStateSize.x,parentIndex/uStateSize.x);vec4 pp=texelFetch(uPositionState,pc,0),pv=texelFetch(uVelocityState,pc,0);float parentGeneration=floor(pv.z+.01),marker=fract(pv.z),parentSpeed=length(pv.xy);if(pp.w>0.0&&parentGeneration>=1.0&&parentGeneration<1.5&&marker>.2&&marker<.5&&parentSpeed>=uBounceBurstMinSpeed){float impactT=smoothstep(0.0,max(1.0,uSparkPower*1.35),parentSpeed);float effective=clamp(base*mix(.16,1.0+impactT*max(0.0,uBounceBurstCountSpeedScale),impactT),0.0,48.0);if(float(attempt)>=effective)continue;float probe=float(parentIndex)*.754877666+float(attempt)*19.371+floor(uTime*23.7);vec2 parentDir=decodeMarker(marker);vec2 burstDir=normalize(rotateVector(parentDir,signedHash(probe+29.0)*clamp(uBounceBurstSpread,0.0,3.0)*PI/6.0));float speedVariation=mix(max(.05,1.0-uBounceSparkSpeedVariability),1.0+uBounceSparkSpeedVariability,hash(probe+67.0));float speedScale=max(0.0,uBounceSparkSpeedScale)*mix(.28,1.0,impactT)*(1.0+impactT*max(0.0,uBounceBurstImpactSpeedScale))*speedVariation;float inheritedSpeed=parentSpeed*speedScale*mix(.34,1.18,hash(probe+37.0));float burstSpeed=max(0.0,uSparkPower)*speedScale*mix(.18,1.08,hash(probe+41.0));velocity.xy=burstDir*(inheritedSpeed+burstSpeed)+parentDir*parentSpeed*mix(.02,.18,hash(probe+43.0));position.xy=pp.xy+burstDir*mix(5.0,24.0,hash(probe+47.0));age=0.0;life=mix(.85,2.15,hash(probe+53.0))*max(0.0,uBounceSparkLifespan)*lifeVariation(probe+59.0,uBounceSparkLifespanVariability);kind=parentGeneration+1.0;seed=probe+pv.w*.017+parentGeneration*71.0;break;}}}
@@ -54,6 +54,7 @@ void main(){
 }`;
 export const SPARKS_POINT_VERTEX_SHADER = `#version 300 es
 precision highp float;
+precision highp sampler2D;
 uniform sampler2D uPositionState;
 uniform sampler2D uVelocityState;
 uniform ivec2 uStateSize;
@@ -72,67 +73,165 @@ uniform float uBounceLength;
 uniform float uBounceLengthVariability;
 uniform float uRenderTier;
 uniform float uSimDepth;
-out float vLife;
-out float vStretch;
+uniform float uCoreAfterglow;
+uniform float uPrimarySizeScale;
+out float vAlpha;
+out float vKind;
+out float vLifeT;
+out float vSeed;
+out float vSpeed;
+out float vTrailStretch;
+out float vLengthT;
 out vec2 vDirection;
-flat out float vSeed;
-flat out float vKind;
-float hash(float n) { return fract(sin(n) * 43758.5453123); }
+float sparkRenderHash(float n) { return fract(sin(n) * 43758.5453123); }
+float sparkSizeVariation(float seed, float variability) {
+  float spread = clamp(variability, 0.0, 2.0);
+  float spreadT = spread * 0.5;
+  float primary = sparkRenderHash(seed + 103.0) * 2.0 - 1.0;
+  float base = exp(primary * mix(0.0, 1.18, spreadT));
+  float largeRoll = smoothstep(0.58, 1.0, sparkRenderHash(seed + 211.0));
+  float smallRoll = smoothstep(0.66, 1.0, sparkRenderHash(seed + 401.0));
+  float rareLarge = largeRoll * mix(0.35, 2.35, sparkRenderHash(seed + 307.0)) * spreadT;
+  float rareSmall = smallRoll * mix(0.18, 0.78, sparkRenderHash(seed + 503.0)) * spreadT;
+  return clamp(base + rareLarge - rareSmall, 0.08, 4.2);
+}
 void main() {
   int id = gl_VertexID;
   ivec2 cell = ivec2(id % uStateSize.x, id / uStateSize.x);
-  vec4 p = texelFetch(uPositionState, cell, 0);
-  vec4 v = texelFetch(uVelocityState, cell, 0);
-  if (id >= uParticleCapacity || p.w <= 0.0) {
+  vec4 position = texelFetch(uPositionState, cell, 0);
+  vec4 velocity = texelFetch(uVelocityState, cell, 0);
+  float life = position.w;
+  float age = position.z;
+  float generation = velocity.z < 0.5 ? velocity.z : floor(velocity.z + 0.01);
+  float lifeT = life > 0.0 ? clamp(age / life, 0.0, 1.0) : 1.0;
+  float fade = 0.0;
+  if (life > 0.0) {
+    if (generation < 0.5) {
+      float flashSeed = fract(sin(velocity.w + 113.0) * 43758.5453123);
+      float ignition = smoothstep(0.0, mix(0.018, 0.075, flashSeed), lifeT);
+      float flashDecay = pow(max(0.0, 1.0 - lifeT), mix(3.8, 1.45, clamp(uCoreAfterglow, 0.0, 1.0)));
+      fade = ignition * flashDecay;
+    } else {
+      fade = pow(1.0 - lifeT, 1.22);
+    }
+  }
+  if (id >= uParticleCapacity || fade <= 0.0) {
     gl_Position = vec4(2.0); gl_PointSize = 0.0;
-    vLife = 0.0; vStretch = 1.0; vDirection = vec2(1.0); vSeed = 0.0; vKind = 0.0;
+    vAlpha = 0.0; vKind = generation; vLifeT = lifeT; vSeed = velocity.w;
+    vSpeed = 0.0; vTrailStretch = 1.0; vLengthT = 0.0; vDirection = vec2(1.0);
     return;
   }
-  float generation = v.z < 0.5 ? 0.0 : floor(v.z + 0.01);
-  float seedSize = hash(v.w * 71.7);
-  float depth = mix(1.0, mix(0.76, 1.22, hash(v.w + 71.0)), clamp(uSimDepth, 0.0, 1.0));
-  float baseSize = generation < 0.5 ? uCoreSize : (generation >= 2.0 ? uBounceSize : uPrimarySize);
-  float sizeSpread = generation < 0.5 ? uCoreSizeVariability : (generation >= 2.0 ? uBounceSizeVariability : uPrimarySizeVariability);
-  float lengthSetting = generation >= 2.0 ? uBounceLength : uPrimaryLength;
-  float lengthSpread = generation >= 2.0 ? uBounceLengthVariability : uPrimaryLengthVariability;
-  float variance = max(0.12, 1.0 + (seedSize * 2.0 - 1.0) * clamp(sizeSpread, 0.0, 2.0));
-  float lengthVariance = max(0.08, 1.0 + (hash(v.w * 43.1 + 17.0) * 2.0 - 1.0) * clamp(lengthSpread, 0.0, 2.0));
-  float speedT = clamp(length(v.xy) / 820.0, 0.0, 1.0);
-  vStretch = generation < 0.5 ? 1.0 : clamp(1.0 + speedT * max(0.0, lengthSetting) * lengthVariance * mix(0.35, 1.45, clamp(uRenderTier * 0.5, 0.0, 1.0)), 1.0, 14.0);
-  gl_Position = vec4(p.x / uCanvasSize.x * 2.0 - 1.0, 1.0 - p.y / uCanvasSize.y * 2.0, 0.0, 1.0);
-  gl_PointSize = min((generation < 0.5 ? 64.0 : 118.0) * uPixelScale, max(1.0, baseSize * variance * depth * (1.0 + uRenderTier * 0.12) * vStretch) * uPixelScale);
-  vDirection = length(v.xy) > 0.001 ? normalize(vec2(v.x, -v.y)) : vec2(1.0, 0.0);
-  vLife = max(0.0, p.w - p.z);
-  vSeed = v.w;
+  float coreBurstSeed = fract(sin(velocity.w + 33.0) * 43758.5453123);
+  float sparkBurstSeed = fract(sin(velocity.w + 71.0) * 43758.5453123);
+  float coreVariance = mix(1.0, mix(0.48, 1.86, fract(sin(velocity.w + 133.0) * 43758.5453123)), clamp(uCoreSizeVariability, 0.0, 1.0));
+  float coreBurst = mix(9.0, 30.0, coreBurstSeed) * max(0.01, uCoreSize) * coreVariance;
+  coreBurst *= mix(1.22, 0.26, smoothstep(0.04, 0.94, lifeT));
+  float primarySpark = mix(10.0, 30.0, sparkBurstSeed) * mix(1.0, 0.84, smoothstep(0.1, 0.9, lifeT));
+  float bounceSpark = mix(7.0, 18.0, sparkBurstSeed) * mix(1.0, 0.78, smoothstep(0.1, 0.88, lifeT));
+  float depthScale = mix(1.0, mix(0.72, 1.24, sparkBurstSeed), clamp(uSimDepth, 0.0, 1.0));
+  primarySpark *= depthScale;
+  bounceSpark *= depthScale;
+  bool bounceProfile = generation >= 2.0;
+  float profileSize = bounceProfile ? uBounceSize : uPrimarySize * uPrimarySizeScale;
+  float profileLength = bounceProfile ? uBounceLength : uPrimaryLength;
+  float profileLengthVariability = bounceProfile ? uBounceLengthVariability : uPrimaryLengthVariability;
+  float profileVariability = bounceProfile ? uBounceSizeVariability : uPrimarySizeVariability;
+  float generationSize = generation < 0.5 ? coreBurst : (bounceProfile ? bounceSpark : primarySpark);
+  float renderSeed = float(id) * 0.754877666 + generation * 41.0;
+  float seededSize = sparkSizeVariation(renderSeed, profileVariability);
+  generationSize *= generation < 0.5 ? mix(1.0, seededSize, 0.38) : seededSize;
+  float lengthSeed = sparkSizeVariation(renderSeed + 701.0, profileLengthVariability);
+  float lengthControl = clamp(profileLength * lengthSeed, 0.0, 12.0);
+  float lengthT = generation < 0.5 ? 0.0 : smoothstep(0.0, 12.0, lengthControl);
+  float speed = length(velocity.xy);
+  float speedStretch = generation < 0.5 ? 1.0 : 1.0 + clamp(speed / 980.0, 0.0, 1.0) * mix(0.82, 2.35, uRenderTier) * mix(0.62, 1.18, profileVariability) * lengthControl;
+  float pointScale = generation < 0.5 ? mix(0.72, 2.45, smoothstep(0.02, 2.4, clamp(uCoreSize, 0.02, 2.4))) : profileSize;
+  gl_Position = vec4(position.x / uCanvasSize.x * 2.0 - 1.0, 1.0 - position.y / uCanvasSize.y * 2.0, 0.0, 1.0);
+  float pointLimit = generation < 0.5 ? 180.0 : (generation < 1.5 ? mix(54.0, 340.0, lengthT) : mix(34.0, 168.0, lengthT));
+  gl_PointSize = min(pointLimit * uPixelScale, max(1.0, pointScale * generationSize * speedStretch * mix(1.0, 1.85, uRenderTier)) * uPixelScale);
+  vAlpha = fade;
   vKind = generation;
+  vLifeT = lifeT;
+  vSeed = velocity.w;
+  vSpeed = speed;
+  vTrailStretch = speedStretch;
+  vLengthT = lengthT;
+  vDirection = speed > 0.001 ? normalize(velocity.xy) : vec2(1.0, 0.0);
 }`;
 export const SPARKS_POINT_FRAGMENT_SHADER = `#version 300 es
 precision highp float;
-in float vLife;
-in float vStretch;
-in vec2 vDirection;
-flat in float vSeed;
-flat in float vKind;
-out vec4 outColor;
 uniform vec3 uPalette[8];
 uniform int uPaletteCount;
 uniform float uCoreIntensity;
+uniform float uCoreSize;
 uniform float uGlowBias;
-float hash(float value) { return fract(sin(value * 31.17) * 43758.5453); }
+uniform float uCoreAlpha;
+uniform float uTime;
+in float vAlpha;
+in float vKind;
+in float vLifeT;
+in float vSeed;
+in float vSpeed;
+in float vTrailStretch;
+in float vLengthT;
+in vec2 vDirection;
+out vec4 outColor;
+float hash(float value) { return fract(sin(value) * 43758.5453123); }
+float particleSeed(float packed) { return mod(packed, 100000.0); }
+float paletteSeed(float packed) { return floor(packed / 100000.0); }
+vec3 paletteColor(float seed, float offset) {
+  int count = min(uPaletteCount, 8);
+  if (count <= 0) return vec3(1.0);
+  int primary = int(floor(hash(paletteSeed(seed) + offset) * float(count))) % count;
+  int accent = int(floor(hash(paletteSeed(seed) + offset + 19.0) * float(count))) % count;
+  return mix(uPalette[primary], uPalette[accent], smoothstep(0.08, 0.92, hash(particleSeed(seed) + offset)));
+}
+vec3 paletteSparkColor(float seed, float offset) {
+  int count = min(uPaletteCount, 8);
+  if (count <= 1) return paletteColor(seed, offset);
+  int selectable = count - 1;
+  int primary = 1 + (int(floor(hash(paletteSeed(seed) + offset) * float(selectable))) % selectable);
+  int accent = 1 + (int(floor(hash(paletteSeed(seed) + offset + 29.0) * float(selectable))) % selectable);
+  return mix(uPalette[primary], uPalette[accent], smoothstep(0.06, 0.9, hash(particleSeed(seed) + offset)));
+}
 void main() {
-  vec2 p = gl_PointCoord * 2.0 - 1.0;
-  vec2 normal = vec2(-vDirection.y, vDirection.x);
-  vec2 q = vec2(dot(p, vDirection), dot(p, normal) * vStretch);
-  float distanceSquared = dot(q, q);
-  if (distanceSquared > 1.0) discard;
-  int count = max(1, uPaletteCount);
-  int index = int(floor(hash(vSeed) * float(count))) % count;
-  vec3 palette = uPalette[index];
-  float hotness = exp(-distanceSquared * (vKind < 0.5 ? 2.0 : 4.8));
-  float lifeAlpha = min(1.0, vLife * 3.0);
-  vec3 core = vKind < 0.5 ? vec3(1.0, 0.96, 0.84) * uCoreIntensity : palette;
-  vec3 color = mix(palette, core, vKind < 0.5 ? 0.86 : 0.12 + hotness * 0.24);
-  outColor = vec4(color * hotness * uGlowBias, smoothstep(1.0, 0.08, distanceSquared) * lifeAlpha);
+  if (vAlpha <= 0.0) discard;
+  vec2 centered = gl_PointCoord * 2.0 - 1.0;
+  float radius2 = dot(centered, centered);
+  if (radius2 > 1.0) discard;
+  float core = smoothstep(1.0, 0.015, radius2);
+  float halo = smoothstep(1.0, 0.34, radius2) * 0.46;
+  if (vKind >= 0.5) {
+    vec2 axis = normalize(vDirection);
+    vec2 tangent = vec2(-axis.y, axis.x);
+    float along = dot(centered, axis);
+    float across = dot(centered, tangent);
+    float speedT = clamp(vSpeed / 760.0, 0.0, 1.0);
+    float lengthT = clamp(vLengthT, 0.0, 1.0);
+    float halfLength = mix(0.28, 1.0, lengthT);
+    float halfWidth = mix(0.3, 0.095, speedT) / sqrt(max(1.0, vTrailStretch));
+    float hotHead = smoothstep(-0.18, 0.82, along);
+    float tail = smoothstep(halfLength, halfLength * 0.58, abs(along)) * mix(0.72, 1.0, hotHead);
+    float lineCore = tail * smoothstep(halfWidth, 0.018, abs(across));
+    float lineHalo = smoothstep(halfLength, halfLength * 0.48, abs(along)) * smoothstep(halfWidth * 3.4, halfWidth * 0.82, abs(across)) * mix(0.28, 0.46, speedT);
+    if (lineCore + lineHalo <= 0.001) discard;
+    core = lineCore;
+    halo = lineHalo;
+  }
+  vec3 hot = vec3(1.0, 0.985, 0.9) * uCoreIntensity;
+  vec3 cooling = vKind < 0.5 ? paletteColor(vSeed, vKind * 17.0 + floor(uTime * 0.7)) : paletteSparkColor(vSeed, vKind * 23.0 + floor(uTime * 0.45));
+  vec3 sparkHeat = mix(cooling, vec3(1.0, 0.86, 0.5) * min(uCoreIntensity, 2.4), 0.22);
+  vec3 color = vKind < 0.5 ? mix(hot * 2.85, cooling, 0.018) : mix(sparkHeat, cooling, smoothstep(0.0, 0.24, vLifeT));
+  if (vKind >= 2.0) color = mix(color, paletteSparkColor(vSeed, 83.0 + floor(uTime * 0.3)), 0.38);
+  float sparkle = step(0.82, hash(particleSeed(vSeed) + floor(uTime * (24.0 + vKind * 5.0))));
+  color += vec3(sparkle) * (1.0 - vLifeT) * (vKind < 0.5 ? 0.45 : 0.16);
+  float alpha = vAlpha * (core + halo) * uGlowBias;
+  if (vKind < 0.5) {
+    float coreSizeT = clamp(uCoreSize / 2.4, 0.0, 1.0);
+    float coreIntensityT = clamp(uCoreIntensity / 8.0, 0.0, 1.0);
+    alpha *= uCoreAlpha * mix(1.35, 2.95, coreIntensityT) * mix(0.85, 1.55, coreSizeT);
+  }
+  outColor = vec4(color, alpha);
 }`;
 
 export const SPARKS_TRAIL_VERTEX_SHADER = `#version 300 es
@@ -154,14 +253,24 @@ uniform float uBounceSizeVariability;
 uniform float uTrailContinuity;
 uniform float uRenderTier;
 uniform float uSimDepth;
+uniform float uTime;
 out vec2 vLocal;
 out float vAlpha;
 out float vLifeT;
-flat out float vKind;
-flat out float vSeed;
-float hash(float value) { return fract(sin(value) * 43758.5453123); }
-float profileVariation(float seed, float variability) {
-  return max(0.08, 1.0 + (hash(seed * 29.3 + 103.0) * 2.0 - 1.0) * clamp(variability, 0.0, 2.0));
+out float vKind;
+out float vSeed;
+out float vSpeedT;
+float sparkRenderHash(float n) { return fract(sin(n) * 43758.5453123); }
+float sparkSizeVariation(float seed, float variability) {
+  float spread = clamp(variability, 0.0, 2.0);
+  float spreadT = spread * 0.5;
+  float primary = sparkRenderHash(seed + 103.0) * 2.0 - 1.0;
+  float base = exp(primary * mix(0.0, 1.18, spreadT));
+  float largeRoll = smoothstep(0.58, 1.0, sparkRenderHash(seed + 211.0));
+  float smallRoll = smoothstep(0.66, 1.0, sparkRenderHash(seed + 401.0));
+  float rareLarge = largeRoll * mix(0.35, 2.35, sparkRenderHash(seed + 307.0)) * spreadT;
+  float rareSmall = smallRoll * mix(0.18, 0.78, sparkRenderHash(seed + 503.0)) * spreadT;
+  return clamp(base + rareLarge - rareSmall, 0.08, 4.2);
 }
 void main() {
   int particleId = gl_VertexID / 6;
@@ -171,25 +280,28 @@ void main() {
   vec4 position = texelFetch(uPositionState, texel, 0);
   vec4 velocity = texelFetch(uVelocityState, texel, 0);
   float generation = velocity.z < 0.5 ? 0.0 : floor(velocity.z + 0.01);
-  if (particleId >= uParticleCapacity || position.w <= 0.0 || generation < 0.5 || uTrailContinuity <= 0.0) {
-    gl_Position = vec4(2.0); vAlpha = 0.0; vLocal = vec2(0.0); vLifeT = 1.0; vKind = generation; vSeed = velocity.w; return;
-  }
   float speed = length(velocity.xy);
+  float speedT = clamp(speed / 1400.0, 0.0, 1.0);
+  if (particleId >= uParticleCapacity || position.w <= 0.0 || generation < 0.5 || speed < 4.0 || uTrailContinuity <= 0.001) {
+    gl_Position = vec4(2.0); vAlpha = 0.0; vLocal = vec2(0.0); vLifeT = 1.0; vKind = generation; vSeed = velocity.w; vSpeedT = 0.0; return;
+  }
   float lifeT = clamp(position.z / max(0.001, position.w), 0.0, 1.0);
   float profileSize = generation >= 2.0 ? uBounceSize : uPrimarySize;
   float profileLength = generation >= 2.0 ? uBounceLength : uPrimaryLength;
   float sizeVariation = generation >= 2.0 ? uBounceSizeVariability : uPrimarySizeVariability;
   float lengthVariation = generation >= 2.0 ? uBounceLengthVariability : uPrimaryLengthVariability;
-  float lengthControl = max(0.0, profileLength * profileVariation(velocity.w + 43.0, lengthVariation));
+  float renderSeed = float(particleId) * 0.754877666 + generation * 41.0;
+  float lengthControl = clamp(profileLength * sparkSizeVariation(renderSeed + 701.0, lengthVariation), 0.0, 12.0);
+  float seedSize = sparkSizeVariation(renderSeed, sizeVariation);
   float continuity = clamp(uTrailContinuity, 0.0, 2.0);
   float trailSeconds = mix(0.0, 0.048, min(1.0, continuity)) * mix(1.0, 1.72, max(0.0, continuity - 1.0)) * lengthControl;
   float maxTrail = mix(0.0, 168.0, continuity * 0.5) * mix(0.86, 1.32, uRenderTier) * lengthControl;
   float trailLength = clamp(speed * trailSeconds, 0.0, maxTrail);
-  if (trailLength <= 0.001) { gl_Position = vec4(2.0); vAlpha = 0.0; vLocal = vec2(0.0); vLifeT = lifeT; vKind = generation; vSeed = velocity.w; return; }
+  if (trailLength <= 0.001) { gl_Position = vec4(2.0); vAlpha = 0.0; vLocal = vec2(0.0); vLifeT = lifeT; vKind = generation; vSeed = velocity.w; vSpeedT = speedT; return; }
   vec2 axis = speed > 0.001 ? velocity.xy / speed : vec2(1.0, 0.0);
   vec2 normal = vec2(-axis.y, axis.x);
-  float depth = mix(1.0, mix(0.76, 1.22, hash(velocity.w + 71.0)), clamp(uSimDepth, 0.0, 1.0));
-  float width = max(0.55, profileSize * mix(0.34, 0.74, uRenderTier) * profileVariation(velocity.w, sizeVariation) * depth);
+  float depth = mix(1.0, mix(0.76, 1.22, sparkRenderHash(velocity.w + 71.0)), clamp(uSimDepth, 0.0, 1.0));
+  float width = max(0.55, profileSize * mix(0.34, 0.74, uRenderTier) * seedSize * depth);
   vec2 corner = corners[vertexId];
   float along = corner.x;
   float side = corner.y;
@@ -197,11 +309,13 @@ void main() {
   vec2 head = position.xy + axis * min(width * 0.75, trailLength * 0.12);
   vec2 world = mix(tail, head, along) + normal * side * width;
   gl_Position = vec4(world.x / uCanvasSize.x * 2.0 - 1.0, 1.0 - world.y / uCanvasSize.y * 2.0, 0.0, 1.0);
-  vAlpha = pow(max(0.0, 1.0 - lifeT), 1.15) * mix(0.22, 0.74, clamp(speed / 760.0, 0.0, 1.0)) * mix(0.72, 1.24, min(1.0, continuity));
+  float youngGate = smoothstep(0.0, 0.035, lifeT);
+  vAlpha = youngGate * pow(max(0.0, 1.0 - lifeT), 1.15) * mix(0.22, 0.74, speedT) * mix(0.72, 1.24, min(1.0, continuity));
   vLocal = vec2(along, side);
   vLifeT = lifeT;
   vKind = generation;
   vSeed = velocity.w;
+  vSpeedT = speedT;
 }`;
 
 export const SPARKS_TRAIL_FRAGMENT_SHADER = `#version 300 es
@@ -209,26 +323,38 @@ precision highp float;
 in vec2 vLocal;
 in float vAlpha;
 in float vLifeT;
-flat in float vKind;
-flat in float vSeed;
+in float vKind;
+in float vSeed;
+in float vSpeedT;
 out vec4 outColor;
 uniform vec3 uPalette[8];
 uniform int uPaletteCount;
 uniform float uGlowBias;
 uniform float uCoreIntensity;
-float hash(float value) { return fract(sin(value * 31.17) * 43758.5453); }
+uniform float uTime;
+float hash(float value) { return fract(sin(value) * 43758.5453123); }
+float particleSeed(float packed) { return mod(packed, 100000.0); }
+float paletteSeed(float packed) { return floor(packed / 100000.0); }
+vec3 paletteSparkColor(float seed, float offset) {
+  int count = min(uPaletteCount, 8);
+  if (count <= 0) return vec3(1.0, 0.82, 0.38);
+  int selectable = max(1, count - 1);
+  int primary = count <= 1 ? 0 : 1 + (int(floor(hash(paletteSeed(seed) + offset) * float(selectable))) % selectable);
+  int accent = count <= 1 ? 0 : 1 + (int(floor(hash(paletteSeed(seed) + offset + 29.0) * float(selectable))) % selectable);
+  return mix(uPalette[primary], uPalette[accent], smoothstep(0.06, 0.9, hash(particleSeed(seed) + offset)));
+}
 void main() {
-  float widthMask = smoothstep(1.0, 0.28, abs(vLocal.y));
-  float tail = smoothstep(0.0, 0.12, vLocal.x) * smoothstep(1.0, 0.58, vLocal.x);
+  float widthMask = smoothstep(1.0, 0.18, abs(vLocal.y));
+  float tail = smoothstep(0.0, 0.1, vLocal.x);
   float hotHead = smoothstep(0.28, 1.0, vLocal.x);
   float alpha = vAlpha * widthMask * tail * mix(0.42, 1.0, hotHead) * uGlowBias;
   if (alpha <= 0.001) discard;
-  int count = max(1, uPaletteCount);
-  vec3 palette = uPalette[int(floor(hash(vSeed) * float(count))) % count];
+  vec3 palette = paletteSparkColor(vSeed, vKind * 23.0 + floor(uTime * 0.45));
   vec3 hot = vec3(1.0, 0.9, 0.55) * min(uCoreIntensity, 2.6);
   vec3 color = mix(palette, hot, mix(0.08, 0.34, hotHead) * (1.0 - smoothstep(0.38, 1.0, vLifeT)));
-  if (vKind >= 2.0) color = mix(color, palette, 0.32);
-  outColor = vec4(color * alpha, alpha);
+  if (vKind >= 2.0) color = mix(color, paletteSparkColor(vSeed, 83.0 + floor(uTime * 0.3)), 0.32);
+  color += vec3(1.0, 0.9, 0.42) * widthMask * hotHead * vSpeedT * 0.08;
+  outColor = vec4(color, alpha);
 }`;
 export const SPARKS_RAIL_SHADER = `#version 300 es
 precision highp float;in vec2 vUv;out vec4 outColor;uniform vec2 uResolution;uniform int uSurfaceCount;uniform vec4 uSurfaces[13];uniform float uRadius;float segmentDistance(vec2 p,vec2 a,vec2 b){vec2 ab=b-a;return length(p-(a+ab*clamp(dot(p-a,ab)/max(.001,dot(ab,ab)),0.0,1.0)));}void main(){vec2 p=vec2(vUv.x*uResolution.x,(1.0-vUv.y)*uResolution.y);float glow=0.0;for(int i=0;i<13;i++){if(i>=uSurfaceCount)break;vec4 rail=uSurfaces[i];glow=max(glow,smoothstep(uRadius+2.0,uRadius-2.0,segmentDistance(p,rail.xy,rail.zw)));}outColor=vec4(mix(vec3(.12,.18,.24),vec3(.58,.72,.84),glow),glow*.92);}`;

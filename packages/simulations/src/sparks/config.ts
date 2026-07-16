@@ -4,7 +4,7 @@ export type SparksConfig = Readonly<Record<string, ExperienceSettingValue>>;
 const EMITTER_MODES = ['welding', 'pinwheel', 'shower'];
 
 const numeric = [
-  n('emissionRate','Burst Rate','Input Mode',0,80000,25,980,EMITTER_MODES), n('contactHeat','Burst Density','Input Mode',0,12,.05,2.1,EMITTER_MODES),
+  n('emissionRate','Burst Rate','Input Mode',0,500000,25,980,EMITTER_MODES), n('contactHeat','Burst Density','Input Mode',0,100,.05,2.1,EMITTER_MODES),
   n('sparkPower','Spark Power','Input Mode',90,6000,25,480,EMITTER_MODES), n('sparkDirectionChaos','Direction Chaos','Input Mode',0,1,.01,.42,EMITTER_MODES),
   n('torchRadius','Torch Radius','Input Mode',4,56,1,24,EMITTER_MODES), n('coreSparkTorchPositionVariability','Torch Position Variability','Input Mode',0,50,1,0,['welding']),
   n('buildRadius','Build Radius','Input Mode',10,44,1,18,['build']), n('bounceRestitution','Bounce','Physics',0,1.35,.01,.58),
@@ -16,11 +16,11 @@ const numeric = [
   n('coreSparkRate','Rate','Spark Profile: Core',0,18,.05,3.2), n('coreSparkSize','Size','Spark Profile: Core',.02,10,.01,1),
   n('coreSparkSizeVariability','Size Variability','Spark Profile: Core',0,2,.01,.56), n('coreSparkLifespan','Lifespan','Spark Profile: Core',0,4,.01,1),
   n('coreSparkLifespanVariability','Lifespan Variability','Spark Profile: Core',0,1,.01,.28), n('coreSparkIntensity','Intensity','Spark Profile: Core',0,8,.05,3.65),
-  n('coreSparkAfterglow','Afterglow','Spark Profile: Core',0,1,.01,.38), n('primarySparkSize','Size','Spark Profile: Primary',.02,10,.01,3.6),
+  n('coreSparkAfterglow','Afterglow','Spark Profile: Core',0,1,.01,.38), n('primarySparkSize','Size','Spark Profile: Primary',.02,3,.01,3),
   n('primarySparkSizeVariability','Size Variability','Spark Profile: Primary',0,2,.01,.56), n('primarySparkLength','Length','Spark Profile: Primary',0,12,.01,1),
   n('primarySparkLengthVariability','Length Variability','Spark Profile: Primary',0,2,.01,.38), n('primarySparkLifespan','Lifespan','Spark Profile: Primary',0,4,.01,1),
   n('primarySparkLifespanVariability','Lifespan Variability','Spark Profile: Primary',0,1,.01,.34), n('primarySparkSpeedScale','Speed Scale','Spark Profile: Primary',0,3,.01,1),
-  n('bounceSparkSize','Size','Spark Profile: Bounce',.02,10,.01,.42), n('bounceSparkSizeVariability','Size Variability','Spark Profile: Bounce',0,2,.01,.72),
+  n('bounceSparkSize','Size','Spark Profile: Bounce',.02,3,.01,.42), n('bounceSparkSizeVariability','Size Variability','Spark Profile: Bounce',0,2,.01,.72),
   n('bounceSparkLength','Length','Spark Profile: Bounce',0,12,.01,.72), n('bounceSparkLengthVariability','Length Variability','Spark Profile: Bounce',0,2,.01,.52),
   n('bounceSparkLifespan','Lifespan','Spark Profile: Bounce',0,4,.01,.58), n('bounceSparkLifespanVariability','Lifespan Variability','Spark Profile: Bounce',0,1,.01,.44),
   n('bounceSparkSpeedScale','Speed Scale','Spark Profile: Bounce',0,3,.01,.72), n('bounceSparkSpeedVariability','Speed Variability','Spark Profile: Bounce',0,2,.01,0),

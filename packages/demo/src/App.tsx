@@ -94,6 +94,17 @@ function applySceneDefaults(definition: ExperienceDefinition, defaults: Readonly
   };
 }
 
+async function loadCurrentSceneDefaults(): Promise<SceneDefaultsMap> {
+  if (!import.meta.env.DEV) return INITIAL_SCENE_DEFAULTS;
+  try {
+    const response = await fetch(SCENE_DEFAULTS_ENDPOINT, { cache: 'no-store' });
+    if (response.ok) return normalizeSceneDefaults(await response.json() as unknown);
+  } catch {
+    // The bundled committed defaults remain a valid fallback when local persistence is unavailable.
+  }
+  return INITIAL_SCENE_DEFAULTS;
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
@@ -182,7 +193,9 @@ function DemoGallery(): JSX.Element {
     let mounted = true;
     void loadDemoCatalog().then(async (definitions) => {
       if (!mounted) return;
-      const configured = definitions.map((definition) => applySceneDefaults(definition, INITIAL_SCENE_DEFAULTS[definition.id]));
+      const sceneDefaultSource = await loadCurrentSceneDefaults();
+      if (!mounted) return;
+      const configured = definitions.map((definition) => applySceneDefaults(definition, sceneDefaultSource[definition.id]));
       let previewProfileSource: unknown = bundledPreviewProfiles;
       if (import.meta.env.DEV) {
         try {
@@ -194,6 +207,7 @@ function DemoGallery(): JSX.Element {
       }
       if (!mounted) return;
       const profiles = normalizePreviewProfiles(previewProfileSource, configured);
+      setSceneDefaults(sceneDefaultSource);
       setCatalog(configured);
       setPreviewProfiles(profiles);
       setPreviewDrafts(profiles);
@@ -223,6 +237,7 @@ function DemoGallery(): JSX.Element {
       });
       if (response.ok) nextDefaults = normalizeSceneDefaults(await response.json() as unknown);
       else throw new Error('Disk-backed scene defaults are unavailable');
+      localStorage.removeItem(`gl-game-lab:scene-defaults:${definitionId}`);
     } catch {
       localStorage.setItem(`gl-game-lab:scene-defaults:${definitionId}`, JSON.stringify(clean));
     }
@@ -342,6 +357,12 @@ function DemoGallery(): JSX.Element {
   const galleryPageCount = gallery.pageCount;
   const galleryItems = gallery.items;
   const pickerItems = useMemo(() => pickerFilter === 'all' ? catalog : catalog.filter((definition) => definition.kind === pickerFilter), [catalog, pickerFilter]);
+  const defaultPreviewProfiles = useMemo(() => Object.fromEntries(
+    catalog.map((definition) => [definition.id, createDefaultPreviewProfile(definition, definitionSettings(definition))] as const),
+  ) as PreviewProfileMap, [catalog]);
+  const previewProfileFor = useCallback((definition: ExperienceDefinition): ExperiencePreviewProfile => (
+    previewProfiles[definition.id] ?? defaultPreviewProfiles[definition.id] ?? createDefaultPreviewProfile(definition, definitionSettings(definition))
+  ), [defaultPreviewProfiles, previewProfiles]);
   const activeIndex = active ? pickerItems.findIndex((definition) => definition.id === active.id) : -1;
 
   useEffect(() => {
@@ -434,6 +455,7 @@ function DemoGallery(): JSX.Element {
                   {...(demoMode ? { onDemoAdvance: advanceDemo, onDemoExit: quit } : {})}
                   onLocalDemoChange={setLocalDemoMode}
                   onSaveDefaults={saveSceneDefaults}
+                  useLocalSceneDefaults={false}
                   showIntroCard={!previewAuthoringEnabled}
                   {...(import.meta.env.DEV && activePreviewProfile ? { previewAuthoring: {
                     enabled: previewAuthoringEnabled,
@@ -497,7 +519,7 @@ function DemoGallery(): JSX.Element {
                 </div>
                 {catalog.length === 0 ? <p className="py-24 text-center text-slate-400" role="status">Loading GLGameLab experiences…</p> : (
                   <div className="grid grid-cols-2 gap-x-6 gap-y-10 sm:grid-cols-3 lg:grid-cols-4">
-                    {galleryItems.map((definition, index) => <ExperienceCard key={definition.id} definition={definition} previewProfile={previewProfiles[definition.id] ?? createDefaultPreviewProfile(definition, definitionSettings(definition))} previewSessionSeed={previewSessionSeed} assetBaseUrl={import.meta.env.BASE_URL} index={index} onSelect={selectExperience} showPreviewFps={previewFpsVisible} previewsEnabled={previewFidelity === 'simulation'} previewMaxFps={previewMaxFps} hideKindBadge={filter === 'simulation'} />)}
+                    {galleryItems.map((definition, index) => <ExperienceCard key={definition.id} definition={definition} previewProfile={previewProfileFor(definition)} previewSessionSeed={previewSessionSeed} assetBaseUrl={import.meta.env.BASE_URL} index={index} onSelect={selectExperience} showPreviewFps={previewFpsVisible} previewsEnabled={previewFidelity === 'simulation'} previewMaxFps={previewMaxFps} hideKindBadge={filter === 'simulation'} />)}
                   </div>
                 )}
                 {galleryPageCount > 1 && (
@@ -546,7 +568,7 @@ function DemoGallery(): JSX.Element {
                   {pickerBottom ? (
                     portraitMobile ? (
                       <div ref={scrollerRef} className="flex items-center gap-2 overflow-x-scroll px-2 py-2 snap-x snap-mandatory" style={{ scrollbarWidth: 'none' }}>
-                        {pickerItems.map((definition, index) => <div key={definition.id} className="shrink-0 snap-start py-0.5"><CarouselTile definition={definition} previewProfile={previewProfiles[definition.id] ?? createDefaultPreviewProfile(definition, definitionSettings(definition))} previewSessionSeed={previewSessionSeed} assetBaseUrl={import.meta.env.BASE_URL} index={index} active={definition.id === active.id} onSelect={selectExperience} size={88} showPreviewFps={previewFpsVisible} previewsEnabled={previewFidelity === 'simulation'} previewMaxFps={previewMaxFps} /></div>)}
+                        {pickerItems.map((definition, index) => <div key={definition.id} className="shrink-0 snap-start py-0.5"><CarouselTile definition={definition} previewProfile={previewProfileFor(definition)} previewSessionSeed={previewSessionSeed} assetBaseUrl={import.meta.env.BASE_URL} index={index} active={definition.id === active.id} onSelect={selectExperience} size={88} showPreviewFps={previewFpsVisible} previewsEnabled={previewFidelity === 'simulation'} previewMaxFps={previewMaxFps} /></div>)}
                       </div>
                     ) : (
                       <div className="flex h-[132px] items-stretch">
@@ -555,7 +577,7 @@ function DemoGallery(): JSX.Element {
                         </div>
                         <button type="button" aria-label="Previous" onClick={() => { move(-1); }} className="flex shrink-0 items-center justify-center px-1.5 text-white/25 transition-colors hover:text-white/60"><ChevronLeft size={15} /></button>
                         <div ref={scrollerRef} className="flex flex-1 items-center gap-2 overflow-x-auto px-1" style={{ scrollbarWidth: 'none' }}>
-                          {pickerItems.map((definition, index) => <CarouselTile key={definition.id} definition={definition} previewProfile={previewProfiles[definition.id] ?? createDefaultPreviewProfile(definition, definitionSettings(definition))} previewSessionSeed={previewSessionSeed} assetBaseUrl={import.meta.env.BASE_URL} index={index} active={definition.id === active.id} onSelect={selectExperience} size={80} showPreviewFps={previewFpsVisible} previewsEnabled={previewFidelity === 'simulation'} previewMaxFps={previewMaxFps} />)}
+                          {pickerItems.map((definition, index) => <CarouselTile key={definition.id} definition={definition} previewProfile={previewProfileFor(definition)} previewSessionSeed={previewSessionSeed} assetBaseUrl={import.meta.env.BASE_URL} index={index} active={definition.id === active.id} onSelect={selectExperience} size={80} showPreviewFps={previewFpsVisible} previewsEnabled={previewFidelity === 'simulation'} previewMaxFps={previewMaxFps} />)}
                         </div>
                         <button type="button" aria-label="Next" onClick={() => { move(1); }} className="flex shrink-0 items-center justify-center px-1.5 text-white/25 transition-colors hover:text-white/60"><ChevronRight size={15} /></button>
                       </div>
@@ -567,7 +589,7 @@ function DemoGallery(): JSX.Element {
                       </div>
                       <button type="button" aria-label="Previous" onClick={() => { move(-1); }} className="py-1 text-white/25 transition-colors hover:text-white/60"><ChevronUp className="mx-auto" size={15} /></button>
                       <div ref={scrollerRef} className="flex flex-1 flex-col items-center gap-2 overflow-y-auto px-2 py-1" style={{ scrollbarWidth: 'none' }}>
-                        {pickerItems.map((definition, index) => <CarouselTile key={definition.id} definition={definition} previewProfile={previewProfiles[definition.id] ?? createDefaultPreviewProfile(definition, definitionSettings(definition))} previewSessionSeed={previewSessionSeed} assetBaseUrl={import.meta.env.BASE_URL} index={index} active={definition.id === active.id} onSelect={selectExperience} size={74} labelRight showPreviewFps={previewFpsVisible} previewsEnabled={previewFidelity === 'simulation'} previewMaxFps={previewMaxFps} />)}
+                        {pickerItems.map((definition, index) => <CarouselTile key={definition.id} definition={definition} previewProfile={previewProfileFor(definition)} previewSessionSeed={previewSessionSeed} assetBaseUrl={import.meta.env.BASE_URL} index={index} active={definition.id === active.id} onSelect={selectExperience} size={74} labelRight showPreviewFps={previewFpsVisible} previewsEnabled={previewFidelity === 'simulation'} previewMaxFps={previewMaxFps} />)}
                       </div>
                       <button type="button" aria-label="Next" onClick={() => { move(1); }} className="py-1 text-white/25 transition-colors hover:text-white/60"><ChevronDown className="mx-auto" size={15} /></button>
                     </div>
@@ -848,8 +870,8 @@ function DiagnosticExperienceHost(): JSX.Element {
     setSelectedExperience(undefined);
     setAlternateExperience(undefined);
     setLifecycleAlternate(false);
-    void loadDemoExperience(experienceId).then((definition) => {
-      if (active) setSelectedExperience(definition);
+    void Promise.all([loadDemoExperience(experienceId), loadCurrentSceneDefaults()]).then(([definition, defaults]) => {
+      if (active) setSelectedExperience(applySceneDefaults(definition, defaults[definition.id]));
     }).catch((error: unknown) => {
       if (active) setRuntimeError(error instanceof Error ? error.message : String(error));
     });
@@ -941,8 +963,11 @@ function DiagnosticExperienceHost(): JSX.Element {
     setDiagnosticStatus('lifecycle-cycling');
     if (!alternateExperience) {
       try {
-        const alternate = await loadLifecycleAlternate(selectedExperience.id);
-        setAlternateExperience(alternate);
+        const [alternate, defaults] = await Promise.all([
+          loadLifecycleAlternate(selectedExperience.id),
+          loadCurrentSceneDefaults(),
+        ]);
+        setAlternateExperience(applySceneDefaults(alternate, defaults[alternate.id]));
         setLifecycleAlternate(true);
       } catch (error) {
         setRuntimeError(error instanceof Error ? error.message : String(error));
@@ -966,6 +991,7 @@ function DiagnosticExperienceHost(): JSX.Element {
         {...(capture.enabled && capture.styleId ? { initialStyleId: capture.styleId } : {})}
         showChrome={false}
         showDiagnostics={showDiagnostics}
+        useLocalSceneDefaults={false}
         onReady={handleReady}
         onError={(error) => { setRuntimeError(error instanceof Error ? error.message : String(error)); }}
         {...(capture.enabled ? { fixedFrameCapture: {
