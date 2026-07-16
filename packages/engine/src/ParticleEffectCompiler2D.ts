@@ -125,6 +125,7 @@ uniform int uCapacity;
 uniform sampler2D uParticleCommandData;
 uniform int uParticleCommandCount;
 uniform int uParticleCommandTexels;
+uniform int uParticleCommandFrameStart;
 uniform float uDt;
 uniform vec2 uCanvasSize;
 uniform vec4 uArchetypeMotion[${Math.max(1, effect.source.archetypes.length)}];
@@ -133,14 +134,27 @@ layout(location=1) out vec4 outVelocity;
 ${targets === 3 ? 'layout(location=2) out vec4 outMetadata;' : ''}
 float hash21(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123); }
 bool readCommand(int id, out vec4 a, out vec4 b, out vec4 c, out vec4 d, out int relative) {
-  for (int commandIndex = 0; commandIndex < 64; commandIndex++) {
-    if (commandIndex >= uParticleCommandCount) break;
-    int offset = commandIndex * uParticleCommandTexels;
-    a = texelFetch(uParticleCommandData, ivec2(offset, 0), 0);
-    int start = int(a.y + .5), count = int(a.z + .5), candidate = (id - start + uCapacity) % uCapacity;
-    if (candidate < count) { b=texelFetch(uParticleCommandData,ivec2(offset+1,0),0); c=texelFetch(uParticleCommandData,ivec2(offset+2,0),0); d=texelFetch(uParticleCommandData,ivec2(offset+3,0),0); relative=candidate; return true; }
+  if (uParticleCommandCount <= 0) return false;
+  int candidate = (id - uParticleCommandFrameStart + uCapacity) % uCapacity;
+  int low = 0, high = uParticleCommandCount;
+  // The command texture stores monotonically increasing prefix starts. With a
+  // maximum of 64 commands, six lower-bound comparisons are sufficient.
+  for (int iteration = 0; iteration < 6; iteration++) {
+    int middle = (low + high) / 2;
+    if (middle >= uParticleCommandCount) { high = middle; continue; }
+    vec4 probe = texelFetch(uParticleCommandData, ivec2(middle * uParticleCommandTexels, 0), 0);
+    if (int(probe.y + .5) <= candidate) low = middle + 1; else high = middle;
   }
-  return false;
+  int commandIndex = low - 1;
+  if (commandIndex < 0 || commandIndex >= uParticleCommandCount) return false;
+  int offset = commandIndex * uParticleCommandTexels;
+  a = texelFetch(uParticleCommandData, ivec2(offset, 0), 0);
+  relative = candidate - int(a.y + .5);
+  if (relative < 0 || relative >= int(a.z + .5)) return false;
+  b=texelFetch(uParticleCommandData,ivec2(offset+1,0),0);
+  c=texelFetch(uParticleCommandData,ivec2(offset+2,0),0);
+  d=texelFetch(uParticleCommandData,ivec2(offset+3,0),0);
+  return true;
 }
 void main() {
   ivec2 uv = ivec2(gl_FragCoord.xy);

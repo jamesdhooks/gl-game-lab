@@ -48,6 +48,7 @@ class WebGLParticleEffectResource2D implements ParticleEffectBackendResource2D {
   private commandCount = 0;
   private particleCount = 0;
   private cursor = 0;
+  private frameStart = 0;
   private paletteCount = 1;
   private viewportWidth = 1;
   private viewportHeight = 1;
@@ -101,9 +102,11 @@ class WebGLParticleEffectResource2D implements ParticleEffectBackendResource2D {
   emit(emission: ParticleRuntimeEmission2D): void {
     this.assertUsable();
     let index = this.commandCount;
+    let replacing = false;
     if (index >= COMMAND_CAPACITY) {
       index = lowestPriorityIndex(this.commandImportance);
       if (emission.importance <= this.commandImportance[index]!) { this.droppedCommands += 1; this.droppedParticles += emission.count; return; }
+      replacing = true;
       this.droppedCommands += 1;
       this.droppedParticles += Math.max(0, Math.round(this.commands[index * COMMAND_FLOATS + 2] ?? 0));
     } else this.commandCount += 1;
@@ -113,10 +116,19 @@ class WebGLParticleEffectResource2D implements ParticleEffectBackendResource2D {
     const archetypeId = this.program.effect.archetypeIds[emitter.archetypeId];
     const archetype = this.program.effect.source.archetypes[archetypeId ?? -1];
     if (archetypeId === undefined || !archetype) throw new Error(`Particle emitter references invalid archetype ${emitter.archetypeId}`);
-    const count = Math.min(emission.count, this.particles.capacity);
+    const replacedCount = replacing ? Math.max(0, Math.round(this.commands[index * COMMAND_FLOATS + 2] ?? 0)) : 0;
+    const remainingBudget = Math.max(0, this.particles.capacity - (this.particleCount - replacedCount));
+    const count = Math.min(emission.count, remainingBudget);
+    if (count <= 0) {
+      this.droppedCommands += 1;
+      this.droppedParticles += emission.count;
+      return;
+    }
     const offset = index * COMMAND_FLOATS;
     this.commands[offset] = archetypeId;
-    this.commands[offset + 1] = this.cursor;
+    // Prefix starts are assigned immediately before upload, after any priority
+    // replacement has settled. This field is deliberately temporary here.
+    this.commands[offset + 1] = 0;
     this.commands[offset + 2] = count;
     this.commands[offset + 3] = spawnShapeCode(emitter.source.kind);
     this.commands[offset + 4] = emission.positionX;
@@ -131,8 +143,8 @@ class WebGLParticleEffectResource2D implements ParticleEffectBackendResource2D {
     this.commands[offset + 13] = emission.seed / 0x1_0000_0000;
     this.commands[offset + 14] = archetype.lifecycle.lifetimeVariability ?? 0;
     this.commands[offset + 15] = 0;
-    this.cursor = (this.cursor + count) % this.particles.capacity;
-    this.particleCount += count;
+    this.particleCount += count - replacedCount;
+    this.droppedParticles += emission.count - count;
   }
 
   setPalette(value: ParticlePalette2D): void {
@@ -147,7 +159,9 @@ class WebGLParticleEffectResource2D implements ParticleEffectBackendResource2D {
 
   update(deltaSeconds: number, timescale: number): void {
     this.assertUsable();
+    this.prepareCommands();
     this.particles.stepBatch(this.batch, (gl, uniform) => this.bindSimulation(gl, uniform, deltaSeconds * timescale));
+    this.cursor = (this.frameStart + this.particleCount) % this.particles.capacity;
     this.commandCount = 0;
     this.particleCount = 0;
     this.commandImportance.fill(0);
@@ -207,6 +221,17 @@ class WebGLParticleEffectResource2D implements ParticleEffectBackendResource2D {
     gl.uniform1f(uniform('uDt'), delta);
     gl.uniform2f(uniform('uCanvasSize'), this.viewportWidth, this.viewportHeight);
     gl.uniform4fv(uniform('uArchetypeMotion[0]'), this.archetypeMotion);
+    gl.uniform1i(uniform('uParticleCommandFrameStart'), this.frameStart);
+  }
+
+  private prepareCommands(): void {
+    this.frameStart = this.cursor;
+    let prefix = 0;
+    for (let index = 0; index < this.commandCount; index += 1) {
+      const offset = index * COMMAND_FLOATS;
+      this.commands[offset + 1] = prefix;
+      prefix += Math.max(0, Math.round(this.commands[offset + 2] ?? 0));
+    }
   }
 
   private assertUsable(): void { if (this.disposed) throw new Error(`WebGL particle effect resource is disposed: ${this.id}`); }
