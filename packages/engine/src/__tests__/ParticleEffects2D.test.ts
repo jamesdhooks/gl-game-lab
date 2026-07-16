@@ -2,6 +2,9 @@ import { describe, expect, it } from 'vitest';
 import {
   PARTICLE_EFFECT_COMMAND_CAPACITY,
   PARTICLE_EFFECT_STATE_LAYOUT,
+  ParticleCommandQueue2D,
+  resolveParticleRenderRecipe2D,
+  validateParticleSettingBindings2D,
   validateParticleEffectDefinition2D,
   type ParticleEffectDefinition2D,
 } from '../index.js';
@@ -62,5 +65,31 @@ describe('ParticleEffects2D', () => {
       ...definition,
       archetypes: [{ ...definition.archetypes[0]!, events: [{ trigger: 'death', childArchetypeId: 'missing', probability: 1, count: 1, maxGeneration: 1 }] }],
     })).toThrow('unknown child archetype');
+  });
+
+  it('packs commands into a stable allocation-free 16-float batch', () => {
+    const queue = new ParticleCommandQueue2D(definition);
+    expect(queue.enqueue({
+      archetypeId: 'primary', count: 24, position: [10, 20], inheritedVelocity: [2, 3],
+      direction: 1, spread: 2, power: 300, seed: 7, paletteSeed: 9,
+    })).toBe(true);
+    const first = queue.drain();
+    expect(first.count).toBe(1);
+    expect(first.particleCount).toBe(24);
+    expect(first.data.slice(0, 14)).toEqual(new Float32Array([0, 0, 24, 6, 10, 20, 2, 3, 1, 2, 300, 2, 7, 9]));
+    queue.enqueue({ archetypeId: 'sparkle', count: 4, position: [0, 0], inheritedVelocity: [0, 0], direction: 0, spread: 1, power: 4, seed: 1, paletteSeed: 2 });
+    expect(queue.drain()).toBe(first);
+  });
+
+  it('resolves render recipes and validates contextual setting bindings', () => {
+    expect(resolveParticleRenderRecipe2D(definition, 'basic').points).toBe(true);
+    expect(() => resolveParticleRenderRecipe2D(definition, 'ultra')).toThrow('does not define render tier');
+    expect(validateParticleSettingBindings2D(definition, [
+      { parameter: 'motion.gravity', persistedKey: 'gravity', label: 'Gravity', section: 'Physics' },
+      { parameter: 'appearance.size', persistedKey: 'sparkleSize', label: 'Sparkle Size', section: 'Sparkle', archetypeId: 'sparkle' },
+    ])).toHaveLength(2);
+    expect(() => validateParticleSettingBindings2D(definition, [
+      { parameter: 'appearance.size', persistedKey: 'size', label: 'Size', section: 'Rendering', archetypeId: 'missing' },
+    ])).toThrow('unknown archetype');
   });
 });

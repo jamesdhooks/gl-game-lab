@@ -1,4 +1,5 @@
 import type { GpuRenderTarget2D } from './Gpu2D.js';
+import type { GpuParticleCommandBatch2D } from './Gpu2D.js';
 
 export const PARTICLE_EFFECT_STATE_ABI_VERSION = 1;
 export const PARTICLE_EFFECT_COMMAND_CAPACITY = 64;
@@ -181,6 +182,111 @@ export interface ParticleSettingBinding2D {
   readonly tiers?: readonly ParticleRenderTier2D[];
 }
 
+export class ParticleCommandQueue2D {
+  readonly data: Float32Array;
+  private readonly archetypeIds = new Map<string, number>();
+  private readonly stableBatch: GpuParticleCommandBatch2D;
+  private queued = 0;
+  private queuedParticles = 0;
+  private drainCount = 0;
+  private drainParticles = 0;
+  private cursor = 0;
+  private droppedCommands = 0;
+  private droppedParticles = 0;
+
+  constructor(readonly definition: ParticleEffectDefinition2D) {
+    validateParticleEffectDefinition2D(definition);
+    const commandCapacity = definition.capacity.commandCapacity ?? PARTICLE_EFFECT_COMMAND_CAPACITY;
+    this.data = new Float32Array(commandCapacity * 16);
+    definition.archetypes.forEach((archetype, index) => { this.archetypeIds.set(archetype.id, index); });
+    const queue = this;
+    this.stableBatch = Object.freeze({
+      get data() { return queue.data; },
+      get count() { return queue.drainCount; },
+      get particleCount() { return queue.drainParticles; },
+    });
+  }
+
+  get commandCapacity(): number { return this.data.length / 16; }
+  get queuedCommands(): number { return this.queued; }
+  get totalDroppedCommands(): number { return this.droppedCommands; }
+  get totalDroppedParticles(): number { return this.droppedParticles; }
+
+  enqueue(command: ParticleSpawnCommand2D): boolean {
+    const archetypeId = this.archetypeIds.get(command.archetypeId);
+    if (archetypeId === undefined) throw new Error(`Unknown particle archetype: ${command.archetypeId}`);
+    if (!Number.isSafeInteger(command.count) || command.count < 0) throw new Error('Particle spawn count must be a non-negative integer');
+    if (this.queued >= this.commandCapacity) {
+      this.droppedCommands += 1;
+      this.droppedParticles += command.count;
+      return false;
+    }
+    const count = Math.min(command.count, this.definition.capacity.max);
+    const offset = this.queued * 16;
+    this.data[offset] = archetypeId;
+    this.data[offset + 1] = this.cursor;
+    this.data[offset + 2] = count;
+    this.data[offset + 3] = particleSpawnShapeCode2D(this.definition.archetypes[archetypeId]!.spawn.shape);
+    this.data[offset + 4] = command.position[0];
+    this.data[offset + 5] = command.position[1];
+    this.data[offset + 6] = command.inheritedVelocity[0];
+    this.data[offset + 7] = command.inheritedVelocity[1];
+    this.data[offset + 8] = command.direction;
+    this.data[offset + 9] = command.spread;
+    this.data[offset + 10] = command.power;
+    this.data[offset + 11] = this.definition.archetypes[archetypeId]!.lifecycle.lifetime;
+    this.data[offset + 12] = command.seed;
+    this.data[offset + 13] = command.paletteSeed;
+    this.data[offset + 14] = 0;
+    this.data[offset + 15] = 0;
+    this.cursor = (this.cursor + count) % this.definition.capacity.max;
+    this.queued += 1;
+    this.queuedParticles += count;
+    return true;
+  }
+
+  drain(): GpuParticleCommandBatch2D {
+    this.drainCount = this.queued;
+    this.drainParticles = this.queuedParticles;
+    this.queued = 0;
+    this.queuedParticles = 0;
+    return this.stableBatch;
+  }
+
+  reset(): void {
+    this.queued = 0;
+    this.queuedParticles = 0;
+    this.drainCount = 0;
+    this.drainParticles = 0;
+    this.cursor = 0;
+  }
+}
+
+export function particleSpawnShapeCode2D(shape: ParticleSpawnShape2D): number {
+  const index = SPAWN_SHAPES.indexOf(shape);
+  if (index < 0) throw new Error(`Unknown particle spawn shape: ${String(shape)}`);
+  return index;
+}
+
+export function resolveParticleRenderRecipe2D(definition: ParticleEffectDefinition2D, tier?: ParticleRenderTier2D): ParticleRenderRecipe2D {
+  const requested = tier ?? definition.renderRecipes.defaultTier;
+  const recipe = definition.renderRecipes.recipes.find((candidate) => candidate.tier === requested);
+  if (!recipe) throw new Error(`Particle effect ${definition.id} does not define render tier ${requested}`);
+  return recipe;
+}
+
+export function validateParticleSettingBindings2D(definition: ParticleEffectDefinition2D, bindings: readonly ParticleSettingBinding2D[]): readonly ParticleSettingBinding2D[] {
+  const persisted = new Set<string>();
+  const archetypes = new Set(definition.archetypes.map((archetype) => archetype.id));
+  for (const binding of bindings) {
+    if (binding.parameter.trim().length === 0 || binding.persistedKey.trim().length === 0) throw new Error('Particle setting bindings require parameter and persisted keys');
+    if (persisted.has(binding.persistedKey)) throw new Error(`Duplicate particle setting persisted key: ${binding.persistedKey}`);
+    if (binding.archetypeId && !archetypes.has(binding.archetypeId)) throw new Error(`Particle setting binding references unknown archetype: ${binding.archetypeId}`);
+    persisted.add(binding.persistedKey);
+  }
+  return Object.freeze(bindings);
+}
+
 export function validateParticleEffectDefinition2D(definition: ParticleEffectDefinition2D): ParticleEffectDefinition2D {
   if (definition.id.trim().length === 0) throw new Error('Particle effect id cannot be empty');
   validateCapacity(definition.capacity);
@@ -219,3 +325,5 @@ function validateArchetype(archetype: ParticleArchetype2D): void {
     if (!Number.isSafeInteger(event.maxGeneration) || event.maxGeneration < 0) throw new Error(`Particle event generation limit for ${archetype.id} must be a non-negative integer`);
   }
 }
+
+const SPAWN_SHAPES: readonly ParticleSpawnShape2D[] = Object.freeze(['point', 'disc', 'line', 'cone', 'arc', 'ring', 'radial', 'spiral', 'pinwheel', 'shower']);
