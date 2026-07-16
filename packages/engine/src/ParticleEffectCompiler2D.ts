@@ -248,6 +248,8 @@ uniform sampler2D uVelocityState;
 ${targets === 3 ? 'uniform sampler2D uMetadataState;' : ''}
 uniform ivec2 uStateSize;
 uniform int uParticleCapacity;
+uniform int uRenderStride;
+uniform int uRenderPhase;
 uniform vec2 uCanvasSize;
 uniform float uPointScale;
 uniform vec4 uArchetypeSize[${Math.max(1, effect.source.archetypes.length)}];
@@ -261,7 +263,8 @@ out float vIntensity;
 flat out int vStreak;
 void main() {
   vStreak=${streak ? '1' : '0'};
-  int index = ${streak ? 'gl_VertexID / 6' : 'gl_VertexID'};
+  int drawIndex = ${streak ? 'gl_VertexID / 6' : 'gl_VertexID'};
+  int index = drawIndex * max(1, uRenderStride) + uRenderPhase;
   ivec2 uv = ivec2(index % int(uStateSize.x), index / int(uStateSize.x));
   vec4 a = texelFetch(uPositionState, uv, 0);
   ${targets === 3 ? 'vec4 c = texelFetch(uMetadataState, uv, 0);' : 'vec4 c = vec4(0.0);'}

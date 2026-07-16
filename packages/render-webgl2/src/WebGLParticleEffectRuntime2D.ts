@@ -67,6 +67,8 @@ class WebGLParticleEffectResource2D implements ParticleEffectBackendResource2D {
   private paletteCount = 1;
   private viewportWidth = 1;
   private viewportHeight = 1;
+  private renderStride = 1;
+  private renderPhase = 0;
   private droppedCommands = 0;
   private droppedParticles = 0;
   private truncatedCommands = 0;
@@ -222,6 +224,12 @@ class WebGLParticleEffectResource2D implements ParticleEffectBackendResource2D {
     for (let index = 0; index < this.capsuleCount; index += 1) { const capsule=value.capsules![index]!; this.capsuleA.set([capsule.ax,capsule.ay,capsule.bx,capsule.by],index*4); this.capsuleB.set([capsule.radius,capsule.mode==='kill'?1:0,0,0],index*4); }
   }
 
+  setRenderScale(scale: number): void {
+    this.assertUsable();
+    this.renderStride = Math.max(1, Math.min(16, Math.round(1 / scale)));
+    this.renderPhase %= this.renderStride;
+  }
+
   update(deltaSeconds: number, timescale: number): void {
     this.assertUsable();
     this.prepareCommands();
@@ -293,6 +301,8 @@ class WebGLParticleEffectResource2D implements ParticleEffectBackendResource2D {
   private readonly bindRender = (gl: GpuUniformEncoder2D, uniform: GpuUniformLookup2D): void => {
     gl.uniform2f(uniform('uCanvasSize'), this.viewportWidth, this.viewportHeight);
     gl.uniform1i(uniform('uParticleCapacity'), this.particles.capacity);
+    gl.uniform1i(uniform('uRenderStride'), this.renderStride);
+    gl.uniform1i(uniform('uRenderPhase'), this.renderPhase);
     gl.uniform1f(uniform('uPointScale'), 2);
     gl.uniform3fv(uniform('uPalette[0]'), this.palette);
     gl.uniform1i(uniform('uPaletteCount'), this.paletteCount);
@@ -331,8 +341,10 @@ class WebGLParticleEffectResource2D implements ParticleEffectBackendResource2D {
 
   private renderTier(target: GpuRenderTarget2D, tier: ParticleRenderTier2D): void {
     const passes = this.program.renderPasses[tier];
-    if (passes.some((pass) => pass.kind === 'points')) this.particles.render(target, this.bindRender);
-    for (const pass of passes) if (pass.kind === 'streaks') this.particles.renderPass(pass.id, target, this.bindRender);
+    const renderCount = Math.ceil(this.particles.capacity / this.renderStride);
+    if (passes.some((pass) => pass.kind === 'points')) this.particles.render(target, this.bindRender, renderCount);
+    for (const pass of passes) if (pass.kind === 'streaks') this.particles.renderPass(pass.id, target, this.bindRender, renderCount);
+    this.renderPhase = (this.renderPhase + 1) % this.renderStride;
   }
 
   private assertUsable(): void { if (this.disposed) throw new Error(`WebGL particle effect resource is disposed: ${this.id}`); }

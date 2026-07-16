@@ -22,10 +22,12 @@ class TestResource implements ParticleEffectBackendResource2D {
   transferred = false;
   parameters: Readonly<Record<string, unknown>> = {};
   paletteRevision = -1;
+  renderScale = 1;
   disposed = false;
   emit(emission: ParticleRuntimeEmission2D): void { this.emissions.push({ ...emission }); }
   setPalette(palette: ParticlePalette2D): void { this.paletteRevision = palette.revision; }
   setParameters(parameters: Readonly<Record<string, import('../index.js').ParticleParameterValue2D>>): void { this.parameters = parameters; }
+  setRenderScale(scale: number): void { this.renderScale = scale; }
   update(): void { this.updates += 1; }
   render(_target: GpuRenderTarget2D, _tier: ParticleRenderTier2D): void { this.renders += 1; }
   clear(): void { this.emissions = []; }
@@ -76,6 +78,9 @@ describe('EngineParticleEffects2D', () => {
     expect(() => instance.setTimescale(20)).toThrow('between 0 and 16');
     instance.setParameter('power', 3);
     expect(backend.resources[0]!.parameters).toMatchObject({ power: 3 });
+    instance.setRenderScale(0.25);
+    expect(backend.resources[0]!.renderScale).toBe(0.25);
+    expect(() => instance.setRenderScale(0)).toThrow('between 0.0625 and 1');
     const handle = instance.emitter('spark');
     expect(handle).toBe(instance.emitter('spark'));
     handle.writer().position(12, 18).count(3).power(7).submit();

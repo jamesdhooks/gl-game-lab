@@ -100,6 +100,7 @@ export interface ParticleEffectBackendResource2D {
   setPalette(palette: ParticlePalette2D): void;
   setParameters?(parameters: Readonly<Record<string, ParticleParameterValue2D>>): void;
   setColliders?(colliders: ParticleColliderSet2D): void;
+  setRenderScale?(scale: number): void;
   update(deltaSeconds: number, timescale: number): void;
   render(target: GpuRenderTarget2D, tier: ParticleRenderTier2D): void;
   clear(): void;
@@ -144,6 +145,7 @@ class RecoveringParticleEffectBackendResource2D implements ParticleEffectBackend
   setPalette(value: ParticlePalette2D): void { this.invoke((resource) => { resource.setPalette(value); }); }
   setParameters(value: Readonly<Record<string, ParticleParameterValue2D>>): void { this.invoke((resource) => { resource.setParameters?.(value); }); }
   setColliders(value: ParticleColliderSet2D): void { this.invoke((resource) => { resource.setColliders?.(value); }); }
+  setRenderScale(value: number): void { this.invoke((resource) => { resource.setRenderScale?.(value); }); }
   update(deltaSeconds: number, timescale: number): void { this.invoke((resource) => { resource.update(deltaSeconds, timescale); }); }
   render(target: GpuRenderTarget2D, tier: ParticleRenderTier2D): void { this.invoke((resource) => { resource.render(target, tier); }); }
   clear(): void { this.invoke((resource) => { resource.clear(); }); }
@@ -190,6 +192,7 @@ export interface ParticleEffectInstance2D {
   setColliders(colliders: ParticleColliderSet2D): void;
   setTimescale(value: number): void;
   setQualityTier(tier: ParticleRenderTier2D): void;
+  setRenderScale(scale: number): void;
   state(): ParticleEffectInstanceState2D;
   diagnostics(): ParticleEffectBackendDiagnostics2D;
   dispose(): void;
@@ -392,6 +395,7 @@ class RuntimeParticleEffectInstance2D implements ParticleEffectInstance2D {
   private palette: ParticlePalette2D;
   private timescale: number;
   private tier: ParticleRenderTier2D;
+  private renderScale = 1;
   private drainRemaining = 0;
   private readonly emitters: EmitterRuntime[];
   private readonly emitterHandles: Map<string, RuntimeParticleEmitterHandle2D>;
@@ -426,6 +430,7 @@ class RuntimeParticleEffectInstance2D implements ParticleEffectInstance2D {
     backend.setPalette(this.palette);
     backend.setParameters?.(this.parameters);
     backend.setColliders?.({ revision: 0, circles: [], capsules: [] });
+    backend.setRenderScale?.(this.renderScale);
   }
 
   get isAdvancing(): boolean { return this.statusValue === 'running' || this.statusValue === 'draining'; }
@@ -482,6 +487,7 @@ class RuntimeParticleEffectInstance2D implements ParticleEffectInstance2D {
   setColliders(colliders: ParticleColliderSet2D): void { this.assertUsable(); this.backend.setColliders?.(colliders); }
   setTimescale(value: number): void { this.assertUsable(); this.timescale = validateTimescale(value); }
   setQualityTier(tier: ParticleRenderTier2D): void { this.assertUsable(); if (!this.program.effect.source.renderRecipes.recipes.some((entry) => entry.tier === tier)) throw new Error(`Particle effect does not render tier: ${tier}`); this.tier = tier; }
+  setRenderScale(scale: number): void { this.assertUsable(); if (!Number.isFinite(scale) || scale < 0.0625 || scale > 1) throw new Error('Particle render scale must be between 0.0625 and 1'); this.renderScale = scale; this.backend.setRenderScale?.(scale); }
 
   state(): ParticleEffectInstanceState2D {
     return Object.freeze({ id: this.id, effectId: this.program.effect.source.id, status: this.statusValue, elapsed: this.elapsed, seed: this.seed, timescale: this.timescale, qualityTier: this.tier, activeEmitters: this.emitters.reduce((count, emitter) => count + Number(emitter.active), 0) });
@@ -510,7 +516,7 @@ class RuntimeParticleEffectInstance2D implements ParticleEffectInstance2D {
     const compatible = program.effect.abiHash === this.program.effect.abiHash;
     if (compatible) this.backend.transferStateTo?.(backend);
     this.backend.dispose();
-    this.program = program; this.backend = backend; this.parameters = { ...resolveParticleParameters2D(program.effect.source, this.parameters) }; backend.setPalette(this.palette); backend.setParameters?.(this.parameters);
+    this.program = program; this.backend = backend; this.parameters = { ...resolveParticleParameters2D(program.effect.source, this.parameters) }; backend.setPalette(this.palette); backend.setParameters?.(this.parameters); backend.setRenderScale?.(this.renderScale);
     if (!compatible) {
       this.elapsed = 0;
       this.emitters.forEach((emitter) => { emitter.reset(); });

@@ -36,7 +36,7 @@ export class GpuParticleRenderer {
       throw new Error('GPU particle renderer verticesPerParticle must be a positive integer');
   }
 
-  render(state: GpuParticleState, destination: GpuParticleRenderDestination, bind: GpuParticleUniformBinder): void {
+  render(state: GpuParticleState, destination: GpuParticleRenderDestination, bind: GpuParticleUniformBinder, particleCount = state.capacity): void {
     this.assertUsable();
     const gl = this.gl;
     gl.bindFramebuffer(gl.FRAMEBUFFER, destination.framebuffer ?? null);
@@ -59,7 +59,7 @@ export class GpuParticleRenderer {
     gl.uniform2i(this.uniform('uStateSize'), state.width, state.height);
     gl.uniform1i(this.uniform('uParticleCapacity'), state.capacity);
     bind(gl, (name) => this.uniform(name));
-    gl.drawArrays(this.verticesPerParticle === 1 ? gl.POINTS : gl.TRIANGLES, 0, state.capacity * this.verticesPerParticle);
+    gl.drawArrays(this.verticesPerParticle === 1 ? gl.POINTS : gl.TRIANGLES, 0, Math.max(0, Math.min(state.capacity, particleCount)) * this.verticesPerParticle);
     gl.bindVertexArray(null);
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
   }

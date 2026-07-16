@@ -129,8 +129,8 @@ export interface GpuParticleSystem2D {
   step(uniforms?: GpuUniforms2D | GpuUniformBinder2D): void;
   stepBatch(batch: GpuParticleCommandBatch2D, uniforms?: GpuUniforms2D | GpuUniformBinder2D): void;
   stepEvents(uniforms?: GpuUniforms2D | GpuUniformBinder2D): void;
-  render(target: GpuRenderTarget2D, uniforms?: GpuUniforms2D | GpuUniformBinder2D): void;
-  renderPass(id: string, target: GpuRenderTarget2D, uniforms?: GpuUniforms2D | GpuUniformBinder2D): void;
+  render(target: GpuRenderTarget2D, uniforms?: GpuUniforms2D | GpuUniformBinder2D, particleCount?: number): void;
+  renderPass(id: string, target: GpuRenderTarget2D, uniforms?: GpuUniforms2D | GpuUniformBinder2D, particleCount?: number): void;
   beginTrails(width: number, height: number, fade: number): GpuRenderTarget2D;
   compositeTrails(target: GpuRenderTarget2D, background: readonly [number, number, number], bloom: number): void;
   clearTrails(): void;

@@ -220,20 +220,22 @@ class WebGLGpuParticleSystem implements GpuParticleSystem2D {
     this.simulationPasses += 1;
     this.eventPasses += 1;
   }
-  render(target: GpuRenderTarget2D, uniforms: GpuUniforms2D | GpuUniformBinder2D = {}): void {
+  render(target: GpuRenderTarget2D, uniforms: GpuUniforms2D | GpuUniformBinder2D = {}, particleCount = this.capacity): void {
     const native = requireTarget(target);
     const bundle = this.owner.value;
-    bundle.points.render(bundle.state, native, (gl, uniform) => { applyBindings(gl, uniform, uniforms); });
-    this.countDraw(bundle.state.capacity);
+    const count = Math.max(0, Math.min(bundle.state.capacity, Math.floor(particleCount)));
+    bundle.points.render(bundle.state, native, (gl, uniform) => { applyBindings(gl, uniform, uniforms); }, count);
+    this.countDraw(count);
     this.renderPasses += 1;
   }
-  renderPass(id: string, target: GpuRenderTarget2D, uniforms: GpuUniforms2D | GpuUniformBinder2D = {}): void {
+  renderPass(id: string, target: GpuRenderTarget2D, uniforms: GpuUniforms2D | GpuUniformBinder2D = {}, particleCount = this.capacity): void {
     const native = requireTarget(target);
     const bundle = this.owner.value;
     const pass = bundle.renderPasses.get(id);
     if (!pass) throw new Error(`Unknown GPU particle render pass: ${id}`);
-    pass.render(bundle.state, native, (gl, uniform) => { applyBindings(gl, uniform, uniforms); });
-    this.countDraw(0, bundle.state.capacity * 2);
+    const count = Math.max(0, Math.min(bundle.state.capacity, Math.floor(particleCount)));
+    pass.render(bundle.state, native, (gl, uniform) => { applyBindings(gl, uniform, uniforms); }, count);
+    this.countDraw(0, count * 2);
     this.renderPasses += 1;
   }
   beginTrails(width: number, height: number, fade: number): GpuRenderTarget2D {
