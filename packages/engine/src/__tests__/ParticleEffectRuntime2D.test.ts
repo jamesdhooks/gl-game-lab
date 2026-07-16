@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   EngineParticleEffects2D,
+  FallbackParticleEffectRuntimeBackend2D,
   adaptParticleEffectDefinition2D,
   compileParticleEffect2D,
   compileParticleProgram2D,
@@ -80,5 +81,16 @@ describe('EngineParticleEffects2D', () => {
     runtime.replace(program); expect(backend.resources).toHaveLength(2);
     instance.dispose(); expect(runtime.diagnostics().activeInstances).toBe(0);
     runtime.dispose(); expect(() => runtime.createInstance('runtime-test')).toThrow('disposed');
+  });
+
+  it('falls back internally when the preferred backend fails', () => {
+    const preferred = new TestBackend();
+    preferred.create = () => { throw new Error('device unavailable'); };
+    const fallback = new TestBackend();
+    const runtime = new EngineParticleEffects2D(new FallbackParticleEffectRuntimeBackend2D(preferred, fallback));
+    runtime.register(compileParticleProgram2D(compileParticleEffect2D(adaptParticleEffectDefinition2D(definition))));
+    const instance = runtime.createInstance('runtime-test');
+    instance.emitter('spark').emit(2);
+    expect(instance.diagnostics().backendFallbackCount).toBe(1);
   });
 });

@@ -79,6 +79,9 @@ export interface ParticleEffectBackendDiagnostics2D extends ParticleEffectDiagno
   readonly eventAttempts: number;
   readonly eventOccupiedDrops: number;
   readonly eventBudgetDrops: number;
+  readonly backendFallbackCount?: number;
+  readonly validationFailures?: number;
+  readonly diagnosticAccuracy?: 'exact' | 'delayed' | 'estimated';
 }
 
 export interface ParticleEffectBackendResource2D {
@@ -94,6 +97,53 @@ export interface ParticleEffectBackendResource2D {
 export interface ParticleEffectRuntimeBackend2D {
   readonly kind: 'webgl2' | 'webgpu' | 'test';
   create(program: CompiledParticleProgram2D, capacity: number): ParticleEffectBackendResource2D;
+}
+
+/** Capability/failure wrapper used for internal WebGPU -> WebGL2 fallback. */
+export class FallbackParticleEffectRuntimeBackend2D implements ParticleEffectRuntimeBackend2D {
+  readonly kind: ParticleEffectRuntimeBackend2D['kind'];
+  constructor(
+    private readonly preferred: ParticleEffectRuntimeBackend2D,
+    private readonly fallback: ParticleEffectRuntimeBackend2D,
+  ) { this.kind = preferred.kind; }
+  create(program: CompiledParticleProgram2D, capacity: number): ParticleEffectBackendResource2D {
+    try {
+      return new RecoveringParticleEffectBackendResource2D(program, capacity, this.preferred, this.fallback);
+    } catch {
+      return new RecoveringParticleEffectBackendResource2D(program, capacity, this.fallback, this.fallback, 1);
+    }
+  }
+}
+
+class RecoveringParticleEffectBackendResource2D implements ParticleEffectBackendResource2D {
+  private resource: ParticleEffectBackendResource2D;
+  private fallbackCount: number;
+  private failed = false;
+  constructor(
+    private readonly program: CompiledParticleProgram2D,
+    private readonly capacity: number,
+    preferred: ParticleEffectRuntimeBackend2D,
+    private readonly fallback: ParticleEffectRuntimeBackend2D,
+    initialFallbackCount = 0,
+  ) { this.resource = preferred.create(program, capacity); this.fallbackCount = initialFallbackCount; }
+  emit(value: ParticleRuntimeEmission2D): void { this.invoke((resource) => { resource.emit(value); }); }
+  setPalette(value: ParticlePalette2D): void { this.invoke((resource) => { resource.setPalette(value); }); }
+  update(deltaSeconds: number, timescale: number): void { this.invoke((resource) => { resource.update(deltaSeconds, timescale); }); }
+  render(target: GpuRenderTarget2D, tier: ParticleRenderTier2D): void { this.invoke((resource) => { resource.render(target, tier); }); }
+  clear(): void { this.invoke((resource) => { resource.clear(); }); }
+  diagnostics(): ParticleEffectBackendDiagnostics2D { return { ...this.resource.diagnostics(), backendFallbackCount: this.fallbackCount }; }
+  dispose(): void { this.resource.dispose(); }
+  private invoke(operation: (resource: ParticleEffectBackendResource2D) => void): void {
+    try { operation(this.resource); }
+    catch (error) {
+      if (this.failed) throw error;
+      this.failed = true;
+      this.resource.dispose();
+      this.resource = this.fallback.create(this.program, this.capacity);
+      this.fallbackCount += 1;
+      operation(this.resource);
+    }
+  }
 }
 
 export interface ParticleEffectInstanceState2D {

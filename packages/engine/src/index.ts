@@ -246,6 +246,7 @@ export {
 } from './ParticleEffectCompiler2D.js';
 export {
   EngineParticleEffects2D,
+  FallbackParticleEffectRuntimeBackend2D,
   type ParticleEffectBackendDiagnostics2D,
   type ParticleEffectBackendResource2D,
   type ParticleEffectInstance2D,
