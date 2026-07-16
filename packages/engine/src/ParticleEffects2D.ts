@@ -142,6 +142,8 @@ export interface ParticleSpawnCommand2D {
   readonly shape?: ParticleSpawnShape2D;
   readonly lifetimeScale?: number;
   readonly lifetimeVariability?: number;
+  /** Scene-defined spawn variant such as a burst-pattern index. */
+  readonly variant?: number;
 }
 
 export type ParticleEffectParameters2D = Readonly<Record<string, ParticleSettingValue2D>>;
@@ -249,7 +251,7 @@ export class ParticleCommandQueue2D {
     this.data[offset + 12] = command.seed;
     this.data[offset + 13] = command.paletteSeed;
     this.data[offset + 14] = command.lifetimeVariability ?? this.definition.archetypes[archetypeId]!.lifecycle.lifetimeVariability ?? 0;
-    this.data[offset + 15] = 0;
+    this.data[offset + 15] = command.variant ?? 0;
     this.cursor = (this.cursor + count) % this.activeCapacity;
     this.queued += 1;
     this.queuedParticles += count;

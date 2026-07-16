@@ -73,8 +73,9 @@ export { SPARKS_PLUGIN_ID, SparksControllerService, createSparksDefaultRails, cr
 export { SPARKS_STYLE_MANIFEST } from './sparks/styles.js';
 export { SPARKS_PARTICLE_EFFECT, SPARKS_PARTICLE_SETTING_BINDINGS } from './sparks/effect.js';
 export { FIREWORKS_DEFAULTS, FIREWORKS_SETTINGS, createFireworksConfig, type FireworksConfig } from './fireworks/config.js';
-export { FIREWORKS_PLUGIN_ID, FireworksControllerService, createFireworksPlugin, type FireworksController, type FireworksMode } from './fireworks/FireworksPlugin.js';
+export { FIREWORKS_PLUGIN_ID, FireworksControllerService, createFireworksPlugin, resolveFireworkLaunchVelocity, type FireworksController, type FireworksMode } from './fireworks/FireworksPlugin.js';
 export { FIREWORKS_STYLE_MANIFEST } from './fireworks/styles.js';
+export { FIREWORKS_PARTICLE_EFFECT, FIREWORKS_PARTICLE_SETTING_BINDINGS, fireworksColorModeCode, fireworksPatternCode } from './fireworks/effect.js';
 export {
   HARMONIC_SAND_DEFAULTS,
   HARMONIC_SAND_SETTINGS,

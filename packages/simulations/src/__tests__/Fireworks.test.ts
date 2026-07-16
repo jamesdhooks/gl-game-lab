@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { ExperienceRegistry } from '@hooksjam/gl-game-lab-engine';
-import { createFireworksConfig, FIREWORKS_DEFAULTS, FIREWORKS_STYLE_MANIFEST, fireworksDefinition } from '../index.js';
-import { FIREWORKS_POINT_FRAGMENT_SHADER, FIREWORKS_POINT_VERTEX_SHADER, FIREWORKS_STEP_SHADER } from '../fireworks/shaders.js';
+import { createFireworksConfig, FIREWORKS_DEFAULTS, FIREWORKS_PARTICLE_EFFECT, FIREWORKS_PARTICLE_SETTING_BINDINGS, FIREWORKS_STYLE_MANIFEST, fireworksDefinition, fireworksPatternCode, resolveFireworkLaunchVelocity } from '../index.js';
+import { FIREWORKS_EVENT_SHADER, FIREWORKS_POINT_FRAGMENT_SHADER, FIREWORKS_POINT_VERTEX_SHADER, FIREWORKS_STEP_SHADER, FIREWORKS_STREAK_VERTEX_SHADER } from '../fireworks/shaders.js';
 
 describe('Fireworks', () => {
   it('registers its modes, tutorial, and maintained styles', () => {
@@ -17,24 +17,47 @@ describe('Fireworks', () => {
     expect(() => createFireworksConfig({ shellFuse: 10 })).toThrow('outside its supported range');
   });
 
-  it('characterizes the legacy radial-only burst and static palette renderer', () => {
-    expect(FIREWORKS_STEP_SHADER).toContain('float angle = hash(seed) * 6.2831853');
-    expect(FIREWORKS_STEP_SHADER).toContain('uSpawnKind > 1.5 ? burst : vec2(0.0)');
-    expect(FIREWORKS_POINT_FRAGMENT_SHADER).toContain('vec3 color = uPalette[index]');
-    expect(FIREWORKS_POINT_VERTEX_SHADER).not.toContain('uParticleLength');
+  it('implements batched patterns, metadata events, and color-over-life rendering', () => {
+    expect(FIREWORKS_STEP_SHADER).toContain('uParticleCommandData');
+    expect(FIREWORKS_STEP_SHADER).toContain('burstVelocity');
+    expect(FIREWORKS_STEP_SHADER).toContain('layout(location=2) out vec4 outMetadata');
+    expect(FIREWORKS_EVENT_SHADER).toContain('uSecondaryCount');
+    expect(FIREWORKS_EVENT_SHADER).toContain('uSparkleCount');
+    expect(FIREWORKS_POINT_FRAGMENT_SHADER).toContain('uPaletteTransition');
+    expect(FIREWORKS_POINT_VERTEX_SHADER).toContain('uMetadataState');
+    expect(FIREWORKS_STREAK_VERTEX_SHADER).toContain('uParticleLength');
   });
 
-  it('documents controls that need behavioral migration', () => {
+  it('exposes contextual primary, secondary, sparkle, color, and render controls', () => {
     const settingKeys = new Set((fireworksDefinition.settings ?? []).map((setting) => setting.key));
-    expect(settingKeys).toEqual(new Set([
+    for (const key of [
       'launchPower', 'launchSpread', 'shellFuse', 'gravity', 'airDrag',
       'burstParticles', 'burstChaos', 'explosionPower', 'secondaryChance', 'secondaryDepth',
       'secondaryScale', 'crackleIntensity', 'particleSize', 'sparkSizeVariability',
       'trailFade', 'bloomStrength', 'autoFinaleRate', 'rawParticleTextureSize',
-    ]));
-    expect(FIREWORKS_STEP_SHADER).toContain('uniform float uSpawnPower');
-    expect(FIREWORKS_STEP_SHADER).toContain('uSpawnPower * radial * asymmetry');
+    ]) expect(settingKeys.has(key)).toBe(true);
+    for (const key of [
+      'burstPattern', 'patternVariation', 'secondaryCount', 'secondaryDelay', 'secondaryInheritance',
+      'secondarySpread', 'secondaryPowerScale', 'terminalSparkleProbability', 'terminalSparkleCount',
+      'terminalSparklePower', 'terminalSparkleLifetime', 'terminalSparkleSize', 'particleLength',
+      'paletteTransition', 'colorMode', 'renderStyle',
+    ]) expect(settingKeys.has(key)).toBe(true);
     expect(FIREWORKS_POINT_FRAGMENT_SHADER).toContain('uniform float uCrackle');
-    expect(FIREWORKS_POINT_FRAGMENT_SHADER).toContain('max(0.25, uCrackle)');
+  });
+
+  it('defines four shared archetypes and all eight deterministic burst pattern codes', () => {
+    expect(FIREWORKS_PARTICLE_EFFECT.archetypes.map((archetype) => archetype.id)).toEqual(['shell', 'primary', 'secondary', 'sparkle']);
+    expect(FIREWORKS_PARTICLE_EFFECT.modules.events).toBe(true);
+    expect(FIREWORKS_PARTICLE_EFFECT.renderRecipes.recipes.map((recipe) => recipe.tier)).toEqual(['basic', 'enhanced', 'ultra']);
+    expect(FIREWORKS_PARTICLE_SETTING_BINDINGS.map((binding) => binding.persistedKey)).toContain('launchPower');
+    expect(['peony', 'ring', 'chrysanthemum', 'willow', 'palm', 'spiral', 'crossette', 'comet'].map(fireworksPatternCode)).toEqual([0, 1, 2, 3, 4, 5, 6, 7]);
+  });
+
+  it('makes launch power measurably scale the solved shell velocity', () => {
+    const low = resolveFireworkLaunchVelocity(100, 700, 300, 200, 1.25, 360, 470);
+    const baseline = resolveFireworkLaunchVelocity(100, 700, 300, 200, 1.25, 360, 940);
+    const high = resolveFireworkLaunchVelocity(100, 700, 300, 200, 1.25, 360, 1_410);
+    expect(Math.hypot(...baseline)).toBeCloseTo(Math.hypot(...low) * 2);
+    expect(Math.hypot(...high)).toBeCloseTo(Math.hypot(...low) * 3);
   });
 });

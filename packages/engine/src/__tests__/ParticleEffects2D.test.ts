@@ -73,12 +73,13 @@ describe('ParticleEffects2D', () => {
     expect(queue.enqueue({
       archetypeId: 'primary', count: 24, position: [10, 20], inheritedVelocity: [2, 3],
       direction: 1, spread: 2, power: 300, seed: 7, paletteSeed: 9,
-      shape: 'spiral', lifetimeScale: 3.5, lifetimeVariability: 0.4,
+      shape: 'spiral', lifetimeScale: 3.5, lifetimeVariability: 0.4, variant: 6,
     })).toBe(true);
     const first = queue.drain();
     expect(first.count).toBe(1);
     expect(first.particleCount).toBe(24);
     expect(first.data.slice(0, 15)).toEqual(new Float32Array([0, 0, 24, 7, 10, 20, 2, 3, 1, 2, 300, 3.5, 7, 9, 0.4]));
+    expect(first.data[15]).toBe(6);
     queue.enqueue({ archetypeId: 'sparkle', count: 4, position: [0, 0], inheritedVelocity: [0, 0], direction: 0, spread: 1, power: 4, seed: 1, paletteSeed: 2 });
     expect(queue.drain()).toBe(first);
     expect(() => queue.setCapacity(64)).toThrow('outside the effect policy');
