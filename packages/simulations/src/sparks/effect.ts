@@ -1,6 +1,11 @@
 import {
   validateParticleEffectDefinition2D,
   validateParticleSettingBindings2D,
+  adaptParticleEffectDefinition2D,
+  compileParticleEffect2D,
+  compileParticleProgram2D,
+  defineParticleEffect2D,
+  particleGraph2D,
   type ParticleEffectDefinition2D,
   type ParticleSettingBinding2D,
 } from '@hooksjam/gl-game-lab-engine';
@@ -83,3 +88,31 @@ const bindings: readonly ParticleSettingBinding2D[] = [
 ];
 
 export const SPARKS_PARTICLE_SETTING_BINDINGS = validateParticleSettingBindings2D(SPARKS_PARTICLE_EFFECT, bindings);
+
+const sparksGraphBase = adaptParticleEffectDefinition2D(SPARKS_PARTICLE_EFFECT);
+const sparksEmitter = (id: string, archetypeId: string, importance: 'critical' | 'primary' | 'secondary') => ({
+  id, archetypeId, timeline: { manual: true as const }, source: { kind: 'point' as const },
+  transform: { space: 'scene' as const }, limits: { importance, maxPerFrame: 500_000 },
+});
+
+/** Authoring graph used by the compiled particle runtime; legacy exports remain stable during visual-parity migration. */
+export const SPARKS_PARTICLE_GRAPH = defineParticleEffect2D({
+  ...sparksGraphBase,
+  emitters: [
+    sparksEmitter('core-contact', 'core', 'critical'),
+    sparksEmitter('welding', 'primary', 'primary'),
+    sparksEmitter('pinwheel', 'primary', 'primary'),
+    sparksEmitter('shower', 'primary', 'primary'),
+    sparksEmitter('collision-bounce', 'bounce', 'secondary'),
+  ],
+  graph: {
+    root: particleGraph2D.parallel(
+      particleGraph2D.gate({ kind: 'signal', signal: 'weld' }, particleGraph2D.parallel(particleGraph2D.emit('core-contact'), particleGraph2D.emit('welding'))),
+      particleGraph2D.gate({ kind: 'signal', signal: 'pinwheel' }, particleGraph2D.emit('pinwheel')),
+      particleGraph2D.gate({ kind: 'signal', signal: 'shower' }, particleGraph2D.emit('shower')),
+      particleGraph2D.gate({ kind: 'particle-collision', archetypeId: 'primary' }, particleGraph2D.emit('collision-bounce')),
+    ),
+  },
+});
+
+export const SPARKS_PARTICLE_PROGRAM = compileParticleProgram2D(compileParticleEffect2D(SPARKS_PARTICLE_GRAPH));
