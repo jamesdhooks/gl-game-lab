@@ -111,10 +111,25 @@ describe('EngineParticleEffects2D', () => {
     expect(backend.resources[0]!.emissions).toHaveLength(1);
     expect(backend.resources[1]!.emissions).toHaveLength(1);
     first.dispose();
-    expect(backend.resources[0]!.disposed).toBe(true);
+    expect(backend.resources[0]!.disposed).toBe(false);
     expect(backend.resources[1]!.disposed).toBe(false);
     runtime.dispose();
+    expect(backend.resources[0]!.disposed).toBe(true);
     expect(backend.resources[1]!.disposed).toBe(true);
+  });
+
+  it('prewarms and reuses isolated backend resources without reallocating', () => {
+    const backend = new TestBackend(); const runtime = new EngineParticleEffects2D(backend);
+    const program = compileParticleProgram2D(compileParticleEffect2D(adaptParticleEffectDefinition2D(definition)));
+    runtime.register(program); runtime.prewarm('runtime-test');
+    expect(backend.resources).toHaveLength(1);
+    const first = runtime.createInstance('runtime-test');
+    expect(backend.resources).toHaveLength(1);
+    first.dispose();
+    const second = runtime.createInstance('runtime-test');
+    expect(backend.resources).toHaveLength(1);
+    second.dispose(); runtime.dispose();
+    expect(backend.resources[0]!.disposed).toBe(true);
   });
 
   it('falls back internally when the preferred backend fails', () => {

@@ -26,7 +26,7 @@ export function ParticleBenchmarkLab(): JSX.Element {
 function createParticleBenchmarkPlugin(program:CompiledParticleProgram2D,capacity:number,tier:ParticleRenderTier2D):EnginePlugin{
   return {id:'gl-game-lab.demo.particle-benchmark',version:'1.0.0',dependencies:[{id:'gl-game-lab.render-webgl2'}],install:(context)=>{
     const effects=context.get(EngineParticleEffects),gpu=context.get(EngineGpu2D),schedule=context.get(EngineSchedule);
-    effects.register(program,{capacity});const instance=effects.createInstance(program.effect.source.id,{seed:0x5eed,qualityTier:tier});
+    effects.register(program,{capacity});effects.prewarm(program.effect.source.id);const instance=effects.createInstance(program.effect.source.id,{seed:0x5eed,qualityTier:tier});
     const emitterId=program.effect.source.emitters[0]!.id,emitter=instance.emitter(emitterId);let elapsed=0,seed=1;
     instance.setPalette({revision:1,colors:[[1,.35,.08],[1,.85,.2],[.25,.65,1],[.85,.25,1]]});
     if(program.effect.source.id==='orbital-shrapnel')instance.setColliders({revision:1,circles:[{x:640,y:360,radius:54,mode:'kill'}]});

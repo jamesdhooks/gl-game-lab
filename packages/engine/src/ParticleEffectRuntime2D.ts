@@ -217,6 +217,7 @@ export interface ParticleEffectsDiagnostics2D {
 
 export interface ParticleEffects2D {
   register(program: CompiledParticleProgram2D, options?: { readonly capacity?: number }): void;
+  prewarm(effectId: string, count?: number): void;
   replace(program: CompiledParticleProgram2D): void;
   createInstance(effectId: string, options?: ParticleEffectInstanceOptions2D): ParticleEffectInstance2D;
   update(deltaSeconds: number): void;
@@ -229,6 +230,7 @@ interface ProgramRecord {
   program: CompiledParticleProgram2D;
   capacity: number;
   instances: Set<RuntimeParticleEffectInstance2D>;
+  pooled: ParticleEffectBackendResource2D[];
 }
 
 const DEFAULT_TRANSFORM: ParticleTransform2D = Object.freeze({ position: [0, 0] as const, rotation: 0, scale: [1, 1] as const });
@@ -248,7 +250,15 @@ export class EngineParticleEffects2D implements ParticleEffects2D {
     if (this.programs.has(id)) throw new Error(`Particle effect program is already registered: ${id}`);
     const policy=program.effect.source.capacity, capacity=options.capacity??policy.default;
     if(!Number.isSafeInteger(capacity)||capacity<policy.min||capacity>policy.max)throw new Error(`Particle effect capacity for ${id} is outside its compiled policy`);
-    this.programs.set(id, { program, capacity, instances: new Set() });
+    this.programs.set(id, { program, capacity, instances: new Set(), pooled: [] });
+  }
+
+  prewarm(effectId: string, count = 1): void {
+    this.assertUsable();
+    const record = this.programs.get(effectId);
+    if (!record) throw new Error(`Unknown compiled particle effect: ${effectId}`);
+    if (!Number.isSafeInteger(count) || count < 0 || count > 8) throw new Error('Particle effect prewarm count must be an integer between 0 and 8');
+    while (record.pooled.length < count) record.pooled.push(this.backend.create(record.program, record.capacity));
   }
 
   replace(program: CompiledParticleProgram2D): void {
@@ -256,6 +266,7 @@ export class EngineParticleEffects2D implements ParticleEffects2D {
     const id = program.effect.source.id;
     const previous = this.programs.get(id);
     if (!previous) { this.register(program); return; }
+    for (const resource of previous.pooled.splice(0)) resource.dispose();
     previous.program = program;
     for (const instance of previous.instances) {
       const replacement = this.backend.create(program, previous.capacity);
@@ -268,8 +279,8 @@ export class EngineParticleEffects2D implements ParticleEffects2D {
     const record = this.programs.get(effectId);
     if (!record) throw new Error(`Unknown compiled particle effect: ${effectId}`);
     const instance = new RuntimeParticleEffectInstance2D(
-      this.nextInstanceId++, record.program, this.backend.create(record.program, record.capacity), options,
-      (id) => { this.removeInstance(effectId, id); },
+      this.nextInstanceId++, record.program, record.pooled.pop() ?? this.backend.create(record.program, record.capacity), options,
+      (id, resource) => { this.removeInstance(effectId, id, resource); },
       (referenceId) => { const child = this.createInstance(referenceId); child.start(); },
     );
     this.instances.set(instance.id, instance);
@@ -313,14 +324,18 @@ export class EngineParticleEffects2D implements ParticleEffects2D {
   dispose(): void {
     if (this.disposed) return;
     for (const instance of [...this.instances.values()]) instance.dispose();
+    for (const record of this.programs.values()) for (const resource of record.pooled.splice(0)) resource.dispose();
     this.instances.clear(); this.programs.clear(); this.disposed = true;
   }
 
-  private removeInstance(effectId: string, id: number): void {
+  private removeInstance(effectId: string, id: number, resource: ParticleEffectBackendResource2D): void {
     const instance = this.instances.get(id);
-    if (!instance) return;
+    if (!instance) { resource.dispose(); return; }
     this.instances.delete(id);
-    this.programs.get(effectId)?.instances.delete(instance);
+    const record = this.programs.get(effectId);
+    record?.instances.delete(instance);
+    resource.clear();
+    if (record && record.pooled.length < 2) record.pooled.push(resource); else resource.dispose();
   }
 
   private assertUsable(): void { if (this.disposed) throw new Error('Particle effects runtime is disposed'); }
@@ -387,7 +402,7 @@ class RuntimeParticleEffectInstance2D implements ParticleEffectInstance2D {
     program: CompiledParticleProgram2D,
     backend: ParticleEffectBackendResource2D,
     options: ParticleEffectInstanceOptions2D,
-    private readonly onDispose: (id: number) => void,
+    private readonly onDispose: (id: number, resource: ParticleEffectBackendResource2D) => void,
     onReference: (effectId: string) => void,
   ) {
     this.program = program; this.backend = backend; this.seed = options.seed ?? mixSeed(id, 0x9e3779b9);
@@ -410,6 +425,7 @@ class RuntimeParticleEffectInstance2D implements ParticleEffectInstance2D {
     );
     backend.setPalette(this.palette);
     backend.setParameters?.(this.parameters);
+    backend.setColliders?.({ revision: 0, circles: [], capsules: [] });
   }
 
   get isAdvancing(): boolean { return this.statusValue === 'running' || this.statusValue === 'draining'; }
@@ -471,7 +487,7 @@ class RuntimeParticleEffectInstance2D implements ParticleEffectInstance2D {
     return Object.freeze({ id: this.id, effectId: this.program.effect.source.id, status: this.statusValue, elapsed: this.elapsed, seed: this.seed, timescale: this.timescale, qualityTier: this.tier, activeEmitters: this.emitters.reduce((count, emitter) => count + Number(emitter.active), 0) });
   }
   diagnostics(): ParticleEffectBackendDiagnostics2D { return this.backend.diagnostics(); }
-  dispose(): void { if (this.statusValue === 'disposed') return; this.statusValue = 'disposed'; this.backend.dispose(); this.onDispose(this.id); }
+  dispose(): void { if (this.statusValue === 'disposed') return; this.statusValue = 'disposed'; this.onDispose(this.id, this.backend); }
 
   updateBackend(deltaSeconds: number): void { this.backend.update(deltaSeconds, this.timescale); }
   renderBackend(target: GpuRenderTarget2D): void { this.backend.render(target, this.tier); }
