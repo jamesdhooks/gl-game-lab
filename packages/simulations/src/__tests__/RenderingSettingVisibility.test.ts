@@ -63,20 +63,22 @@ const cases: readonly [string, readonly ExperienceSetting[], StyleExpectation][]
   }],
   ['Sparks', SPARKS_SETTINGS, {
     basic: ['rawParticleTextureSize'],
-    enhanced: ['rawParticleTextureSize'],
-    ultra: ['trailFade', 'bloomStrength', 'rawParticleTextureSize'],
+    enhanced: ['trailContinuity', 'heatRadius', 'rawParticleTextureSize'],
+    ultra: ['trailFade', 'trailContinuity', 'bloomStrength', 'heatRadius', 'rawParticleTextureSize'],
   }],
   ['Splash PIC/FLIP', SPLASH_MPM_SETTINGS, {
     basic: ['opacity'],
     enhanced: [
       'surfaceSmoothing', 'opacity', 'enhancedQuality', 'enhancedSplatSize', 'enhancedDepth', 'enhancedEdge',
       'liquidFieldScale', 'liquidSurfaceThreshold', 'liquidEdgeTightness', 'liquidEdgeSoftness',
-      'liquidSplatDensity', 'liquidParticleRadius', 'liquidRefraction', 'liquidGloss',
+      'liquidSplatDensity', 'liquidParticleRadius', 'fluidColorMode', 'fluidColorStrength',
+      'liquidRefraction', 'liquidGloss',
     ],
     ultra: [
       'surfaceSmoothing', 'opacity', 'enhancedQuality', 'enhancedSplatSize', 'enhancedDepth', 'enhancedEdge',
       'liquidFieldScale', 'liquidSurfaceThreshold', 'liquidEdgeTightness', 'liquidEdgeSoftness',
-      'liquidSplatDensity', 'liquidParticleRadius', 'liquidRefraction', 'liquidGloss',
+      'liquidSplatDensity', 'liquidParticleRadius', 'fluidColorMode', 'fluidColorStrength',
+      'liquidRefraction', 'liquidGloss',
       'liquidFoamStrength', 'liquidBloomStrength', 'liquidHeatShimmer', 'liquidDepthDiffusion',
     ],
   }],
@@ -85,12 +87,12 @@ const cases: readonly [string, readonly ExperienceSetting[], StyleExpectation][]
     enhanced: [
       'fluidGridResolution', 'metaballBlend', 'liquidFieldScale', 'liquidSurfaceThreshold',
       'liquidEdgeTightness', 'liquidEdgeSoftness', 'liquidSplatDensity', 'liquidParticleRadius',
-      'liquidRefraction', 'liquidGloss', 'opacity',
+      'fluidColorMode', 'fluidColorStrength', 'liquidRefraction', 'liquidGloss', 'opacity',
     ],
     ultra: [
       'fluidGridResolution', 'metaballBlend', 'liquidFieldScale', 'liquidSurfaceThreshold',
       'liquidEdgeTightness', 'liquidEdgeSoftness', 'liquidSplatDensity', 'liquidParticleRadius',
-      'liquidRefraction', 'liquidGloss', 'liquidFoamStrength', 'liquidBloomStrength',
+      'fluidColorMode', 'fluidColorStrength', 'liquidRefraction', 'liquidGloss', 'liquidFoamStrength', 'liquidBloomStrength',
       'liquidHeatShimmer', 'liquidDepthDiffusion', 'opacity',
     ],
   }],

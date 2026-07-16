@@ -25,7 +25,9 @@ const numeric = [
   n('bounceSparkLifespan','Lifespan','Spark Profile: Bounce',0,4,.01,.58), n('bounceSparkLifespanVariability','Lifespan Variability','Spark Profile: Bounce',0,1,.01,.44),
   n('bounceSparkSpeedScale','Speed Scale','Spark Profile: Bounce',0,3,.01,.72), n('bounceSparkSpeedVariability','Speed Variability','Spark Profile: Bounce',0,2,.01,0),
   render(n('trailFade','Trail Persistence','Rendering',.72,.992,.004,.952), ['ultra']),
+  render(n('trailContinuity','Trail Continuity','Rendering',0,2,.01,.86), ['enhanced','ultra']),
   render(n('bloomStrength','Bloom Strength','Rendering',.35,7.2,.05,3.85), ['ultra']),
+  render(n('heatRadius','Heat Radius','Rendering',0,130,1,72), ['enhanced','ultra']),
 ] as const;
 
 export const SPARKS_SETTINGS: readonly ExperienceSetting[] = Object.freeze([
