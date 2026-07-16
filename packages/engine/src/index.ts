@@ -217,6 +217,15 @@ export {
   type ParticleValueSource2D,
 } from './ParticleEffectGraph2D.js';
 export {
+  ParticleEffectLibrary2D,
+  effectReferences2D,
+  parseParticleEffect2D,
+  resolveParticleParameters2D,
+  serializeParticleEffect2D,
+  type ParticleEffectAsset2D,
+  type ParticleEffectLibraryDiagnostics2D,
+} from './ParticleEffectAuthoring2D.js';
+export {
   ExperienceRegistry,
   ExperiencePreviewCycleControllerService,
   ExperienceRuntimeControllerService,
