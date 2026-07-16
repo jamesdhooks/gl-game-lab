@@ -1,6 +1,11 @@
 import {
   validateParticleEffectDefinition2D,
   validateParticleSettingBindings2D,
+  adaptParticleEffectDefinition2D,
+  compileParticleEffect2D,
+  compileParticleProgram2D,
+  defineParticleEffect2D,
+  particleGraph2D,
   type ParticleEffectDefinition2D,
   type ParticleSettingBinding2D,
 } from '@hooksjam/gl-game-lab-engine';
@@ -63,6 +68,34 @@ const bindings: readonly ParticleSettingBinding2D[] = [
 ];
 
 export const FIREWORKS_PARTICLE_SETTING_BINDINGS = validateParticleSettingBindings2D(FIREWORKS_PARTICLE_EFFECT, bindings);
+
+const fireworksGraphBase = adaptParticleEffectDefinition2D(FIREWORKS_PARTICLE_EFFECT);
+const fireworksEmitter = (id: string, archetypeId: string, importance: 'critical' | 'primary' | 'secondary' | 'cosmetic') => ({
+  id, archetypeId, timeline: { manual: true as const }, source: { kind: archetypeId === 'shell' ? 'point' as const : 'radial' as const },
+  transform: { space: 'scene' as const },
+  inheritance: { velocity: archetypeId === 'shell' ? 0 : 0.32, palette: true, seed: true, timescale: true },
+  limits: { importance, maxPerFrame: archetypeId === 'primary' ? 16_384 : 4_096, maxGeneration: archetypeId === 'sparkle' ? 3 : 2 },
+});
+
+export const FIREWORKS_PARTICLE_GRAPH = defineParticleEffect2D({
+  ...fireworksGraphBase,
+  emitters: [
+    fireworksEmitter('shell-launch', 'shell', 'critical'),
+    fireworksEmitter('primary-burst', 'primary', 'primary'),
+    fireworksEmitter('secondary-burst', 'secondary', 'secondary'),
+    fireworksEmitter('terminal-sparkle', 'sparkle', 'cosmetic'),
+  ],
+  graph: {
+    root: particleGraph2D.sequence(
+      particleGraph2D.gate({ kind: 'signal', signal: 'launch' }, particleGraph2D.emit('shell-launch')),
+      particleGraph2D.gate({ kind: 'particle-death', archetypeId: 'shell' }, particleGraph2D.emit('primary-burst')),
+      particleGraph2D.gate({ kind: 'particle-age', archetypeId: 'primary', age: 0.48 }, particleGraph2D.emit('secondary-burst')),
+      particleGraph2D.gate({ kind: 'particle-death', archetypeId: 'primary' }, particleGraph2D.emit('terminal-sparkle')),
+    ),
+  },
+});
+
+export const FIREWORKS_PARTICLE_PROGRAM = compileParticleProgram2D(compileParticleEffect2D(FIREWORKS_PARTICLE_GRAPH));
 
 export function fireworksPatternCode(pattern: string): number {
   const index = ['peony', 'ring', 'chrysanthemum', 'willow', 'palm', 'spiral', 'crossette', 'comet'].indexOf(pattern);
