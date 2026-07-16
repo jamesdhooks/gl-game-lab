@@ -179,6 +179,13 @@ export interface ParticlePersistedSettingBinding2D {
   readonly aliases?: readonly string[];
 }
 
+export interface ParticleModuleParameterBinding2D {
+  readonly target: string;
+  readonly parameterId: string;
+  readonly scale?: number;
+  readonly offset?: number;
+}
+
 export interface ParticleBackendRequirements2D {
   readonly metadata: boolean;
   readonly events: boolean;
@@ -199,6 +206,7 @@ export interface ParticleEffectGraph2D {
   readonly quality: ParticleQualityPolicy2D;
   readonly archetypeCapacity?: readonly ParticleArchetypeCapacity2D[];
   readonly persistedBindings?: readonly ParticlePersistedSettingBinding2D[];
+  readonly moduleBindings?: readonly ParticleModuleParameterBinding2D[];
   readonly customModules?: readonly string[];
   readonly fallbackPolicy?: ParticleBackendFallbackPolicy2D;
 }
@@ -387,6 +395,7 @@ export function validateParticleEffectGraph2D(graph: ParticleEffectGraph2D): Par
   }
   validateArchetypeCapacity(graph, archetypes);
   validatePersistedBindings(graph, parameters);
+  validateModuleBindings(graph, parameters, archetypes);
   validateEventCycles(graph);
   validateGraphNode(graph.graph.root, emitters, archetypes, parameters, 'root', 0);
   if (!graph.renderRecipes.recipes.some((entry) => entry.tier === graph.quality.defaultTier)) throw new Error(`Particle effect ${graph.id} quality tier is not rendered`);
@@ -413,6 +422,16 @@ function validatePersistedBindings(graph: ParticleEffectGraph2D, parameters: Rea
       if (keys.has(key)) throw new Error(`Duplicate particle persisted setting key or alias: ${key}`);
       keys.add(key);
     }
+  }
+}
+
+function validateModuleBindings(graph: ParticleEffectGraph2D, parameters: ReadonlySet<string>, archetypes: ReadonlySet<string>): void {
+  const targets=new Set<string>();
+  for(const binding of graph.moduleBindings??[]){
+    if(!parameters.has(binding.parameterId))throw new Error(`Particle module binding references unknown parameter: ${binding.parameterId}`);
+    const match=/^archetype\.([a-z][a-z0-9-]*)\.(motion|collision|appearance)\.[a-z][a-zA-Z0-9.]*$/.exec(binding.target);
+    if(!match||!archetypes.has(match[1]!))throw new Error(`Invalid particle module binding target: ${binding.target}`);
+    if(targets.has(binding.target))throw new Error(`Duplicate particle module binding target: ${binding.target}`);targets.add(binding.target);
   }
 }
 

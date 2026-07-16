@@ -13,6 +13,7 @@ import type {
   ParticlePalette2D,
   ParticleRenderTier2D,
   ParticleRuntimeEmission2D,
+  ParticleParameterValue2D,
 } from '@hooksjam/gl-game-lab-engine';
 
 const COMMAND_CAPACITY = 64;
@@ -200,6 +201,18 @@ class WebGLParticleEffectResource2D implements ParticleEffectBackendResource2D {
     }
   }
 
+  setParameters(parameters: Readonly<Record<string, ParticleParameterValue2D>>): void {
+    for (const binding of this.program.effect.source.moduleBindings ?? []) {
+      const raw=parameters[binding.parameterId]; if(typeof raw!=='number')continue;
+      const value=raw*(binding.scale??1)+(binding.offset??0), parts=binding.target.split('.');
+      const archetypeIndex=this.program.effect.archetypeIds[parts[1]??'']; if(archetypeIndex===undefined)continue;
+      const section=parts[2],field=parts.slice(3).join('.');
+      if(section==='motion') writeBoundMotion(this.archetypeMotion,this.archetypeForce,archetypeIndex,field,value);
+      else if(section==='collision') writeBoundCollision(this.archetypeCollision,archetypeIndex,field,value);
+      else if(section==='appearance') writeBoundAppearance(this.archetypeSize,this.archetypeLength,this.archetypeAlpha,this.archetypeIntensity,archetypeIndex,field,value);
+    }
+  }
+
   setColliders(value: ParticleColliderSet2D): void {
     this.assertUsable(); this.circles.fill(0); this.capsuleA.fill(0); this.capsuleB.fill(0);
     this.circleCount = Math.min(MAX_COLLIDERS, value.circles?.length ?? 0);
@@ -344,3 +357,7 @@ function eventWindowSeconds(archetype: CompiledParticleProgram2D['effect']['sour
 function writeCurve(target: Float32Array, index: number, curve: { readonly start: number; readonly end: number; readonly exponent?: number }): void {
   const offset = index * 4; target[offset] = curve.start; target[offset + 1] = curve.end; target[offset + 2] = curve.exponent ?? 1; target[offset + 3] = 0;
 }
+
+function writeBoundMotion(motion: Float32Array, force: Float32Array, index: number, field: string, value: number): void { const offset=index*4;if(field==='gravity')motion[offset]=value;else if(field==='drag')motion[offset+1]=value;else if(field==='turbulence')motion[offset+2]=value;else if(field==='angularVelocity')motion[offset+3]=value;else if(field==='radialAcceleration')force[offset]=value;else if(field==='tangentialAcceleration')force[offset+1]=value; }
+function writeBoundCollision(target: Float32Array,index:number,field:string,value:number):void{const offset=index*4;if(field==='restitution')target[offset]=value;else if(field==='friction')target[offset+1]=value;else if(field==='lifetimeLoss')target[offset+2]=value;}
+function writeBoundAppearance(size:Float32Array,length:Float32Array,alpha:Float32Array,intensity:Float32Array,index:number,field:string,value:number):void{const [curve,component]=field.split('.');const target=curve==='size'?size:curve==='length'?length:curve==='alpha'?alpha:curve==='intensity'?intensity:undefined;if(!target)return;const slot=component==='start'?0:component==='end'?1:component==='exponent'?2:-1;if(slot>=0)target[index*4+slot]=value;}

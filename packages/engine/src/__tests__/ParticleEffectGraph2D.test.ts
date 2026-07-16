@@ -78,4 +78,11 @@ describe('ParticleEffectGraph2D', () => {
       emitters: [{ ...base.emitters[0]!, initialization: { power: { kind: 'parameter', parameterId: 'missing' } } }],
     })).toThrow('unknown parameter');
   });
+
+  it('validates typed module parameter bindings', () => {
+    const base = adaptParticleEffectDefinition2D(legacy);
+    const parameterized = { ...base, parameters: [{ id: 'gravity', kind: 'number' as const, defaultValue: 9.8 }], moduleBindings: [{ target: 'archetype.spark.motion.gravity', parameterId: 'gravity' }] };
+    expect(compileParticleEffect2D(defineParticleEffect2D(parameterized)).source.moduleBindings).toHaveLength(1);
+    expect(() => defineParticleEffect2D({ ...parameterized, moduleBindings: [{ target: 'archetype.missing.motion.gravity', parameterId: 'gravity' }] })).toThrow('Invalid particle module binding');
+  });
 });

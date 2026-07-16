@@ -98,6 +98,7 @@ export interface ParticleEffectBackendDiagnostics2D extends ParticleEffectDiagno
 export interface ParticleEffectBackendResource2D {
   emit(emission: ParticleRuntimeEmission2D): void;
   setPalette(palette: ParticlePalette2D): void;
+  setParameters?(parameters: Readonly<Record<string, ParticleParameterValue2D>>): void;
   setColliders?(colliders: ParticleColliderSet2D): void;
   update(deltaSeconds: number, timescale: number): void;
   render(target: GpuRenderTarget2D, tier: ParticleRenderTier2D): void;
@@ -141,6 +142,7 @@ class RecoveringParticleEffectBackendResource2D implements ParticleEffectBackend
   ) { this.resource = preferred.create(program, capacity); this.fallbackCount = initialFallbackCount; }
   emit(value: ParticleRuntimeEmission2D): void { this.invoke((resource) => { resource.emit(value); }); }
   setPalette(value: ParticlePalette2D): void { this.invoke((resource) => { resource.setPalette(value); }); }
+  setParameters(value: Readonly<Record<string, ParticleParameterValue2D>>): void { this.invoke((resource) => { resource.setParameters?.(value); }); }
   setColliders(value: ParticleColliderSet2D): void { this.invoke((resource) => { resource.setColliders?.(value); }); }
   update(deltaSeconds: number, timescale: number): void { this.invoke((resource) => { resource.update(deltaSeconds, timescale); }); }
   render(target: GpuRenderTarget2D, tier: ParticleRenderTier2D): void { this.invoke((resource) => { resource.render(target, tier); }); }
@@ -413,6 +415,7 @@ class RuntimeParticleEffectInstance2D implements ParticleEffectInstance2D {
       this.seed,
     );
     backend.setPalette(this.palette);
+    backend.setParameters?.(this.parameters);
   }
 
   get isAdvancing(): boolean { return this.statusValue === 'running' || this.statusValue === 'draining'; }
@@ -464,7 +467,7 @@ class RuntimeParticleEffectInstance2D implements ParticleEffectInstance2D {
   }
 
   setTransform(transform: ParticleTransform2D): void { this.assertUsable(); validateTransform(transform); this.transform = transform; }
-  setParameter(name: string, value: ParticleParameterValue2D): void { this.assertUsable(); this.parameters = { ...resolveParticleParameters2D(this.program.effect.source, { ...this.parameters, [name]: value }) }; }
+  setParameter(name: string, value: ParticleParameterValue2D): void { this.assertUsable(); this.parameters = { ...resolveParticleParameters2D(this.program.effect.source, { ...this.parameters, [name]: value }) }; this.backend.setParameters?.(this.parameters); }
   setPalette(palette: ParticlePalette2D): void { this.assertUsable(); this.palette = palette; this.backend.setPalette(palette); }
   setColliders(colliders: ParticleColliderSet2D): void { this.assertUsable(); this.backend.setColliders?.(colliders); }
   setTimescale(value: number): void { this.assertUsable(); this.timescale = validateTimescale(value); }
@@ -492,7 +495,7 @@ class RuntimeParticleEffectInstance2D implements ParticleEffectInstance2D {
 
   replaceProgram(program: CompiledParticleProgram2D, backend: ParticleEffectBackendResource2D): void {
     if (program.effect.abiHash !== this.program.effect.abiHash) throw new Error(`Hot reload of ${program.effect.source.id} changed its particle ABI; restart its instances`);
-    this.program = program; this.backend = backend; this.parameters = { ...resolveParticleParameters2D(program.effect.source, this.parameters) }; backend.setPalette(this.palette);
+    this.program = program; this.backend = backend; this.parameters = { ...resolveParticleParameters2D(program.effect.source, this.parameters) }; backend.setPalette(this.palette); backend.setParameters?.(this.parameters);
   }
 
   private advanceEmitter(emitter: EmitterRuntime, delta: number): void {

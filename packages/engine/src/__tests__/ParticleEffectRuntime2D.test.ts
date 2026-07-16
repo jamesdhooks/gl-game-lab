@@ -20,8 +20,10 @@ class TestResource implements ParticleEffectBackendResource2D {
   updates = 0;
   renders = 0;
   transferred = false;
+  parameters: Readonly<Record<string, unknown>> = {};
   emit(emission: ParticleRuntimeEmission2D): void { this.emissions.push({ ...emission }); }
   setPalette(_palette: ParticlePalette2D): void {}
+  setParameters(parameters: Readonly<Record<string, import('../index.js').ParticleParameterValue2D>>): void { this.parameters = parameters; }
   update(): void { this.updates += 1; }
   render(_target: GpuRenderTarget2D, _tier: ParticleRenderTier2D): void { this.renders += 1; }
   clear(): void { this.emissions = []; }
@@ -46,7 +48,7 @@ describe('EngineParticleEffects2D', () => {
   it('owns instance lifecycle, timeline emission, update, and render', () => {
     const backend = new TestBackend();
     const runtime = new EngineParticleEffects2D(backend);
-    const graph = adaptParticleEffectDefinition2D(definition);
+    const graph = { ...adaptParticleEffectDefinition2D(definition), parameters: [{ id: 'power', kind: 'number' as const, defaultValue: 1, min: 0, max: 10 }] };
     const emitter = { ...graph.emitters[0]!, timeline: { duration: 1, rate: { kind: 'constant' as const, value: 10 } } };
     runtime.register(compileParticleProgram2D(compileParticleEffect2D({ ...graph, emitters: [emitter] })));
     const instance = runtime.createInstance('runtime-test', { seed: 4 });
@@ -62,7 +64,7 @@ describe('EngineParticleEffects2D', () => {
 
   it('supports manual emission, signals, parameters, and deterministic restart', () => {
     const backend = new TestBackend(); const runtime = new EngineParticleEffects2D(backend);
-    const graph = adaptParticleEffectDefinition2D(definition);
+    const graph = { ...adaptParticleEffectDefinition2D(definition), parameters: [{ id: 'power', kind: 'number' as const, defaultValue: 1, min: 0, max: 10 }] };
     runtime.register(compileParticleProgram2D(compileParticleEffect2D(graph)));
     const instance = runtime.createInstance('runtime-test', { seed: 10 });
     instance.emit('spark', { count: 7, power: 3 });
@@ -70,6 +72,8 @@ describe('EngineParticleEffects2D', () => {
     expect(backend.resources[0]!.emissions[0]!.seed).toEqual(expect.any(Number));
     instance.restart(99); expect(instance.state()).toMatchObject({ status: 'running', seed: 99 });
     expect(() => instance.setTimescale(20)).toThrow('between 0 and 16');
+    instance.setParameter('power', 3);
+    expect(backend.resources[0]!.parameters).toMatchObject({ power: 3 });
     const handle = instance.emitter('spark');
     expect(handle).toBe(instance.emitter('spark'));
     handle.writer().position(12, 18).count(3).power(7).submit();

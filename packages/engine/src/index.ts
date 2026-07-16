@@ -217,6 +217,7 @@ export {
   type ParticleParameterKind2D,
   type ParticleParameterValue2D,
   type ParticlePersistedSettingBinding2D,
+  type ParticleModuleParameterBinding2D,
   type ParticleOverflowPolicy2D,
   type ParticleQualityPolicy2D,
   type ParticleSpawnSource2D,
