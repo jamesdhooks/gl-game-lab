@@ -83,6 +83,28 @@ export interface GpuParticleSystem2DOptions {
   readonly renderPasses?: Readonly<Record<string, GpuParticleRenderPass2DOptions>>;
   readonly blend?: 'opaque' | 'alpha' | 'additive' | 'multiply';
   readonly trails?: boolean;
+  /** Enables one-pass spawning from a compact RGBA32F command texture. */
+  readonly commandCapacity?: number;
+}
+
+export interface GpuParticleCommandBatch2D {
+  /** Packed commands, exactly 16 floats per command. */
+  readonly data: Float32Array;
+  readonly count: number;
+  /** Optional diagnostic count of particles represented by the commands. */
+  readonly particleCount?: number;
+}
+
+export interface GpuParticleSystemDiagnostics2D {
+  readonly commandCapacity: number;
+  readonly queuedCommands: number;
+  readonly droppedCommands: number;
+  readonly spawnedParticles: number;
+  readonly simulationPasses: number;
+  readonly renderPasses: number;
+  readonly uploadBytes: number;
+  readonly contextGeneration: number;
+  readonly rebuildCount: number;
 }
 
 export interface GpuParticleRenderPass2DOptions {
@@ -100,11 +122,13 @@ export interface GpuParticleSystem2D {
   clear(): void;
   uploadSeed(seed: GpuParticleSeed2D): void;
   step(uniforms?: GpuUniforms2D | GpuUniformBinder2D): void;
+  stepBatch(batch: GpuParticleCommandBatch2D, uniforms?: GpuUniforms2D | GpuUniformBinder2D): void;
   render(target: GpuRenderTarget2D, uniforms?: GpuUniforms2D | GpuUniformBinder2D): void;
   renderPass(id: string, target: GpuRenderTarget2D, uniforms?: GpuUniforms2D | GpuUniformBinder2D): void;
   beginTrails(width: number, height: number, fade: number): GpuRenderTarget2D;
   compositeTrails(target: GpuRenderTarget2D, background: readonly [number, number, number], bloom: number): void;
   clearTrails(): void;
+  diagnostics(): GpuParticleSystemDiagnostics2D;
   dispose(): void;
 }
 

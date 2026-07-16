@@ -19,6 +19,8 @@ import type {
   GpuParticleGridUpdateOptions2D,
   GpuParticleSystem2D,
   GpuParticleSystem2DOptions,
+  GpuParticleCommandBatch2D,
+  GpuParticleSystemDiagnostics2D,
   Gpu2DCapabilities,
   GpuParticleGridValidation2D,
   GpuRenderTarget2D,
@@ -43,6 +45,7 @@ import type { GpuFrameRenderPass, GpuRenderPassQueue } from './GpuRenderPassQueu
 import type { RestorableResourceOwner } from './RestorableResourceOwner.js';
 import type { WebGL2Device } from './WebGL2Device.js';
 import { TrailFeedbackRenderer } from './TrailFeedbackRenderer.js';
+import { GpuParticleCommandBuffer, GPU_PARTICLE_COMMAND_CAPACITY, GPU_PARTICLE_COMMAND_FLOATS } from './GpuParticleCommandBuffer.js';
 
 interface FieldBundle {
   readonly state: GpuFieldState;
@@ -56,6 +59,7 @@ interface ParticleBundle {
   readonly points: GpuParticleRenderer;
   readonly renderPasses: ReadonlyMap<string, GpuParticleRenderer>;
   readonly trails: TrailFeedbackRenderer | undefined;
+  readonly commands: GpuParticleCommandBuffer;
 }
 
 interface ParticleGridBundle {
@@ -136,6 +140,12 @@ class WebGLGpuParticleSystem implements GpuParticleSystem2D {
   private disposed = false;
   private currentGeneration = 0;
   private retainedSeed: GpuParticleSeed2D | undefined;
+  private queuedCommands = 0;
+  private droppedCommands = 0;
+  private spawnedParticles = 0;
+  private simulationPasses = 0;
+  private renderPasses = 0;
+  private uploadedBytes = 0;
 
   constructor(
     device: WebGL2Device,
@@ -178,12 +188,33 @@ class WebGLGpuParticleSystem implements GpuParticleSystem2D {
     const bundle = this.owner.value;
     bundle.stepper.run(bundle.state, (gl, uniform) => { applyBindings(gl, uniform, uniforms); });
     this.countDraw();
+    this.simulationPasses += 1;
+  }
+  stepBatch(batch: GpuParticleCommandBatch2D, uniforms: GpuUniforms2D | GpuUniformBinder2D = {}): void {
+    const bundle = this.owner.value;
+    const normalized = bundle.commands.upload(batch.data, batch.count);
+    const uploadBytes = normalized.requiredFloats * Float32Array.BYTES_PER_ELEMENT;
+    this.queuedCommands += normalized.count;
+    this.droppedCommands += normalized.dropped;
+    this.spawnedParticles += Math.max(0, Math.floor(batch.particleCount ?? 0));
+    this.uploadedBytes += uploadBytes;
+    this.countUpload(uploadBytes);
+    bundle.stepper.run(bundle.state, (gl, uniform) => {
+      bundle.commands.bind(2);
+      gl.uniform1i(uniform('uParticleCommandData'), 2);
+      gl.uniform1i(uniform('uParticleCommandCount'), normalized.count);
+      gl.uniform1i(uniform('uParticleCommandTexels'), 4);
+      applyBindings(gl, uniform, uniforms);
+    });
+    this.countDraw();
+    this.simulationPasses += 1;
   }
   render(target: GpuRenderTarget2D, uniforms: GpuUniforms2D | GpuUniformBinder2D = {}): void {
     const native = requireTarget(target);
     const bundle = this.owner.value;
     bundle.points.render(bundle.state, native, (gl, uniform) => { applyBindings(gl, uniform, uniforms); });
     this.countDraw(bundle.state.capacity);
+    this.renderPasses += 1;
   }
   renderPass(id: string, target: GpuRenderTarget2D, uniforms: GpuUniforms2D | GpuUniformBinder2D = {}): void {
     const native = requireTarget(target);
@@ -192,18 +223,34 @@ class WebGLGpuParticleSystem implements GpuParticleSystem2D {
     if (!pass) throw new Error(`Unknown GPU particle render pass: ${id}`);
     pass.render(bundle.state, native, (gl, uniform) => { applyBindings(gl, uniform, uniforms); });
     this.countDraw(0, bundle.state.capacity * 2);
+    this.renderPasses += 1;
   }
   beginTrails(width: number, height: number, fade: number): GpuRenderTarget2D {
     const trails = requireTrails(this.owner.value);
     const target = new WebGLGpuRenderTarget(trails.beginFrame(width, height, fade));
     this.countDraw();
+    this.renderPasses += 1;
     return target;
   }
   compositeTrails(target: GpuRenderTarget2D, background: readonly [number, number, number], bloom: number): void {
     requireTrails(this.owner.value).composite(requireTarget(target), background, bloom);
     this.countDraw();
+    this.renderPasses += 1;
   }
   clearTrails(): void { this.owner.value.trails?.clear(); }
+  diagnostics(): GpuParticleSystemDiagnostics2D {
+    return Object.freeze({
+      commandCapacity: this.owner.value.commands.capacity,
+      queuedCommands: this.queuedCommands,
+      droppedCommands: this.droppedCommands,
+      spawnedParticles: this.spawnedParticles,
+      simulationPasses: this.simulationPasses,
+      renderPasses: this.renderPasses,
+      uploadBytes: this.uploadedBytes,
+      contextGeneration: this.currentGeneration,
+      rebuildCount: this.currentGeneration,
+    });
+  }
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
@@ -474,7 +521,9 @@ function createParticleBundle(gl: WebGL2RenderingContext, options: GpuParticleSy
     }
     const trails = options.trails ? new TrailFeedbackRenderer(gl) : undefined;
     if (trails) disposers.push(() => { trails.dispose(); });
-    return { state, stepper, points, renderPasses, trails };
+    const commands = new GpuParticleCommandBuffer(gl, options.commandCapacity ?? GPU_PARTICLE_COMMAND_CAPACITY);
+    disposers.push(() => { commands.dispose(); });
+    return { state, stepper, points, renderPasses, trails, commands };
   } catch (error) {
     for (const dispose of disposers.reverse()) dispose();
     throw error;
@@ -482,6 +531,7 @@ function createParticleBundle(gl: WebGL2RenderingContext, options: GpuParticleSy
 }
 
 function disposeParticleBundle(bundle: ParticleBundle): void {
+  bundle.commands.dispose();
   bundle.trails?.dispose();
   for (const pass of bundle.renderPasses.values()) pass.dispose();
   bundle.points.dispose();
@@ -583,7 +633,8 @@ function fieldBytes(options: GpuFieldSystem2DOptions): number {
 function particleBytes(options: GpuParticleSystem2DOptions): number {
   const width = options.width ?? Math.ceil(Math.sqrt(options.capacity));
   const height = options.height ?? Math.ceil(options.capacity / width);
-  return width * height * (options.precision === 'half-float' ? 8 : 16) * 4;
+  return width * height * (options.precision === 'half-float' ? 8 : 16) * 4
+    + (options.commandCapacity ?? GPU_PARTICLE_COMMAND_CAPACITY) * GPU_PARTICLE_COMMAND_FLOATS * Float32Array.BYTES_PER_ELEMENT;
 }
 
 function cloneParticleGridSeed(seed: GpuParticleGridSeed2D): GpuParticleGridSeed2D {
