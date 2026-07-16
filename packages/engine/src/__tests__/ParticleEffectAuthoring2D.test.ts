@@ -5,6 +5,7 @@ import {
   parseParticleEffect2D,
   particleGraph2D,
   resolveParticleParameters2D,
+  resolveParticlePersistedSettings2D,
   serializeParticleEffect2D,
   type ParticleEffectDefinition2D,
 } from '../index.js';
@@ -50,5 +51,17 @@ describe('ParticleEffectAuthoring2D', () => {
     const graph = { ...adaptParticleEffectDefinition2D(legacy), parameters: [{ id: 'power', kind: 'number' as const, defaultValue: 2, min: 0, max: 4 }] };
     expect(resolveParticleParameters2D(graph, { power: 20 })).toEqual({ power: 4 });
     expect(() => resolveParticleParameters2D(graph, { missing: 1 })).toThrow('Unknown particle parameter');
+  });
+
+  it('migrates persisted aliases and reports unknown values visibly', () => {
+    const graph = {
+      ...adaptParticleEffectDefinition2D(legacy),
+      parameters: [{ id: 'rate', kind: 'number' as const, defaultValue: 10, min: 0, max: 100 }],
+      persistedBindings: [{ parameterId: 'rate', key: 'emissionRate', aliases: ['legacyRate'] }],
+    };
+    const resolution = resolveParticlePersistedSettings2D(graph, { legacyRate: 42, obsolete: 3 });
+    expect(resolution.parameters.rate).toBe(42);
+    expect(resolution.migratedAliases).toEqual([{ from: 'legacyRate', to: 'emissionRate' }]);
+    expect(resolution.unknownKeys).toEqual(['obsolete']);
   });
 });

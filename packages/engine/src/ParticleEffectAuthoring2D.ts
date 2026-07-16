@@ -129,6 +129,43 @@ export function resolveParticleParameters2D(
   return Object.freeze(resolved);
 }
 
+export interface ParticlePersistedSettingsResolution2D {
+  readonly parameters: Readonly<Record<string, ParticleParameterValue2D>>;
+  readonly consumedKeys: readonly string[];
+  readonly unknownKeys: readonly string[];
+  readonly migratedAliases: readonly { readonly from: string; readonly to: string }[];
+}
+
+/** Resolves stable scene keys and legacy aliases without silently discarding data. */
+export function resolveParticlePersistedSettings2D(
+  graph: ParticleEffectGraph2D,
+  settings: Readonly<Record<string, ParticleParameterValue2D>>,
+): ParticlePersistedSettingsResolution2D {
+  const overrides: Record<string, ParticleParameterValue2D> = {};
+  const consumed = new Set<string>();
+  const migrated: Array<{ from: string; to: string }> = [];
+  for (const binding of graph.persistedBindings ?? []) {
+    let sourceKey: string | undefined;
+    if (Object.prototype.hasOwnProperty.call(settings, binding.key)) sourceKey = binding.key;
+    else sourceKey = binding.aliases?.find((alias) => Object.prototype.hasOwnProperty.call(settings, alias));
+    if (!sourceKey) continue;
+    overrides[binding.parameterId] = settings[sourceKey]!;
+    consumed.add(sourceKey);
+    if (sourceKey !== binding.key) migrated.push({ from: sourceKey, to: binding.key });
+  }
+  const parameterIds = new Set(graph.parameters.map((parameter) => parameter.id));
+  for (const [key, value] of Object.entries(settings)) {
+    if (consumed.has(key)) continue;
+    if (parameterIds.has(key)) { overrides[key] = value; consumed.add(key); }
+  }
+  return Object.freeze({
+    parameters: resolveParticleParameters2D(graph, overrides),
+    consumedKeys: Object.freeze([...consumed].sort()),
+    unknownKeys: Object.freeze(Object.keys(settings).filter((key) => !consumed.has(key)).sort()),
+    migratedAliases: Object.freeze(migrated),
+  });
+}
+
 export function effectReferences2D(graph: ParticleEffectGraph2D): readonly string[] {
   const references = new Set<string>();
   visitNodes(graph.graph.root, (node) => { if (node.kind === 'effect-reference') references.add(node.effectId); });

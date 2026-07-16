@@ -228,9 +228,11 @@ export {
   effectReferences2D,
   parseParticleEffect2D,
   resolveParticleParameters2D,
+  resolveParticlePersistedSettings2D,
   serializeParticleEffect2D,
   type ParticleEffectAsset2D,
   type ParticleEffectLibraryDiagnostics2D,
+  type ParticlePersistedSettingsResolution2D,
 } from './ParticleEffectAuthoring2D.js';
 export {
   compileParticleProgram2D,
