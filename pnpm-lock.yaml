@@ -172,6 +172,12 @@ importers:
         specifier: workspace:*
         version: link:../engine
 
+  packages/render-webgpu:
+    dependencies:
+      '@hooksjam/gl-game-lab-engine':
+        specifier: workspace:*
+        version: link:../engine
+
   packages/simulations:
     dependencies:
       '@hooksjam/gl-game-lab-core':

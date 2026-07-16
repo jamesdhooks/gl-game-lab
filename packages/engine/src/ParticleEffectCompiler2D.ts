@@ -243,22 +243,43 @@ function buildWgslSimulation(effect: CompiledParticleEffect2D, extensions: reado
   return `struct ParticleA { position: vec2<f32>, age: f32, lifetime: f32 }
 struct ParticleB { velocity: vec2<f32>, rotation: f32, angularVelocity: f32 }
 struct ParticleC { archetype: f32, generation: f32, colorSeed: f32, flags: f32 }
-struct Frame { delta: f32, capacity: u32, viewport: vec2<f32> }
+struct Frame { delta: f32, capacity: u32, viewport: vec2<f32>, commandCount: u32, commandTexels: u32, padding: vec2<u32> }
 @group(0) @binding(0) var<storage, read_write> stateA: array<ParticleA>;
 @group(0) @binding(1) var<storage, read_write> stateB: array<ParticleB>;
 @group(0) @binding(2) var<storage, read_write> stateC: array<ParticleC>;
 @group(0) @binding(3) var<uniform> frame: Frame;
+@group(0) @binding(4) var<storage, read> commandData: array<vec4<f32>>;
+fn hash11(value: f32) -> f32 { return fract(sin(value * 91.3458 + 17.123) * 47453.5453); }
 @compute @workgroup_size(256)
 fn simulate(@builtin(global_invocation_id) gid: vec3<u32>) {
   let i = gid.x;
-  if (i >= frame.capacity || stateA[i].age >= stateA[i].lifetime) { return; }
-  stateA[i].age += frame.delta;
-  stateB[i].velocity.y += ${wgslFloat(effect.source.archetypes[0]?.motion.gravity ?? 0)} * frame.delta;
-  stateB[i].velocity *= exp(-${wgslFloat(effect.source.archetypes[0]?.motion.drag ?? 0)} * frame.delta);
-  stateB[i].rotation += stateB[i].angularVelocity * frame.delta;
-  stateA[i].position += stateB[i].velocity * frame.delta;
-  ${collisions ? 'stateA[i].position = clamp(stateA[i].position, vec2<f32>(0.0), frame.viewport);' : ''}
+  if (i >= frame.capacity) { return; }
+  if (stateA[i].age < stateA[i].lifetime) {
+    stateA[i].age += frame.delta;
+    stateB[i].velocity.y += ${wgslFloat(effect.source.archetypes[0]?.motion.gravity ?? 0)} * frame.delta;
+    stateB[i].velocity *= exp(-${wgslFloat(effect.source.archetypes[0]?.motion.drag ?? 0)} * frame.delta);
+    stateB[i].rotation += stateB[i].angularVelocity * frame.delta;
+    stateA[i].position += stateB[i].velocity * frame.delta;
+    ${collisions ? 'stateA[i].position = clamp(stateA[i].position, vec2<f32>(0.0), frame.viewport);' : ''}
+  }
   ${turbulence ? '// Turbulence is generated from the stable color seed in the backend module.' : ''}
+  for (var commandIndex = 0u; commandIndex < min(frame.commandCount, 64u); commandIndex++) {
+    let offset = commandIndex * frame.commandTexels;
+    let a = commandData[offset];
+    let start = u32(a.y + 0.5);
+    let count = u32(a.z + 0.5);
+    let candidate = (i + frame.capacity - start) % frame.capacity;
+    if (candidate < count) {
+      let b = commandData[offset + 1u]; let c = commandData[offset + 2u]; let d = commandData[offset + 3u];
+      let seed = d.x + f32(candidate) * 1.6180339;
+      let angle = c.x + (hash11(seed) - 0.5) * c.y;
+      let power = c.z * mix(0.72, 1.28, hash11(seed + 2.0));
+      stateA[i] = ParticleA(b.xy, 0.0, c.w * mix(max(0.05, 1.0-d.z), 1.0+d.z, hash11(seed+3.0)));
+      stateB[i] = ParticleB(b.zw + vec2<f32>(cos(angle), sin(angle)) * power, 0.0, 0.0);
+      stateC[i] = ParticleC(a.x, 0.0, d.y + hash11(seed+4.0), 0.0);
+      break;
+    }
+  }
   ${extensions.map((entry) => entry.wgslSimulation ?? '').filter(Boolean).join('\n  ')}
 }`;
 }
