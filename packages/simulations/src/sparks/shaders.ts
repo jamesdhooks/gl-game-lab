@@ -3,7 +3,8 @@ precision highp float;
 in vec2 vUv;
 layout(location=0) out vec4 outPosition;
 layout(location=1) out vec4 outVelocity;
-uniform sampler2D uPositionState; uniform sampler2D uVelocityState; uniform ivec2 uStateSize; uniform int uCapacity;
+layout(location=2) out vec4 outMetadata;
+uniform sampler2D uPositionState; uniform sampler2D uVelocityState; uniform sampler2D uMetadataState; uniform ivec2 uStateSize; uniform int uCapacity;
 uniform float uDt; uniform float uGravity; uniform float uDamping; uniform float uRestitution; uniform float uSurfaceFriction;
 uniform float uBounceLifeDecay; uniform float uBounceBurstChance; uniform float uBounceBurstMinSpeed; uniform float uBounceBurstCount;
 uniform float uBounceBurstCountSpeedScale; uniform float uBounceBurstImpactSpeedScale; uniform float uBounceBurstSpread; uniform float uSparkPower;
@@ -35,11 +36,11 @@ bool readSpawnCommand(int particleId,out vec4 commandA,out vec4 commandB,out vec
 }
 void main(){
   ivec2 cell=ivec2(gl_FragCoord.xy); int id=cell.y*uStateSize.x+cell.x;
-  vec4 position=texelFetch(uPositionState,cell,0); vec4 velocity=texelFetch(uVelocityState,cell,0);
-  if(id>=uCapacity){outPosition=position;outVelocity=velocity;return;}
-  float age=position.z,life=position.w,kind=velocity.z,seed=velocity.w;
+  vec4 position=texelFetch(uPositionState,cell,0); vec4 velocity=texelFetch(uVelocityState,cell,0); vec4 metadata=texelFetch(uMetadataState,cell,0);
+  if(id>=uCapacity){outPosition=position;outVelocity=velocity;outMetadata=metadata;return;}
+  float age=position.z,life=position.w,kind=metadata.x,generation=metadata.y,seed=metadata.z,eventMarker=0.0;
   if(life>0.0){
-    float marker=kind>=.5?fract(kind):0.0; float nextMarker=0.0; kind=kind<.5?kind:floor(kind+.01); float generation=kind; vec2 previous=position.xy;
+    float nextMarker=0.0; vec2 previous=position.xy;
     age+=uDt; velocity.y+=uGravity*uDt; velocity.xy*=exp(-uDamping*uDt);
     if(kind>=.5&&uTurbulence>0.0)velocity.xy=bendVelocity(velocity.xy,turbulenceField(position.xy,age,seed),clamp(uTurbulence*(kind>=2.0?1.32:1.0),0.0,1.0));
     position.xy+=velocity.xy*uDt;
@@ -47,25 +48,26 @@ void main(){
     if(position.x<2.0){position.x=2.0;normal=vec2(1,0);bounced=true;}else if(position.x>uWorldSize.x-2.0){position.x=uWorldSize.x-2.0;normal=vec2(-1,0);bounced=true;}else if(position.y>uWorldSize.y-2.0){position.y=uWorldSize.y-2.0;normal=vec2(0,-1);bounced=true;}
     for(int i=0;i<13;i++){if(i>=uBuildSurfaceCount||bounced)continue;vec4 rail=uBuildSurfaces[i];vec2 start=rail.xy,end=rail.zw,segment=end-start,movement=position.xy-previous;float radius=max(6.0,uBuildRadius+mix(2.0,7.0,clamp(uSimDepth,0.0,1.0)));vec2 closest=closestSegmentParameters(previous,position.xy,start,end);vec2 swept=previous+movement*closest.x;vec2 point=start+segment*closest.y;vec2 delta=swept-point;float distance=length(delta);if(distance<=radius){vec2 segmentNormal=length(segment)>.001?normalize(vec2(-segment.y,segment.x)):vec2(0,-1);vec2 collisionNormal=distance>.001?delta/distance:segmentNormal;if(dot(previous-point,collisionNormal)<0.0)collisionNormal*=-1.0;if(dot(velocity.xy,collisionNormal)>0.0)collisionNormal*=-1.0;normal=collisionNormal;position.xy=point+normal*(radius+.75);bounced=true;}}
     if(bounced){float speed=length(velocity.xy);float restitution=clamp(uRestitution,0.0,1.45);float restitutionT=smoothstep(.08,1.35,restitution);velocity.xy=reflectWithFriction(velocity.xy,normal,uSurfaceFriction)*restitution;velocity.xy=withMinimumSpeed(velocity.xy,normal,speed*mix(.18,.98,restitutionT));vec2 reflected=length(velocity.xy)>.001?normalize(velocity.xy):normal;if(generation>=.5){float remaining=max(0.0,life-age);life=min(life,age+remaining*max(0.0,1.0-clamp(uBounceLifeDecay,0.0,1.0)));}if(generation>=.5&&generation<1.5&&uBounceBurstCount>0.0&&speed>=uBounceBurstMinSpeed&&burstRoll<uBounceBurstChance)nextMarker=encodeMarker(reflected);}
-    if(kind>=.5)kind=floor(kind+.01)+nextMarker;
+    eventMarker=nextMarker;
     if(age>=life||position.y>uWorldSize.y+160.0||(length(velocity.xy)<3.0&&age>life*.82)){life=0.0;age=0.0;velocity.xy=vec2(0);}
   }
   vec4 commandA=vec4(0),commandB=vec4(0),commandC=vec4(0),commandD=vec4(0);int relative=0;
   if(readSpawnCommand(id,commandA,commandB,commandC,commandD,relative)){float spawnKind=commandA.x,spawnShape=commandA.w,spawnCount=commandA.z;vec2 spawnPosition=commandB.xy,spawnVelocity=commandB.zw;float spawnDirection=commandC.x,spawnSpread=commandC.y,spawnPower=commandC.z,lifeScale=commandC.w,spawnSeedBase=commandD.x,spawnPaletteSeed=commandD.y,lifeVariabilityValue=commandD.z;float spawnPattern=spawnShape>8.5?2.0:spawnShape>7.5?1.0:0.0;float slot=float(relative),spawnSeed=spawnSeedBase+slot*19.37,t=(slot+hash(spawnSeed))/max(1.0,spawnCount);float chaos=clamp(uDirectionChaos,0.0,1.0);float angle=spawnDirection+signedHash(spawnSeed+3.0)*spawnSpread*.5;angle+=signedHash(spawnSeed+8.0)*mix(.05,1.08,chaos)*mix(.36,1.0,hash(spawnSeedBase+4.0));angle+=signedHash(spawnSeed+15.0)*PI*chaos*.38;vec2 dir=direction(angle),side=direction(hash(spawnSeed+12.0)*PI*2.0);
     if(spawnPattern>1.5){dir=normalize(vec2(signedHash(spawnSeed+18.0)*mix(.01,.24,chaos),1.0));side=vec2(signedHash(spawnSeed+12.0),hash(spawnSeed+14.0)*.18);}
     else if(spawnPattern>.5){float wheelAngle=t*PI*8.0+uTime*7.5+hash(spawnSeedBase+13.0)*PI*2.0;float wheelSign=signedHash(spawnSeedBase+29.0)<0.0?-1.0:1.0;vec2 radial=direction(wheelAngle),tangent=vec2(-radial.y,radial.x)*wheelSign;dir=normalize(radial*mix(.22,.52,hash(spawnSeed+16.0))+tangent*mix(.86,1.42,hash(spawnSeed+19.0)));side=radial;}
-    kind=spawnKind;seed=spawnPaletteSeed*100000.0+spawnSeed;age=0.0;
+    kind=spawnKind;generation=spawnKind;seed=spawnPaletteSeed*100000.0+spawnSeed;eventMarker=0.0;age=0.0;
     if(kind<.5){life=mix(.72,1.36,hash(spawnSeed+22.0))*lifeScale*lifeVariation(spawnSeed+37.0,lifeVariabilityValue);position.xy=spawnPosition+side*mix(0.0,max(8.0,spawnPower*1.35),hash(spawnSeed+5.0));velocity.xy=spawnVelocity*.018+side*mix(.35,9.0,hash(spawnSeed+9.0));}
     else{float fan=smoothstep(0.0,1.0,t);float speed=spawnPower*mix(.24,.92,hash(spawnSeed+21.0));speed*=mix(.62,1.32,sin(fan*PI));float jitter=spawnPattern>1.5?mix(0.0,7.0,hash(spawnSeed+31.0)):mix(0.0,12.0,hash(spawnSeed+31.0));position.xy=spawnPosition+side*jitter;vec2 inherited=spawnPattern>1.5?vec2(0):spawnVelocity*mix(.08,.22,hash(spawnSeed+41.0));velocity.xy=inherited+dir*speed;if(spawnPattern<=1.5){velocity.xy+=direction(hash(spawnSeed+49.0)*PI*2.0)*spawnPower*chaos*mix(.02,.34,hash(spawnSeed+52.0));velocity.x+=signedHash(spawnSeed+52.0)*spawnPower*mix(.06,.3,chaos);velocity.y+=signedHash(spawnSeed+61.0)*spawnPower*mix(.02,.12,chaos);}life=mix(.85,2.15,hash(spawnSeed+71.0))*lifeScale*lifeVariation(spawnSeed+73.0,lifeVariabilityValue);if(kind>=2.0){life*=.86;velocity.xy*=mix(1.18,1.82,hash(spawnSeed+81.0));}}
   }
-  if(life<=0.0&&uBounceBurstChance>0.0&&uBounceBurstCount>0.0){int capacity=uStateSize.x*uStateSize.y;float base=max(0.0,min(48.0,uBounceBurstCount));for(int attempt=0;attempt<48;attempt++){if(float(attempt)>=base)continue;int parentIndex=(id-4099*(attempt+1))%capacity;if(parentIndex<0)parentIndex+=capacity;ivec2 pc=ivec2(parentIndex%uStateSize.x,parentIndex/uStateSize.x);vec4 pp=texelFetch(uPositionState,pc,0),pv=texelFetch(uVelocityState,pc,0);float parentGeneration=floor(pv.z+.01),marker=fract(pv.z),parentSpeed=length(pv.xy);if(pp.w>0.0&&parentGeneration>=1.0&&parentGeneration<1.5&&marker>.2&&marker<.5&&parentSpeed>=uBounceBurstMinSpeed){float impactT=smoothstep(0.0,max(1.0,uSparkPower*1.35),parentSpeed);float effective=clamp(base*mix(.16,1.0+impactT*max(0.0,uBounceBurstCountSpeedScale),impactT),0.0,48.0);if(float(attempt)>=effective)continue;float probe=float(parentIndex)*.754877666+float(attempt)*19.371+floor(uTime*23.7);vec2 parentDir=decodeMarker(marker);vec2 burstDir=normalize(rotateVector(parentDir,signedHash(probe+29.0)*clamp(uBounceBurstSpread,0.0,3.0)*PI/6.0));float speedVariation=mix(max(.05,1.0-uBounceSparkSpeedVariability),1.0+uBounceSparkSpeedVariability,hash(probe+67.0));float speedScale=max(0.0,uBounceSparkSpeedScale)*mix(.28,1.0,impactT)*(1.0+impactT*max(0.0,uBounceBurstImpactSpeedScale))*speedVariation;float inheritedSpeed=parentSpeed*speedScale*mix(.34,1.18,hash(probe+37.0));float burstSpeed=max(0.0,uSparkPower)*speedScale*mix(.18,1.08,hash(probe+41.0));velocity.xy=burstDir*(inheritedSpeed+burstSpeed)+parentDir*parentSpeed*mix(.02,.18,hash(probe+43.0));position.xy=pp.xy+burstDir*mix(5.0,24.0,hash(probe+47.0));age=0.0;life=mix(.85,2.15,hash(probe+53.0))*max(0.0,uBounceSparkLifespan)*lifeVariation(probe+59.0,uBounceSparkLifespanVariability);kind=parentGeneration+1.0;seed=probe+pv.w*.017+parentGeneration*71.0;break;}}}
-  outPosition=vec4(position.xy,age,life);outVelocity=vec4(velocity.xy,kind,seed);
+  if(life<=0.0&&uBounceBurstChance>0.0&&uBounceBurstCount>0.0){int capacity=uStateSize.x*uStateSize.y;float base=max(0.0,min(48.0,uBounceBurstCount));for(int attempt=0;attempt<48;attempt++){if(float(attempt)>=base)continue;int parentIndex=(id-4099*(attempt+1))%capacity;if(parentIndex<0)parentIndex+=capacity;ivec2 pc=ivec2(parentIndex%uStateSize.x,parentIndex/uStateSize.x);vec4 pp=texelFetch(uPositionState,pc,0),pv=texelFetch(uVelocityState,pc,0),pm=texelFetch(uMetadataState,pc,0);float parentGeneration=pm.y,marker=pm.w,parentSpeed=length(pv.xy);if(pp.w>0.0&&parentGeneration>=1.0&&parentGeneration<1.5&&marker>.2&&marker<.5&&parentSpeed>=uBounceBurstMinSpeed){float impactT=smoothstep(0.0,max(1.0,uSparkPower*1.35),parentSpeed);float effective=clamp(base*mix(.16,1.0+impactT*max(0.0,uBounceBurstCountSpeedScale),impactT),0.0,48.0);if(float(attempt)>=effective)continue;float probe=float(parentIndex)*.754877666+float(attempt)*19.371+floor(uTime*23.7);vec2 parentDir=decodeMarker(marker);vec2 burstDir=normalize(rotateVector(parentDir,signedHash(probe+29.0)*clamp(uBounceBurstSpread,0.0,3.0)*PI/6.0));float speedVariation=mix(max(.05,1.0-uBounceSparkSpeedVariability),1.0+uBounceSparkSpeedVariability,hash(probe+67.0));float speedScale=max(0.0,uBounceSparkSpeedScale)*mix(.28,1.0,impactT)*(1.0+impactT*max(0.0,uBounceBurstImpactSpeedScale))*speedVariation;float inheritedSpeed=parentSpeed*speedScale*mix(.34,1.18,hash(probe+37.0));float burstSpeed=max(0.0,uSparkPower)*speedScale*mix(.18,1.08,hash(probe+41.0));velocity.xy=burstDir*(inheritedSpeed+burstSpeed)+parentDir*parentSpeed*mix(.02,.18,hash(probe+43.0));position.xy=pp.xy+burstDir*mix(5.0,24.0,hash(probe+47.0));age=0.0;life=mix(.85,2.15,hash(probe+53.0))*max(0.0,uBounceSparkLifespan)*lifeVariation(probe+59.0,uBounceSparkLifespanVariability);kind=2.0;generation=parentGeneration+1.0;seed=probe+pm.z*.017+parentGeneration*71.0;eventMarker=0.0;break;}}}
+  outPosition=vec4(position.xy,age,life);outVelocity=vec4(velocity.xy,0.0,0.0);outMetadata=vec4(kind,generation,seed,eventMarker);
 }`;
 export const SPARKS_POINT_VERTEX_SHADER = `#version 300 es
 precision highp float;
 precision highp sampler2D;
 uniform sampler2D uPositionState;
 uniform sampler2D uVelocityState;
+uniform sampler2D uMetadataState;
 uniform ivec2 uStateSize;
 uniform int uParticleCapacity;
 uniform vec2 uCanvasSize;
@@ -109,14 +111,15 @@ void main() {
   ivec2 cell = ivec2(id % uStateSize.x, id / uStateSize.x);
   vec4 position = texelFetch(uPositionState, cell, 0);
   vec4 velocity = texelFetch(uVelocityState, cell, 0);
+  vec4 metadata = texelFetch(uMetadataState, cell, 0);
   float life = position.w;
   float age = position.z;
-  float generation = velocity.z < 0.5 ? velocity.z : floor(velocity.z + 0.01);
+  float generation = metadata.x;
   float lifeT = life > 0.0 ? clamp(age / life, 0.0, 1.0) : 1.0;
   float fade = 0.0;
   if (life > 0.0) {
     if (generation < 0.5) {
-      float flashSeed = fract(sin(velocity.w + 113.0) * 43758.5453123);
+      float flashSeed = fract(sin(metadata.z + 113.0) * 43758.5453123);
       float ignition = smoothstep(0.0, mix(0.018, 0.075, flashSeed), lifeT);
       float flashDecay = pow(max(0.0, 1.0 - lifeT), mix(3.8, 1.45, clamp(uCoreAfterglow, 0.0, 1.0)));
       fade = ignition * flashDecay;
@@ -126,13 +129,13 @@ void main() {
   }
   if (id >= uParticleCapacity || fade <= 0.0) {
     gl_Position = vec4(2.0); gl_PointSize = 0.0;
-    vAlpha = 0.0; vKind = generation; vLifeT = lifeT; vSeed = velocity.w;
+    vAlpha = 0.0; vKind = generation; vLifeT = lifeT; vSeed = metadata.z;
     vSpeed = 0.0; vTrailStretch = 1.0; vLengthT = 0.0; vDirection = vec2(1.0);
     return;
   }
-  float coreBurstSeed = fract(sin(velocity.w + 33.0) * 43758.5453123);
-  float sparkBurstSeed = fract(sin(velocity.w + 71.0) * 43758.5453123);
-  float coreVariance = mix(1.0, mix(0.48, 1.86, fract(sin(velocity.w + 133.0) * 43758.5453123)), clamp(uCoreSizeVariability, 0.0, 1.0));
+  float coreBurstSeed = fract(sin(metadata.z + 33.0) * 43758.5453123);
+  float sparkBurstSeed = fract(sin(metadata.z + 71.0) * 43758.5453123);
+  float coreVariance = mix(1.0, mix(0.48, 1.86, fract(sin(metadata.z + 133.0) * 43758.5453123)), clamp(uCoreSizeVariability, 0.0, 1.0));
   float coreBurst = mix(9.0, 30.0, coreBurstSeed) * max(0.01, uCoreSize) * coreVariance;
   coreBurst *= mix(1.22, 0.26, smoothstep(0.04, 0.94, lifeT));
   float primarySpark = mix(10.0, 30.0, sparkBurstSeed) * mix(1.0, 0.84, smoothstep(0.1, 0.9, lifeT));
@@ -161,7 +164,7 @@ void main() {
   vAlpha = fade;
   vKind = generation;
   vLifeT = lifeT;
-  vSeed = velocity.w;
+  vSeed = metadata.z;
   vSpeed = speed;
   vTrailStretch = speedStretch;
   vLengthT = lengthT;
@@ -248,6 +251,7 @@ precision highp float;
 precision highp sampler2D;
 uniform sampler2D uPositionState;
 uniform sampler2D uVelocityState;
+uniform sampler2D uMetadataState;
 uniform ivec2 uStateSize;
 uniform int uParticleCapacity;
 uniform vec2 uCanvasSize;
@@ -288,11 +292,12 @@ void main() {
   ivec2 texel = ivec2(particleId % uStateSize.x, particleId / uStateSize.x);
   vec4 position = texelFetch(uPositionState, texel, 0);
   vec4 velocity = texelFetch(uVelocityState, texel, 0);
-  float generation = velocity.z < 0.5 ? 0.0 : floor(velocity.z + 0.01);
+  vec4 metadata = texelFetch(uMetadataState, texel, 0);
+  float generation = metadata.x;
   float speed = length(velocity.xy);
   float speedT = clamp(speed / 1400.0, 0.0, 1.0);
   if (particleId >= uParticleCapacity || position.w <= 0.0 || generation < 0.5 || speed < 4.0 || uTrailContinuity <= 0.001) {
-    gl_Position = vec4(2.0); vAlpha = 0.0; vLocal = vec2(0.0); vLifeT = 1.0; vKind = generation; vSeed = velocity.w; vSpeedT = 0.0; return;
+    gl_Position = vec4(2.0); vAlpha = 0.0; vLocal = vec2(0.0); vLifeT = 1.0; vKind = generation; vSeed = metadata.z; vSpeedT = 0.0; return;
   }
   float lifeT = clamp(position.z / max(0.001, position.w), 0.0, 1.0);
   float profileSize = generation >= 2.0 ? uBounceSize : uPrimarySize;
@@ -306,10 +311,10 @@ void main() {
   float trailSeconds = mix(0.0, 0.048, min(1.0, continuity)) * mix(1.0, 1.72, max(0.0, continuity - 1.0)) * lengthControl;
   float maxTrail = mix(0.0, 168.0, continuity * 0.5) * mix(0.86, 1.32, uRenderTier) * lengthControl;
   float trailLength = clamp(speed * trailSeconds, 0.0, maxTrail);
-  if (trailLength <= 0.001) { gl_Position = vec4(2.0); vAlpha = 0.0; vLocal = vec2(0.0); vLifeT = lifeT; vKind = generation; vSeed = velocity.w; vSpeedT = speedT; return; }
+  if (trailLength <= 0.001) { gl_Position = vec4(2.0); vAlpha = 0.0; vLocal = vec2(0.0); vLifeT = lifeT; vKind = generation; vSeed = metadata.z; vSpeedT = speedT; return; }
   vec2 axis = speed > 0.001 ? velocity.xy / speed : vec2(1.0, 0.0);
   vec2 normal = vec2(-axis.y, axis.x);
-  float depth = mix(1.0, mix(0.76, 1.22, sparkRenderHash(velocity.w + 71.0)), clamp(uSimDepth, 0.0, 1.0));
+  float depth = mix(1.0, mix(0.76, 1.22, sparkRenderHash(metadata.z + 71.0)), clamp(uSimDepth, 0.0, 1.0));
   float width = max(0.55, profileSize * mix(0.34, 0.74, uRenderTier) * seedSize * depth);
   vec2 corner = corners[vertexId];
   float along = corner.x;
@@ -323,7 +328,7 @@ void main() {
   vLocal = vec2(along, side);
   vLifeT = lifeT;
   vKind = generation;
-  vSeed = velocity.w;
+  vSeed = metadata.z;
   vSpeedT = speedT;
 }`;
 

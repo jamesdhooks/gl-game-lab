@@ -440,6 +440,7 @@ export function createSparksPlugin(initial: SparksConfig = SPARKS_DEFAULTS, laun
           width: size,
           height: size,
           precision: 'float',
+          metadata: true,
           simulationFragmentSource: SPARKS_STEP_SHADER,
           particleVertexSource: SPARKS_POINT_VERTEX_SHADER,
           particleFragmentSource: SPARKS_POINT_FRAGMENT_SHADER,

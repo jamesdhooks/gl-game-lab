@@ -78,7 +78,10 @@ describe('Sparks', () => {
     expect(SPARKS_PARTICLE_EFFECT.renderRecipes.recipes.map((recipe) => recipe.tier)).toEqual(['basic', 'enhanced', 'ultra']);
     expect(SPARKS_PARTICLE_SETTING_BINDINGS.map((binding) => binding.persistedKey)).toContain('primarySparkLength');
     expect(SPARKS_STEP_SHADER).toContain('uParticleCommandData');
+    expect(SPARKS_STEP_SHADER).toContain('layout(location=2) out vec4 outMetadata');
+    expect(SPARKS_STEP_SHADER).toContain('uMetadataState');
     expect(SPARKS_STEP_SHADER).toContain('commandIndex<64');
     expect(SPARKS_STEP_SHADER).not.toContain('uSpawnActive');
+    expect(SPARKS_STEP_SHADER).not.toContain('fract(pv.z)');
   });
 });
