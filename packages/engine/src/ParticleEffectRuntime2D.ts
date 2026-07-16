@@ -354,6 +354,7 @@ class RuntimeParticleEffectInstance2D implements ParticleEffectInstance2D {
   private palette: ParticlePalette2D;
   private timescale: number;
   private tier: ParticleRenderTier2D;
+  private drainRemaining = 0;
   private readonly emitters: EmitterRuntime[];
   private readonly emitterHandles: Map<string, RuntimeParticleEmitterHandle2D>;
   private readonly scheduler: ParticleGraphScheduler2D;
@@ -425,6 +426,7 @@ class RuntimeParticleEffectInstance2D implements ParticleEffectInstance2D {
     this.assertUsable();
     const emitter = this.emitters.find((entry) => entry.definition.id === emitterId);
     if (!emitter) throw new Error(`Unknown particle emitter: ${emitterId}`);
+    if (this.statusValue === 'idle' || this.statusValue === 'complete') this.statusValue = 'running';
     this.submit(emitter, override.count ?? firstBurstCount(emitter.definition), override);
   }
   emitter(emitterId: string): ParticleEmitterHandle2D {
@@ -454,6 +456,10 @@ class RuntimeParticleEffectInstance2D implements ParticleEffectInstance2D {
     let active = false;
     for (const emitter of this.emitters) { if (emitter.active) { active = true; this.advanceEmitter(emitter, delta); } }
     if (!active && this.statusValue === 'running') this.statusValue = 'draining';
+    if (!active && this.statusValue === 'draining') {
+      this.drainRemaining = Math.max(0, this.drainRemaining - delta);
+      if (this.drainRemaining === 0) this.statusValue = 'complete';
+    }
   }
 
   replaceProgram(program: CompiledParticleProgram2D, backend: ParticleEffectBackendResource2D): void {
@@ -498,6 +504,8 @@ class RuntimeParticleEffectInstance2D implements ParticleEffectInstance2D {
     emission.seed = override.seed ?? mixSeed(this.seed, emitter.index + Math.round(this.elapsed * 1000));
     emission.importance = importanceCode(emitter.definition.limits.importance);
     this.backend.emit(emission);
+    const archetype = this.program.effect.source.archetypes[this.program.effect.archetypeIds[emitter.definition.archetypeId] ?? -1];
+    if (archetype) this.drainRemaining = Math.max(this.drainRemaining, archetype.lifecycle.lifetime * (1 + (archetype.lifecycle.lifetimeVariability ?? 0)));
   }
 
   private activateGraphEmitter(emitterId: string): void {

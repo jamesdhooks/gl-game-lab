@@ -74,6 +74,9 @@ describe('EngineParticleEffects2D', () => {
     expect(handle).toBe(instance.emitter('spark'));
     handle.writer().position(12, 18).count(3).power(7).submit();
     expect(backend.resources[0]!.emissions.at(-1)).toMatchObject({ count: 3, positionX: 12, positionY: 18, power: 7 });
+    expect(instance.state().status).toBe('running');
+    runtime.update(1.1);
+    expect(instance.state().status).toBe('complete');
   });
 
   it('hot replaces compatible programs and rejects use after disposal', () => {
