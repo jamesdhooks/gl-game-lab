@@ -1,5 +1,5 @@
 import { DenseCircleParticleWorld2D } from '@hooksjam/gl-game-lab-physics-2d';
-import type { WaterObstacle } from '../water-tank/WaterTankModel.js';
+import { createWaterTankObstacleLayout, type WaterObstacle } from '../water-tank/WaterTankModel.js';
 export interface SplashMpmTuning {
   readonly maxParticles: number;
   readonly resolution: number;
@@ -298,6 +298,9 @@ export class SplashPicFlipModel {
       radius: r
     });
   }
+  seedObstacles(width: number, height: number, ramps: number, pegs: number, radius: number, seed: number): void {
+    this.obstacles.push(...createWaterTankObstacleLayout(width, height, ramps, pegs, radius, seed));
+  }
   step(dt: number, width: number, height: number, t: SplashMpmTuning) {
     this.configure(t);
     this.world.setBounds(width, height);
@@ -366,6 +369,11 @@ export class SplashPicFlipModel {
       scratch: this.sampleScratch,
     });
     this.foamFrame++;
+  }
+  prepareSnapshotGrid(width: number, height: number, t: SplashMpmTuning): void {
+    this.configure(t);
+    this.world.setBounds(width, height);
+    this.ensureGrid(width, height, t.resolution);
   }
   snapshot(): SplashPicFlipStateSnapshot {
     const count = this.count;

@@ -57,14 +57,14 @@ export const WATER_TANK_SETTINGS: readonly ExperienceSetting[] = Object.freeze([
   m(n('pourRadius', 'Pour Radius', 'Input Mode', 4, 120, 1, 34), [
     'pour'
   ]),
-  m(n('buildRadius', 'Build Radius', 'Input Mode', 6, 48, 1, 18), [
-    'build'
-  ]),
   m(n('interactionRadius', 'Splash Radius', 'Input Mode', 20, 220, 2, 76), [
     'splash'
   ]),
   m(n('interactionStrength', 'Splash Strength', 'Input Mode', 2, 45, 1, 18), [
     'splash'
+  ]),
+  m(n('buildRadius', 'Build Radius', 'Input Mode', 6, 48, 1, 18), [
+    'build'
   ]),
   v(n('metaballBlend', 'Water Surface', r, 0, 1, 0.01, 0.76), ['enhanced', 'ultra']),
   v(n('liquidFieldScale', 'Field Resolution', r, 0.45, 1, 0.01, 0.78), [

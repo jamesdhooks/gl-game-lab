@@ -1,10 +1,16 @@
 import type { Gpu2DService } from '@hooksjam/gl-game-lab-engine';
 import {
+  compareSplashPicFlipMetrics,
   computeSplashPicFlipGridUpdate,
   computeSplashPicFlipParticleToGrid,
   computeSplashPicFlipParticleUpdate,
+  measureSplashPicFlipSnapshot,
+  SplashPicFlipModel,
+  type SplashMpmTuning,
+  type SplashPicFlipMetricDelta,
+  type SplashPicFlipStateSnapshot,
 } from './SplashMpmModel.js';
-import { createSplashGpuImpulse } from './SplashPicFlipBackend.js';
+import { createSplashGpuImpulse, createSplashGpuObstacles, splashSnapshotToGpuParticleGridSeed } from './SplashPicFlipBackend.js';
 
 export interface SplashPicFlipGpuParityResult {
   readonly supported: boolean;
@@ -13,6 +19,7 @@ export interface SplashPicFlipGpuParityResult {
   readonly instancedParticleToGrid: boolean;
   readonly gridUpdate: boolean;
   readonly particleUpdate: boolean;
+  readonly sceneTrajectory: boolean;
   readonly maxParticleToGridError: number | undefined;
   readonly maxInstancedParticleToGridError: number | undefined;
   readonly maxGridUpdateError: number | undefined;
@@ -21,6 +28,10 @@ export interface SplashPicFlipGpuParityResult {
   readonly maxParticleVelocityError: number | undefined;
   readonly maxParticleFoamError: number | undefined;
   readonly maxParticleAffineError: number | undefined;
+  readonly sceneCenterDistance: number | undefined;
+  readonly sceneMomentumRelativeError: number | undefined;
+  readonly sceneKineticEnergyRelativeError: number | undefined;
+  readonly sceneFoamCoverageError: number | undefined;
   readonly reasons: readonly string[];
 }
 
@@ -34,6 +45,7 @@ export function validateSplashPicFlipGpuParity(gpu2D: Gpu2DService): SplashPicFl
       instancedParticleToGrid: false,
       gridUpdate: false,
       particleUpdate: false,
+      sceneTrajectory: false,
       maxParticleToGridError: undefined,
       maxInstancedParticleToGridError: undefined,
       maxGridUpdateError: undefined,
@@ -42,6 +54,10 @@ export function validateSplashPicFlipGpuParity(gpu2D: Gpu2DService): SplashPicFl
       maxParticleVelocityError: undefined,
       maxParticleFoamError: undefined,
       maxParticleAffineError: undefined,
+      sceneCenterDistance: undefined,
+      sceneMomentumRelativeError: undefined,
+      sceneKineticEnergyRelativeError: undefined,
+      sceneFoamCoverageError: undefined,
       reasons: Object.freeze([validation.reason ?? 'GPU particle-grid support is unavailable']),
     });
   }
@@ -173,12 +189,21 @@ export function validateSplashPicFlipGpuParity(gpu2D: Gpu2DService): SplashPicFl
     const instancedParticleToGrid = Number.isFinite(maxInstancedParticleToGridError) && maxInstancedParticleToGridError <= 0.002;
     const gridUpdate = Number.isFinite(maxGridUpdateError) && maxGridUpdateError <= 0.004;
     const particleUpdate = Number.isFinite(maxParticleUpdateError) && maxParticleUpdateError <= 0.006;
+    const sceneTrajectoryDelta = validateSceneTrajectory(gpu2D);
+    const sceneTrajectory = sceneTrajectoryDelta.countEqual && sceneTrajectoryDelta.finite
+      && sceneTrajectoryDelta.centerDistance <= 3.5
+      && sceneTrajectoryDelta.momentumRelativeError <= 0.16
+      && sceneTrajectoryDelta.kineticEnergyRelativeError <= 0.22
+      && sceneTrajectoryDelta.foamCoverageError <= 0.06;
     const reasons: string[] = [];
     if (!seedRoundTrip) reasons.push('GPU particle seed round trip failed');
     if (!particleToGrid) reasons.push(`GPU particle-to-grid parity failed: ${maxParticleToGridError}`);
     if (!instancedParticleToGrid) reasons.push(`GPU instanced particle-to-grid parity failed: ${maxInstancedParticleToGridError}`);
     if (!gridUpdate) reasons.push(`GPU grid update parity failed: ${maxGridUpdateError}`);
     if (!particleUpdate) reasons.push(`GPU particle update parity failed: ${maxParticleUpdateError}`);
+    if (!sceneTrajectory) {
+      reasons.push(`GPU scene trajectory parity failed: center=${formatError(sceneTrajectoryDelta.centerDistance)}, momentum=${formatError(sceneTrajectoryDelta.momentumRelativeError)}, energy=${formatError(sceneTrajectoryDelta.kineticEnergyRelativeError)}, foam=${formatError(sceneTrajectoryDelta.foamCoverageError)}`);
+    }
     return Object.freeze({
       supported: true,
       seedRoundTrip,
@@ -186,6 +211,7 @@ export function validateSplashPicFlipGpuParity(gpu2D: Gpu2DService): SplashPicFl
       instancedParticleToGrid,
       gridUpdate,
       particleUpdate,
+      sceneTrajectory,
       maxParticleToGridError,
       maxInstancedParticleToGridError,
       maxGridUpdateError,
@@ -194,6 +220,10 @@ export function validateSplashPicFlipGpuParity(gpu2D: Gpu2DService): SplashPicFl
       maxParticleVelocityError,
       maxParticleFoamError,
       maxParticleAffineError,
+      sceneCenterDistance: sceneTrajectoryDelta.centerDistance,
+      sceneMomentumRelativeError: sceneTrajectoryDelta.momentumRelativeError,
+      sceneKineticEnergyRelativeError: sceneTrajectoryDelta.kineticEnergyRelativeError,
+      sceneFoamCoverageError: sceneTrajectoryDelta.foamCoverageError,
       reasons: Object.freeze(reasons),
     });
   } catch (error) {
@@ -204,6 +234,7 @@ export function validateSplashPicFlipGpuParity(gpu2D: Gpu2DService): SplashPicFl
       instancedParticleToGrid: false,
       gridUpdate: false,
       particleUpdate: false,
+      sceneTrajectory: false,
       maxParticleToGridError: undefined,
       maxInstancedParticleToGridError: undefined,
       maxGridUpdateError: undefined,
@@ -212,11 +243,117 @@ export function validateSplashPicFlipGpuParity(gpu2D: Gpu2DService): SplashPicFl
       maxParticleVelocityError: undefined,
       maxParticleFoamError: undefined,
       maxParticleAffineError: undefined,
+      sceneCenterDistance: undefined,
+      sceneMomentumRelativeError: undefined,
+      sceneKineticEnergyRelativeError: undefined,
+      sceneFoamCoverageError: undefined,
       reasons: Object.freeze([error instanceof Error ? error.message : String(error)]),
     });
   } finally {
     particleGrid.dispose();
   }
+}
+
+function validateSceneTrajectory(gpu2D: Gpu2DService): SplashPicFlipMetricDelta {
+  const width = 320;
+  const height = 220;
+  const dt = 1 / 60;
+  const frames = 18;
+  const tuning: SplashMpmTuning = Object.freeze({
+    maxParticles: 384,
+    resolution: 42,
+    stiffness: 86,
+    restDensity: 3.2,
+    separation: 0.7,
+    viscosity: 0.18,
+    flipness: 0.88,
+    gravity: 920,
+    radius: 4.2,
+  });
+  const initialModel = new SplashPicFlipModel();
+  initialModel.reset(width, height, tuning);
+  initialModel.seed(width, height, tuning);
+  initialModel.addCircle(width * 0.34, height * 0.64, 22);
+  initialModel.addSegment(width * 0.18, height * 0.82, width * 0.82, height * 0.78, 5);
+  initialModel.splash(width * 0.44, height * 0.38, 46, 2.1, 22, -16);
+  initialModel.step(dt, width, height, tuning);
+  const initialSnapshot = initialModel.snapshot();
+
+  const cpuModel = new SplashPicFlipModel();
+  cpuModel.restore(initialSnapshot, width, height, tuning);
+  for (let frame = 0; frame < frames; frame += 1) {
+    if (frame === 8) cpuModel.splash(width * 0.62, height * 0.36, 38, 1.35, -18, 9);
+    cpuModel.step(dt, width, height, tuning);
+  }
+
+  const stateWidth = Math.max(1, Math.ceil(Math.sqrt(Math.max(1, Math.floor(tuning.maxParticles)))));
+  const stateHeight = Math.max(1, Math.ceil(Math.max(1, Math.floor(tuning.maxParticles)) / stateWidth));
+  const particleGrid = gpu2D.createParticleGridSystem('splash-pic-flip-scene-parity', {
+    capacity: Math.floor(tuning.maxParticles),
+    width: stateWidth,
+    height: stateHeight,
+    gridWidth: initialSnapshot.grid.columns,
+    gridHeight: initialSnapshot.grid.rows,
+  });
+  try {
+    particleGrid.uploadSeed(splashSnapshotToGpuParticleGridSeed(initialSnapshot));
+    particleGrid.setObstacles(createSplashGpuObstacles(initialSnapshot.obstacles, 0));
+    for (let frame = 0; frame < frames; frame += 1) {
+      const impulse = frame === 8 ? createSplashGpuImpulse(width * 0.62, height * 0.36, 38, 1.35, -18, 9) : undefined;
+      particleGrid.step(Object.freeze({
+        cell: initialSnapshot.grid.cell,
+        radius: tuning.radius,
+        dt,
+        stiffness: tuning.stiffness,
+        restDensity: tuning.restDensity,
+        separation: tuning.separation,
+        viscosity: tuning.viscosity,
+        gravity: tuning.gravity,
+        width,
+        height,
+        flipness: tuning.flipness,
+        foamFrame: frame,
+        particleToGridMode: 'instanced-splat',
+        ...(impulse ? { impulses: impulse } : {}),
+      }));
+    }
+    const gpuSnapshot = splashGpuSnapshotToPicFlipSnapshot(particleGrid.debugReadback(), initialSnapshot);
+    return compareSplashPicFlipMetrics(cpuModel.metrics(), measureSplashPicFlipSnapshot(gpuSnapshot));
+  } finally {
+    particleGrid.dispose();
+  }
+}
+
+function splashGpuSnapshotToPicFlipSnapshot(
+  snapshot: ReturnType<ReturnType<Gpu2DService['createParticleGridSystem']>['debugReadback']>,
+  reference: SplashPicFlipStateSnapshot,
+): SplashPicFlipStateSnapshot {
+  const gridLength = reference.grid.columns * reference.grid.rows;
+  return Object.freeze({
+    count: snapshot.count,
+    positions: snapshot.positions,
+    velocities: snapshot.velocities,
+    radii: snapshot.radii,
+    colorSeeds: snapshot.colorSeeds,
+    foam: snapshot.foam,
+    affine: snapshot.affine,
+    obstacles: reference.obstacles,
+    grid: Object.freeze({
+      columns: reference.grid.columns,
+      rows: reference.grid.rows,
+      cell: reference.grid.cell,
+      mass: new Float32Array(gridLength),
+      velocityX: new Float32Array(gridLength),
+      velocityY: new Float32Array(gridLength),
+      previousVelocityX: new Float32Array(gridLength),
+      previousVelocityY: new Float32Array(gridLength),
+      pressure: new Float32Array(gridLength),
+    }),
+  });
+}
+
+function formatError(value: number): string {
+  return Number.isFinite(value) ? value.toFixed(4) : String(value);
 }
 
 function nearly(value: number | undefined, expected: number): boolean {

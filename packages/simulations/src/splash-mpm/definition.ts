@@ -34,16 +34,16 @@ export const splashMpmDefinition: ExperienceDefinition = {
   },
   modes: [
     {
-      id: 'splash',
-      label: 'Splash',
-      icon: '~',
-      description: 'Drag to stir the water.'
-    },
-    {
       id: 'pour',
       label: 'Pour',
       icon: '+',
       description: 'Drag to pour more water.'
+    },
+    {
+      id: 'splash',
+      label: 'Splash',
+      icon: '~',
+      description: 'Drag to stir the water.'
     },
     {
       id: 'build',

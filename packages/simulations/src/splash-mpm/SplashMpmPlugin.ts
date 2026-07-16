@@ -7,7 +7,8 @@ import { resolveSplashPicFlipBackend, SplashPicFlipGpuRuntime, type SplashPicFli
 import { validateSplashPicFlipGpuParity } from './SplashPicFlipGpuParity.js';
 import { SPLASH_PIC_FLIP_CAPACITY, SplashPicFlipModel, type SplashMpmTuning } from './SplashMpmModel.js';
 import { splashPointScale, splashRgb, splashRgba, SPLASH_MPM_STYLE_MANIFEST } from './styles.js';
-export type SplashMpmMode = 'splash' | 'pour' | 'build';
+import { waterTankObstacleLayoutSeed } from '../water-tank/WaterTankModel.js';
+export type SplashMpmMode = 'pour' | 'splash' | 'build';
 export interface SplashMpmController extends ExperienceRuntimeController {
   readonly mode: SplashMpmMode;
   readonly particleCount: number;
@@ -18,6 +19,7 @@ export interface SplashMpmController extends ExperienceRuntimeController {
 }
 export const SplashMpmControllerService = createExtensionToken<SplashMpmController>('gl-game-lab.simulations.splash-mpm.controller');
 export const SPLASH_MPM_PLUGIN_ID = 'gl-game-lab.simulations.splash-mpm';
+const SPLASH_MPM_LAYOUT_SEED = 5398371;
 export function resolveSplashSurfaceParameters(config: SplashMpmConfig, worldWidth = 1280) {
   const renderStyle = splashString(config, 'renderStyle');
   const smoothing = splashNumber(config, 'surfaceSmoothing');
@@ -67,7 +69,7 @@ type Point = {
   readonly y: number;
 };
 export function createSplashMpmPlugin(initial: SplashMpmConfig = SPLASH_MPM_DEFAULTS, launch: ExperienceLaunchOptions = {}): EnginePlugin {
-  let config = initial, mode: SplashMpmMode = launch.modeId === 'pour' || launch.modeId === 'build' ? launch.modeId : 'splash', styleId = validStyle(launch.styleId) ?? SPLASH_MPM_STYLE_MANIFEST.defaultStyleId, width = 1, height = 1, pendingReset = true, time = 0, accumulator = 0, cleanup = (): void => undefined;
+  let config = initial, mode: SplashMpmMode = launch.modeId === 'splash' || launch.modeId === 'build' ? launch.modeId : 'pour', styleId = validStyle(launch.styleId) ?? SPLASH_MPM_STYLE_MANIFEST.defaultStyleId, width = 1, height = 1, pendingReset = true, pendingLayoutRegeneration = true, time = 0, accumulator = 0, layoutGeneration = 0, layoutSeed = waterTankObstacleLayoutSeed(launch.seed ?? SPLASH_MPM_LAYOUT_SEED, 0), cleanup = (): void => undefined;
   let activeBackend: SplashPicFlipBackendKind = 'cpu', obstacleRevision = 0;
   const model = new SplashPicFlipModel(), paths = new Map<number, Point[]>(), previous = new Map<number, Point>(), pointerDelta = new Map<number, Point>();
   const renderedRadii = new Float32Array(SPLASH_PIC_FLIP_CAPACITY);
@@ -80,7 +82,8 @@ export function createSplashMpmPlugin(initial: SplashMpmConfig = SPLASH_MPM_DEFA
       const renderer = context.get(EngineRender2D), gpu = context.get(EngineGpu2D), input = context.get(EngineInput);
       const gpuRuntime = new SplashPicFlipGpuRuntime(gpu, `${SPLASH_MPM_PLUGIN_ID}.pic-flip`);
       const parity = validateSplashPicFlipGpuParity(gpu);
-      const gpuParityValidated = parity.supported && parity.seedRoundTrip && parity.instancedParticleToGrid && parity.gridUpdate && parity.particleUpdate;
+      const gpuParityValidated = parity.supported && parity.seedRoundTrip && parity.instancedParticleToGrid
+        && parity.gridUpdate && parity.particleUpdate && parity.sceneTrajectory;
       cleanup = () => { gpuRuntime.dispose(); };
       applyStyle();
       const controller: SplashMpmController = {
@@ -128,6 +131,7 @@ export function createSplashMpmPlugin(initial: SplashMpmConfig = SPLASH_MPM_DEFA
             'splash.parityInstancedP2G': parity.instancedParticleToGrid,
             'splash.parityGrid': parity.gridUpdate,
             'splash.parityParticle': parity.particleUpdate,
+            'splash.parityScene': parity.sceneTrajectory,
             'splash.parityMaxInstancedP2G': parity.maxInstancedParticleToGridError ?? 'n/a',
             'splash.parityMaxGrid': parity.maxGridUpdateError ?? 'n/a',
             'splash.parityMaxParticle': parity.maxParticleUpdateError ?? 'n/a',
@@ -135,6 +139,10 @@ export function createSplashMpmPlugin(initial: SplashMpmConfig = SPLASH_MPM_DEFA
             'splash.parityMaxVelocity': parity.maxParticleVelocityError ?? 'n/a',
             'splash.parityMaxFoam': parity.maxParticleFoamError ?? 'n/a',
             'splash.parityMaxAffine': parity.maxParticleAffineError ?? 'n/a',
+            'splash.paritySceneCenter': parity.sceneCenterDistance ?? 'n/a',
+            'splash.paritySceneMomentum': parity.sceneMomentumRelativeError ?? 'n/a',
+            'splash.paritySceneEnergy': parity.sceneKineticEnergyRelativeError ?? 'n/a',
+            'splash.paritySceneFoam': parity.sceneFoamCoverageError ?? 'n/a',
             'splash.reasonCount': decision.reasons.length,
             'splash.reasons': [...decision.reasons, ...parity.reasons].join('; ') || 'none',
           });
@@ -155,16 +163,21 @@ export function createSplashMpmPlugin(initial: SplashMpmConfig = SPLASH_MPM_DEFA
           applyStyle();
         },
         setSetting: (key, value) => {
+          const layout = key === 'obstacleRamps' || key === 'obstaclePegs' || key === 'buildRadius';
           config = createSplashMpmConfig({
             ...record(),
             [key]: value
           });
-          if (key === 'resolution' || key === 'maxParticles' || key === 'particleRadius')
+          if (layout) {
+            pendingReset = true;
+            pendingLayoutRegeneration = true;
+          } else if (key === 'resolution' || key === 'maxParticles' || key === 'particleRadius')
             pendingReset = true;
           applyStyle();
         },
         reset: () => {
           pendingReset = true;
+          pendingLayoutRegeneration = true;
         }
       };
       registerSimulationRuntime(context, SplashMpmControllerService, controller, () => cleanup());
@@ -175,10 +188,12 @@ export function createSplashMpmPlugin(initial: SplashMpmConfig = SPLASH_MPM_DEFA
           const w = Math.max(1, renderer.viewport.width), h = Math.max(1, renderer.viewport.height), dt = Math.min(1 / 30, clock.deltaSeconds);
           time += dt;
           if (pendingReset || w !== width || h !== height) {
+            const regenerateLayout = pendingLayoutRegeneration;
             width = w;
             height = h;
-            reset();
+            reset(regenerateLayout);
             pendingReset = false;
+            pendingLayoutRegeneration = false;
           }
           migrateBackendIfNeeded();
           for (const event of input.snapshot.events)
@@ -321,18 +336,25 @@ export function createSplashMpmPlugin(initial: SplashMpmConfig = SPLASH_MPM_DEFA
           });
         }
       });
-      function reset() {
+      function reset(regenerateLayout: boolean) {
         const authored = tuning();
         const t = launch.profile === 'preview' ? { ...authored, maxParticles: Math.min(8192, authored.maxParticles) } : authored;
+        if (regenerateLayout) layoutSeed = waterTankObstacleLayoutSeed(launch.seed ?? SPLASH_MPM_LAYOUT_SEED, layoutGeneration++);
         model.reset(width, height, t);
         model.seed(width, height, t);
-        if (launch.profile === 'preview') {
-          const radius = Math.min(8, splashNumber(config, 'buildRadius'));
-          model.addCircle(width * 0.62, height * 0.44, radius);
-          model.addSegment(width * 0.18, height * 0.66, width * 0.52, height * 0.72, radius);
-        }
+        model.seedObstacles(
+          width,
+          height,
+          Math.floor(splashNumber(config, 'obstacleRamps')),
+          Math.floor(splashNumber(config, 'obstaclePegs')),
+          splashNumber(config, 'buildRadius'),
+          layoutSeed,
+        );
         obstacleRevision += 1;
-        if (activeBackend === 'gpu') gpuRuntime.resetFromSnapshot(model.snapshot(), t);
+        if (activeBackend === 'gpu') {
+          model.prepareSnapshotGrid(width, height, t);
+          gpuRuntime.resetFromSnapshot(model.snapshot(), t);
+        }
         accumulator = 0;
         time = 0;
         paths.clear();
@@ -393,7 +415,9 @@ export function createSplashMpmPlugin(initial: SplashMpmConfig = SPLASH_MPM_DEFA
         const next = backendDecision().backend;
         if (next === activeBackend) return;
         if (next === 'gpu') {
-          gpuRuntime.resetFromSnapshot(model.snapshot(), tuning());
+          const currentTuning = tuning();
+          model.prepareSnapshotGrid(width, height, currentTuning);
+          gpuRuntime.resetFromSnapshot(model.snapshot(), currentTuning);
           activeBackend = 'gpu';
           return;
         }
@@ -405,7 +429,7 @@ export function createSplashMpmPlugin(initial: SplashMpmConfig = SPLASH_MPM_DEFA
         try {
           model.restore(gpuRuntime.snapshot(model.obstacles), width, height, tuning());
         } catch {
-          reset();
+          reset(false);
         }
       }
       function particleCount(): number {
@@ -413,12 +437,17 @@ export function createSplashMpmPlugin(initial: SplashMpmConfig = SPLASH_MPM_DEFA
       }
       function renderGpuFluid(target: GpuRenderTarget2D, style: typeof SPLASH_MPM_STYLE_MANIFEST.styles[number], renderStyle: string): void {
         if (renderStyle !== 'basic') {
+          const surface = resolveSplashSurfaceParameters(config, width);
           gpuRuntime.renderMetaballs(target, {
             worldWidth: width,
             worldHeight: height,
             palette: style.palette.slice(0, 4).map(splashRgb),
             background: splashRgb(style.background),
-            ...resolveSplashSurfaceParameters(config, width),
+            ...surface,
+            ...(renderStyle === 'ultra' ? {
+              thermalContrast: surface.thermalContrast * 0.24,
+              thermalStrength: surface.thermalStrength * 0.34,
+            } : {}),
             time,
             backgroundDepth: 0,
           });
@@ -432,23 +461,6 @@ export function createSplashMpmPlugin(initial: SplashMpmConfig = SPLASH_MPM_DEFA
             paletteMode: 'hashed',
             blend: 'alpha',
             opacity: splashNumber(config, 'opacity'),
-          });
-        }
-        if (renderStyle === 'ultra') {
-          const ultraPalette = style.palette.slice(1, 4).map((color, index) => {
-            const rgb = splashRgb(color);
-            return [rgb[0], rgb[1], rgb[2], 0.1 + index * 0.16] as const;
-          });
-          gpuRuntime.renderParticles(target, {
-            worldWidth: width,
-            worldHeight: height,
-            radiusScale: 1,
-            radiusMode: 'splash-ultra',
-            splashUltraPointScale: splashPointScale(styleId),
-            palette: ultraPalette,
-            paletteMode: 'indexed',
-            blend: 'additive',
-            opacity: 1,
           });
         }
       }
@@ -486,7 +498,6 @@ function validStyle(v: string | undefined) {
 }
 function gpuRenderPathForStyle(renderStyle: string): SplashPicFlipGpuRenderPath {
   if (renderStyle === 'basic') return 'particles';
-  if (renderStyle === 'ultra') return 'surface-with-particles';
   return 'surface';
 }
 export function selectHeldSplashPointer<T extends { readonly buttons: number }>(pointers: readonly T[]): T | undefined {

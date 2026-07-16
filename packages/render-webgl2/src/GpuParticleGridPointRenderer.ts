@@ -64,7 +64,7 @@ void main() {
     float particleRadius = max(0.7, min(2.2, sqrt(radius) * 0.82));
     authoredRadius = particleRadius * 1.35 * uSplashUltraPointScale * max(0.62, min(1.3, motionScale)) * uRadiusScale;
   }
-  gl_PointSize = max(0.0, authoredRadius * uPixelScale * alive);
+  gl_PointSize = max(0.0, authoredRadius * 2.0 * uPixelScale * alive);
 }`;
 
 const FRAGMENT_SOURCE = `#version 300 es

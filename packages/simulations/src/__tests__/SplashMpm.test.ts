@@ -183,8 +183,8 @@ class FakeGpu2DService implements Gpu2DService {
 describe('Splash MPM', () => {
   it('retains modes, styles, and attribution', () => {
     expect(splashMpmDefinition.modes?.map(x => x.id)).toEqual([
-      'splash',
       'pour',
+      'splash',
       'build'
     ]);
     expect(SPLASH_MPM_STYLE_MANIFEST.styles).toHaveLength(10);
@@ -248,6 +248,23 @@ describe('Splash MPM', () => {
     expect(seed.affine).toEqual(snapshot.affine);
     expect(seed.positions).not.toBe(snapshot.positions);
   });
+  it('prepares nondegenerate snapshot grids before GPU handoff without advancing particles', () => {
+    const model = new SplashMpmModel();
+    model.reset(320, 240, BASE_TUNING);
+    model.seed(320, 240, BASE_TUNING);
+    const before = model.snapshot();
+    expect(before.grid.columns).toBe(1);
+    expect(before.grid.rows).toBe(1);
+
+    model.prepareSnapshotGrid(320, 240, BASE_TUNING);
+    const after = model.snapshot();
+    expect(after.grid.columns).toBeGreaterThan(1);
+    expect(after.grid.rows).toBeGreaterThan(1);
+    expect(after.grid.cell).toBeGreaterThan(1);
+    expect(after.positions).toEqual(before.positions);
+    expect(after.velocities).toEqual(before.velocities);
+    expect(after.foam).toEqual(before.foam);
+  });
   it('converts CPU snapshots and obstacles into GPU particle-grid step options', () => {
     const model = new SplashMpmModel();
     const t = BASE_TUNING;
@@ -305,7 +322,10 @@ describe('Splash MPM', () => {
     model.seed(192, 128, BASE_TUNING);
     model.addCircle(92, 96, 12);
     model.addSegment(32, 112, 160, 108, 7);
+    model.prepareSnapshotGrid(192, 128, BASE_TUNING);
     const snapshot = model.snapshot();
+    expect(snapshot.grid.columns).toBeGreaterThan(1);
+    expect(snapshot.grid.rows).toBeGreaterThan(1);
     const gpu = new FakeGpu2DService();
     const runtime = new SplashPicFlipGpuRuntime(gpu, 'splash-test', { particleToGridMode: 'debug-gather' });
 

@@ -431,6 +431,16 @@
         "height": 512,
         "profileHash": "6e875bb1"
       }
+    },
+    "splash-mpm": {
+      "settings": {},
+      "variation": {
+        "intensity": 0.25,
+        "lockedKeys": [],
+        "seed": 2806831539
+      },
+      "generationMode": "varied",
+      "renderPolicy": "auto"
     }
   }
 }

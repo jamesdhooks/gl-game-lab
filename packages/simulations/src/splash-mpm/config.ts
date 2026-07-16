@@ -24,6 +24,7 @@ export const SPLASH_MPM_SETTINGS: readonly ExperienceSetting[] = Object.freeze([
     ],
     default: 'ultra'
   },
+  n('particleRadius', 'Particle Radius', s, 1, 32, 0.1, 4.2),
   {
     ...n('maxParticles', 'Particle Budget', s, 2048, 131072, 1, 32768),
     numericScale: 'powerOfTwo'
@@ -34,11 +35,12 @@ export const SPLASH_MPM_SETTINGS: readonly ExperienceSetting[] = Object.freeze([
   },
   n('stiffness', 'Pressure Stiffness', s, 18, 180, 2, 86),
   n('restDensity', 'Rest Density', s, 1.8, 8, 0.1, 3.2),
-  n('particleSeparation', 'Particle Separation', s, 0, 10, 0.01, 0.7),
+  n('particleSeparation', 'Particle Separation', s, 0, 100, 0.01, 0.7),
   n('viscosity', 'Grid Viscosity', s, 0, 0.7, 0.01, 0.18),
   n('flipness', 'FLIP Blend', s, 0, 1, 0.01, 0.88),
   n('gravity', 'Gravity', s, 80, 1900, 20, 920),
-  n('particleRadius', 'Droplet Size', s, 1, 64, 0.1, 4.2),
+  n('obstacleRamps', 'Obstacle Ramps', 'Build Layout', 0, 8, 1, 4),
+  n('obstaclePegs', 'Obstacle Pegs', 'Build Layout', 0, 10, 1, 3),
   v(n('surfaceSmoothing', 'Surface Smoothing', r, 0, 1, 0.01, 0.72), [
     'enhanced',
     'ultra'
@@ -104,17 +106,17 @@ export const SPLASH_MPM_SETTINGS: readonly ExperienceSetting[] = Object.freeze([
   v(n('liquidDepthDiffusion', 'Depth Diffusion', r, 0, 1, 0.01, 0.18), [
     'ultra'
   ]),
-  m(n('inputRadius', 'Splash Radius', 'Input Mode', 18, 160, 2, 62), [
-    'splash'
-  ]),
-  m(n('inputForce', 'Splash Force', 'Input Mode', 2, 46, 1, 17), [
-    'splash'
-  ]),
   m(n('emitRate', 'Pour Rate', 'Input Mode', 80, 1800, 20, 520), [
     'pour'
   ]),
   m(n('pourRadius', 'Pour Radius', 'Input Mode', 4, 120, 1, 34), [
     'pour'
+  ]),
+  m(n('inputRadius', 'Splash Radius', 'Input Mode', 18, 160, 2, 62), [
+    'splash'
+  ]),
+  m(n('inputForce', 'Splash Force', 'Input Mode', 2, 46, 1, 17), [
+    'splash'
   ]),
   m(n('buildRadius', 'Build Radius', 'Input Mode', 6, 48, 1, 18), [
     'build'

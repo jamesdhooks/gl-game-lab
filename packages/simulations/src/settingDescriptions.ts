@@ -199,7 +199,9 @@ const EXPERIENCE_DESCRIPTIONS: Readonly<Record<string, DescriptionCatalog>> = Ob
   'splash-mpm': Object.freeze({
     particleSeparation: 'Sets the preferred spacing between visible water particles.',
     flipness: 'Blends stable PIC velocity with energetic FLIP velocity. Higher values preserve more splashing motion.',
-    particleRadius: 'Sets the visual radius of particle accents around the reconstructed water surface.',
+    particleRadius: 'Sets the physical and visual radius of each Splash PIC/FLIP particle.',
+    obstacleRamps: 'Sets how many randomized starter ramp obstacles appear after reset.',
+    obstaclePegs: 'Sets how many randomized starter circular pegs appear after reset.',
     enhancedSplatSize: 'Sets how broadly particles deposit into the Enhanced surface field.',
     enhancedDepth: 'Controls the apparent depth and body of the Enhanced water surface.',
     enhancedEdge: 'Controls the sharpness of the Enhanced water boundary.',

@@ -18,7 +18,7 @@ type Point = {
   readonly y: number;
 };
 export function createWaterTankPlugin(initial: WaterTankConfig = WATER_TANK_DEFAULTS, launch: ExperienceLaunchOptions = {}): EnginePlugin {
-  let config = initial, mode: WaterTankMode = launch.modeId === 'splash' || launch.modeId === 'build' ? launch.modeId : 'pour', styleId = validStyle(launch.styleId) ?? WATER_TANK_STYLE_MANIFEST.defaultStyleId, width = 1, height = 1, pendingReset = true, elapsed = 0, spawnAccumulator = 0, layoutGeneration = 0, layoutSeed = waterTankObstacleLayoutSeed(launch.seed ?? 8027693, 0), cleanup = (): void => undefined;
+  let config = initial, mode: WaterTankMode = launch.modeId === 'splash' || launch.modeId === 'build' ? launch.modeId : 'pour', styleId = validStyle(launch.styleId) ?? WATER_TANK_STYLE_MANIFEST.defaultStyleId, width = 1, height = 1, pendingReset = true, pendingLayoutRegeneration = true, elapsed = 0, spawnAccumulator = 0, layoutGeneration = 0, layoutSeed = waterTankObstacleLayoutSeed(launch.seed ?? 8027693, 0), cleanup = (): void => undefined;
   const model = new WaterTankModel(), paths = new Map<number, Point[]>(), previous = new Map<number, Point>(), pointerVelocity = new Map<number, Point>();
   return {
     id: WATER_TANK_PLUGIN_ID,
@@ -75,12 +75,15 @@ export function createWaterTankPlugin(initial: WaterTankConfig = WATER_TANK_DEFA
             [key]: value
           });
           model.configure(tuning());
-          if (layout)
+          if (layout) {
             pendingReset = true;
+            pendingLayoutRegeneration = true;
+          }
           applyStyle();
         },
         reset: () => {
           pendingReset = true;
+          pendingLayoutRegeneration = true;
         }
       };
       registerSimulationRuntime(context, WaterTankControllerService, controller, () => cleanup());
@@ -91,11 +94,12 @@ export function createWaterTankPlugin(initial: WaterTankConfig = WATER_TANK_DEFA
           const nextWidth = Math.max(1, renderer.viewport.width), nextHeight = Math.max(1, renderer.viewport.height), dt = Math.min(1 / 30, time.deltaSeconds);
           elapsed += dt;
           if (pendingReset || nextWidth !== width || nextHeight !== height) {
-            const regenerateLayout = pendingReset;
+            const regenerateLayout = pendingLayoutRegeneration;
             width = nextWidth;
             height = nextHeight;
             reset(regenerateLayout);
             pendingReset = false;
+            pendingLayoutRegeneration = false;
           }
           for (const event of input.snapshot.events)
             if (event.kind === 'pointer') {
