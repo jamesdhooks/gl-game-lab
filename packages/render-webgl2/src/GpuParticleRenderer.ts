@@ -16,6 +16,7 @@ export interface GpuParticleRendererOptions {
   readonly vertexSource: string;
   readonly fragmentSource: string;
   readonly blend?: BlendMode;
+  readonly verticesPerParticle?: number;
 }
 
 export class GpuParticleRenderer {
@@ -23,12 +24,16 @@ export class GpuParticleRenderer {
   private readonly vao: WebGLVertexArrayObject;
   private readonly uniforms = new Map<string, WebGLUniformLocation | null>();
   private readonly blend: BlendMode;
+  private readonly verticesPerParticle: number;
   private disposed = false;
 
   constructor(private readonly gl: WebGL2RenderingContext, options: GpuParticleRendererOptions) {
     this.program = createShaderProgram(gl, { label: options.label ?? 'GPU particle renderer', vertexSource: options.vertexSource, fragmentSource: options.fragmentSource });
     this.vao = requireValue(gl.createVertexArray(), 'Unable to allocate GPU particle vertex array');
     this.blend = options.blend ?? 'additive';
+    this.verticesPerParticle = options.verticesPerParticle ?? 1;
+    if (!Number.isSafeInteger(this.verticesPerParticle) || this.verticesPerParticle < 1)
+      throw new Error('GPU particle renderer verticesPerParticle must be a positive integer');
   }
 
   render(state: GpuParticleState, destination: GpuParticleRenderDestination, bind: GpuParticleUniformBinder): void {
@@ -48,7 +53,7 @@ export class GpuParticleRenderer {
     gl.uniform2i(this.uniform('uStateSize'), state.width, state.height);
     gl.uniform1i(this.uniform('uParticleCapacity'), state.capacity);
     bind(gl, (name) => this.uniform(name));
-    gl.drawArrays(gl.POINTS, 0, state.capacity);
+    gl.drawArrays(this.verticesPerParticle === 1 ? gl.POINTS : gl.TRIANGLES, 0, state.capacity * this.verticesPerParticle);
     gl.bindVertexArray(null);
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
   }

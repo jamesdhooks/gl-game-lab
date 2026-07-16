@@ -54,6 +54,7 @@ interface ParticleBundle {
   readonly state: GpuParticleState;
   readonly stepper: GpuSimulationPass;
   readonly points: GpuParticleRenderer;
+  readonly renderPasses: ReadonlyMap<string, GpuParticleRenderer>;
   readonly trails: TrailFeedbackRenderer | undefined;
 }
 
@@ -183,6 +184,14 @@ class WebGLGpuParticleSystem implements GpuParticleSystem2D {
     const bundle = this.owner.value;
     bundle.points.render(bundle.state, native, (gl, uniform) => { applyBindings(gl, uniform, uniforms); });
     this.countDraw(bundle.state.capacity);
+  }
+  renderPass(id: string, target: GpuRenderTarget2D, uniforms: GpuUniforms2D | GpuUniformBinder2D = {}): void {
+    const native = requireTarget(target);
+    const bundle = this.owner.value;
+    const pass = bundle.renderPasses.get(id);
+    if (!pass) throw new Error(`Unknown GPU particle render pass: ${id}`);
+    pass.render(bundle.state, native, (gl, uniform) => { applyBindings(gl, uniform, uniforms); });
+    this.countDraw(0, bundle.state.capacity * 2);
   }
   beginTrails(width: number, height: number, fade: number): GpuRenderTarget2D {
     const trails = requireTrails(this.owner.value);
@@ -450,9 +459,22 @@ function createParticleBundle(gl: WebGL2RenderingContext, options: GpuParticleSy
       fragmentSource: options.particleFragmentSource,
       ...(options.blend ? { blend: options.blend } : {}),
     }); disposers.push(() => { points.dispose(); });
+    const renderPasses = new Map<string, GpuParticleRenderer>();
+    for (const [id, pass] of Object.entries(options.renderPasses ?? {})) {
+      if (id.trim().length === 0) throw new Error('GPU particle render pass id cannot be empty');
+      const renderer = new GpuParticleRenderer(gl, {
+        label: `${label}.${id}`,
+        vertexSource: pass.vertexSource,
+        fragmentSource: pass.fragmentSource,
+        ...(pass.blend ? { blend: pass.blend } : {}),
+        verticesPerParticle: pass.verticesPerParticle,
+      });
+      renderPasses.set(id, renderer);
+      disposers.push(() => { renderer.dispose(); });
+    }
     const trails = options.trails ? new TrailFeedbackRenderer(gl) : undefined;
     if (trails) disposers.push(() => { trails.dispose(); });
-    return { state, stepper, points, trails };
+    return { state, stepper, points, renderPasses, trails };
   } catch (error) {
     for (const dispose of disposers.reverse()) dispose();
     throw error;
@@ -461,6 +483,7 @@ function createParticleBundle(gl: WebGL2RenderingContext, options: GpuParticleSy
 
 function disposeParticleBundle(bundle: ParticleBundle): void {
   bundle.trails?.dispose();
+  for (const pass of bundle.renderPasses.values()) pass.dispose();
   bundle.points.dispose();
   bundle.stepper.dispose();
   bundle.state.dispose();

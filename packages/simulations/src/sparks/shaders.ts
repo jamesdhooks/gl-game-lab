@@ -53,9 +53,182 @@ void main(){
   outPosition=vec4(position.xy,age,life);outVelocity=vec4(velocity.xy,kind,seed);
 }`;
 export const SPARKS_POINT_VERTEX_SHADER = `#version 300 es
-precision highp float;uniform sampler2D uPositionState;uniform sampler2D uVelocityState;uniform ivec2 uStateSize;uniform int uParticleCapacity;uniform vec2 uCanvasSize;uniform float uPrimarySize;uniform float uCoreSize;uniform float uBounceSize;uniform float uSizeVariability;uniform float uPrimaryLength;uniform float uBounceLength;uniform float uLengthVariability;uniform float uRenderTier;out float vLife;out float vStretch;out vec2 vDirection;flat out float vSeed;flat out float vKind;
-void main(){int id=gl_VertexID;ivec2 cell=ivec2(id%uStateSize.x,id/uStateSize.x);vec4 p=texelFetch(uPositionState,cell,0),v=texelFetch(uVelocityState,cell,0);if(id>=uParticleCapacity||p.w<=0.0){gl_Position=vec4(2,2,0,1);gl_PointSize=0.0;vLife=0.0;vStretch=1.0;vDirection=vec2(1,0);vSeed=0.0;vKind=0.0;return;}gl_Position=vec4(p.x/uCanvasSize.x*2.0-1.0,1.0-p.y/uCanvasSize.y*2.0,0,1);float base=v.z<.5?uCoreSize:(v.z>=2.0?uBounceSize:uPrimarySize);float random=fract(sin(v.w*71.7)*43758.5),variance=max(.15,1.0+(random*2.0-1.0)*uSizeVariability),lengthSetting=v.z>=2.0?uBounceLength:uPrimaryLength,lengthVariance=max(.1,1.0+(random*2.0-1.0)*uLengthVariability);vStretch=v.z<.5?1.0:clamp(1.0+length(v.xy)*.0025*lengthSetting*lengthVariance*uRenderTier,1.0,9.0);gl_PointSize=max(1.0,base*variance*(1.0+uRenderTier*.12)*vStretch);vDirection=length(v.xy)>.001?normalize(vec2(v.x,-v.y)):vec2(1,0);vLife=max(0.0,p.w-p.z);vSeed=v.w;vKind=v.z;}`;
+precision highp float;
+uniform sampler2D uPositionState;
+uniform sampler2D uVelocityState;
+uniform ivec2 uStateSize;
+uniform int uParticleCapacity;
+uniform vec2 uCanvasSize;
+uniform float uPixelScale;
+uniform float uPrimarySize;
+uniform float uPrimarySizeVariability;
+uniform float uPrimaryLength;
+uniform float uPrimaryLengthVariability;
+uniform float uCoreSize;
+uniform float uCoreSizeVariability;
+uniform float uBounceSize;
+uniform float uBounceSizeVariability;
+uniform float uBounceLength;
+uniform float uBounceLengthVariability;
+uniform float uRenderTier;
+uniform float uSimDepth;
+out float vLife;
+out float vStretch;
+out vec2 vDirection;
+flat out float vSeed;
+flat out float vKind;
+float hash(float n) { return fract(sin(n) * 43758.5453123); }
+void main() {
+  int id = gl_VertexID;
+  ivec2 cell = ivec2(id % uStateSize.x, id / uStateSize.x);
+  vec4 p = texelFetch(uPositionState, cell, 0);
+  vec4 v = texelFetch(uVelocityState, cell, 0);
+  if (id >= uParticleCapacity || p.w <= 0.0) {
+    gl_Position = vec4(2.0); gl_PointSize = 0.0;
+    vLife = 0.0; vStretch = 1.0; vDirection = vec2(1.0); vSeed = 0.0; vKind = 0.0;
+    return;
+  }
+  float generation = v.z < 0.5 ? 0.0 : floor(v.z + 0.01);
+  float seedSize = hash(v.w * 71.7);
+  float depth = mix(1.0, mix(0.76, 1.22, hash(v.w + 71.0)), clamp(uSimDepth, 0.0, 1.0));
+  float baseSize = generation < 0.5 ? uCoreSize : (generation >= 2.0 ? uBounceSize : uPrimarySize);
+  float sizeSpread = generation < 0.5 ? uCoreSizeVariability : (generation >= 2.0 ? uBounceSizeVariability : uPrimarySizeVariability);
+  float lengthSetting = generation >= 2.0 ? uBounceLength : uPrimaryLength;
+  float lengthSpread = generation >= 2.0 ? uBounceLengthVariability : uPrimaryLengthVariability;
+  float variance = max(0.12, 1.0 + (seedSize * 2.0 - 1.0) * clamp(sizeSpread, 0.0, 2.0));
+  float lengthVariance = max(0.08, 1.0 + (hash(v.w * 43.1 + 17.0) * 2.0 - 1.0) * clamp(lengthSpread, 0.0, 2.0));
+  float speedT = clamp(length(v.xy) / 820.0, 0.0, 1.0);
+  vStretch = generation < 0.5 ? 1.0 : clamp(1.0 + speedT * max(0.0, lengthSetting) * lengthVariance * mix(0.35, 1.45, clamp(uRenderTier * 0.5, 0.0, 1.0)), 1.0, 14.0);
+  gl_Position = vec4(p.x / uCanvasSize.x * 2.0 - 1.0, 1.0 - p.y / uCanvasSize.y * 2.0, 0.0, 1.0);
+  gl_PointSize = min((generation < 0.5 ? 64.0 : 118.0) * uPixelScale, max(1.0, baseSize * variance * depth * (1.0 + uRenderTier * 0.12) * vStretch) * uPixelScale);
+  vDirection = length(v.xy) > 0.001 ? normalize(vec2(v.x, -v.y)) : vec2(1.0, 0.0);
+  vLife = max(0.0, p.w - p.z);
+  vSeed = v.w;
+  vKind = generation;
+}`;
 export const SPARKS_POINT_FRAGMENT_SHADER = `#version 300 es
-precision highp float;in float vLife;in float vStretch;in vec2 vDirection;flat in float vSeed;flat in float vKind;out vec4 outColor;uniform vec3 uPalette[8];uniform int uPaletteCount;uniform float uCoreIntensity;uniform float uGlowBias;float hash(float v){return fract(sin(v*31.17)*43758.5453);}void main(){vec2 p=gl_PointCoord*2.0-1.0,n=vec2(-vDirection.y,vDirection.x);vec2 q=vec2(dot(p,vDirection),dot(p,n)*vStretch);float d=dot(q,q);if(d>1.0)discard;int index=int(floor(hash(vSeed)*float(max(1,uPaletteCount))))%max(1,uPaletteCount);vec3 color=uPalette[index];float core=exp(-d*(vKind<.5?2.0:4.8));float intensity=vKind<.5?uCoreIntensity:1.0;outColor=vec4(color*core*intensity*uGlowBias,smoothstep(1.0,.08,d)*min(1.0,vLife*3.0));}`;
+precision highp float;
+in float vLife;
+in float vStretch;
+in vec2 vDirection;
+flat in float vSeed;
+flat in float vKind;
+out vec4 outColor;
+uniform vec3 uPalette[8];
+uniform int uPaletteCount;
+uniform float uCoreIntensity;
+uniform float uGlowBias;
+float hash(float value) { return fract(sin(value * 31.17) * 43758.5453); }
+void main() {
+  vec2 p = gl_PointCoord * 2.0 - 1.0;
+  vec2 normal = vec2(-vDirection.y, vDirection.x);
+  vec2 q = vec2(dot(p, vDirection), dot(p, normal) * vStretch);
+  float distanceSquared = dot(q, q);
+  if (distanceSquared > 1.0) discard;
+  int count = max(1, uPaletteCount);
+  int index = int(floor(hash(vSeed) * float(count))) % count;
+  vec3 palette = uPalette[index];
+  float hotness = exp(-distanceSquared * (vKind < 0.5 ? 2.0 : 4.8));
+  float lifeAlpha = min(1.0, vLife * 3.0);
+  vec3 core = vKind < 0.5 ? vec3(1.0, 0.96, 0.84) * uCoreIntensity : palette;
+  vec3 color = mix(palette, core, vKind < 0.5 ? 0.86 : 0.12 + hotness * 0.24);
+  outColor = vec4(color * hotness * uGlowBias, smoothstep(1.0, 0.08, distanceSquared) * lifeAlpha);
+}`;
+
+export const SPARKS_TRAIL_VERTEX_SHADER = `#version 300 es
+precision highp float;
+precision highp sampler2D;
+uniform sampler2D uPositionState;
+uniform sampler2D uVelocityState;
+uniform ivec2 uStateSize;
+uniform int uParticleCapacity;
+uniform vec2 uCanvasSize;
+uniform float uPrimarySize;
+uniform float uPrimaryLength;
+uniform float uPrimaryLengthVariability;
+uniform float uPrimarySizeVariability;
+uniform float uBounceSize;
+uniform float uBounceLength;
+uniform float uBounceLengthVariability;
+uniform float uBounceSizeVariability;
+uniform float uTrailContinuity;
+uniform float uRenderTier;
+uniform float uSimDepth;
+out vec2 vLocal;
+out float vAlpha;
+out float vLifeT;
+flat out float vKind;
+flat out float vSeed;
+float hash(float value) { return fract(sin(value) * 43758.5453123); }
+float profileVariation(float seed, float variability) {
+  return max(0.08, 1.0 + (hash(seed * 29.3 + 103.0) * 2.0 - 1.0) * clamp(variability, 0.0, 2.0));
+}
+void main() {
+  int particleId = gl_VertexID / 6;
+  int vertexId = gl_VertexID - particleId * 6;
+  const vec2 corners[6] = vec2[6](vec2(0.0, -1.0), vec2(1.0, -1.0), vec2(1.0, 1.0), vec2(0.0, -1.0), vec2(1.0, 1.0), vec2(0.0, 1.0));
+  ivec2 texel = ivec2(particleId % uStateSize.x, particleId / uStateSize.x);
+  vec4 position = texelFetch(uPositionState, texel, 0);
+  vec4 velocity = texelFetch(uVelocityState, texel, 0);
+  float generation = velocity.z < 0.5 ? 0.0 : floor(velocity.z + 0.01);
+  if (particleId >= uParticleCapacity || position.w <= 0.0 || generation < 0.5 || uTrailContinuity <= 0.0) {
+    gl_Position = vec4(2.0); vAlpha = 0.0; vLocal = vec2(0.0); vLifeT = 1.0; vKind = generation; vSeed = velocity.w; return;
+  }
+  float speed = length(velocity.xy);
+  float lifeT = clamp(position.z / max(0.001, position.w), 0.0, 1.0);
+  float profileSize = generation >= 2.0 ? uBounceSize : uPrimarySize;
+  float profileLength = generation >= 2.0 ? uBounceLength : uPrimaryLength;
+  float sizeVariation = generation >= 2.0 ? uBounceSizeVariability : uPrimarySizeVariability;
+  float lengthVariation = generation >= 2.0 ? uBounceLengthVariability : uPrimaryLengthVariability;
+  float lengthControl = max(0.0, profileLength * profileVariation(velocity.w + 43.0, lengthVariation));
+  float continuity = clamp(uTrailContinuity, 0.0, 2.0);
+  float trailSeconds = mix(0.0, 0.048, min(1.0, continuity)) * mix(1.0, 1.72, max(0.0, continuity - 1.0)) * lengthControl;
+  float maxTrail = mix(0.0, 168.0, continuity * 0.5) * mix(0.86, 1.32, uRenderTier) * lengthControl;
+  float trailLength = clamp(speed * trailSeconds, 0.0, maxTrail);
+  if (trailLength <= 0.001) { gl_Position = vec4(2.0); vAlpha = 0.0; vLocal = vec2(0.0); vLifeT = lifeT; vKind = generation; vSeed = velocity.w; return; }
+  vec2 axis = speed > 0.001 ? velocity.xy / speed : vec2(1.0, 0.0);
+  vec2 normal = vec2(-axis.y, axis.x);
+  float depth = mix(1.0, mix(0.76, 1.22, hash(velocity.w + 71.0)), clamp(uSimDepth, 0.0, 1.0));
+  float width = max(0.55, profileSize * mix(0.34, 0.74, uRenderTier) * profileVariation(velocity.w, sizeVariation) * depth);
+  vec2 corner = corners[vertexId];
+  float along = corner.x;
+  float side = corner.y;
+  vec2 tail = position.xy - axis * trailLength;
+  vec2 head = position.xy + axis * min(width * 0.75, trailLength * 0.12);
+  vec2 world = mix(tail, head, along) + normal * side * width;
+  gl_Position = vec4(world.x / uCanvasSize.x * 2.0 - 1.0, 1.0 - world.y / uCanvasSize.y * 2.0, 0.0, 1.0);
+  vAlpha = pow(max(0.0, 1.0 - lifeT), 1.15) * mix(0.22, 0.74, clamp(speed / 760.0, 0.0, 1.0)) * mix(0.72, 1.24, min(1.0, continuity));
+  vLocal = vec2(along, side);
+  vLifeT = lifeT;
+  vKind = generation;
+  vSeed = velocity.w;
+}`;
+
+export const SPARKS_TRAIL_FRAGMENT_SHADER = `#version 300 es
+precision highp float;
+in vec2 vLocal;
+in float vAlpha;
+in float vLifeT;
+flat in float vKind;
+flat in float vSeed;
+out vec4 outColor;
+uniform vec3 uPalette[8];
+uniform int uPaletteCount;
+uniform float uGlowBias;
+uniform float uCoreIntensity;
+float hash(float value) { return fract(sin(value * 31.17) * 43758.5453); }
+void main() {
+  float widthMask = smoothstep(1.0, 0.28, abs(vLocal.y));
+  float tail = smoothstep(0.0, 0.12, vLocal.x) * smoothstep(1.0, 0.58, vLocal.x);
+  float hotHead = smoothstep(0.28, 1.0, vLocal.x);
+  float alpha = vAlpha * widthMask * tail * mix(0.42, 1.0, hotHead) * uGlowBias;
+  if (alpha <= 0.001) discard;
+  int count = max(1, uPaletteCount);
+  vec3 palette = uPalette[int(floor(hash(vSeed) * float(count))) % count];
+  vec3 hot = vec3(1.0, 0.9, 0.55) * min(uCoreIntensity, 2.6);
+  vec3 color = mix(palette, hot, mix(0.08, 0.34, hotHead) * (1.0 - smoothstep(0.38, 1.0, vLifeT)));
+  if (vKind >= 2.0) color = mix(color, palette, 0.32);
+  outColor = vec4(color * alpha, alpha);
+}`;
 export const SPARKS_RAIL_SHADER = `#version 300 es
 precision highp float;in vec2 vUv;out vec4 outColor;uniform vec2 uResolution;uniform int uSurfaceCount;uniform vec4 uSurfaces[13];uniform float uRadius;float segmentDistance(vec2 p,vec2 a,vec2 b){vec2 ab=b-a;return length(p-(a+ab*clamp(dot(p-a,ab)/max(.001,dot(ab,ab)),0.0,1.0)));}void main(){vec2 p=vec2(vUv.x*uResolution.x,(1.0-vUv.y)*uResolution.y);float glow=0.0;for(int i=0;i<13;i++){if(i>=uSurfaceCount)break;vec4 rail=uSurfaces[i];glow=max(glow,smoothstep(uRadius+2.0,uRadius-2.0,segmentDistance(p,rail.xy,rail.zw)));}outColor=vec4(mix(vec3(.12,.18,.24),vec3(.58,.72,.84),glow),glow*.92);}`;

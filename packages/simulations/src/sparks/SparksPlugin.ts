@@ -1,8 +1,8 @@
 import { createExtensionToken, type EnginePlugin, type PointerInputEvent } from '@hooksjam/gl-game-lab-core';
-import { EngineGpu2D, EngineInput, EngineRender2D, EngineSchedule, type ExperienceLaunchOptions, type ExperienceRuntimeController, type ExperienceSettingValue, type GpuParticleSystem2D } from '@hooksjam/gl-game-lab-engine';
+import { EngineGpu2D, EngineInput, EngineRender2D, EngineSchedule, type ExperienceLaunchOptions, type ExperienceRuntimeController, type ExperienceSettingValue, type GpuParticleSystem2D, type GpuUniformEncoder2D, type GpuUniformLookup2D } from '@hooksjam/gl-game-lab-engine';
 import { registerSimulationRuntime } from '../SimulationPluginLifecycle.js';
 import { createSparksConfig, SPARKS_DEFAULTS, sparksNumber, sparksString, type SparksConfig } from './config.js';
-import { SPARKS_POINT_FRAGMENT_SHADER, SPARKS_POINT_VERTEX_SHADER, SPARKS_RAIL_SHADER, SPARKS_STEP_SHADER } from './shaders.js';
+import { SPARKS_POINT_FRAGMENT_SHADER, SPARKS_POINT_VERTEX_SHADER, SPARKS_RAIL_SHADER, SPARKS_STEP_SHADER, SPARKS_TRAIL_FRAGMENT_SHADER, SPARKS_TRAIL_VERTEX_SHADER } from './shaders.js';
 import { sparksColor3, SPARKS_STYLE_MANIFEST } from './styles.js';
 export type SparksMode = 'welding' | 'pinwheel' | 'shower' | 'build';
 interface Rail {
@@ -185,29 +185,42 @@ export function createSparksPlugin(initial: SparksConfig = SPARKS_DEFAULTS, laun
               else
                 commands.splice(0, 16).forEach((command, index) => runStep(index === 0 ? dt : 0, command));
               const renderStyle = sparksString(config, 'renderStyle');
-              const fade = renderStyle === 'ultra' ? sparksNumber(config, 'trailFade') : renderStyle === 'enhanced' ? 0.82 : 0;
-              const trailDestination = particles.beginTrails(destination.width, destination.height, fade);
               const palette = paletteData();
-              particles.render(trailDestination, (g, u) => {
+              const bindSparkRender = (g: GpuUniformEncoder2D, u: GpuUniformLookup2D): void => {
                 // Particle state is expressed in the renderer's logical CSS-pixel
                 // world. The destination is DPR-scaled and must only control the
                 // raster viewport, otherwise DPR 2 compresses the simulation into
                 // the upper-left quarter and separates rail visuals from collision.
                 g.uniform2f(u('uCanvasSize'), renderer.viewport.width, renderer.viewport.height);
+                g.uniform1f(u('uPixelScale'), destination.width / Math.max(1, renderer.viewport.width));
                 g.uniform1f(u('uPrimarySize'), sparksNumber(config, 'primarySparkSize'));
                 g.uniform1f(u('uCoreSize'), sparksNumber(config, 'coreSparkSize'));
                 g.uniform1f(u('uBounceSize'), sparksNumber(config, 'bounceSparkSize'));
-                g.uniform1f(u('uSizeVariability'), sparksNumber(config, 'primarySparkSizeVariability'));
+                g.uniform1f(u('uPrimarySizeVariability'), sparksNumber(config, 'primarySparkSizeVariability'));
                 g.uniform1f(u('uPrimaryLength'), sparksNumber(config, 'primarySparkLength'));
+                g.uniform1f(u('uPrimaryLengthVariability'), sparksNumber(config, 'primarySparkLengthVariability'));
+                g.uniform1f(u('uCoreSizeVariability'), sparksNumber(config, 'coreSparkSizeVariability'));
                 g.uniform1f(u('uBounceLength'), sparksNumber(config, 'bounceSparkLength'));
-                g.uniform1f(u('uLengthVariability'), sparksNumber(config, 'primarySparkLengthVariability'));
+                g.uniform1f(u('uBounceSizeVariability'), sparksNumber(config, 'bounceSparkSizeVariability'));
+                g.uniform1f(u('uBounceLengthVariability'), sparksNumber(config, 'bounceSparkLengthVariability'));
                 g.uniform1f(u('uRenderTier'), renderStyle === 'basic' ? 0 : renderStyle === 'enhanced' ? 1 : 2);
+                g.uniform1f(u('uSimDepth'), simDepthNumber(sparksString(config, 'simDepth')));
                 g.uniform1f(u('uCoreIntensity'), sparksNumber(config, 'coreSparkIntensity'));
                 g.uniform1f(u('uGlowBias'), 1.18);
                 g.uniform3fv(u('uPalette[0]'), palette.data);
                 g.uniform1i(u('uPaletteCount'), palette.count);
-              });
-              particles.compositeTrails(destination, sparksColor3(requireStyle().background), renderStyle === 'ultra' ? sparksNumber(config, 'bloomStrength') : renderStyle === 'enhanced' ? 0.9 : 0.35);
+              };
+              if (renderStyle === 'basic') {
+                particles.render(destination, bindSparkRender);
+              } else if (renderStyle === 'enhanced') {
+                particles.renderPass('streaks', destination, bindSparkRender);
+                particles.render(destination, bindSparkRender);
+              } else {
+                const trailDestination = particles.beginTrails(destination.width, destination.height, sparksNumber(config, 'trailFade'));
+                particles.renderPass('streaks', trailDestination, bindSparkRender);
+                particles.render(trailDestination, bindSparkRender);
+                particles.compositeTrails(destination, sparksColor3(requireStyle().background), sparksNumber(config, 'bloomStrength'));
+              }
           });
           const surfaceData = writeRails();
           renderer.submitFullscreenEffect({
@@ -368,6 +381,14 @@ export function createSparksPlugin(initial: SparksConfig = SPARKS_DEFAULTS, laun
           simulationFragmentSource: SPARKS_STEP_SHADER,
           particleVertexSource: SPARKS_POINT_VERTEX_SHADER,
           particleFragmentSource: SPARKS_POINT_FRAGMENT_SHADER,
+          renderPasses: {
+            streaks: {
+              vertexSource: SPARKS_TRAIL_VERTEX_SHADER,
+              fragmentSource: SPARKS_TRAIL_FRAGMENT_SHADER,
+              blend: 'additive',
+              verticesPerParticle: 6,
+            },
+          },
           blend: 'additive',
           trails: true,
         });

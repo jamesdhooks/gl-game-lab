@@ -75,8 +75,21 @@ export interface GpuParticleSystem2DOptions {
   readonly simulationFragmentSource: string;
   readonly particleVertexSource: string;
   readonly particleFragmentSource: string;
+  /**
+   * Optional GPU-only particle render passes. These share the particle state
+   * textures with the point pass, but can choose a different primitive topology
+   * (for example six vertices per particle for swept trails).
+   */
+  readonly renderPasses?: Readonly<Record<string, GpuParticleRenderPass2DOptions>>;
   readonly blend?: 'opaque' | 'alpha' | 'additive' | 'multiply';
   readonly trails?: boolean;
+}
+
+export interface GpuParticleRenderPass2DOptions {
+  readonly vertexSource: string;
+  readonly fragmentSource: string;
+  readonly blend?: 'opaque' | 'alpha' | 'additive' | 'multiply';
+  readonly verticesPerParticle: number;
 }
 
 export interface GpuParticleSystem2D {
@@ -88,6 +101,7 @@ export interface GpuParticleSystem2D {
   uploadSeed(seed: GpuParticleSeed2D): void;
   step(uniforms?: GpuUniforms2D | GpuUniformBinder2D): void;
   render(target: GpuRenderTarget2D, uniforms?: GpuUniforms2D | GpuUniformBinder2D): void;
+  renderPass(id: string, target: GpuRenderTarget2D, uniforms?: GpuUniforms2D | GpuUniformBinder2D): void;
   beginTrails(width: number, height: number, fade: number): GpuRenderTarget2D;
   compositeTrails(target: GpuRenderTarget2D, background: readonly [number, number, number], bloom: number): void;
   clearTrails(): void;
