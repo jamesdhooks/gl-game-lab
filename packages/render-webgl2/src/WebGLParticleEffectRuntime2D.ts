@@ -181,12 +181,12 @@ class WebGLParticleEffectResource2D implements ParticleEffectBackendResource2D {
     this.viewportHeight = target.height;
     if (tier === 'ultra' && this.program.renderPasses.ultra.some((pass) => pass.kind === 'trails')) {
       const trailTarget = this.particles.beginTrails(target.width, target.height, this.options.trailFade ?? 0.9);
-      this.particles.render(trailTarget, this.bindRender);
+      this.renderTier(trailTarget, tier);
       this.particles.compositeTrails(target, this.options.trailBackground ?? [0, 0, 0], this.options.trailBloom ?? 0.65);
-      this.particles.render(target, this.bindRender);
+      this.renderTier(target, tier);
       return;
     }
-    this.particles.render(target, this.bindRender);
+    this.renderTier(target, tier);
   }
 
   clear(): void { this.assertUsable(); this.particles.clear(); this.particles.clearTrails(); this.commandCount = 0; this.particleCount = 0; this.cursor = 0; this.eventWindow = 0; }
@@ -254,6 +254,12 @@ class WebGLParticleEffectResource2D implements ParticleEffectBackendResource2D {
       this.commands[offset + 1] = prefix;
       prefix += Math.max(0, Math.round(this.commands[offset + 2] ?? 0));
     }
+  }
+
+  private renderTier(target: GpuRenderTarget2D, tier: ParticleRenderTier2D): void {
+    const passes = this.program.renderPasses[tier];
+    if (passes.some((pass) => pass.kind === 'points')) this.particles.render(target, this.bindRender);
+    for (const pass of passes) if (pass.kind === 'streaks') this.particles.renderPass(pass.id, target, this.bindRender);
   }
 
   private assertUsable(): void { if (this.disposed) throw new Error(`WebGL particle effect resource is disposed: ${this.id}`); }
