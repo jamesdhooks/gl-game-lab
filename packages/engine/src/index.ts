@@ -238,6 +238,22 @@ export {
   type ParticleShaderStage2D,
 } from './ParticleEffectCompiler2D.js';
 export {
+  EngineParticleEffects2D,
+  type ParticleEffectBackendDiagnostics2D,
+  type ParticleEffectBackendResource2D,
+  type ParticleEffectInstance2D,
+  type ParticleEffectInstanceOptions2D,
+  type ParticleEffectInstanceState2D,
+  type ParticleEffectInstanceStatus2D,
+  type ParticleEffectRuntimeBackend2D,
+  type ParticleEffects2D,
+  type ParticleEffectsDiagnostics2D,
+  type ParticleEmissionOverride2D,
+  type ParticleRuntimeEmission2D,
+  type ParticleSignalPayload2D,
+  type ParticleTransform2D,
+} from './ParticleEffectRuntime2D.js';
+export {
   ExperienceRegistry,
   ExperiencePreviewCycleControllerService,
   ExperienceRuntimeControllerService,
