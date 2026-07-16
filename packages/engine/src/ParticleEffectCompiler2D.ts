@@ -111,58 +111,84 @@ function buildGlslSimulation(effect: CompiledParticleEffect2D, extensions: reado
   const targets = effect.report.requiredStateTargets;
   return `#version 300 es
 precision highp float;
-uniform sampler2D uStateA;
-uniform sampler2D uStateB;
-${targets === 3 ? 'uniform sampler2D uStateC;' : ''}
-uniform float uDelta;
-uniform vec2 uViewport;
+precision highp sampler2D;
+in vec2 vUv;
+uniform sampler2D uPositionState;
+uniform sampler2D uVelocityState;
+${targets === 3 ? 'uniform sampler2D uMetadataState;' : ''}
+uniform ivec2 uStateSize;
+uniform int uCapacity;
+uniform sampler2D uParticleCommandData;
+uniform int uParticleCommandCount;
+uniform int uParticleCommandTexels;
+uniform float uDt;
+uniform vec2 uCanvasSize;
 uniform vec4 uArchetypeMotion[${Math.max(1, effect.source.archetypes.length)}];
-layout(location=0) out vec4 outStateA;
-layout(location=1) out vec4 outStateB;
-${targets === 3 ? 'layout(location=2) out vec4 outStateC;' : ''}
+layout(location=0) out vec4 outPosition;
+layout(location=1) out vec4 outVelocity;
+${targets === 3 ? 'layout(location=2) out vec4 outMetadata;' : ''}
 float hash21(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123); }
+bool readCommand(int id, out vec4 a, out vec4 b, out vec4 c, out vec4 d, out int relative) {
+  for (int commandIndex = 0; commandIndex < 64; commandIndex++) {
+    if (commandIndex >= uParticleCommandCount) break;
+    int offset = commandIndex * uParticleCommandTexels;
+    a = texelFetch(uParticleCommandData, ivec2(offset, 0), 0);
+    int start = int(a.y + .5), count = int(a.z + .5), candidate = (id - start + uCapacity) % uCapacity;
+    if (candidate < count) { b=texelFetch(uParticleCommandData,ivec2(offset+1,0),0); c=texelFetch(uParticleCommandData,ivec2(offset+2,0),0); d=texelFetch(uParticleCommandData,ivec2(offset+3,0),0); relative=candidate; return true; }
+  }
+  return false;
+}
 void main() {
   ivec2 uv = ivec2(gl_FragCoord.xy);
-  vec4 stateA = texelFetch(uStateA, uv, 0);
-  vec4 stateB = texelFetch(uStateB, uv, 0);
-  ${targets === 3 ? 'vec4 stateC = texelFetch(uStateC, uv, 0);' : 'vec4 stateC = vec4(0.0);'}
+  int id = uv.y * uStateSize.x + uv.x;
+  vec4 stateA = texelFetch(uPositionState, uv, 0);
+  vec4 stateB = texelFetch(uVelocityState, uv, 0);
+  ${targets === 3 ? 'vec4 stateC = texelFetch(uMetadataState, uv, 0);' : 'vec4 stateC = vec4(0.0);'}
   int archetype = clamp(int(stateC.x + 0.5), 0, ${Math.max(0, effect.source.archetypes.length - 1)});
   vec4 motion = uArchetypeMotion[archetype];
   if (stateA.z < stateA.w) {
-    stateA.z += uDelta;
-    stateB.y += motion.x * uDelta;
-    stateB.xy *= exp(-max(0.0, motion.y) * uDelta);
-    ${turbulence ? 'float noise = hash21(stateA.xy + stateC.zz); stateB.xy += vec2(cos(noise * 6.2831853), sin(noise * 6.2831853)) * motion.z * uDelta;' : ''}
-    stateB.w += motion.w * uDelta;
-    stateB.z += stateB.w * uDelta;
-    stateA.xy += stateB.xy * uDelta;
-    ${collisions ? 'stateA.xy = clamp(stateA.xy, vec2(0.0), uViewport);' : ''}
+    stateA.z += uDt;
+    stateB.y += motion.x * uDt;
+    stateB.xy *= exp(-max(0.0, motion.y) * uDt);
+    ${turbulence ? 'float noise = hash21(stateA.xy + stateC.zz); stateB.xy += vec2(cos(noise * 6.2831853), sin(noise * 6.2831853)) * motion.z * uDt;' : ''}
+    stateB.w += motion.w * uDt;
+    stateB.z += stateB.w * uDt;
+    stateA.xy += stateB.xy * uDt;
+    ${collisions ? 'stateA.xy = clamp(stateA.xy, vec2(0.0), uCanvasSize);' : ''}
+  }
+  vec4 commandA=vec4(0), commandB=vec4(0), commandC=vec4(0), commandD=vec4(0); int relative=0;
+  if (id < uCapacity && readCommand(id, commandA, commandB, commandC, commandD, relative)) {
+    float angle = commandC.x + (hash21(vec2(commandD.x + float(relative), 1.0)) - .5) * commandC.y;
+    float power = commandC.z * mix(.72, 1.28, hash21(vec2(commandD.x + float(relative), 2.0)));
+    stateA = vec4(commandB.xy, 0.0, commandC.w * mix(max(.05, 1.0-commandD.z), 1.0+commandD.z, hash21(vec2(commandD.x + float(relative), 3.0))));
+    stateB = vec4(commandB.zw + vec2(cos(angle), sin(angle)) * power, 0.0, 0.0);
+    stateC = vec4(commandA.x, 0.0, commandD.y + hash21(vec2(commandD.x + float(relative), 4.0)), 0.0);
   }
   ${extensions.map((entry) => entry.glslSimulation ?? '').filter(Boolean).join('\n  ')}
-  outStateA = stateA;
-  outStateB = stateB;
-  ${targets === 3 ? 'outStateC = stateC;' : ''}
+  outPosition = stateA;
+  outVelocity = stateB;
+  ${targets === 3 ? 'outMetadata = stateC;' : ''}
 }`;
 }
 
 function buildGlslEvent(effect: CompiledParticleEffect2D): string {
   return `#version 300 es
 precision highp float;
-uniform sampler2D uStateA;
-uniform sampler2D uStateB;
-uniform sampler2D uStateC;
-uniform float uDelta;
-layout(location=0) out vec4 outStateA;
-layout(location=1) out vec4 outStateB;
-layout(location=2) out vec4 outStateC;
+uniform sampler2D uPositionState;
+uniform sampler2D uVelocityState;
+uniform sampler2D uMetadataState;
+uniform float uDt;
+layout(location=0) out vec4 outPosition;
+layout(location=1) out vec4 outVelocity;
+layout(location=2) out vec4 outMetadata;
 void main() {
   ivec2 uv = ivec2(gl_FragCoord.xy);
-  vec4 a = texelFetch(uStateA, uv, 0);
-  vec4 b = texelFetch(uStateB, uv, 0);
-  vec4 c = texelFetch(uStateC, uv, 0);
+  vec4 a = texelFetch(uPositionState, uv, 0);
+  vec4 b = texelFetch(uVelocityState, uv, 0);
+  vec4 c = texelFetch(uMetadataState, uv, 0);
   // Event allocation remains backend-owned; the compiler supplies the versioned metadata semantics.
   c.w = c.w;
-  outStateA = a; outStateB = b; outStateC = c;
+  outPosition = a; outVelocity = b; outMetadata = c;
 }`;
 }
 
@@ -170,22 +196,24 @@ function buildGlslVertex(effect: CompiledParticleEffect2D, extensions: readonly 
   const targets = effect.report.requiredStateTargets;
   return `#version 300 es
 precision highp float;
-uniform sampler2D uStateA;
-uniform sampler2D uStateB;
-${targets === 3 ? 'uniform sampler2D uStateC;' : ''}
-uniform vec2 uStateSize;
-uniform vec2 uViewport;
+uniform sampler2D uPositionState;
+uniform sampler2D uVelocityState;
+${targets === 3 ? 'uniform sampler2D uMetadataState;' : ''}
+uniform ivec2 uStateSize;
+uniform int uParticleCapacity;
+uniform vec2 uCanvasSize;
 uniform float uPointScale;
 out float vAge;
 out float vSeed;
 void main() {
   int index = gl_VertexID;
   ivec2 uv = ivec2(index % int(uStateSize.x), index / int(uStateSize.x));
-  vec4 a = texelFetch(uStateA, uv, 0);
-  ${targets === 3 ? 'vec4 c = texelFetch(uStateC, uv, 0);' : 'vec4 c = vec4(0.0);'}
+  vec4 a = texelFetch(uPositionState, uv, 0);
+  ${targets === 3 ? 'vec4 c = texelFetch(uMetadataState, uv, 0);' : 'vec4 c = vec4(0.0);'}
+  if (index >= uParticleCapacity || a.w <= 0.0) { gl_Position=vec4(2.0); gl_PointSize=0.0; vAge=1.0; vSeed=0.0; return; }
   vAge = clamp(a.z / max(a.w, 0.0001), 0.0, 1.0);
   vSeed = c.z;
-  vec2 clip = vec2(a.x / uViewport.x * 2.0 - 1.0, 1.0 - a.y / uViewport.y * 2.0);
+  vec2 clip = vec2(a.x / uCanvasSize.x * 2.0 - 1.0, 1.0 - a.y / uCanvasSize.y * 2.0);
   gl_Position = vec4(clip, 0.0, a.z < a.w ? 1.0 : 0.0);
   gl_PointSize = max(0.0, mix(uPointScale, 0.0, vAge));
   ${extensions.map((entry) => entry.glslRender ?? '').filter(Boolean).join('\n  ')}
@@ -195,8 +223,8 @@ void main() {
 function buildGlslFragment(extensions: readonly ParticleModuleCompilerExtension2D[]): string {
   return `#version 300 es
 precision highp float;
-uniform sampler2D uPalette;
-uniform float uPaletteSize;
+uniform vec3 uPalette[8];
+uniform int uPaletteCount;
 uniform float uIntensity;
 in float vAge;
 in float vSeed;
@@ -204,7 +232,8 @@ out vec4 outColor;
 void main() {
   vec2 p = gl_PointCoord * 2.0 - 1.0;
   float coverage = 1.0 - smoothstep(0.72, 1.0, length(p));
-  vec3 color = texture(uPalette, vec2((floor(vSeed * uPaletteSize) + 0.5) / uPaletteSize, 0.5)).rgb;
+  int paletteIndex = int(floor(vSeed * float(max(1, uPaletteCount)))) % max(1, uPaletteCount);
+  vec3 color = uPalette[paletteIndex];
   outColor = vec4(color * uIntensity, coverage * (1.0 - vAge));
   ${extensions.map((entry) => entry.glslRender ?? '').filter(Boolean).join('\n  ')}
 }`;
@@ -258,14 +287,14 @@ function compileRenderPasses(effect: CompiledParticleEffect2D): Readonly<Record<
 
 function baseBindings(targets: 2 | 3, collisions: boolean, events: boolean, extensions: readonly ParticleModuleCompilerExtension2D[]): ParticleShaderBinding2D[] {
   const bindings: ParticleShaderBinding2D[] = [
-    { name: 'uStateA', kind: 'texture', dataType: 'rgba32f', required: true },
-    { name: 'uStateB', kind: 'texture', dataType: 'rgba32f', required: true },
-    { name: 'uDelta', kind: 'uniform', dataType: 'f32', required: true },
-    { name: 'uViewport', kind: 'uniform', dataType: 'vec2', required: true },
+    { name: 'uPositionState', kind: 'texture', dataType: 'rgba32f', required: true },
+    { name: 'uVelocityState', kind: 'texture', dataType: 'rgba32f', required: true },
+    { name: 'uDt', kind: 'uniform', dataType: 'f32', required: true },
+    { name: 'uCanvasSize', kind: 'uniform', dataType: 'vec2', required: true },
     { name: 'uArchetypeMotion', kind: 'uniform', dataType: 'vec4[]', required: true },
-    { name: 'uPalette', kind: 'texture', dataType: 'rgb8', required: true },
+    { name: 'uPalette', kind: 'uniform', dataType: 'vec3[8]', required: true },
   ];
-  if (targets === 3) bindings.push({ name: 'uStateC', kind: 'texture', dataType: 'rgba32f', required: true });
+  if (targets === 3) bindings.push({ name: 'uMetadataState', kind: 'texture', dataType: 'rgba32f', required: true });
   if (collisions) bindings.push({ name: 'uColliders', kind: 'texture', dataType: 'rgba32f', required: false });
   if (events) bindings.push({ name: 'uEventCommands', kind: 'texture', dataType: 'rgba32f', required: false });
   extensions.forEach((extension) => { bindings.push(...(extension.bindings ?? [])); });

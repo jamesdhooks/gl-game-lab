@@ -141,6 +141,10 @@ export {
   type ParticlePointDrawPlan,
 } from './ParticlePointRenderer.js';
 export {
+  WebGLParticleEffectRuntimeBackend2D,
+  type WebGLParticleEffectRuntimeOptions2D,
+} from './WebGLParticleEffectRuntime2D.js';
+export {
   WEBGL2_RENDERER_PLUGIN_ID,
   ParticlePointRenderQueueService,
   FullscreenEffectRenderQueueService,

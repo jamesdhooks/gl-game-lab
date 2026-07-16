@@ -29,9 +29,9 @@ const definition: ParticleEffectDefinition2D = {
 describe('ParticleEffectCompiler2D', () => {
   it('generates executable WebGL2 and WebGPU variants with reflection', () => {
     const program = compileParticleProgram2D(compileParticleEffect2D(adaptParticleEffectDefinition2D(definition)));
-    expect(program.webgl2.simulation.source).toContain('layout(location=2) out vec4 outStateC');
+    expect(program.webgl2.simulation.source).toContain('layout(location=2) out vec4 outMetadata');
     expect(program.webgl2.simulation.source).toContain('stateB.xy += vec2');
-    expect(program.webgl2.event?.source).toContain('uStateC');
+    expect(program.webgl2.event?.source).toContain('uMetadataState');
     expect(program.webgpu.simulation.source).toContain('@compute @workgroup_size(256)');
     expect(program.reflection).toMatchObject({ stateTargets: 3, usesCollisions: true, usesEvents: true, usesTurbulence: true });
     expect(program.renderPasses.ultra.map((entry) => entry.kind)).toEqual(['points', 'streaks', 'trails', 'bloom']);
@@ -47,8 +47,8 @@ describe('ParticleEffectCompiler2D', () => {
     const program = compileParticleProgram2D(effect);
     const names = new Set(program.reflection.bindings.filter((entry) => entry.required).map((entry) => entry.name));
     expect(() => validateParticleShaderBindings2D(program.reflection, names)).not.toThrow();
-    names.delete('uDelta');
-    expect(() => validateParticleShaderBindings2D(program.reflection, names)).toThrow('uDelta');
+    names.delete('uDt');
+    expect(() => validateParticleShaderBindings2D(program.reflection, names)).toThrow('uDt');
     expect(() => compileParticleProgram2D(effect, [{ id: 'same' }, { id: 'same' }])).toThrow('duplicate');
   });
 });
