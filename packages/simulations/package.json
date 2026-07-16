@@ -10,7 +10,7 @@
   },
   "files": ["dist", "README.md"],
   "scripts": {
-    "build": "tsc --build --force tsconfig.json && node scripts/copy-assets.mjs",
+    "build": "tsc --build --force tsconfig.json && node scripts/copy-assets.mjs && node scripts/compile-particle-effects.mjs",
     "typecheck": "tsc --noEmit --project tsconfig.json",
     "test": "vitest run --passWithNoTests",
     "clean": "tsc --build --clean tsconfig.json"
