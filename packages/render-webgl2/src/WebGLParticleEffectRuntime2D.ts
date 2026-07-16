@@ -54,9 +54,11 @@ class WebGLParticleEffectResource2D implements ParticleEffectBackendResource2D {
   private viewportHeight = 1;
   private droppedCommands = 0;
   private droppedParticles = 0;
+  private truncatedCommands = 0;
   private eventAttempts = 0;
   private eventOccupiedDrops = 0;
   private eventBudgetDrops = 0;
+  private eventWindow = 0;
   private disposed = false;
 
   constructor(
@@ -145,6 +147,8 @@ class WebGLParticleEffectResource2D implements ParticleEffectBackendResource2D {
     this.commands[offset + 15] = 0;
     this.particleCount += count - replacedCount;
     this.droppedParticles += emission.count - count;
+    if (count < emission.count) this.truncatedCommands += 1;
+    if ((archetype.events?.length ?? 0) > 0) this.eventWindow = Math.max(this.eventWindow, eventWindowSeconds(archetype));
   }
 
   setPalette(value: ParticlePalette2D): void {
@@ -161,6 +165,10 @@ class WebGLParticleEffectResource2D implements ParticleEffectBackendResource2D {
     this.assertUsable();
     this.prepareCommands();
     this.particles.stepBatch(this.batch, (gl, uniform) => this.bindSimulation(gl, uniform, deltaSeconds * timescale));
+    if (this.eventWindow > 0 && this.program.webgl2.event) {
+      this.particles.stepEvents((gl, uniform) => this.bindSimulation(gl, uniform, deltaSeconds * timescale));
+      this.eventWindow = Math.max(0, this.eventWindow - deltaSeconds * timescale);
+    }
     this.cursor = (this.frameStart + this.particleCount) % this.particles.capacity;
     this.commandCount = 0;
     this.particleCount = 0;
@@ -181,7 +189,7 @@ class WebGLParticleEffectResource2D implements ParticleEffectBackendResource2D {
     this.particles.render(target, this.bindRender);
   }
 
-  clear(): void { this.assertUsable(); this.particles.clear(); this.particles.clearTrails(); this.commandCount = 0; this.particleCount = 0; this.cursor = 0; }
+  clear(): void { this.assertUsable(); this.particles.clear(); this.particles.clearTrails(); this.commandCount = 0; this.particleCount = 0; this.cursor = 0; this.eventWindow = 0; }
   transferStateTo(target: ParticleEffectBackendResource2D): boolean {
     return target instanceof WebGLParticleEffectResource2D && (this.particles.copyStateTo?.(target.particles) ?? false);
   }
@@ -201,6 +209,17 @@ class WebGLParticleEffectResource2D implements ParticleEffectBackendResource2D {
       uploadBytes: diagnostics.uploadBytes,
       contextGeneration: diagnostics.contextGeneration,
       rebuildCount: diagnostics.rebuildCount,
+      diagnosticAccuracy: 'estimated',
+      directCommandsAdmitted: diagnostics.queuedCommands,
+      directCommandsTruncated: this.truncatedCommands,
+      eventContentionLosses: this.eventOccupiedDrops,
+      eventCapacityDrops: this.eventBudgetDrops,
+      trailPasses: this.program.renderPasses.ultra.filter((pass) => pass.kind === 'trails').length > 0 ? diagnostics.renderPasses : 0,
+      bloomPasses: this.program.renderPasses.ultra.filter((pass) => pass.kind === 'bloom').length > 0 ? diagnostics.renderPasses : 0,
+      commandUploadBytes: diagnostics.uploadBytes,
+      parameterUploadBytes: 0,
+      paletteUploadBytes: 0,
+      allocationsAfterWarmup: 0,
       allocatedBytes: this.particles.capacity * 4 * Float32Array.BYTES_PER_ELEMENT * this.program.reflection.stateTargets * 2,
       eventAttempts: this.eventAttempts,
       eventOccupiedDrops: this.eventOccupiedDrops,
@@ -249,4 +268,10 @@ function lowestPriorityIndex(priorities: Int8Array): number {
 function spawnShapeCode(shape: string): number {
   const index = ['point', 'disc', 'line', 'cone', 'arc', 'ring', 'radial', 'spiral', 'pinwheel', 'shower', 'rectangle', 'path', 'texture-mask', 'mesh', 'particles', 'collision-contacts', 'external-points', 'custom'].indexOf(shape);
   return Math.max(0, index);
+}
+
+function eventWindowSeconds(archetype: CompiledParticleProgram2D['effect']['source']['archetypes'][number]): number {
+  let latest = archetype.lifecycle.lifetime * (1 + (archetype.lifecycle.lifetimeVariability ?? 0));
+  for (const event of archetype.events ?? []) latest = Math.max(latest, archetype.lifecycle.lifetime + (event.delay ?? 0));
+  return latest;
 }
