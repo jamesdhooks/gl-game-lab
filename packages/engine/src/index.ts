@@ -256,6 +256,8 @@ export {
   type ParticleEffects2D,
   type ParticleEffectsDiagnostics2D,
   type ParticleEmissionOverride2D,
+  type ParticleEmissionWriter2D,
+  type ParticleEmitterHandle2D,
   type ParticleRuntimeEmission2D,
   type ParticleSignalPayload2D,
   type ParticleTransform2D,

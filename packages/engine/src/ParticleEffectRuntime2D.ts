@@ -36,6 +36,25 @@ export interface ParticleEmissionOverride2D {
   readonly seed?: number;
 }
 
+/** Reusable command writer for allocation-free emission in frame loops. */
+export interface ParticleEmissionWriter2D {
+  count(value: number): ParticleEmissionWriter2D;
+  position(x: number, y: number): ParticleEmissionWriter2D;
+  direction(value: number): ParticleEmissionWriter2D;
+  spread(value: number): ParticleEmissionWriter2D;
+  power(value: number): ParticleEmissionWriter2D;
+  seed(value: number): ParticleEmissionWriter2D;
+  submit(): void;
+  reset(): ParticleEmissionWriter2D;
+}
+
+export interface ParticleEmitterHandle2D {
+  readonly id: string;
+  emit(count?: number): void;
+  emitAt(x: number, y: number, count?: number): void;
+  writer(): ParticleEmissionWriter2D;
+}
+
 export interface ParticleSignalPayload2D {
   readonly position?: readonly [number, number];
   readonly velocity?: readonly [number, number];
@@ -97,6 +116,7 @@ export interface ParticleEffectInstance2D {
   restart(seed?: number): void;
   trigger(signal: string, payload?: ParticleSignalPayload2D): void;
   emit(emitterId: string, override?: ParticleEmissionOverride2D): void;
+  emitter(emitterId: string): ParticleEmitterHandle2D;
   setTransform(transform: ParticleTransform2D): void;
   setParameter(name: string, value: ParticleParameterValue2D): void;
   setPalette(palette: ParticlePalette2D): void;
@@ -248,6 +268,28 @@ class EmitterRuntime {
   reset(): void { this.active = false; this.elapsed = 0; this.rateAccumulator = 0; this.burstIndex = 0; this.loops = 0; this.lastX = 0; this.lastY = 0; }
 }
 
+class MutableEmissionOverride implements ParticleEmissionOverride2D {
+  count?: number; position?: readonly [number, number]; direction?: number; spread?: number; power?: number; seed?: number;
+  readonly point: [number, number] = [0, 0];
+  clear(): void { delete this.count; delete this.position; delete this.direction; delete this.spread; delete this.power; delete this.seed; }
+}
+
+class RuntimeParticleEmitterHandle2D implements ParticleEmitterHandle2D, ParticleEmissionWriter2D {
+  private readonly override = new MutableEmissionOverride();
+  constructor(readonly id: string, private readonly owner: RuntimeParticleEffectInstance2D) {}
+  emit(count?: number): void { this.override.clear(); if (count !== undefined) this.override.count = count; this.owner.emit(this.id, this.override); }
+  emitAt(x: number, y: number, count?: number): void { this.override.clear(); this.override.point[0] = x; this.override.point[1] = y; this.override.position = this.override.point; if (count !== undefined) this.override.count = count; this.owner.emit(this.id, this.override); }
+  writer(): ParticleEmissionWriter2D { return this.reset(); }
+  count(value: number): ParticleEmissionWriter2D { this.override.count = value; return this; }
+  position(x: number, y: number): ParticleEmissionWriter2D { this.override.point[0] = x; this.override.point[1] = y; this.override.position = this.override.point; return this; }
+  direction(value: number): ParticleEmissionWriter2D { this.override.direction = value; return this; }
+  spread(value: number): ParticleEmissionWriter2D { this.override.spread = value; return this; }
+  power(value: number): ParticleEmissionWriter2D { this.override.power = value; return this; }
+  seed(value: number): ParticleEmissionWriter2D { this.override.seed = value; return this; }
+  submit(): void { this.owner.emit(this.id, this.override); this.override.clear(); }
+  reset(): ParticleEmissionWriter2D { this.override.clear(); return this; }
+}
+
 class RuntimeParticleEffectInstance2D implements ParticleEffectInstance2D {
   private program: CompiledParticleProgram2D;
   private backend: ParticleEffectBackendResource2D;
@@ -260,6 +302,7 @@ class RuntimeParticleEffectInstance2D implements ParticleEffectInstance2D {
   private timescale: number;
   private tier: ParticleRenderTier2D;
   private readonly emitters: EmitterRuntime[];
+  private readonly emitterHandles: Map<string, RuntimeParticleEmitterHandle2D>;
   private readonly scheduler: ParticleGraphScheduler2D;
 
   constructor(
@@ -276,6 +319,7 @@ class RuntimeParticleEffectInstance2D implements ParticleEffectInstance2D {
     this.palette = options.palette ?? EMPTY_PALETTE; this.timescale = validateTimescale(options.timescale ?? 1);
     this.tier = options.qualityTier ?? program.effect.source.quality.defaultTier;
     this.emitters = program.effect.source.emitters.map((entry, index) => new EmitterRuntime(entry, index));
+    this.emitterHandles = new Map(this.emitters.map((entry) => [entry.definition.id, new RuntimeParticleEmitterHandle2D(entry.definition.id, this)]));
     this.scheduler = new ParticleGraphScheduler2D(
       program.effect.source,
       () => this.parameters,
@@ -330,6 +374,12 @@ class RuntimeParticleEffectInstance2D implements ParticleEffectInstance2D {
     if (!emitter) throw new Error(`Unknown particle emitter: ${emitterId}`);
     this.submit(emitter, override.count ?? firstBurstCount(emitter.definition), override);
   }
+  emitter(emitterId: string): ParticleEmitterHandle2D {
+    this.assertUsable();
+    const handle = this.emitterHandles.get(emitterId);
+    if (!handle) throw new Error(`Unknown particle emitter: ${emitterId}`);
+    return handle;
+  }
 
   setTransform(transform: ParticleTransform2D): void { this.assertUsable(); validateTransform(transform); this.transform = transform; }
   setParameter(name: string, value: ParticleParameterValue2D): void { this.assertUsable(); this.parameters = { ...resolveParticleParameters2D(this.program.effect.source, { ...this.parameters, [name]: value }) }; }
@@ -354,7 +404,7 @@ class RuntimeParticleEffectInstance2D implements ParticleEffectInstance2D {
   }
 
   replaceProgram(program: CompiledParticleProgram2D, backend: ParticleEffectBackendResource2D): void {
-    if (program.effect.source.emitters.length !== this.emitters.length) throw new Error(`Hot reload of ${program.effect.source.id} changed emitter layout; restart its instances`);
+    if (program.effect.abiHash !== this.program.effect.abiHash) throw new Error(`Hot reload of ${program.effect.source.id} changed its particle ABI; restart its instances`);
     this.program = program; this.backend = backend; this.parameters = { ...resolveParticleParameters2D(program.effect.source, this.parameters) }; backend.setPalette(this.palette);
   }
 

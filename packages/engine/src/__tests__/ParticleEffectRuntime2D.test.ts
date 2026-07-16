@@ -67,6 +67,10 @@ describe('EngineParticleEffects2D', () => {
     expect(backend.resources[0]!.emissions[0]!.seed).toEqual(expect.any(Number));
     instance.restart(99); expect(instance.state()).toMatchObject({ status: 'running', seed: 99 });
     expect(() => instance.setTimescale(20)).toThrow('between 0 and 16');
+    const handle = instance.emitter('spark');
+    expect(handle).toBe(instance.emitter('spark'));
+    handle.writer().position(12, 18).count(3).power(7).submit();
+    expect(backend.resources[0]!.emissions.at(-1)).toMatchObject({ count: 3, positionX: 12, positionY: 18, power: 7 });
   });
 
   it('hot replaces compatible programs and rejects use after disposal', () => {
