@@ -37,6 +37,9 @@ export interface CompiledParticleRenderPass2D {
 
 export interface ParticleModuleCompilerExtension2D {
   readonly id: string;
+  readonly supports: readonly ParticleShaderBackend2D[];
+  readonly parameters?: Readonly<Record<string, 'number' | 'boolean' | 'vector2' | 'color'>>;
+  readonly cpuReference: (state: Float32Array, parameters: Readonly<Record<string, number>>, deltaSeconds: number) => void;
   readonly glslSimulation?: string;
   readonly glslRender?: string;
   readonly wgslSimulation?: string;
@@ -64,6 +67,7 @@ export function compileParticleProgram2D(
   extensions: readonly ParticleModuleCompilerExtension2D[] = [],
 ): CompiledParticleProgram2D {
   validateExtensions(extensions);
+  validateRequiredExtensions(effect, extensions);
   if (effect.source.archetypes.length > 32) throw new Error('Particle compiler supports at most 32 archetypes per effect');
   const usesCollisions = effect.source.archetypes.some((entry) => entry.collision !== undefined);
   const usesEvents = effect.source.archetypes.some((entry) => (entry.events?.length ?? 0) > 0);
@@ -336,7 +340,19 @@ function validateExtensions(extensions: readonly ParticleModuleCompilerExtension
   const ids = new Set<string>();
   for (const extension of extensions) {
     if (!/^[a-z][a-z0-9-]*$/.test(extension.id) || ids.has(extension.id)) throw new Error(`Invalid or duplicate particle compiler extension: ${extension.id}`);
+    if (extension.supports.length === 0) throw new Error(`Particle compiler extension ${extension.id} declares no compatible backend`);
+    if (extension.supports.includes('webgl2') && !extension.glslSimulation && !extension.glslRender) throw new Error(`Particle compiler extension ${extension.id} is missing its GLSL implementation`);
+    if (extension.supports.includes('webgpu') && !extension.wgslSimulation) throw new Error(`Particle compiler extension ${extension.id} is missing its WGSL implementation`);
     ids.add(extension.id);
+  }
+}
+
+function validateRequiredExtensions(effect: CompiledParticleEffect2D, extensions: readonly ParticleModuleCompilerExtension2D[]): void {
+  const available = new Map(extensions.map((extension) => [extension.id, extension]));
+  for (const id of effect.source.customModules ?? []) {
+    const extension = available.get(id);
+    if (!extension) throw new Error(`Particle effect ${effect.source.id} requires unregistered compiler extension ${id}`);
+    if (!extension.supports.includes('webgl2') && effect.fallbackPolicy === 'webgl2') throw new Error(`Particle extension ${id} cannot satisfy the WebGL2 fallback policy`);
   }
 }
 

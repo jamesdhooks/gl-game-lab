@@ -49,6 +49,7 @@ describe('ParticleEffectCompiler2D', () => {
     expect(() => validateParticleShaderBindings2D(program.reflection, names)).not.toThrow();
     names.delete('uDt');
     expect(() => validateParticleShaderBindings2D(program.reflection, names)).toThrow('uDt');
-    expect(() => compileParticleProgram2D(effect, [{ id: 'same' }, { id: 'same' }])).toThrow('duplicate');
+    const extension = { id: 'same', supports: ['webgl2'] as const, cpuReference: () => undefined, glslSimulation: 'stateA.x += 0.0;' };
+    expect(() => compileParticleProgram2D(effect, [extension, extension])).toThrow('duplicate');
   });
 });

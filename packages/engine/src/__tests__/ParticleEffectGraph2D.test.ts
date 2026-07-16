@@ -57,6 +57,9 @@ describe('ParticleEffectGraph2D', () => {
     const first = compileParticleEffect2D(graph);
     const second = compileParticleEffect2D(graph);
     expect(first.emitterIds).toEqual({ burst: 0 });
+    expect(first.graphHash).toMatch(/^[0-9a-f]{8}$/);
+    expect(first.abiHash).toMatch(/^[0-9a-f]{8}$/);
+    expect(first.graphHash).toBe(second.graphHash);
     expect(first.instructions).toEqual(second.instructions);
     expect(first.report).toMatchObject({ emitterCount: 1, archetypeCount: 1, requiredStateTargets: 2 });
   });

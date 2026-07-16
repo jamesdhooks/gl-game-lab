@@ -16,6 +16,8 @@ export type ParticleParameterKind2D = 'number' | 'boolean' | 'enum' | 'vector2' 
 export type ParticleCoordinateSpace2D = 'local' | 'parent' | 'effect' | 'scene' | 'world';
 export type ParticleEmitterImportance2D = 'critical' | 'primary' | 'secondary' | 'cosmetic';
 export type ParticleEmitterStopMode2D = 'drain' | 'kill';
+export type ParticleOverflowPolicy2D = 'recycle-oldest' | 'drop-new' | 'reserve-priority';
+export type ParticleBackendFallbackPolicy2D = 'webgl2' | 'static-preview' | 'fail';
 export type ParticleInterpolation2D = 'linear' | 'smooth' | 'step' | 'exponential' | 'cubic';
 
 export interface ParticleParameterDefinition2D {
@@ -159,6 +161,30 @@ export interface ParticleQualityPolicy2D {
   readonly defaultTier: ParticleRenderTier2D;
   readonly allowRuntimeScaling?: boolean;
   readonly targetFrameMs?: number;
+  readonly previewCapacity?: number;
+  readonly demoCapacity?: number;
+  readonly previewEmissionScale?: number;
+}
+
+export interface ParticleArchetypeCapacity2D {
+  readonly archetypeId: string;
+  readonly share: number;
+  readonly reserved?: number;
+  readonly overflow: ParticleOverflowPolicy2D;
+}
+
+export interface ParticlePersistedSettingBinding2D {
+  readonly parameterId: string;
+  readonly key: string;
+  readonly aliases?: readonly string[];
+}
+
+export interface ParticleBackendRequirements2D {
+  readonly metadata: boolean;
+  readonly events: boolean;
+  readonly floatTargets: boolean;
+  readonly floatBlend?: boolean;
+  readonly minimumDrawBuffers: number;
 }
 
 export interface ParticleEffectGraph2D {
@@ -171,6 +197,10 @@ export interface ParticleEffectGraph2D {
   readonly renderRecipes: ParticleRenderRecipeSet2D;
   readonly capacity: ParticleCapacityPolicy2D;
   readonly quality: ParticleQualityPolicy2D;
+  readonly archetypeCapacity?: readonly ParticleArchetypeCapacity2D[];
+  readonly persistedBindings?: readonly ParticlePersistedSettingBinding2D[];
+  readonly customModules?: readonly string[];
+  readonly fallbackPolicy?: ParticleBackendFallbackPolicy2D;
 }
 
 export type ParticleGraphInstruction2D =
@@ -194,6 +224,9 @@ export interface ParticleEffectCompileReport2D {
 
 export interface CompiledParticleEffect2D {
   readonly compilerVersion: number;
+  readonly stateAbiVersion: number;
+  readonly graphHash: string;
+  readonly abiHash: string;
   readonly source: ParticleEffectGraph2D;
   readonly legacyDefinition: ParticleEffectDefinition2D;
   readonly archetypeIds: Readonly<Record<string, number>>;
@@ -201,6 +234,10 @@ export interface CompiledParticleEffect2D {
   readonly parameterIds: Readonly<Record<string, number>>;
   readonly instructions: readonly ParticleGraphInstruction2D[];
   readonly report: ParticleEffectCompileReport2D;
+  readonly archetypeCapacity: readonly ParticleArchetypeCapacity2D[];
+  readonly backendRequirements: ParticleBackendRequirements2D;
+  readonly fallbackPolicy: ParticleBackendFallbackPolicy2D;
+  readonly persistedBindings: readonly ParticlePersistedSettingBinding2D[];
 }
 
 export function defineParticleEffect2D<const T extends ParticleEffectGraph2D>(definition: T): T {
@@ -294,8 +331,21 @@ export function compileParticleEffect2D(graph: ParticleEffectGraph2D): CompiledP
     },
     renderRecipes: graph.renderRecipes,
   });
+  const archetypeCapacity = resolveArchetypeCapacity(graph);
+  const backendRequirements: ParticleBackendRequirements2D = Object.freeze({
+    metadata: maximumEventGeneration > 0 || graph.archetypes.some((entry) => entry.events?.length),
+    events: graph.archetypes.some((entry) => entry.events?.length),
+    floatTargets: true,
+    floatBlend: false,
+    minimumDrawBuffers: maximumEventGeneration > 0 || graph.archetypes.some((entry) => entry.events?.length) ? 3 : 2,
+  });
+  const graphHash = hashParticleGraph2D(graph);
+  const abiHash = hashText2D(JSON.stringify({ state: 1, archetypes: graph.archetypes.map((entry) => entry.id), metadata: backendRequirements.metadata }));
   return Object.freeze({
     compilerVersion: PARTICLE_EFFECT_COMPILER_VERSION,
+    stateAbiVersion: 1,
+    graphHash,
+    abiHash,
     source: graph,
     legacyDefinition,
     archetypeIds: Object.freeze(archetypeIds),
@@ -312,7 +362,15 @@ export function compileParticleEffect2D(graph: ParticleEffectGraph2D): CompiledP
       referencedEffects: Object.freeze([...references].sort()),
       warnings: Object.freeze(collectWarnings(graph)),
     }),
+    archetypeCapacity: Object.freeze(archetypeCapacity),
+    backendRequirements,
+    fallbackPolicy: graph.fallbackPolicy ?? 'webgl2',
+    persistedBindings: Object.freeze([...(graph.persistedBindings ?? [])]),
   });
+}
+
+export function hashParticleGraph2D(graph: ParticleEffectGraph2D): string {
+  return hashText2D(canonicalJson2D(graph));
 }
 
 export function validateParticleEffectGraph2D(graph: ParticleEffectGraph2D): ParticleEffectGraph2D {
@@ -327,9 +385,48 @@ export function validateParticleEffectGraph2D(graph: ParticleEffectGraph2D): Par
     if (!archetypes.has(emitter.archetypeId)) throw new Error(`Particle emitter ${emitter.id} references unknown archetype ${emitter.archetypeId}`);
     validateEmitter(emitter, parameters, archetypes);
   }
+  validateArchetypeCapacity(graph, archetypes);
+  validatePersistedBindings(graph, parameters);
+  validateEventCycles(graph);
   validateGraphNode(graph.graph.root, emitters, archetypes, parameters, 'root', 0);
   if (!graph.renderRecipes.recipes.some((entry) => entry.tier === graph.quality.defaultTier)) throw new Error(`Particle effect ${graph.id} quality tier is not rendered`);
   return graph;
+}
+
+function validateArchetypeCapacity(graph: ParticleEffectGraph2D, archetypes: ReadonlySet<string>): void {
+  if (!graph.archetypeCapacity) return;
+  const seen = new Set<string>(); let share = 0;
+  for (const policy of graph.archetypeCapacity) {
+    if (!archetypes.has(policy.archetypeId) || seen.has(policy.archetypeId)) throw new Error(`Invalid particle archetype capacity policy: ${policy.archetypeId}`);
+    if (!Number.isFinite(policy.share) || policy.share <= 0 || policy.share > 1) throw new Error(`Particle archetype ${policy.archetypeId} has an invalid capacity share`);
+    if (policy.reserved !== undefined && (!Number.isSafeInteger(policy.reserved) || policy.reserved < 0)) throw new Error(`Particle archetype ${policy.archetypeId} has an invalid reservation`);
+    seen.add(policy.archetypeId); share += policy.share;
+  }
+  if (share > 1.000001) throw new Error('Particle archetype capacity shares exceed one');
+}
+
+function validatePersistedBindings(graph: ParticleEffectGraph2D, parameters: ReadonlySet<string>): void {
+  const keys = new Set<string>();
+  for (const binding of graph.persistedBindings ?? []) {
+    if (!parameters.has(binding.parameterId)) throw new Error(`Particle persisted binding references unknown parameter ${binding.parameterId}`);
+    for (const key of [binding.key, ...(binding.aliases ?? [])]) {
+      if (keys.has(key)) throw new Error(`Duplicate particle persisted setting key or alias: ${key}`);
+      keys.add(key);
+    }
+  }
+}
+
+function validateEventCycles(graph: ParticleEffectGraph2D): void {
+  const edges = new Map(graph.archetypes.map((entry) => [entry.id, entry.events ?? []] as const));
+  const visit = (id: string, path: Set<string>): void => {
+    if (path.has(id)) return;
+    const nextPath = new Set(path); nextPath.add(id);
+    for (const event of edges.get(id) ?? []) {
+      if (nextPath.has(event.childArchetypeId) && event.maxGeneration > 8) throw new Error(`Particle event cycle at ${event.childArchetypeId} exceeds the supported generation depth`);
+      visit(event.childArchetypeId, nextPath);
+    }
+  };
+  graph.archetypes.forEach((entry) => { visit(entry.id, new Set()); });
 }
 
 function validateParameter(parameter: ParticleParameterDefinition2D): void {
@@ -419,6 +516,27 @@ function collectWarnings(graph: ParticleEffectGraph2D): string[] {
   if (graph.capacity.previewMax > 262_144) warnings.push('Preview capacity exceeds the recommended 262144-particle ceiling');
   if (graph.archetypes.some((entry) => (entry.events ?? []).some((event) => event.count > 1024))) warnings.push('A particle event emits more than 1024 children');
   return warnings;
+}
+
+function resolveArchetypeCapacity(graph: ParticleEffectGraph2D): ParticleArchetypeCapacity2D[] {
+  if (graph.archetypeCapacity) return [...graph.archetypeCapacity];
+  const share = 1 / graph.archetypes.length;
+  return graph.archetypes.map((entry, index) => ({ archetypeId: entry.id, share, overflow: index === 0 ? 'reserve-priority' : 'recycle-oldest' }));
+}
+
+function canonicalJson2D(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(canonicalJson2D).join(',')}]`;
+  if (typeof value === 'object' && value !== null) {
+    const record = value as Readonly<Record<string, unknown>>;
+    return `{${Object.keys(record).sort().map((key) => `${JSON.stringify(key)}:${canonicalJson2D(record[key])}`).join(',')}}`;
+  }
+  return JSON.stringify(value);
+}
+
+function hashText2D(source: string): string {
+  let hash = 2166136261;
+  for (let index = 0; index < source.length; index += 1) { hash ^= source.charCodeAt(index); hash = Math.imul(hash, 16777619); }
+  return (hash >>> 0).toString(16).padStart(8, '0');
 }
 
 function stableIds(ids: readonly string[]): Record<string, number> {
