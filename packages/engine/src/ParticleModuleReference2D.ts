@@ -9,8 +9,9 @@ export function integrateParticleReference2D(state: ParticleReferenceState2D, mo
   state.vy += motion.gravity * delta;
   if (attractor && ((motion.radialAcceleration ?? 0) !== 0 || (motion.tangentialAcceleration ?? 0) !== 0)) {
     const dx=attractor.x-state.x, dy=attractor.y-state.y, length=Math.max(1,Math.hypot(dx,dy)), nx=dx/length, ny=dy/length;
-    state.vx += (nx*(motion.radialAcceleration ?? 0)-ny*(motion.tangentialAcceleration ?? 0))*delta;
-    state.vy += (ny*(motion.radialAcceleration ?? 0)+nx*(motion.tangentialAcceleration ?? 0))*delta;
+    const falloff=motion.radialFalloff==='inverse-square'?1/(length*length):motion.radialFalloff==='inverse'?1/length:1;
+    state.vx += (nx*(motion.radialAcceleration ?? 0)-ny*(motion.tangentialAcceleration ?? 0))*falloff*delta;
+    state.vy += (ny*(motion.radialAcceleration ?? 0)+nx*(motion.tangentialAcceleration ?? 0))*falloff*delta;
   }
   const damping=Math.exp(-Math.max(0,motion.drag)*delta); state.vx*=damping; state.vy*=damping;
   state.rotation += state.angularVelocity*delta; state.x += state.vx*delta; state.y += state.vy*delta;

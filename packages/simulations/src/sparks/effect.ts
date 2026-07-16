@@ -98,6 +98,15 @@ const sparksEmitter = (id: string, archetypeId: string, importance: 'critical' |
 /** Authoring graph used by the compiled particle runtime; legacy exports remain stable during visual-parity migration. */
 export const SPARKS_PARTICLE_GRAPH = defineParticleEffect2D({
   ...sparksGraphBase,
+  parameters: [
+    { id: 'gravity', kind: 'number', defaultValue: 760, min: 0, max: 4000 },
+    { id: 'air-drag', kind: 'number', defaultValue: 0.08, min: 0, max: 4 },
+    { id: 'turbulence', kind: 'number', defaultValue: 0.22, min: 0, max: 4 },
+    { id: 'restitution', kind: 'number', defaultValue: 0.58, min: 0, max: 1 },
+    { id: 'friction', kind: 'number', defaultValue: 0.18, min: 0, max: 1 },
+    { id: 'primary-size', kind: 'number', defaultValue: 1, min: 0, max: 3 },
+    { id: 'primary-length', kind: 'number', defaultValue: 1, min: 0, max: 8 },
+  ],
   emitters: [
     sparksEmitter('core-contact', 'core', 'critical'),
     sparksEmitter('welding', 'primary', 'primary'),
@@ -113,6 +122,20 @@ export const SPARKS_PARTICLE_GRAPH = defineParticleEffect2D({
       particleGraph2D.gate({ kind: 'particle-collision', archetypeId: 'primary' }, particleGraph2D.emit('collision-bounce')),
     ),
   },
+  persistedBindings: [
+    { parameterId: 'gravity', key: 'gravity' }, { parameterId: 'air-drag', key: 'airDrag' }, { parameterId: 'turbulence', key: 'sparkTurbulence' },
+    { parameterId: 'restitution', key: 'bounceRestitution' }, { parameterId: 'friction', key: 'surfaceFriction' },
+    { parameterId: 'primary-size', key: 'primarySparkSize' }, { parameterId: 'primary-length', key: 'primarySparkLength' },
+  ],
+  moduleBindings: [
+    ...['core','primary','bounce'].flatMap((id) => [
+      { target: `archetype.${id}.motion.gravity`, parameterId: 'gravity' }, { target: `archetype.${id}.motion.drag`, parameterId: 'air-drag' },
+    ]),
+    { target: 'archetype.primary.motion.turbulence', parameterId: 'turbulence' }, { target: 'archetype.bounce.motion.turbulence', parameterId: 'turbulence' },
+    { target: 'archetype.primary.collision.restitution', parameterId: 'restitution' }, { target: 'archetype.bounce.collision.restitution', parameterId: 'restitution' },
+    { target: 'archetype.primary.collision.friction', parameterId: 'friction' }, { target: 'archetype.bounce.collision.friction', parameterId: 'friction' },
+    { target: 'archetype.primary.appearance.size.start', parameterId: 'primary-size' }, { target: 'archetype.primary.appearance.length.start', parameterId: 'primary-length' },
+  ],
 });
 
 export const SPARKS_PARTICLE_PROGRAM = compileParticleProgram2D(compileParticleEffect2D(SPARKS_PARTICLE_GRAPH));

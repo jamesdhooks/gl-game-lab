@@ -13,13 +13,13 @@ export const ORBITAL_SHRAPNEL_PARTICLE_EFFECT: ParticleEffectDefinition2D = vali
   archetypes: [
     {
       id: 'debris', spawn: { shape: 'disc', spread: Math.PI * 2, radius: 32 },
-      motion: { gravity: 0, drag: 0.0016, inheritedVelocity: 0.35 }, lifecycle: { lifetime: 120, lifetimeVariability: 0.3, killMargin: 256 },
+      motion: { gravity: 0, drag: 0.0016, inheritedVelocity: 0.35, radialAcceleration: 1850, radialFalloff: 'inverse-square' }, lifecycle: { lifetime: 120, lifetimeVariability: 0.3, killMargin: 256 },
       appearance: { size: { start: 1, end: 0.7 }, alpha: { start: 1, end: 0 }, intensity: { start: 1, end: 0.5 }, length: { start: 1, end: 0.5 }, paletteMode: 'seeded' },
       collision: { circles: true, restitution: 0, friction: 0 },
     },
     {
       id: 'asteroid', spawn: { shape: 'disc', spread: 0.12, radius: 12 },
-      motion: { gravity: 0, drag: 0.0016, inheritedVelocity: 1 }, lifecycle: { lifetime: 120, lifetimeVariability: 0.1, killMargin: 256 },
+      motion: { gravity: 0, drag: 0.0016, inheritedVelocity: 1, radialAcceleration: 1850, radialFalloff: 'inverse-square' }, lifecycle: { lifetime: 120, lifetimeVariability: 0.1, killMargin: 256 },
       appearance: { size: { start: 2.2, end: 1.3 }, alpha: { start: 1, end: 0 }, intensity: { start: 1.5, end: 0.6 }, length: { start: 1.2, end: 0.5 }, paletteMode: 'seeded' },
       collision: { circles: true, restitution: 0, friction: 0 },
     },
@@ -56,6 +56,14 @@ export const ORBITAL_SHRAPNEL_PARTICLE_GRAPH = defineParticleEffect2D({
   renderRecipes: ORBITAL_SHRAPNEL_PARTICLE_EFFECT.renderRecipes,
   capacity: ORBITAL_SHRAPNEL_PARTICLE_EFFECT.capacity,
   quality: { defaultTier: 'ultra', allowRuntimeScaling: true, targetFrameMs: 16.67 },
+  persistedBindings: [
+    { parameterId: 'planet-gravity', key: 'gravity' },
+    { parameterId: 'planet-radius', key: 'planetRadius' },
+  ],
+  moduleBindings: [
+    { target: 'archetype.debris.motion.radialAcceleration', parameterId: 'planet-gravity' },
+    { target: 'archetype.asteroid.motion.radialAcceleration', parameterId: 'planet-gravity' },
+  ],
 });
 
 export const ORBITAL_SHRAPNEL_PARTICLE_PROGRAM = compileParticleProgram2D(compileParticleEffect2D(ORBITAL_SHRAPNEL_PARTICLE_GRAPH));

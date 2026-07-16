@@ -115,6 +115,7 @@ class WebGLParticleEffectResource2D implements ParticleEffectBackendResource2D {
       this.archetypeMotion[index * 4 + 3] = archetype.motion.angularVelocity ?? 0;
       this.archetypeForce[index * 4] = archetype.motion.radialAcceleration ?? 0;
       this.archetypeForce[index * 4 + 1] = archetype.motion.tangentialAcceleration ?? 0;
+      this.archetypeForce[index * 4 + 2] = archetype.motion.radialFalloff === 'inverse-square' ? 2 : archetype.motion.radialFalloff === 'inverse' ? 1 : 0;
       const collision = archetype.collision;
       this.archetypeCollision[index * 4] = collision?.restitution ?? 0;
       this.archetypeCollision[index * 4 + 1] = collision?.friction ?? 0;

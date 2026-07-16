@@ -181,7 +181,7 @@ void main() {
     stateA.z += uDt;
     stateB.y += motion.x * uDt;
     stateB.xy *= exp(-max(0.0, motion.y) * uDt);
-    if (abs(force.x)+abs(force.y) > 0.0 && uCircleColliderCount > 0) { vec2 delta=uCircleColliders[0].xy-stateA.xy; float distance=max(length(delta),1.0); vec2 radial=delta/distance; stateB.xy+=(radial*force.x+vec2(-radial.y,radial.x)*force.y)*uDt; }
+    if (abs(force.x)+abs(force.y) > 0.0 && uCircleColliderCount > 0) { vec2 delta=uCircleColliders[0].xy-stateA.xy; float distance=max(length(delta),1.0); vec2 radial=delta/distance; float falloff=force.z<.5?1.0:force.z<1.5?1.0/distance:1.0/(distance*distance); stateB.xy+=(radial*force.x+vec2(-radial.y,radial.x)*force.y)*falloff*uDt; }
     ${turbulence ? 'float noise = hash21(stateA.xy + stateC.zz); stateB.xy += vec2(cos(noise * 6.2831853), sin(noise * 6.2831853)) * motion.z * uDt;' : ''}
     stateB.w += motion.w * uDt;
     stateB.z += stateB.w * uDt;

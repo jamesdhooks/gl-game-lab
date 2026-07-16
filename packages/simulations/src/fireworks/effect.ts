@@ -79,6 +79,10 @@ const fireworksEmitter = (id: string, archetypeId: string, importance: 'critical
 
 export const FIREWORKS_PARTICLE_GRAPH = defineParticleEffect2D({
   ...fireworksGraphBase,
+  parameters: [
+    { id: 'gravity', kind: 'number', defaultValue: 360, min: 0, max: 2000 }, { id: 'air-drag', kind: 'number', defaultValue: 0.34, min: 0, max: 4 },
+    { id: 'particle-size', kind: 'number', defaultValue: 1.45, min: 0, max: 8 }, { id: 'particle-length', kind: 'number', defaultValue: 1.2, min: 0, max: 12 },
+  ],
   emitters: [
     fireworksEmitter('shell-launch', 'shell', 'critical'),
     fireworksEmitter('primary-burst', 'primary', 'primary'),
@@ -93,6 +97,16 @@ export const FIREWORKS_PARTICLE_GRAPH = defineParticleEffect2D({
       particleGraph2D.gate({ kind: 'particle-death', archetypeId: 'primary' }, particleGraph2D.emit('terminal-sparkle')),
     ),
   },
+  persistedBindings: [
+    { parameterId: 'gravity', key: 'gravity' }, { parameterId: 'air-drag', key: 'airDrag' },
+    { parameterId: 'particle-size', key: 'particleSize' }, { parameterId: 'particle-length', key: 'particleLength' },
+  ],
+  moduleBindings: [
+    ...['shell','primary','secondary','sparkle'].flatMap((id) => [
+      { target: `archetype.${id}.motion.gravity`, parameterId: 'gravity' }, { target: `archetype.${id}.motion.drag`, parameterId: 'air-drag' },
+    ]),
+    { target: 'archetype.primary.appearance.size.start', parameterId: 'particle-size' }, { target: 'archetype.primary.appearance.length.start', parameterId: 'particle-length' },
+  ],
 });
 
 export const FIREWORKS_PARTICLE_PROGRAM = compileParticleProgram2D(compileParticleEffect2D(FIREWORKS_PARTICLE_GRAPH));

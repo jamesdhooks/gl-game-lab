@@ -43,6 +43,7 @@ export interface ParticleMotionProfile2D {
   readonly drag: number;
   readonly turbulence?: number;
   readonly radialAcceleration?: number;
+  readonly radialFalloff?: 'constant' | 'inverse' | 'inverse-square';
   readonly tangentialAcceleration?: number;
   readonly inheritedVelocity?: number;
   readonly angularVelocity?: number;
