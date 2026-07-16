@@ -66,7 +66,9 @@ class WebGpuParticleEffectResource2D implements ParticleEffectBackendResource2D 
   private frameStart = 0;
   private spawnedParticles = 0;
   private droppedCommands = 0;
+  private admittedCommands = 0;
   private droppedParticles = 0;
+  private truncatedCommands = 0;
   private simulationPasses = 0;
   private renderPasses = 0;
   private uploadBytes = 0;
@@ -119,6 +121,8 @@ class WebGpuParticleEffectResource2D implements ParticleEffectBackendResource2D 
     this.commandData[offset + 12] = emission.seed; this.commandData[offset + 13] = emission.seed / 0x1_0000_0000;
     this.commandData[offset + 14] = archetype.lifecycle.lifetimeVariability ?? 0;
     this.commandCount += 1; this.particleCount += count; this.droppedParticles += emission.count - count;
+    this.admittedCommands += 1;
+    if (count < emission.count) this.truncatedCommands += 1;
   }
 
   setPalette(_palette: ParticlePalette2D): void { this.assertUsable(); }
@@ -143,7 +147,7 @@ class WebGpuParticleEffectResource2D implements ParticleEffectBackendResource2D 
   }
   clear(): void { this.assertUsable(); this.commandCount = 0; this.particleCount = 0; this.cursor = 0; }
   diagnostics(): ParticleEffectBackendDiagnostics2D {
-    return Object.freeze({ capacity: this.capacity, activeEstimate: Math.min(this.capacity, this.spawnedParticles), queuedCommands: 0, droppedCommands: this.droppedCommands, spawnedParticles: this.spawnedParticles, droppedParticles: this.droppedParticles, eventCount: 0, simulationPasses: this.simulationPasses, renderPasses: this.renderPasses, uploadBytes: this.uploadBytes, contextGeneration: 0, rebuildCount: 0, allocatedBytes: this.capacity * 4 * 4 * 3 + this.commandData.byteLength + this.frameData.byteLength, eventAttempts: 0, eventOccupiedDrops: 0, eventBudgetDrops: 0 });
+    return Object.freeze({ capacity: this.capacity, activeEstimate: Math.min(this.capacity, this.spawnedParticles), queuedCommands: 0, droppedCommands: this.droppedCommands, spawnedParticles: this.spawnedParticles, droppedParticles: this.droppedParticles, eventCount: 0, simulationPasses: this.simulationPasses, renderPasses: this.renderPasses, uploadBytes: this.uploadBytes, contextGeneration: 0, rebuildCount: 0, allocatedBytes: this.capacity * 4 * 4 * 3 + this.commandData.byteLength + this.frameData.byteLength, eventAttempts: 0, eventOccupiedDrops: 0, eventBudgetDrops: 0, diagnosticAccuracy: 'estimated', directCommandsAdmitted: this.admittedCommands, directCommandsTruncated: this.truncatedCommands, commandUploadBytes: this.uploadBytes, allocationsAfterWarmup: 0 });
   }
   dispose(): void { if (this.disposed) return; this.disposed = true; this.stateA.destroy(); this.stateB.destroy(); this.stateC.destroy(); this.commands.destroy(); this.frame.destroy(); this.motion.destroy(); }
   private assertUsable(): void { if (this.disposed) throw new Error('WebGPU particle effect resource is disposed'); }

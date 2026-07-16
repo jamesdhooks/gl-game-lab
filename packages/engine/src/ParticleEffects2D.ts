@@ -166,6 +166,21 @@ export interface ParticleEffectDiagnostics2D {
   readonly uploadBytes: number;
   readonly contextGeneration: number;
   readonly rebuildCount: number;
+  readonly diagnosticAccuracy?: 'exact' | 'delayed' | 'estimated';
+  readonly directCommandsAdmitted?: number;
+  readonly directCommandsTruncated?: number;
+  readonly eventContentionLosses?: number;
+  readonly eventGenerationDrops?: number;
+  readonly eventCapacityDrops?: number;
+  readonly trailPasses?: number;
+  readonly bloomPasses?: number;
+  readonly parameterUploadBytes?: number;
+  readonly paletteUploadBytes?: number;
+  readonly commandUploadBytes?: number;
+  readonly cpuTimeMs?: number;
+  readonly gpuTimeMs?: number;
+  readonly allocationsAfterWarmup?: number;
+  readonly pipelineCacheHits?: number;
 }
 
 export interface ParticleEffectController2D {
