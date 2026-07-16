@@ -227,7 +227,7 @@ export interface ParticleEffects2D {
 
 interface ProgramRecord {
   program: CompiledParticleProgram2D;
-  backend: ParticleEffectBackendResource2D;
+  capacity: number;
   instances: Set<RuntimeParticleEffectInstance2D>;
 }
 
@@ -248,7 +248,7 @@ export class EngineParticleEffects2D implements ParticleEffects2D {
     if (this.programs.has(id)) throw new Error(`Particle effect program is already registered: ${id}`);
     const policy=program.effect.source.capacity, capacity=options.capacity??policy.default;
     if(!Number.isSafeInteger(capacity)||capacity<policy.min||capacity>policy.max)throw new Error(`Particle effect capacity for ${id} is outside its compiled policy`);
-    this.programs.set(id, { program, backend: this.backend.create(program, capacity), instances: new Set() });
+    this.programs.set(id, { program, capacity, instances: new Set() });
   }
 
   replace(program: CompiledParticleProgram2D): void {
@@ -256,12 +256,11 @@ export class EngineParticleEffects2D implements ParticleEffects2D {
     const id = program.effect.source.id;
     const previous = this.programs.get(id);
     if (!previous) { this.register(program); return; }
-    const replacement = this.backend.create(program, program.effect.source.capacity.default);
-    if (previous.program.effect.abiHash === program.effect.abiHash) previous.backend.transferStateTo?.(replacement);
-    previous.backend.dispose();
-    previous.backend = replacement;
     previous.program = program;
-    for (const instance of previous.instances) instance.replaceProgram(program, replacement);
+    for (const instance of previous.instances) {
+      const replacement = this.backend.create(program, previous.capacity);
+      instance.replaceProgram(program, replacement);
+    }
   }
 
   createInstance(effectId: string, options: ParticleEffectInstanceOptions2D = {}): ParticleEffectInstance2D {
@@ -269,7 +268,7 @@ export class EngineParticleEffects2D implements ParticleEffects2D {
     const record = this.programs.get(effectId);
     if (!record) throw new Error(`Unknown compiled particle effect: ${effectId}`);
     const instance = new RuntimeParticleEffectInstance2D(
-      this.nextInstanceId++, record.program, record.backend, options,
+      this.nextInstanceId++, record.program, this.backend.create(record.program, record.capacity), options,
       (id) => { this.removeInstance(effectId, id); },
       (referenceId) => { const child = this.createInstance(referenceId); child.start(); },
     );
@@ -281,29 +280,24 @@ export class EngineParticleEffects2D implements ParticleEffects2D {
   update(deltaSeconds: number): void {
     this.assertUsable();
     if (!Number.isFinite(deltaSeconds) || deltaSeconds < 0) throw new Error('Particle runtime delta must be finite and non-negative');
-    for (const instance of this.instances.values()) instance.update(deltaSeconds);
-    for (const record of this.programs.values()) {
-      let maxTimescale = 0;
-      for (const instance of record.instances) if (instance.isAdvancing) maxTimescale = Math.max(maxTimescale, instance.currentTimescale);
-      if (maxTimescale > 0) record.backend.update(deltaSeconds, maxTimescale);
+    for (const instance of this.instances.values()) {
+      const wasAdvancing = instance.isAdvancing;
+      instance.update(deltaSeconds);
+      if (wasAdvancing || instance.isAdvancing) instance.updateBackend(deltaSeconds);
     }
   }
 
   render(target: GpuRenderTarget2D): void {
     this.assertUsable();
-    for (const record of this.programs.values()) {
-      let tier: ParticleRenderTier2D | undefined;
-      for (const instance of record.instances) if (instance.isVisible) tier = higherTier(tier, instance.currentTier);
-      if (tier) record.backend.render(target, tier);
-    }
+    for (const instance of this.instances.values()) if (instance.isVisible) instance.renderBackend(target);
   }
 
   diagnostics(): ParticleEffectsDiagnostics2D {
     let capacity = 0, activeEstimate = 0, spawnedParticles = 0, droppedParticles = 0, simulationPasses = 0, renderPasses = 0, uploadBytes = 0, allocatedBytes = 0;
     let eventPasses = 0, eventAttempts = 0, eventLosses = 0, backendFallbackCount = 0, allocationsAfterWarmup = 0;
     let diagnosticAccuracy: ParticleEffectsDiagnostics2D['diagnosticAccuracy'] = 'exact';
-    for (const record of this.programs.values()) {
-      const diagnostics = record.backend.diagnostics();
+    for (const instance of this.instances.values()) {
+      const diagnostics = instance.diagnostics();
       capacity += diagnostics.capacity; activeEstimate += diagnostics.activeEstimate; spawnedParticles += diagnostics.spawnedParticles;
       droppedParticles += diagnostics.droppedParticles; simulationPasses += diagnostics.simulationPasses; renderPasses += diagnostics.renderPasses;
       uploadBytes += diagnostics.uploadBytes; allocatedBytes += diagnostics.allocatedBytes;
@@ -319,7 +313,6 @@ export class EngineParticleEffects2D implements ParticleEffects2D {
   dispose(): void {
     if (this.disposed) return;
     for (const instance of [...this.instances.values()]) instance.dispose();
-    for (const record of this.programs.values()) record.backend.dispose();
     this.instances.clear(); this.programs.clear(); this.disposed = true;
   }
 
@@ -478,7 +471,10 @@ class RuntimeParticleEffectInstance2D implements ParticleEffectInstance2D {
     return Object.freeze({ id: this.id, effectId: this.program.effect.source.id, status: this.statusValue, elapsed: this.elapsed, seed: this.seed, timescale: this.timescale, qualityTier: this.tier, activeEmitters: this.emitters.reduce((count, emitter) => count + Number(emitter.active), 0) });
   }
   diagnostics(): ParticleEffectBackendDiagnostics2D { return this.backend.diagnostics(); }
-  dispose(): void { if (this.statusValue === 'disposed') return; this.statusValue = 'disposed'; this.onDispose(this.id); }
+  dispose(): void { if (this.statusValue === 'disposed') return; this.statusValue = 'disposed'; this.backend.dispose(); this.onDispose(this.id); }
+
+  updateBackend(deltaSeconds: number): void { this.backend.update(deltaSeconds, this.timescale); }
+  renderBackend(target: GpuRenderTarget2D): void { this.backend.render(target, this.tier); }
 
   update(deltaSeconds: number): void {
     if (!this.isAdvancing) return;
@@ -495,8 +491,17 @@ class RuntimeParticleEffectInstance2D implements ParticleEffectInstance2D {
   }
 
   replaceProgram(program: CompiledParticleProgram2D, backend: ParticleEffectBackendResource2D): void {
-    if (program.effect.abiHash !== this.program.effect.abiHash) throw new Error(`Hot reload of ${program.effect.source.id} changed its particle ABI; restart its instances`);
+    const compatible = program.effect.abiHash === this.program.effect.abiHash;
+    if (compatible) this.backend.transferStateTo?.(backend);
+    this.backend.dispose();
     this.program = program; this.backend = backend; this.parameters = { ...resolveParticleParameters2D(program.effect.source, this.parameters) }; backend.setPalette(this.palette); backend.setParameters?.(this.parameters);
+    if (!compatible) {
+      this.elapsed = 0;
+      this.emitters.forEach((emitter) => { emitter.reset(); });
+      this.scheduler.reset(this.seed);
+      this.statusValue = 'idle';
+      this.start();
+    }
   }
 
   private advanceEmitter(emitter: EmitterRuntime, delta: number): void {
@@ -556,7 +561,6 @@ class RuntimeParticleEffectInstance2D implements ParticleEffectInstance2D {
 
 function firstBurstCount(emitter: ParticleEmitterDefinition2D): number { return emitter.timeline.bursts?.[0]?.count ?? 1; }
 function importanceCode(importance: ParticleEmitterDefinition2D['limits']['importance']): number { return ['cosmetic', 'secondary', 'primary', 'critical'].indexOf(importance); }
-function higherTier(current: ParticleRenderTier2D | undefined, next: ParticleRenderTier2D): ParticleRenderTier2D { return !current || ['basic', 'enhanced', 'ultra'].indexOf(next) > ['basic', 'enhanced', 'ultra'].indexOf(current) ? next : current; }
 function validateTimescale(value: number): number { if (!Number.isFinite(value) || value < 0 || value > 16) throw new Error('Particle effect timescale must be between 0 and 16'); return value; }
 function validateTransform(transform: ParticleTransform2D): void { if (![...transform.position, transform.rotation, ...transform.scale].every(Number.isFinite)) throw new Error('Particle transform values must be finite'); }
 function mixSeed(a: number, b: number): number { let value = (a ^ b) >>> 0; value = Math.imul(value ^ (value >>> 16), 0x7feb352d); value = Math.imul(value ^ (value >>> 15), 0x846ca68b); return (value ^ (value >>> 16)) >>> 0; }
