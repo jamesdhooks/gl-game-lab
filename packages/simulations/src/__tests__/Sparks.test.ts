@@ -53,4 +53,22 @@ describe('Sparks', () => {
     expect(first.some(rail => rail.x1 === rail.x2 && rail.y1 === rail.y2)).toBe(true);
     expect(first.some(rail => Math.abs(rail.y2 - rail.y1) > 8 && Math.hypot(rail.x2 - rail.x1, rail.y2 - rail.y1) > 80)).toBe(true);
   });
+
+  it('keeps contextual settings scoped to the relevant input and render modes', () => {
+    const byKey = new Map(SPARKS_SETTINGS.map((setting) => [setting.key, setting]));
+    expect(byKey.get('buildRadius')?.visibleModes).toEqual(['build']);
+    expect(byKey.get('coreSparkTorchPositionVariability')?.visibleModes).toEqual(['welding']);
+    expect(byKey.get('trailFade')?.visibleRenderStyles).toEqual(['ultra']);
+    expect(byKey.get('trailContinuity')?.visibleRenderStyles).toEqual(['enhanced', 'ultra']);
+    expect(byKey.get('heatRadius')?.visibleRenderStyles).toEqual(['enhanced', 'ultra']);
+  });
+
+  it('keeps collision, turbulence, and bounce sub-emission in the GPU step contract', () => {
+    expect(SPARKS_STEP_SHADER).toContain('uBuildSurfaces[13]');
+    expect(SPARKS_STEP_SHADER).toContain('reflectWithFriction');
+    expect(SPARKS_STEP_SHADER).toContain('turbulenceField');
+    expect(SPARKS_STEP_SHADER).toContain('uBounceBurstChance');
+    expect(SPARKS_STEP_SHADER).toContain('uBounceBurstCount');
+    expect(SPARKS_STEP_SHADER).toContain('parentGeneration>=1.0&&parentGeneration<1.5');
+  });
 });
