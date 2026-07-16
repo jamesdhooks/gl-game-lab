@@ -15,6 +15,7 @@ import { paginateGallery } from './galleryPagination.js';
 import { MobileCertificationRunner } from './MobileCertificationRunner.js';
 import { definitionSettings, normalizePreviewProfiles, type PreviewProfileMap } from './previewProfiles.js';
 import { readPreviewFrameRateMode, useAutoPreviewFrameRate, type PreviewFrameRate, type PreviewFrameRateMode } from './previewFrameRate.js';
+import { ParticleBenchmarkLab } from './ParticleBenchmarkLab.js';
 
 type FilterKind = 'all' | 'game' | 'simulation';
 type PreviewFidelity = 'simulation' | 'image';
@@ -134,6 +135,7 @@ const LOGO_PARTICLES: ReadonlyArray<readonly [number, string, string, string, nu
 export function App(): JSX.Element {
   const query = new URLSearchParams(window.location.search);
   if (query.get('mobileCertification') === '1') return <MobileCertificationRunner />;
+  if (import.meta.env.DEV && query.get('particleBenchmark') === '1') return <ParticleBenchmarkLab />;
   const capture = parseDemoCaptureOptions(window.location.search);
   const diagnosticHost = capture.enabled
     || query.get('diagnostics') === '1'

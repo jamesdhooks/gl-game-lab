@@ -216,7 +216,7 @@ export interface ParticleEffectsDiagnostics2D {
 }
 
 export interface ParticleEffects2D {
-  register(program: CompiledParticleProgram2D): void;
+  register(program: CompiledParticleProgram2D, options?: { readonly capacity?: number }): void;
   replace(program: CompiledParticleProgram2D): void;
   createInstance(effectId: string, options?: ParticleEffectInstanceOptions2D): ParticleEffectInstance2D;
   update(deltaSeconds: number): void;
@@ -242,11 +242,12 @@ export class EngineParticleEffects2D implements ParticleEffects2D {
 
   constructor(private readonly backend: ParticleEffectRuntimeBackend2D) {}
 
-  register(program: CompiledParticleProgram2D): void {
+  register(program: CompiledParticleProgram2D, options: { readonly capacity?: number } = {}): void {
     this.assertUsable();
     const id = program.effect.source.id;
     if (this.programs.has(id)) throw new Error(`Particle effect program is already registered: ${id}`);
-    const capacity = program.effect.source.capacity.default;
+    const policy=program.effect.source.capacity, capacity=options.capacity??policy.default;
+    if(!Number.isSafeInteger(capacity)||capacity<policy.min||capacity>policy.max)throw new Error(`Particle effect capacity for ${id} is outside its compiled policy`);
     this.programs.set(id, { program, backend: this.backend.create(program, capacity), instances: new Set() });
   }
 
