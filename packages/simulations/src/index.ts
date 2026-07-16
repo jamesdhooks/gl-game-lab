@@ -68,14 +68,15 @@ export { TURING_SKIN_STYLE_MANIFEST } from './turing-skin/styles.js';
 export { ORBITAL_SHRAPNEL_DEFAULTS, ORBITAL_SHRAPNEL_SETTINGS, createOrbitalShrapnelConfig, orbitalBoolean, orbitalNumber, orbitalString, type OrbitalShrapnelConfig } from './orbital-shrapnel/config.js';
 export { ORBITAL_SHRAPNEL_PLUGIN_ID, OrbitalShrapnelControllerService, createOrbitalShrapnelPlugin, type OrbitalShrapnelController, type OrbitalShrapnelMode } from './orbital-shrapnel/OrbitalShrapnelPlugin.js';
 export { ORBITAL_SHRAPNEL_STYLE_MANIFEST } from './orbital-shrapnel/styles.js';
+export { ORBITAL_SHRAPNEL_PARTICLE_EFFECT, ORBITAL_SHRAPNEL_PARTICLE_GRAPH, ORBITAL_SHRAPNEL_PARTICLE_PROGRAM } from './orbital-shrapnel/effect.js';
 export { SPARKS_DEFAULTS, SPARKS_SETTINGS, createSparksConfig, sparksNumber, sparksString, type SparksConfig } from './sparks/config.js';
 export { SPARKS_PLUGIN_ID, SparksControllerService, createSparksDefaultRails, createSparksPreviewRails, createSparksPlugin, type Rail, type SparksController, type SparksMode } from './sparks/SparksPlugin.js';
 export { SPARKS_STYLE_MANIFEST } from './sparks/styles.js';
-export { SPARKS_PARTICLE_EFFECT, SPARKS_PARTICLE_SETTING_BINDINGS } from './sparks/effect.js';
+export { SPARKS_PARTICLE_EFFECT, SPARKS_PARTICLE_GRAPH, SPARKS_PARTICLE_PROGRAM, SPARKS_PARTICLE_SETTING_BINDINGS } from './sparks/effect.js';
 export { FIREWORKS_DEFAULTS, FIREWORKS_SETTINGS, createFireworksConfig, type FireworksConfig } from './fireworks/config.js';
 export { FIREWORKS_PLUGIN_ID, FireworksControllerService, createFireworksPlugin, resolveFireworkLaunchVelocity, type FireworksController, type FireworksMode } from './fireworks/FireworksPlugin.js';
 export { FIREWORKS_STYLE_MANIFEST } from './fireworks/styles.js';
-export { FIREWORKS_PARTICLE_EFFECT, FIREWORKS_PARTICLE_SETTING_BINDINGS, fireworksColorModeCode, fireworksPatternCode } from './fireworks/effect.js';
+export { FIREWORKS_PARTICLE_EFFECT, FIREWORKS_PARTICLE_GRAPH, FIREWORKS_PARTICLE_PROGRAM, FIREWORKS_PARTICLE_SETTING_BINDINGS, fireworksColorModeCode, fireworksPatternCode } from './fireworks/effect.js';
 export {
   HARMONIC_SAND_DEFAULTS,
   HARMONIC_SAND_SETTINGS,
