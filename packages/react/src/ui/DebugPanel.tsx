@@ -82,6 +82,11 @@ export function DebugPanel({ engine }: DebugPanelProps): JSX.Element {
                   <StatRow label="active / capacity" value={`${formatInteger(particleDiagnostics.activeEstimate)} / ${formatInteger(particleDiagnostics.capacity)}`} />
                   <StatRow label="spawned / dropped" value={`${formatInteger(particleDiagnostics.spawnedParticles)} / ${formatInteger(particleDiagnostics.droppedParticles)}`} />
                   <StatRow label="sim / render passes" value={`${formatInteger(particleDiagnostics.simulationPasses)} / ${formatInteger(particleDiagnostics.renderPasses)}`} />
+                  <StatRow label="event passes / attempts" value={`${formatInteger(particleDiagnostics.eventPasses)} / ${formatInteger(particleDiagnostics.eventAttempts)}`} />
+                  <StatRow label="event losses" value={formatInteger(particleDiagnostics.eventLosses)} />
+                  <StatRow label="fallbacks" value={formatInteger(particleDiagnostics.backendFallbackCount)} />
+                  <StatRow label="accuracy" value={particleDiagnostics.diagnosticAccuracy} />
+                  <StatRow label="warm allocations" value={formatInteger(particleDiagnostics.allocationsAfterWarmup)} />
                   <StatRow label="uploads" value={formatBytes(particleDiagnostics.uploadBytes)} />
                   <StatRow label="allocated" value={formatBytes(particleDiagnostics.allocatedBytes)} />
                 </DebugSection>

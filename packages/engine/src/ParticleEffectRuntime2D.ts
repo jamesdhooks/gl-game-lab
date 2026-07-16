@@ -191,6 +191,12 @@ export interface ParticleEffectsDiagnostics2D {
   readonly renderPasses: number;
   readonly uploadBytes: number;
   readonly allocatedBytes: number;
+  readonly eventPasses: number;
+  readonly eventAttempts: number;
+  readonly eventLosses: number;
+  readonly backendFallbackCount: number;
+  readonly allocationsAfterWarmup: number;
+  readonly diagnosticAccuracy: 'exact' | 'delayed' | 'estimated';
 }
 
 export interface ParticleEffects2D {
@@ -277,13 +283,20 @@ export class EngineParticleEffects2D implements ParticleEffects2D {
 
   diagnostics(): ParticleEffectsDiagnostics2D {
     let capacity = 0, activeEstimate = 0, spawnedParticles = 0, droppedParticles = 0, simulationPasses = 0, renderPasses = 0, uploadBytes = 0, allocatedBytes = 0;
+    let eventPasses = 0, eventAttempts = 0, eventLosses = 0, backendFallbackCount = 0, allocationsAfterWarmup = 0;
+    let diagnosticAccuracy: ParticleEffectsDiagnostics2D['diagnosticAccuracy'] = 'exact';
     for (const record of this.programs.values()) {
       const diagnostics = record.backend.diagnostics();
       capacity += diagnostics.capacity; activeEstimate += diagnostics.activeEstimate; spawnedParticles += diagnostics.spawnedParticles;
       droppedParticles += diagnostics.droppedParticles; simulationPasses += diagnostics.simulationPasses; renderPasses += diagnostics.renderPasses;
       uploadBytes += diagnostics.uploadBytes; allocatedBytes += diagnostics.allocatedBytes;
+      eventPasses += diagnostics.eventCount; eventAttempts += diagnostics.eventAttempts;
+      eventLosses += diagnostics.eventOccupiedDrops + diagnostics.eventBudgetDrops + (diagnostics.eventContentionLosses ?? 0) + (diagnostics.eventGenerationDrops ?? 0);
+      backendFallbackCount += diagnostics.backendFallbackCount ?? 0; allocationsAfterWarmup += diagnostics.allocationsAfterWarmup ?? 0;
+      if (diagnostics.diagnosticAccuracy === undefined || diagnostics.diagnosticAccuracy === 'estimated') diagnosticAccuracy = 'estimated';
+      else if (diagnostics.diagnosticAccuracy === 'delayed' && diagnosticAccuracy === 'exact') diagnosticAccuracy = 'delayed';
     }
-    return Object.freeze({ backend: this.backend.kind, activeInstances: this.instances.size, registeredPrograms: this.programs.size, capacity, activeEstimate, spawnedParticles, droppedParticles, simulationPasses, renderPasses, uploadBytes, allocatedBytes });
+    return Object.freeze({ backend: this.backend.kind, activeInstances: this.instances.size, registeredPrograms: this.programs.size, capacity, activeEstimate, spawnedParticles, droppedParticles, simulationPasses, renderPasses, uploadBytes, allocatedBytes, eventPasses, eventAttempts, eventLosses, backendFallbackCount, allocationsAfterWarmup, diagnosticAccuracy });
   }
 
   dispose(): void {

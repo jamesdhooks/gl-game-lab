@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { ParticleEffectBudgetController2D, ParticleEffectRecorder2D, ParticleEffectReplayPlayer2D, type ParticleEffectInstance2D, type ParticleEffectsDiagnostics2D } from '../index.js';
 
-const diagnostics: ParticleEffectsDiagnostics2D = { backend: 'test', activeInstances: 1, registeredPrograms: 1, capacity: 100, activeEstimate: 50, spawnedParticles: 50, droppedParticles: 0, simulationPasses: 1, renderPasses: 1, uploadBytes: 64, allocatedBytes: 1024 };
+const diagnostics: ParticleEffectsDiagnostics2D = { backend: 'test', activeInstances: 1, registeredPrograms: 1, capacity: 100, activeEstimate: 50, spawnedParticles: 50, droppedParticles: 0, simulationPasses: 1, renderPasses: 1, uploadBytes: 64, allocatedBytes: 1024, eventPasses: 0, eventAttempts: 0, eventLosses: 0, backendFallbackCount: 0, allocationsAfterWarmup: 0, diagnosticAccuracy: 'exact' };
 
 describe('ParticleEffectTools2D', () => {
   it('degrades cosmetic work first and recovers with hysteresis', () => {
