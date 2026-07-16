@@ -96,4 +96,27 @@ describe('ParticleEffects2D', () => {
       { parameter: 'appearance.size', persistedKey: 'size', label: 'Size', section: 'Rendering', archetypeId: 'missing' },
     ])).toThrow('unknown archetype');
   });
+
+  it('is deterministic, wraps active capacity, and bounds command overflow without reallocating its batch', () => {
+    const first = new ParticleCommandQueue2D(definition);
+    const second = new ParticleCommandQueue2D(definition);
+    first.setCapacity(128); second.setCapacity(128);
+    const makeCommand = (seed: number) => ({
+      archetypeId: 'primary', count: 17, position: [seed, seed + 1] as const,
+      inheritedVelocity: [2, 3] as const, direction: 1, spread: 2, power: 300,
+      seed, paletteSeed: seed + 9, variant: seed % 8,
+    });
+    for (let index = 0; index < PARTICLE_EFFECT_COMMAND_CAPACITY; index += 1) {
+      expect(first.enqueue(makeCommand(index))).toBe(true);
+      expect(second.enqueue(makeCommand(index))).toBe(true);
+    }
+    expect(first.enqueue(makeCommand(100))).toBe(false);
+    const firstBatch = first.drain(), secondBatch = second.drain();
+    expect(firstBatch.data).toEqual(secondBatch.data);
+    expect(firstBatch.count).toBe(PARTICLE_EFFECT_COMMAND_CAPACITY);
+    expect(first.totalDroppedCommands).toBe(1);
+    expect(first.totalDroppedParticles).toBe(17);
+    expect(firstBatch.data[(PARTICLE_EFFECT_COMMAND_CAPACITY - 1) * 16 + 1]).toBeLessThan(128);
+    expect(first.drain()).toBe(firstBatch);
+  });
 });
