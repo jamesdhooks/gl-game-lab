@@ -3,9 +3,15 @@ import {
   createFireworksConfig,
   FIREWORKS_DEFAULTS,
   FIREWORKS_PARTICLE_EFFECT,
+  FIREWORKS_PARTICLE_GRAPH,
+  FIREWORKS_PARTICLE_PROGRAM,
   FIREWORKS_PARTICLE_SETTING_BINDINGS,
   SPARKS_PARTICLE_EFFECT,
+  SPARKS_PARTICLE_GRAPH,
+  SPARKS_PARTICLE_PROGRAM,
   SPARKS_PARTICLE_SETTING_BINDINGS,
+  ORBITAL_SHRAPNEL_PARTICLE_GRAPH,
+  ORBITAL_SHRAPNEL_PARTICLE_PROGRAM,
 } from '../index.js';
 import { FIREWORKS_EVENT_SHADER, FIREWORKS_STEP_SHADER } from '../fireworks/shaders.js';
 import { SPARKS_STEP_SHADER } from '../sparks/shaders.js';
@@ -43,5 +49,20 @@ describe('shared particle effect acceptance', () => {
     expect(FIREWORKS_STEP_SHADER).not.toContain('uSpawnActive');
     expect(FIREWORKS_EVENT_SHADER).not.toContain('readPixels');
     expect(FIREWORKS_STEP_SHADER).not.toContain('readPixels');
+  });
+
+  it('compiles all three proof scenes through the reusable emitter graph architecture', () => {
+    expect(SPARKS_PARTICLE_GRAPH.emitters.map((emitter) => emitter.id)).toEqual(['core-contact', 'welding', 'pinwheel', 'shower', 'collision-bounce']);
+    expect(FIREWORKS_PARTICLE_GRAPH.emitters.map((emitter) => emitter.id)).toEqual(['shell-launch', 'primary-burst', 'secondary-burst', 'terminal-sparkle']);
+    expect(ORBITAL_SHRAPNEL_PARTICLE_GRAPH.emitters.map((emitter) => emitter.id)).toEqual(['debris-field', 'asteroid-stream']);
+    expect(SPARKS_PARTICLE_PROGRAM.reflection).toMatchObject({ stateTargets: 3, usesCollisions: true, usesEvents: true });
+    expect(FIREWORKS_PARTICLE_PROGRAM.reflection).toMatchObject({ stateTargets: 3, usesCollisions: false, usesEvents: true });
+    expect(ORBITAL_SHRAPNEL_PARTICLE_PROGRAM.reflection).toMatchObject({ usesCollisions: true });
+    for (const program of [SPARKS_PARTICLE_PROGRAM, FIREWORKS_PARTICLE_PROGRAM, ORBITAL_SHRAPNEL_PARTICLE_PROGRAM]) {
+      expect(program.webgl2.simulation.source).toContain('uParticleCommandData');
+      expect(program.webgpu.simulation.source).toContain('@compute @workgroup_size(256)');
+      expect(program.webgl2.simulation.source).not.toContain('readPixels');
+      expect(program.webgpu.simulation.source).not.toContain('readPixels');
+    }
   });
 });
