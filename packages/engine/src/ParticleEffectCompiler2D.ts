@@ -132,7 +132,14 @@ uniform int uParticleCommandFrameStart;
 uniform float uDt;
 uniform vec2 uCanvasSize;
 uniform vec4 uArchetypeMotion[${Math.max(1, effect.source.archetypes.length)}];
+uniform vec4 uArchetypeForce[${Math.max(1, effect.source.archetypes.length)}];
+uniform vec4 uArchetypeCollision[${Math.max(1, effect.source.archetypes.length)}];
 uniform vec4 uEmitterSource[${Math.max(1, effect.source.emitters.length)}];
+uniform vec4 uCircleColliders[16];
+uniform vec4 uCapsuleA[16];
+uniform vec4 uCapsuleB[16];
+uniform int uCircleColliderCount;
+uniform int uCapsuleColliderCount;
 layout(location=0) out vec4 outPosition;
 layout(location=1) out vec4 outVelocity;
 ${targets === 3 ? 'layout(location=2) out vec4 outMetadata;' : ''}
@@ -168,15 +175,21 @@ void main() {
   ${targets === 3 ? 'vec4 stateC = texelFetch(uMetadataState, uv, 0);' : 'vec4 stateC = vec4(0.0);'}
   int archetype = clamp(int(stateC.x + 0.5), 0, ${Math.max(0, effect.source.archetypes.length - 1)});
   vec4 motion = uArchetypeMotion[archetype];
+  vec4 force = uArchetypeForce[archetype];
+  vec4 collision = uArchetypeCollision[archetype];
   if (stateA.z < stateA.w) {
     stateA.z += uDt;
     stateB.y += motion.x * uDt;
     stateB.xy *= exp(-max(0.0, motion.y) * uDt);
+    if (abs(force.x)+abs(force.y) > 0.0 && uCircleColliderCount > 0) { vec2 delta=uCircleColliders[0].xy-stateA.xy; float distance=max(length(delta),1.0); vec2 radial=delta/distance; stateB.xy+=(radial*force.x+vec2(-radial.y,radial.x)*force.y)*uDt; }
     ${turbulence ? 'float noise = hash21(stateA.xy + stateC.zz); stateB.xy += vec2(cos(noise * 6.2831853), sin(noise * 6.2831853)) * motion.z * uDt;' : ''}
     stateB.w += motion.w * uDt;
     stateB.z += stateB.w * uDt;
     stateA.xy += stateB.xy * uDt;
-    ${collisions ? 'stateA.xy = clamp(stateA.xy, vec2(0.0), uCanvasSize);' : ''}
+    ${collisions ? `int collisionFlags=int(collision.w+.5);
+    if ((collisionFlags & 1) != 0) { if(stateA.x<0.0||stateA.x>uCanvasSize.x){stateA.x=clamp(stateA.x,0.0,uCanvasSize.x);stateB.x=-stateB.x*collision.x;} if(stateA.y<0.0||stateA.y>uCanvasSize.y){stateA.y=clamp(stateA.y,0.0,uCanvasSize.y);stateB.y=-stateB.y*collision.x;} }
+    if ((collisionFlags & 2) != 0) for(int collider=0;collider<16;collider++){if(collider>=uCircleColliderCount)break;vec4 circle=uCircleColliders[collider];vec2 delta=stateA.xy-circle.xy;float distance=length(delta);if(distance<circle.z){if(circle.w>.5){stateA.z=stateA.w;}else{vec2 normal=distance>.0001?delta/distance:vec2(0,-1);stateA.xy=circle.xy+normal*circle.z;stateB.xy-=normal*(1.0+collision.x)*dot(stateB.xy,normal);stateB.xy*=max(0.0,1.0-collision.y);stateA.z+=stateA.w*collision.z;}}}
+    if ((collisionFlags & 4) != 0) for(int collider=0;collider<16;collider++){if(collider>=uCapsuleColliderCount)break;vec4 segment=uCapsuleA[collider];vec4 data=uCapsuleB[collider];vec2 ab=segment.zw-segment.xy;float t=clamp(dot(stateA.xy-segment.xy,ab)/max(dot(ab,ab),.0001),0.0,1.0);vec2 closest=segment.xy+ab*t,delta=stateA.xy-closest;float distance=length(delta);if(distance<data.x){if(data.y>.5){stateA.z=stateA.w;}else{vec2 normal=distance>.0001?delta/distance:vec2(0,-1);stateA.xy=closest+normal*data.x;stateB.xy-=normal*(1.0+collision.x)*dot(stateB.xy,normal);stateB.xy*=max(0.0,1.0-collision.y);stateA.z+=stateA.w*collision.z;}}}` : ''}
   }
   vec4 commandA=vec4(0), commandB=vec4(0), commandC=vec4(0), commandD=vec4(0); int relative=0;
   if (id < uCapacity && readCommand(id, commandA, commandB, commandC, commandD, relative)) {
@@ -390,6 +403,8 @@ function baseBindings(targets: 2 | 3, collisions: boolean, events: boolean, exte
     { name: 'uDt', kind: 'uniform', dataType: 'f32', required: true },
     { name: 'uCanvasSize', kind: 'uniform', dataType: 'vec2', required: true },
     { name: 'uArchetypeMotion', kind: 'uniform', dataType: 'vec4[]', required: true },
+    { name: 'uArchetypeForce', kind: 'uniform', dataType: 'vec4[]', required: true },
+    { name: 'uArchetypeCollision', kind: 'uniform', dataType: 'vec4[]', required: collisions },
     { name: 'uEmitterSource', kind: 'uniform', dataType: 'vec4[]', required: true },
     { name: 'uArchetypeSize', kind: 'uniform', dataType: 'vec4[]', required: true },
     { name: 'uArchetypeLength', kind: 'uniform', dataType: 'vec4[]', required: true },
@@ -398,7 +413,11 @@ function baseBindings(targets: 2 | 3, collisions: boolean, events: boolean, exte
     { name: 'uPalette', kind: 'uniform', dataType: 'vec3[8]', required: true },
   ];
   if (targets === 3) bindings.push({ name: 'uMetadataState', kind: 'texture', dataType: 'rgba32f', required: true });
-  if (collisions) bindings.push({ name: 'uColliders', kind: 'texture', dataType: 'rgba32f', required: false });
+  if (collisions) bindings.push(
+    { name: 'uCircleColliders', kind: 'uniform', dataType: 'vec4[16]', required: true },
+    { name: 'uCapsuleA', kind: 'uniform', dataType: 'vec4[16]', required: true },
+    { name: 'uCapsuleB', kind: 'uniform', dataType: 'vec4[16]', required: true },
+  );
   if (events) bindings.push({ name: 'uEventCommands', kind: 'texture', dataType: 'rgba32f', required: false });
   extensions.forEach((extension) => { bindings.push(...(extension.bindings ?? [])); });
   return bindings;

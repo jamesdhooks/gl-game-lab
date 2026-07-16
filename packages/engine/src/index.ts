@@ -262,6 +262,9 @@ export {
   type ParticleEmissionWriter2D,
   type ParticleEmitterHandle2D,
   type ParticleRuntimeEmission2D,
+  type ParticleCircleCollider2D,
+  type ParticleCapsuleCollider2D,
+  type ParticleColliderSet2D,
   type ParticleSignalPayload2D,
   type ParticleTransform2D,
 } from './ParticleEffectRuntime2D.js';

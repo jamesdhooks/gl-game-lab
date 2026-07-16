@@ -9,6 +9,7 @@ import type {
   ParticleEffectBackendDiagnostics2D,
   ParticleEffectBackendResource2D,
   ParticleEffectRuntimeBackend2D,
+  ParticleColliderSet2D,
   ParticlePalette2D,
   ParticleRenderTier2D,
   ParticleRuntimeEmission2D,
@@ -17,6 +18,7 @@ import type {
 const COMMAND_CAPACITY = 64;
 const COMMAND_FLOATS = 16;
 const MAX_PALETTE = 8;
+const MAX_COLLIDERS = 16;
 
 export interface WebGLParticleEffectRuntimeOptions2D {
   readonly trailFade?: number;
@@ -43,12 +45,19 @@ class WebGLParticleEffectResource2D implements ParticleEffectBackendResource2D {
   private readonly commands = new Float32Array(COMMAND_CAPACITY * COMMAND_FLOATS);
   private readonly commandImportance = new Int8Array(COMMAND_CAPACITY);
   private readonly archetypeMotion: Float32Array;
+  private readonly archetypeForce: Float32Array;
+  private readonly archetypeCollision: Float32Array;
   private readonly emitterSource: Float32Array;
   private readonly archetypeSize: Float32Array;
   private readonly archetypeLength: Float32Array;
   private readonly archetypeAlpha: Float32Array;
   private readonly archetypeIntensity: Float32Array;
   private readonly palette = new Float32Array(MAX_PALETTE * 3);
+  private readonly circles = new Float32Array(MAX_COLLIDERS * 4);
+  private readonly capsuleA = new Float32Array(MAX_COLLIDERS * 4);
+  private readonly capsuleB = new Float32Array(MAX_COLLIDERS * 4);
+  private circleCount = 0;
+  private capsuleCount = 0;
   private readonly batch: GpuParticleCommandBatch2D;
   private commandCount = 0;
   private particleCount = 0;
@@ -91,6 +100,8 @@ class WebGLParticleEffectResource2D implements ParticleEffectBackendResource2D {
       metadata: program.reflection.stateTargets === 3,
     });
     this.archetypeMotion = new Float32Array(Math.max(1, program.effect.source.archetypes.length) * 4);
+    this.archetypeForce = new Float32Array(Math.max(1, program.effect.source.archetypes.length) * 4);
+    this.archetypeCollision = new Float32Array(Math.max(1, program.effect.source.archetypes.length) * 4);
     this.emitterSource = new Float32Array(Math.max(1, program.effect.source.emitters.length) * 4);
     this.archetypeSize = new Float32Array(Math.max(1, program.effect.source.archetypes.length) * 4);
     this.archetypeLength = new Float32Array(Math.max(1, program.effect.source.archetypes.length) * 4);
@@ -101,6 +112,13 @@ class WebGLParticleEffectResource2D implements ParticleEffectBackendResource2D {
       this.archetypeMotion[index * 4 + 1] = archetype.motion.drag;
       this.archetypeMotion[index * 4 + 2] = archetype.motion.turbulence ?? 0;
       this.archetypeMotion[index * 4 + 3] = archetype.motion.angularVelocity ?? 0;
+      this.archetypeForce[index * 4] = archetype.motion.radialAcceleration ?? 0;
+      this.archetypeForce[index * 4 + 1] = archetype.motion.tangentialAcceleration ?? 0;
+      const collision = archetype.collision;
+      this.archetypeCollision[index * 4] = collision?.restitution ?? 0;
+      this.archetypeCollision[index * 4 + 1] = collision?.friction ?? 0;
+      this.archetypeCollision[index * 4 + 2] = collision?.lifetimeLoss ?? 0;
+      this.archetypeCollision[index * 4 + 3] = (collision?.bounds ? 1 : 0) + (collision?.circles ? 2 : 0) + (collision?.capsules ? 4 : 0);
       writeCurve(this.archetypeSize, index, archetype.appearance.size);
       writeCurve(this.archetypeLength, index, archetype.appearance.length ?? archetype.appearance.size);
       writeCurve(this.archetypeAlpha, index, archetype.appearance.alpha);
@@ -180,6 +198,14 @@ class WebGLParticleEffectResource2D implements ParticleEffectBackendResource2D {
       const color = value.colors[index] ?? [1, 1, 1];
       this.palette.set(color, index * 3);
     }
+  }
+
+  setColliders(value: ParticleColliderSet2D): void {
+    this.assertUsable(); this.circles.fill(0); this.capsuleA.fill(0); this.capsuleB.fill(0);
+    this.circleCount = Math.min(MAX_COLLIDERS, value.circles?.length ?? 0);
+    this.capsuleCount = Math.min(MAX_COLLIDERS, value.capsules?.length ?? 0);
+    for (let index = 0; index < this.circleCount; index += 1) { const circle=value.circles![index]!; this.circles.set([circle.x,circle.y,circle.radius,circle.mode==='kill'?1:0],index*4); }
+    for (let index = 0; index < this.capsuleCount; index += 1) { const capsule=value.capsules![index]!; this.capsuleA.set([capsule.ax,capsule.ay,capsule.bx,capsule.by],index*4); this.capsuleB.set([capsule.radius,capsule.mode==='kill'?1:0,0,0],index*4); }
   }
 
   update(deltaSeconds: number, timescale: number): void {
@@ -268,7 +294,14 @@ class WebGLParticleEffectResource2D implements ParticleEffectBackendResource2D {
     gl.uniform1f(uniform('uDt'), delta);
     gl.uniform2f(uniform('uCanvasSize'), this.viewportWidth, this.viewportHeight);
     gl.uniform4fv(uniform('uArchetypeMotion[0]'), this.archetypeMotion);
+    gl.uniform4fv(uniform('uArchetypeForce[0]'), this.archetypeForce);
+    gl.uniform4fv(uniform('uArchetypeCollision[0]'), this.archetypeCollision);
     gl.uniform4fv(uniform('uEmitterSource[0]'), this.emitterSource);
+    gl.uniform1i(uniform('uCircleColliderCount'), this.circleCount);
+    gl.uniform1i(uniform('uCapsuleColliderCount'), this.capsuleCount);
+    gl.uniform4fv(uniform('uCircleColliders[0]'), this.circles);
+    gl.uniform4fv(uniform('uCapsuleA[0]'), this.capsuleA);
+    gl.uniform4fv(uniform('uCapsuleB[0]'), this.capsuleB);
     gl.uniform1i(uniform('uParticleCommandFrameStart'), this.frameStart);
   }
 

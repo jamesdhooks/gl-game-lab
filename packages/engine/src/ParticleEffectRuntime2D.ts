@@ -62,6 +62,14 @@ export interface ParticleSignalPayload2D {
   readonly value?: number;
 }
 
+export interface ParticleCircleCollider2D { readonly x: number; readonly y: number; readonly radius: number; readonly mode?: 'bounce' | 'kill' }
+export interface ParticleCapsuleCollider2D { readonly ax: number; readonly ay: number; readonly bx: number; readonly by: number; readonly radius: number; readonly mode?: 'bounce' | 'kill' }
+export interface ParticleColliderSet2D {
+  readonly circles?: readonly ParticleCircleCollider2D[];
+  readonly capsules?: readonly ParticleCapsuleCollider2D[];
+  readonly revision: number;
+}
+
 export interface ParticleRuntimeEmission2D {
   readonly instanceId: number;
   readonly emitterIndex: number;
@@ -90,6 +98,7 @@ export interface ParticleEffectBackendDiagnostics2D extends ParticleEffectDiagno
 export interface ParticleEffectBackendResource2D {
   emit(emission: ParticleRuntimeEmission2D): void;
   setPalette(palette: ParticlePalette2D): void;
+  setColliders?(colliders: ParticleColliderSet2D): void;
   update(deltaSeconds: number, timescale: number): void;
   render(target: GpuRenderTarget2D, tier: ParticleRenderTier2D): void;
   clear(): void;
@@ -132,6 +141,7 @@ class RecoveringParticleEffectBackendResource2D implements ParticleEffectBackend
   ) { this.resource = preferred.create(program, capacity); this.fallbackCount = initialFallbackCount; }
   emit(value: ParticleRuntimeEmission2D): void { this.invoke((resource) => { resource.emit(value); }); }
   setPalette(value: ParticlePalette2D): void { this.invoke((resource) => { resource.setPalette(value); }); }
+  setColliders(value: ParticleColliderSet2D): void { this.invoke((resource) => { resource.setColliders?.(value); }); }
   update(deltaSeconds: number, timescale: number): void { this.invoke((resource) => { resource.update(deltaSeconds, timescale); }); }
   render(target: GpuRenderTarget2D, tier: ParticleRenderTier2D): void { this.invoke((resource) => { resource.render(target, tier); }); }
   clear(): void { this.invoke((resource) => { resource.clear(); }); }
@@ -175,6 +185,7 @@ export interface ParticleEffectInstance2D {
   setTransform(transform: ParticleTransform2D): void;
   setParameter(name: string, value: ParticleParameterValue2D): void;
   setPalette(palette: ParticlePalette2D): void;
+  setColliders(colliders: ParticleColliderSet2D): void;
   setTimescale(value: number): void;
   setQualityTier(tier: ParticleRenderTier2D): void;
   state(): ParticleEffectInstanceState2D;
@@ -455,6 +466,7 @@ class RuntimeParticleEffectInstance2D implements ParticleEffectInstance2D {
   setTransform(transform: ParticleTransform2D): void { this.assertUsable(); validateTransform(transform); this.transform = transform; }
   setParameter(name: string, value: ParticleParameterValue2D): void { this.assertUsable(); this.parameters = { ...resolveParticleParameters2D(this.program.effect.source, { ...this.parameters, [name]: value }) }; }
   setPalette(palette: ParticlePalette2D): void { this.assertUsable(); this.palette = palette; this.backend.setPalette(palette); }
+  setColliders(colliders: ParticleColliderSet2D): void { this.assertUsable(); this.backend.setColliders?.(colliders); }
   setTimescale(value: number): void { this.assertUsable(); this.timescale = validateTimescale(value); }
   setQualityTier(tier: ParticleRenderTier2D): void { this.assertUsable(); if (!this.program.effect.source.renderRecipes.recipes.some((entry) => entry.tier === tier)) throw new Error(`Particle effect does not render tier: ${tier}`); this.tier = tier; }
 
