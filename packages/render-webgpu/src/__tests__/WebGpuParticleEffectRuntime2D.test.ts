@@ -34,7 +34,7 @@ describe('WebGpuParticleEffectRuntimeBackend2D', () => {
     const resource = backend.create(program, 512);
     resource.emit({ instanceId: 1, emitterIndex: 0, count: 40, positionX: 10, positionY: 20, direction: 0, spread: 1, power: 30, seed: 8, importance: 3 });
     resource.update(1 / 60, 1);
-    expect(fixture.writeBuffer).toHaveBeenCalledTimes(2);
+    expect(fixture.writeBuffer).toHaveBeenCalledTimes(3);
     expect(fixture.dispatchWorkgroups).toHaveBeenCalledWith(2);
     expect(fixture.submit).toHaveBeenCalledTimes(1);
     resource.render({ width: 384, height: 384 } as GpuRenderTarget2D, 'basic');
