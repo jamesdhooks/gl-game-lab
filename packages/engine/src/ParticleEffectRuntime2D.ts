@@ -90,6 +90,7 @@ export interface ParticleEffectBackendResource2D {
   update(deltaSeconds: number, timescale: number): void;
   render(target: GpuRenderTarget2D, tier: ParticleRenderTier2D): void;
   clear(): void;
+  transferStateTo?(target: ParticleEffectBackendResource2D): boolean;
   diagnostics(): ParticleEffectBackendDiagnostics2D;
   dispose(): void;
 }
@@ -131,6 +132,7 @@ class RecoveringParticleEffectBackendResource2D implements ParticleEffectBackend
   update(deltaSeconds: number, timescale: number): void { this.invoke((resource) => { resource.update(deltaSeconds, timescale); }); }
   render(target: GpuRenderTarget2D, tier: ParticleRenderTier2D): void { this.invoke((resource) => { resource.render(target, tier); }); }
   clear(): void { this.invoke((resource) => { resource.clear(); }); }
+  transferStateTo(target: ParticleEffectBackendResource2D): boolean { return this.resource.transferStateTo?.(target) ?? false; }
   diagnostics(): ParticleEffectBackendDiagnostics2D { return { ...this.resource.diagnostics(), backendFallbackCount: this.fallbackCount }; }
   dispose(): void { this.resource.dispose(); }
   private invoke(operation: (resource: ParticleEffectBackendResource2D) => void): void {
@@ -232,6 +234,7 @@ export class EngineParticleEffects2D implements ParticleEffects2D {
     const previous = this.programs.get(id);
     if (!previous) { this.register(program); return; }
     const replacement = this.backend.create(program, program.effect.source.capacity.default);
+    if (previous.program.effect.abiHash === program.effect.abiHash) previous.backend.transferStateTo?.(replacement);
     previous.backend.dispose();
     previous.backend = replacement;
     previous.program = program;

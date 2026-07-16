@@ -134,6 +134,8 @@ export interface GpuParticleSystem2D {
   beginTrails(width: number, height: number, fade: number): GpuRenderTarget2D;
   compositeTrails(target: GpuRenderTarget2D, background: readonly [number, number, number], bloom: number): void;
   clearTrails(): void;
+  /** GPU-to-GPU state transfer used for ABI-compatible shader hot reloads. */
+  copyStateTo?(target: GpuParticleSystem2D): boolean;
   diagnostics(): GpuParticleSystemDiagnostics2D;
   dispose(): void;
 }

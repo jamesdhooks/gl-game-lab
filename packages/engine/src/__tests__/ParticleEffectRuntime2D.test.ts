@@ -19,11 +19,13 @@ class TestResource implements ParticleEffectBackendResource2D {
   emissions: ParticleRuntimeEmission2D[] = [];
   updates = 0;
   renders = 0;
+  transferred = false;
   emit(emission: ParticleRuntimeEmission2D): void { this.emissions.push({ ...emission }); }
   setPalette(_palette: ParticlePalette2D): void {}
   update(): void { this.updates += 1; }
   render(_target: GpuRenderTarget2D, _tier: ParticleRenderTier2D): void { this.renders += 1; }
   clear(): void { this.emissions = []; }
+  transferStateTo(target: ParticleEffectBackendResource2D): boolean { (target as TestResource).transferred = true; return true; }
   diagnostics(): ParticleEffectBackendDiagnostics2D { return { capacity: 64, activeEstimate: this.emissions.reduce((sum, entry) => sum + entry.count, 0), queuedCommands: 0, droppedCommands: 0, spawnedParticles: this.emissions.reduce((sum, entry) => sum + entry.count, 0), droppedParticles: 0, eventCount: 0, simulationPasses: this.updates, renderPasses: this.renders, uploadBytes: 0, contextGeneration: 0, rebuildCount: 0, allocatedBytes: 4096, eventAttempts: 0, eventOccupiedDrops: 0, eventBudgetDrops: 0 }; }
   dispose(): void {}
 }
@@ -79,6 +81,7 @@ describe('EngineParticleEffects2D', () => {
     const program = compileParticleProgram2D(compileParticleEffect2D(adaptParticleEffectDefinition2D(definition)));
     runtime.register(program); const instance = runtime.createInstance('runtime-test');
     runtime.replace(program); expect(backend.resources).toHaveLength(2);
+    expect(backend.resources[1]!.transferred).toBe(true);
     instance.dispose(); expect(runtime.diagnostics().activeInstances).toBe(0);
     runtime.dispose(); expect(() => runtime.createInstance('runtime-test')).toThrow('disposed');
   });

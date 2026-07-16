@@ -110,6 +110,17 @@ export class GpuParticleState {
     }
   }
 
+  copyTo(target: GpuParticleState): boolean {
+    this.assertUsable();
+    if (target.gl !== this.gl || target.width !== this.width || target.height !== this.height || Boolean(target.metadata) !== Boolean(this.metadata)) return false;
+    copyDoubleTarget(this.gl, this.positions, target.positions);
+    copyDoubleTarget(this.gl, this.velocities, target.velocities);
+    if (this.metadata && target.metadata) copyDoubleTarget(this.gl, this.metadata, target.metadata);
+    this.gl.bindFramebuffer(this.gl.READ_FRAMEBUFFER, null);
+    this.gl.bindFramebuffer(this.gl.DRAW_FRAMEBUFFER, null);
+    return true;
+  }
+
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
@@ -138,6 +149,17 @@ export class GpuParticleState {
   }
 
   private assertUsable(): void { if (this.disposed) throw new Error('GPU particle state has been disposed'); }
+}
+
+function copyDoubleTarget(gl: WebGL2RenderingContext, source: GpuDoubleRenderTarget, target: GpuDoubleRenderTarget): void {
+  copyTarget(gl, source.read.framebuffer, target.read.framebuffer, source.width, source.height);
+  copyTarget(gl, source.write.framebuffer, target.write.framebuffer, source.width, source.height);
+}
+
+function copyTarget(gl: WebGL2RenderingContext, source: WebGLFramebuffer, target: WebGLFramebuffer, width: number, height: number): void {
+  gl.bindFramebuffer(gl.READ_FRAMEBUFFER, source);
+  gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, target);
+  gl.blitFramebuffer(0, 0, width, height, 0, 0, width, height, gl.COLOR_BUFFER_BIT, gl.NEAREST);
 }
 
 function positive(value: number, label: string): number {

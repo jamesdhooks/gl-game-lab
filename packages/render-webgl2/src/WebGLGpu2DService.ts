@@ -249,6 +249,9 @@ class WebGLGpuParticleSystem implements GpuParticleSystem2D {
     this.renderPasses += 1;
   }
   clearTrails(): void { this.owner.value.trails?.clear(); }
+  copyStateTo(target: GpuParticleSystem2D): boolean {
+    return target instanceof WebGLGpuParticleSystem && this.owner.value.state.copyTo(target.owner.value.state);
+  }
   diagnostics(): GpuParticleSystemDiagnostics2D {
     return Object.freeze({
       commandCapacity: this.owner.value.commands.capacity,

@@ -182,6 +182,9 @@ class WebGLParticleEffectResource2D implements ParticleEffectBackendResource2D {
   }
 
   clear(): void { this.assertUsable(); this.particles.clear(); this.particles.clearTrails(); this.commandCount = 0; this.particleCount = 0; this.cursor = 0; }
+  transferStateTo(target: ParticleEffectBackendResource2D): boolean {
+    return target instanceof WebGLParticleEffectResource2D && (this.particles.copyStateTo?.(target.particles) ?? false);
+  }
 
   diagnostics(): ParticleEffectBackendDiagnostics2D {
     const diagnostics = this.particles.diagnostics();
