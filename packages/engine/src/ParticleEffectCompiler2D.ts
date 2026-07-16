@@ -52,6 +52,7 @@ export interface CompiledParticleProgram2D {
     readonly simulation: ParticleCompiledShader2D;
     readonly event?: ParticleCompiledShader2D;
     readonly vertex: ParticleCompiledShader2D;
+    readonly streakVertex: ParticleCompiledShader2D;
     readonly fragment: ParticleCompiledShader2D;
   };
   readonly webgpu: {
@@ -83,7 +84,8 @@ export function compileParticleProgram2D(
   });
   const glslSimulation = buildGlslSimulation(effect, extensions, usesCollisions, usesTurbulence);
   const glslEvent = usesEvents ? buildGlslEvent(effect) : undefined;
-  const glslVertex = buildGlslVertex(effect, extensions);
+  const glslVertex = buildGlslVertex(effect, extensions, false);
+  const glslStreakVertex = buildGlslVertex(effect, extensions, true);
   const glslFragment = buildGlslFragment(extensions);
   const wgslSimulation = buildWgslSimulation(effect, extensions, usesCollisions, usesTurbulence);
   const wgslRender = buildWgslRender();
@@ -93,6 +95,7 @@ export function compileParticleProgram2D(
       simulation: shader('webgl2', 'simulation', 'main', glslSimulation),
       ...(glslEvent === undefined ? {} : { event: shader('webgl2', 'event', 'main', glslEvent) }),
       vertex: shader('webgl2', 'vertex', 'main', glslVertex),
+      streakVertex: shader('webgl2', 'vertex', 'main', glslStreakVertex),
       fragment: shader('webgl2', 'fragment', 'main', glslFragment),
     }),
     webgpu: Object.freeze({
@@ -223,7 +226,7 @@ void main() {
 }`;
 }
 
-function buildGlslVertex(effect: CompiledParticleEffect2D, extensions: readonly ParticleModuleCompilerExtension2D[]): string {
+function buildGlslVertex(effect: CompiledParticleEffect2D, extensions: readonly ParticleModuleCompilerExtension2D[], streak: boolean): string {
   const targets = effect.report.requiredStateTargets;
   return `#version 300 es
 precision highp float;
@@ -234,19 +237,41 @@ uniform ivec2 uStateSize;
 uniform int uParticleCapacity;
 uniform vec2 uCanvasSize;
 uniform float uPointScale;
+uniform vec4 uArchetypeSize[${Math.max(1, effect.source.archetypes.length)}];
+uniform vec4 uArchetypeLength[${Math.max(1, effect.source.archetypes.length)}];
+uniform vec4 uArchetypeAlpha[${Math.max(1, effect.source.archetypes.length)}];
+uniform vec4 uArchetypeIntensity[${Math.max(1, effect.source.archetypes.length)}];
 out float vAge;
 out float vSeed;
+out float vAlpha;
+out float vIntensity;
+flat out int vStreak;
 void main() {
-  int index = gl_VertexID;
+  vStreak=${streak ? '1' : '0'};
+  int index = ${streak ? 'gl_VertexID / 6' : 'gl_VertexID'};
   ivec2 uv = ivec2(index % int(uStateSize.x), index / int(uStateSize.x));
   vec4 a = texelFetch(uPositionState, uv, 0);
   ${targets === 3 ? 'vec4 c = texelFetch(uMetadataState, uv, 0);' : 'vec4 c = vec4(0.0);'}
-  if (index >= uParticleCapacity || a.w <= 0.0) { gl_Position=vec4(2.0); gl_PointSize=0.0; vAge=1.0; vSeed=0.0; return; }
+  if (index >= uParticleCapacity || a.w <= 0.0) { gl_Position=vec4(2.0); gl_PointSize=0.0; vAge=1.0; vSeed=0.0; vAlpha=0.0; vIntensity=0.0; return; }
   vAge = clamp(a.z / max(a.w, 0.0001), 0.0, 1.0);
   vSeed = c.z;
+  int archetype=clamp(int(c.x+.5),0,${Math.max(0, effect.source.archetypes.length - 1)});
+  vec4 sizeCurve=uArchetypeSize[archetype], lengthCurve=uArchetypeLength[archetype];
+  float curveAge=pow(vAge,max(.01,sizeCurve.z));
+  float size=max(0.0,mix(sizeCurve.x,sizeCurve.y,curveAge))*uPointScale;
+  vec4 alphaCurve=uArchetypeAlpha[archetype], intensityCurve=uArchetypeIntensity[archetype];
+  vAlpha=mix(alphaCurve.x,alphaCurve.y,pow(vAge,max(.01,alphaCurve.z)));
+  vIntensity=mix(intensityCurve.x,intensityCurve.y,pow(vAge,max(.01,intensityCurve.z)));
   vec2 clip = vec2(a.x / uCanvasSize.x * 2.0 - 1.0, 1.0 - a.y / uCanvasSize.y * 2.0);
+  ${streak ? `vec4 b=texelFetch(uVelocityState,uv,0); int corner=gl_VertexID%6;
+  vec2 corners[6]=vec2[6](vec2(0,-1),vec2(1,-1),vec2(0,1),vec2(0,1),vec2(1,-1),vec2(1,1));
+  vec2 axis=length(b.xy)>0.001?normalize(b.xy):vec2(1,0), normal=vec2(-axis.y,axis.x);
+  float streakLength=max(size,mix(lengthCurve.x,lengthCurve.y,pow(vAge,max(.01,lengthCurve.z)))*length(b.xy)*.016);
+  vec2 local=-axis*corners[corner].x*streakLength+normal*corners[corner].y*size*.5;
+  clip+=vec2(local.x/uCanvasSize.x*2.0,-local.y/uCanvasSize.y*2.0);` : ''}
   gl_Position = vec4(clip, 0.0, a.z < a.w ? 1.0 : 0.0);
   gl_PointSize = max(0.0, mix(uPointScale, 0.0, vAge));
+  ${streak ? 'gl_PointSize=1.0;' : 'gl_PointSize=size;'}
   ${extensions.map((entry) => entry.glslRender ?? '').filter(Boolean).join('\n  ')}
 }`;
 }
@@ -259,13 +284,16 @@ uniform int uPaletteCount;
 uniform float uIntensity;
 in float vAge;
 in float vSeed;
+in float vAlpha;
+in float vIntensity;
+flat in int vStreak;
 out vec4 outColor;
 void main() {
   vec2 p = gl_PointCoord * 2.0 - 1.0;
-  float coverage = 1.0 - smoothstep(0.72, 1.0, length(p));
+  float coverage = vStreak == 1 ? 1.0 : 1.0 - smoothstep(0.72, 1.0, length(p));
   int paletteIndex = int(floor(vSeed * float(max(1, uPaletteCount)))) % max(1, uPaletteCount);
   vec3 color = uPalette[paletteIndex];
-  outColor = vec4(color * uIntensity, coverage * (1.0 - vAge));
+  outColor = vec4(color * uIntensity * vIntensity, coverage * vAlpha);
   ${extensions.map((entry) => entry.glslRender ?? '').filter(Boolean).join('\n  ')}
 }`;
 }
@@ -363,6 +391,10 @@ function baseBindings(targets: 2 | 3, collisions: boolean, events: boolean, exte
     { name: 'uCanvasSize', kind: 'uniform', dataType: 'vec2', required: true },
     { name: 'uArchetypeMotion', kind: 'uniform', dataType: 'vec4[]', required: true },
     { name: 'uEmitterSource', kind: 'uniform', dataType: 'vec4[]', required: true },
+    { name: 'uArchetypeSize', kind: 'uniform', dataType: 'vec4[]', required: true },
+    { name: 'uArchetypeLength', kind: 'uniform', dataType: 'vec4[]', required: true },
+    { name: 'uArchetypeAlpha', kind: 'uniform', dataType: 'vec4[]', required: true },
+    { name: 'uArchetypeIntensity', kind: 'uniform', dataType: 'vec4[]', required: true },
     { name: 'uPalette', kind: 'uniform', dataType: 'vec3[8]', required: true },
   ];
   if (targets === 3) bindings.push({ name: 'uMetadataState', kind: 'texture', dataType: 'rgba32f', required: true });

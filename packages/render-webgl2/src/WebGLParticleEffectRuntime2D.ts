@@ -44,6 +44,10 @@ class WebGLParticleEffectResource2D implements ParticleEffectBackendResource2D {
   private readonly commandImportance = new Int8Array(COMMAND_CAPACITY);
   private readonly archetypeMotion: Float32Array;
   private readonly emitterSource: Float32Array;
+  private readonly archetypeSize: Float32Array;
+  private readonly archetypeLength: Float32Array;
+  private readonly archetypeAlpha: Float32Array;
+  private readonly archetypeIntensity: Float32Array;
   private readonly palette = new Float32Array(MAX_PALETTE * 3);
   private readonly batch: GpuParticleCommandBatch2D;
   private commandCount = 0;
@@ -71,7 +75,7 @@ class WebGLParticleEffectResource2D implements ParticleEffectBackendResource2D {
   ) {
     const renderPasses = Object.fromEntries(
       [...new Set(program.renderPasses.enhanced.concat(program.renderPasses.ultra).filter((pass) => pass.kind === 'streaks').map((pass) => pass.id))]
-        .map((passId) => [passId, { vertexSource: program.webgl2.vertex.source, fragmentSource: program.webgl2.fragment.source, blend: 'additive' as const, verticesPerParticle: 1 }]),
+        .map((passId) => [passId, { vertexSource: program.webgl2.streakVertex.source, fragmentSource: program.webgl2.fragment.source, blend: 'additive' as const, verticesPerParticle: 6 }]),
     );
     this.particles = gpu.createParticleSystem(id, {
       capacity,
@@ -88,11 +92,19 @@ class WebGLParticleEffectResource2D implements ParticleEffectBackendResource2D {
     });
     this.archetypeMotion = new Float32Array(Math.max(1, program.effect.source.archetypes.length) * 4);
     this.emitterSource = new Float32Array(Math.max(1, program.effect.source.emitters.length) * 4);
+    this.archetypeSize = new Float32Array(Math.max(1, program.effect.source.archetypes.length) * 4);
+    this.archetypeLength = new Float32Array(Math.max(1, program.effect.source.archetypes.length) * 4);
+    this.archetypeAlpha = new Float32Array(Math.max(1, program.effect.source.archetypes.length) * 4);
+    this.archetypeIntensity = new Float32Array(Math.max(1, program.effect.source.archetypes.length) * 4);
     program.effect.source.archetypes.forEach((archetype, index) => {
       this.archetypeMotion[index * 4] = archetype.motion.gravity;
       this.archetypeMotion[index * 4 + 1] = archetype.motion.drag;
       this.archetypeMotion[index * 4 + 2] = archetype.motion.turbulence ?? 0;
       this.archetypeMotion[index * 4 + 3] = archetype.motion.angularVelocity ?? 0;
+      writeCurve(this.archetypeSize, index, archetype.appearance.size);
+      writeCurve(this.archetypeLength, index, archetype.appearance.length ?? archetype.appearance.size);
+      writeCurve(this.archetypeAlpha, index, archetype.appearance.alpha);
+      writeCurve(this.archetypeIntensity, index, archetype.appearance.intensity);
     });
     program.effect.source.emitters.forEach((emitter, index) => {
       const source = emitter.source;
@@ -245,6 +257,10 @@ class WebGLParticleEffectResource2D implements ParticleEffectBackendResource2D {
     gl.uniform3fv(uniform('uPalette[0]'), this.palette);
     gl.uniform1i(uniform('uPaletteCount'), this.paletteCount);
     gl.uniform1f(uniform('uIntensity'), 1);
+    gl.uniform4fv(uniform('uArchetypeSize[0]'), this.archetypeSize);
+    gl.uniform4fv(uniform('uArchetypeLength[0]'), this.archetypeLength);
+    gl.uniform4fv(uniform('uArchetypeAlpha[0]'), this.archetypeAlpha);
+    gl.uniform4fv(uniform('uArchetypeIntensity[0]'), this.archetypeIntensity);
   };
 
   private bindSimulation(gl: GpuUniformEncoder2D, uniform: GpuUniformLookup2D, delta: number): void {
@@ -290,4 +306,8 @@ function eventWindowSeconds(archetype: CompiledParticleProgram2D['effect']['sour
   let latest = archetype.lifecycle.lifetime * (1 + (archetype.lifecycle.lifetimeVariability ?? 0));
   for (const event of archetype.events ?? []) latest = Math.max(latest, archetype.lifecycle.lifetime + (event.delay ?? 0));
   return latest;
+}
+
+function writeCurve(target: Float32Array, index: number, curve: { readonly start: number; readonly end: number; readonly exponent?: number }): void {
+  const offset = index * 4; target[offset] = curve.start; target[offset + 1] = curve.end; target[offset + 2] = curve.exponent ?? 1; target[offset + 3] = 0;
 }
