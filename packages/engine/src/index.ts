@@ -226,6 +226,18 @@ export {
   type ParticleEffectLibraryDiagnostics2D,
 } from './ParticleEffectAuthoring2D.js';
 export {
+  compileParticleProgram2D,
+  validateParticleShaderBindings2D,
+  type CompiledParticleProgram2D,
+  type CompiledParticleRenderPass2D,
+  type ParticleCompiledShader2D,
+  type ParticleModuleCompilerExtension2D,
+  type ParticleShaderBackend2D,
+  type ParticleShaderBinding2D,
+  type ParticleShaderReflection2D,
+  type ParticleShaderStage2D,
+} from './ParticleEffectCompiler2D.js';
+export {
   ExperienceRegistry,
   ExperiencePreviewCycleControllerService,
   ExperienceRuntimeControllerService,
