@@ -25,5 +25,12 @@ describe('active upload accounting', () => {
       particleRadiusScale: 1, threshold: 1, edgeSoftness: 1, palette: [[1, 1, 1], [0, 0, 0]],
       background: [0, 0, 0], thermalContrast: 1, refraction: 0, gloss: 0, rimLighting: 0, opacity: 1,
     })).toBe(5 * 4 * 4);
+    expect(metaballUploadBytes({
+      id: 'colored-metaballs', count: 5, positions: new Float32Array(10), radii: new Float32Array(5),
+      temperatures: new Float32Array(5), colorSeeds: new Float32Array(5), velocities: new Float32Array(10),
+      worldWidth: 1, worldHeight: 1, fieldScale: 1, particleRadiusScale: 1, threshold: 1, edgeSoftness: 1,
+      palette: [[1, 1, 1], [0, 0, 0]], background: [0, 0, 0], thermalContrast: 1, refraction: 0,
+      gloss: 0, rimLighting: 0, opacity: 1,
+    })).toBe(5 * 7 * 4);
   });
 });

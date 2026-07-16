@@ -45,6 +45,8 @@ const SHARED_DESCRIPTIONS: DescriptionCatalog = Object.freeze({
   liquidBloomStrength: 'Controls glow contributed by the liquid surface rendering pass.',
   liquidHeatShimmer: 'Controls heat-driven distortion around hot portions of the liquid.',
   liquidDepthDiffusion: 'Controls how broadly density and color spread through the reconstructed liquid depth.',
+  fluidColorMode: 'Chooses how the reconstructed liquid surface uses the active color palette.',
+  fluidColorStrength: 'Controls how strongly fluid color mode affects the reconstructed liquid surface.',
 });
 
 const EXPERIENCE_DESCRIPTIONS: Readonly<Record<string, DescriptionCatalog>> = Object.freeze({
@@ -195,6 +197,8 @@ const EXPERIENCE_DESCRIPTIONS: Readonly<Record<string, DescriptionCatalog>> = Ob
     pourRadius: 'Sets the width of the stream created by Pour input.',
     interactionStrength: 'Controls how strongly Stir input pushes nearby water.',
     metaballBlend: 'Controls how readily nearby particles merge into the Enhanced surface.',
+    fluidColorMode: 'Chooses whether Water Tank color follows the palette, particle speed, foam, or marbled variation.',
+    fluidColorStrength: 'Controls how strongly Water Tank surface color uses the selected fluid color mode.',
   }),
   'splash-mpm': Object.freeze({
     particleSeparation: 'Sets the preferred spacing between visible water particles.',
@@ -205,6 +209,8 @@ const EXPERIENCE_DESCRIPTIONS: Readonly<Record<string, DescriptionCatalog>> = Ob
     enhancedSplatSize: 'Sets how broadly particles deposit into the Enhanced surface field.',
     enhancedDepth: 'Controls the apparent depth and body of the Enhanced water surface.',
     enhancedEdge: 'Controls the sharpness of the Enhanced water boundary.',
+    fluidColorMode: 'Chooses whether Splash color follows the palette, particle speed, foam, or marbled variation.',
+    fluidColorStrength: 'Controls how strongly Splash surface color uses the selected fluid color mode.',
     emitRate: 'Controls how many water particles Pour input emits per second.',
     pourRadius: 'Sets the width of water emitted by Pour input.',
   }),

@@ -1,5 +1,5 @@
 import { createExtensionToken, type EnginePlugin } from '@hooksjam/gl-game-lab-core';
-import { applyPaletteGradientBackdrop2D, EngineGpu2D, EngineInput, EngineRender2D, EngineSchedule, type ExperienceLaunchOptions, type ExperienceRuntimeController, type ExperienceSettingValue, type GpuRenderTarget2D } from '@hooksjam/gl-game-lab-engine';
+import { applyPaletteGradientBackdrop2D, EngineGpu2D, EngineInput, EngineRender2D, EngineSchedule, type ExperienceLaunchOptions, type ExperienceRuntimeController, type ExperienceSettingValue, type FluidColorMode2D, type GpuRenderTarget2D } from '@hooksjam/gl-game-lab-engine';
 import { registerSimulationRuntime } from '../SimulationPluginLifecycle.js';
 import { createBuildFixture, packBuildPreview } from '../BuildFixtures.js';
 import { createSplashMpmConfig, SPLASH_MPM_DEFAULTS, splashNumber, splashString, type SplashMpmConfig } from './config.js';
@@ -283,8 +283,11 @@ export function createSplashMpmPlugin(initial: SplashMpmConfig = SPLASH_MPM_DEFA
             renderer.submitMetaballs({
               id: 'splash-mpm.surface', count: model.count, positions: model.world.positions,
               radii: model.world.radii, temperatures: model.foam, worldWidth: width, worldHeight: height,
+              colorSeeds: model.world.colorSeeds, velocities: model.world.velocities,
               palette, background: splashRgb(style.background),
               ...resolveSplashSurfaceParameters(config, width),
+              fluidColorMode: splashFluidColorMode(config),
+              fluidColorStrength: splashNumber(config, 'fluidColorStrength'),
               time, backgroundDepth: 0
             });
           }
@@ -448,6 +451,8 @@ export function createSplashMpmPlugin(initial: SplashMpmConfig = SPLASH_MPM_DEFA
               thermalContrast: surface.thermalContrast * 0.24,
               thermalStrength: surface.thermalStrength * 0.34,
             } : {}),
+            fluidColorMode: splashFluidColorMode(config),
+            fluidColorStrength: splashNumber(config, 'fluidColorStrength'),
             time,
             backgroundDepth: 0,
           });
@@ -507,4 +512,9 @@ function smoothstep(edge0: number, edge1: number, value: number): number {
   if (edge0 === edge1) return value < edge0 ? 0 : 1;
   const t = Math.max(0, Math.min(1, (value - edge0) / (edge1 - edge0)));
   return t * t * (3 - 2 * t);
+}
+function splashFluidColorMode(config: SplashMpmConfig): FluidColorMode2D {
+  const value = splashString(config, 'fluidColorMode');
+  if (value === 'solid' || value === 'palette-flow' || value === 'velocity' || value === 'foam' || value === 'marbled') return value;
+  return 'solid';
 }

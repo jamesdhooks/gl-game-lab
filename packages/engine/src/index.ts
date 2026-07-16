@@ -105,6 +105,7 @@ export {
 export { InputSourceRegistry, type InputSource } from './InputSourceRegistry.js';
 export {
   type Gpu2DCapabilities,
+  type FluidColorMode2D,
   type Gpu2DService,
   type GpuFieldSystem2D,
   type GpuFieldSystem2DOptions,

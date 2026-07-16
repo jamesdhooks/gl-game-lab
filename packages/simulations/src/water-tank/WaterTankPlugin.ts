@@ -1,5 +1,5 @@
 import { createExtensionToken, type EnginePlugin } from '@hooksjam/gl-game-lab-core';
-import { applyPaletteGradientBackdrop2D, EngineInput, EngineRender2D, EngineSchedule, type ExperienceLaunchOptions, type ExperienceRuntimeController, type ExperienceSettingValue } from '@hooksjam/gl-game-lab-engine';
+import { applyPaletteGradientBackdrop2D, EngineInput, EngineRender2D, EngineSchedule, type ExperienceLaunchOptions, type ExperienceRuntimeController, type ExperienceSettingValue, type FluidColorMode2D } from '@hooksjam/gl-game-lab-engine';
 import { registerSimulationRuntime } from '../SimulationPluginLifecycle.js';
 import { createBuildFixture, packBuildPreview } from '../BuildFixtures.js';
 import { createWaterTankConfig, WATER_TANK_DEFAULTS, waterNumber, waterString, type WaterTankConfig } from './config.js';
@@ -172,6 +172,7 @@ export function createWaterTankPlugin(initial: WaterTankConfig = WATER_TANK_DEFA
           if (renderStyle !== 'basic') renderer.submitMetaballs({
             id: 'water-tank.surface', count: model.count, positions: model.world.positions,
             radii: model.world.radii, temperatures: model.foam, worldWidth: width, worldHeight: height,
+            colorSeeds: model.world.colorSeeds, velocities: model.world.velocities,
             fieldScale: Math.max(0.2, Math.min(1, waterNumber(config, 'fluidGridResolution') * waterNumber(config, 'liquidFieldScale') / Math.max(1, renderer.viewport.width))),
             particleRadiusScale: waterNumber(config, 'liquidSplatDensity') * waterNumber(config, 'liquidParticleRadius') * 1.35,
             threshold: waterNumber(config, 'liquidSurfaceThreshold') * 0.68,
@@ -186,6 +187,8 @@ export function createWaterTankPlugin(initial: WaterTankConfig = WATER_TANK_DEFA
             bloomStrength: renderStyle === 'ultra' ? waterNumber(config, 'liquidBloomStrength') : 0,
             heatShimmer: renderStyle === 'ultra' ? waterNumber(config, 'liquidHeatShimmer') : 0,
             depthDiffusion: renderStyle === 'ultra' ? waterNumber(config, 'liquidDepthDiffusion') : 0,
+            fluidColorMode: waterFluidColorMode(config),
+            fluidColorStrength: waterNumber(config, 'fluidColorStrength'),
             renderStyle: renderStyle === 'ultra' ? 'ultra' : 'enhanced',
             opacity: Math.min(1, waterNumber(config, 'opacity') + waterNumber(config, 'metaballBlend') * 0.24),
             time: elapsed, backgroundDepth: 0
@@ -319,4 +322,9 @@ function distance(a: Point, b: Point) {
 }
 function validStyle(value: string | undefined) {
   return value && WATER_TANK_STYLE_MANIFEST.styles.some(style => style.id === value) ? value : undefined;
+}
+function waterFluidColorMode(config: WaterTankConfig): FluidColorMode2D {
+  const value = waterString(config, 'fluidColorMode');
+  if (value === 'solid' || value === 'palette-flow' || value === 'velocity' || value === 'foam' || value === 'marbled') return value;
+  return 'solid';
 }

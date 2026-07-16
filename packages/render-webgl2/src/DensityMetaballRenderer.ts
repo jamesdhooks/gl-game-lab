@@ -1,6 +1,7 @@
 import {
   DEFAULT_PALETTE_GRADIENT_BLEND_STRENGTH,
   DEFAULT_PALETTE_GRADIENT_TIER,
+  type FluidColorMode2D,
 } from '@hooksjam/gl-game-lab-engine';
 import { createGpuRenderTarget, type GpuRenderTarget } from './GpuRenderTarget.js';
 import type { GpuParticleRenderDestination } from './GpuParticleRenderer.js';
@@ -12,6 +13,8 @@ export interface DensityMetaballBatch {
   readonly positions: Float32Array;
   readonly radii: Float32Array;
   readonly temperatures: Float32Array;
+  readonly colorSeeds?: Float32Array;
+  readonly velocities?: Float32Array;
 }
 export interface DensityMetaballOptions {
   readonly worldWidth: number;
@@ -41,6 +44,8 @@ export interface DensityMetaballOptions {
   readonly bloomStrength?: number;
   readonly heatShimmer?: number;
   readonly depthDiffusion?: number;
+  readonly fluidColorMode?: FluidColorMode2D;
+  readonly fluidColorStrength?: number;
   readonly renderStyle?: 'enhanced' | 'ultra';
   readonly opacity: number;
   readonly time?: number;
@@ -55,6 +60,10 @@ export function validateDensityMetaballBatch(batch: DensityMetaballBatch): void 
     throw new Error('Metaball radii do not cover the active count');
   if (batch.temperatures.length < batch.count)
     throw new Error('Metaball temperatures do not cover the active count');
+  if (batch.colorSeeds && batch.colorSeeds.length < batch.count)
+    throw new Error('Metaball color seeds do not cover the active count');
+  if (batch.velocities && batch.velocities.length < batch.count * 2)
+    throw new Error('Metaball velocities do not cover the active count');
 }
 export function authoredMetaballEdgeSoftness(value: number): number {
   if (!Number.isFinite(value) || value < 0) throw new Error('Metaball edge softness must be non-negative and finite');
@@ -70,9 +79,12 @@ export class DensityMetaballRenderer {
   private readonly positionBuffer: WebGLBuffer;
   private readonly radiusBuffer: WebGLBuffer;
   private readonly temperatureBuffer: WebGLBuffer;
+  private readonly colorSeedBuffer: WebGLBuffer;
+  private readonly velocityBuffer: WebGLBuffer;
   private readonly splatWorldSize: WebGLUniformLocation;
   private readonly splatPixelScale: WebGLUniformLocation;
   private readonly splatRadiusScale: WebGLUniformLocation;
+  private readonly splatColorMode: WebGLUniformLocation;
   private readonly gridSplatParticleA: WebGLUniformLocation;
   private readonly gridSplatParticleB: WebGLUniformLocation;
   private readonly gridSplatParticleStateSize: WebGLUniformLocation;
@@ -80,6 +92,7 @@ export class DensityMetaballRenderer {
   private readonly gridSplatWorldSize: WebGLUniformLocation;
   private readonly gridSplatPixelScale: WebGLUniformLocation;
   private readonly gridSplatRadiusScale: WebGLUniformLocation;
+  private readonly gridSplatColorMode: WebGLUniformLocation;
   private readonly compositeDensity: WebGLUniformLocation;
   private readonly compositeTexel: WebGLUniformLocation;
   private readonly compositePalette: WebGLUniformLocation;
@@ -103,8 +116,12 @@ export class DensityMetaballRenderer {
   private readonly compositeBloom: WebGLUniformLocation;
   private readonly compositeShimmer: WebGLUniformLocation;
   private readonly compositeDepthDiffusion: WebGLUniformLocation;
+  private readonly compositeFluidColorMode: WebGLUniformLocation;
+  private readonly compositeFluidColorStrength: WebGLUniformLocation;
   private readonly paletteData = new Float32Array(12);
   private readonly backgroundData = new Float32Array(3);
+  private zeroColorSeeds = new Float32Array(0);
+  private zeroVelocities = new Float32Array(0);
   private density: GpuRenderTarget | undefined;
   private count = 0;
   private disposed = false;
@@ -118,9 +135,12 @@ export class DensityMetaballRenderer {
     this.positionBuffer = req(gl.createBuffer(), 'Unable to allocate metaball positions');
     this.radiusBuffer = req(gl.createBuffer(), 'Unable to allocate metaball radii');
     this.temperatureBuffer = req(gl.createBuffer(), 'Unable to allocate metaball temperatures');
+    this.colorSeedBuffer = req(gl.createBuffer(), 'Unable to allocate metaball color seeds');
+    this.velocityBuffer = req(gl.createBuffer(), 'Unable to allocate metaball velocities');
     this.splatWorldSize = requireShaderUniform(gl, this.splatProgram, 'uWorldSize', 'density metaball splat');
     this.splatPixelScale = requireShaderUniform(gl, this.splatProgram, 'uPixelScale', 'density metaball splat');
     this.splatRadiusScale = requireShaderUniform(gl, this.splatProgram, 'uRadiusScale', 'density metaball splat');
+    this.splatColorMode = requireShaderUniform(gl, this.splatProgram, 'uColorMode', 'density metaball splat');
     this.gridSplatParticleA = requireShaderUniform(gl, this.gridSplatProgram, 'uParticleA', 'density metaball particle-grid splat');
     this.gridSplatParticleB = requireShaderUniform(gl, this.gridSplatProgram, 'uParticleB', 'density metaball particle-grid splat');
     this.gridSplatParticleStateSize = requireShaderUniform(gl, this.gridSplatProgram, 'uParticleStateSize', 'density metaball particle-grid splat');
@@ -128,6 +148,7 @@ export class DensityMetaballRenderer {
     this.gridSplatWorldSize = requireShaderUniform(gl, this.gridSplatProgram, 'uWorldSize', 'density metaball particle-grid splat');
     this.gridSplatPixelScale = requireShaderUniform(gl, this.gridSplatProgram, 'uPixelScale', 'density metaball particle-grid splat');
     this.gridSplatRadiusScale = requireShaderUniform(gl, this.gridSplatProgram, 'uRadiusScale', 'density metaball particle-grid splat');
+    this.gridSplatColorMode = requireShaderUniform(gl, this.gridSplatProgram, 'uColorMode', 'density metaball particle-grid splat');
     this.compositeDensity = requireShaderUniform(gl, this.compositeProgram, 'uDensity', 'density metaball composite');
     this.compositeTexel = requireShaderUniform(gl, this.compositeProgram, 'uTexel', 'density metaball composite');
     this.compositePalette = requireShaderUniform(gl, this.compositeProgram, 'uPalette[0]', 'density metaball composite');
@@ -151,10 +172,14 @@ export class DensityMetaballRenderer {
     this.compositeBloom = requireShaderUniform(gl, this.compositeProgram, 'uBloomStrength', 'density metaball composite');
     this.compositeShimmer = requireShaderUniform(gl, this.compositeProgram, 'uHeatShimmer', 'density metaball composite');
     this.compositeDepthDiffusion = requireShaderUniform(gl, this.compositeProgram, 'uDepthDiffusion', 'density metaball composite');
+    this.compositeFluidColorMode = requireShaderUniform(gl, this.compositeProgram, 'uFluidColorMode', 'density metaball composite');
+    this.compositeFluidColorStrength = requireShaderUniform(gl, this.compositeProgram, 'uFluidColorStrength', 'density metaball composite');
     gl.bindVertexArray(this.splatVao);
     attribute(gl, this.positionBuffer, 0, 2);
     attribute(gl, this.radiusBuffer, 1, 1);
     attribute(gl, this.temperatureBuffer, 2, 1);
+    attribute(gl, this.colorSeedBuffer, 3, 1);
+    attribute(gl, this.velocityBuffer, 4, 2);
     gl.bindVertexArray(null);
   }
   update(batch: DensityMetaballBatch) {
@@ -164,6 +189,8 @@ export class DensityMetaballRenderer {
     upload(this.gl, this.positionBuffer, batch.positions.subarray(0, batch.count * 2));
     upload(this.gl, this.radiusBuffer, batch.radii.subarray(0, batch.count));
     upload(this.gl, this.temperatureBuffer, batch.temperatures.subarray(0, batch.count));
+    upload(this.gl, this.colorSeedBuffer, (batch.colorSeeds ?? this.zeroSeedData(batch.count)).subarray(0, batch.count));
+    upload(this.gl, this.velocityBuffer, (batch.velocities ?? this.zeroVelocityData(batch.count)).subarray(0, batch.count * 2));
   }
   render(destination: GpuParticleRenderDestination, options: DensityMetaballOptions) {
     this.assert();
@@ -187,6 +214,7 @@ export class DensityMetaballRenderer {
     gl.uniform2f(this.splatWorldSize, options.worldWidth, options.worldHeight);
     gl.uniform1f(this.splatPixelScale, width / options.worldWidth);
     gl.uniform1f(this.splatRadiusScale, options.particleRadiusScale);
+    gl.uniform1i(this.splatColorMode, fluidColorModeIndex(options.fluidColorMode));
     gl.drawArrays(gl.POINTS, 0, this.count);
     gl.bindVertexArray(null);
     gl.disable(gl.BLEND);
@@ -223,6 +251,8 @@ export class DensityMetaballRenderer {
     gl.uniform1f(this.compositeBloom, options.bloomStrength ?? 0);
     gl.uniform1f(this.compositeShimmer, options.heatShimmer ?? 0);
     gl.uniform1f(this.compositeDepthDiffusion, options.depthDiffusion ?? 0);
+    gl.uniform1i(this.compositeFluidColorMode, fluidColorModeIndex(options.fluidColorMode));
+    gl.uniform1f(this.compositeFluidColorStrength, Math.max(0, Math.min(1, options.fluidColorStrength ?? 0)));
     gl.drawArrays(gl.TRIANGLES, 0, 3);
     gl.bindVertexArray(null);
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
@@ -250,6 +280,7 @@ export class DensityMetaballRenderer {
     gl.uniform2f(this.gridSplatWorldSize, options.worldWidth, options.worldHeight);
     gl.uniform1f(this.gridSplatPixelScale, target.width / options.worldWidth);
     gl.uniform1f(this.gridSplatRadiusScale, options.particleRadiusScale);
+    gl.uniform1i(this.gridSplatColorMode, fluidColorModeIndex(options.fluidColorMode));
     gl.drawArrays(gl.POINTS, 0, source.count);
     gl.bindVertexArray(null);
     gl.disable(gl.BLEND);
@@ -263,6 +294,8 @@ export class DensityMetaballRenderer {
     this.gl.deleteBuffer(this.positionBuffer);
     this.gl.deleteBuffer(this.radiusBuffer);
     this.gl.deleteBuffer(this.temperatureBuffer);
+    this.gl.deleteBuffer(this.colorSeedBuffer);
+    this.gl.deleteBuffer(this.velocityBuffer);
     this.gl.deleteVertexArray(this.splatVao);
     this.gl.deleteVertexArray(this.gridSplatVao);
     this.gl.deleteVertexArray(this.screenVao);
@@ -320,6 +353,8 @@ export class DensityMetaballRenderer {
     gl.uniform1f(this.compositeBloom, options.bloomStrength ?? 0);
     gl.uniform1f(this.compositeShimmer, options.heatShimmer ?? 0);
     gl.uniform1f(this.compositeDepthDiffusion, options.depthDiffusion ?? 0);
+    gl.uniform1i(this.compositeFluidColorMode, fluidColorModeIndex(options.fluidColorMode));
+    gl.uniform1f(this.compositeFluidColorStrength, Math.max(0, Math.min(1, options.fluidColorStrength ?? 0)));
     gl.drawArrays(gl.TRIANGLES, 0, 3);
     gl.bindVertexArray(null);
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
@@ -338,6 +373,15 @@ export class DensityMetaballRenderer {
   private assert() {
     if (this.disposed)
       throw new Error('Density metaball renderer has been disposed');
+  }
+  private zeroSeedData(count: number): Float32Array {
+    if (this.zeroColorSeeds.length < count) this.zeroColorSeeds = new Float32Array(count);
+    return this.zeroColorSeeds;
+  }
+  private zeroVelocityData(count: number): Float32Array {
+    const length = count * 2;
+    if (this.zeroVelocities.length < length) this.zeroVelocities = new Float32Array(length);
+    return this.zeroVelocities;
   }
 }
 function attribute(gl: WebGL2RenderingContext, buffer: WebGLBuffer, index: number, size: number) {
@@ -360,12 +404,19 @@ function req<T>(value: T | null, message: string): T {
     throw new Error(message);
   return value;
 }
+function fluidColorModeIndex(mode: FluidColorMode2D | undefined): number {
+  if (mode === 'palette-flow') return 1;
+  if (mode === 'velocity') return 2;
+  if (mode === 'foam') return 3;
+  if (mode === 'marbled') return 4;
+  return 0;
+}
 const SPLAT_VERTEX = `#version 300 es
-precision highp float;layout(location=0)in vec2 aPosition;layout(location=1)in float aRadius;layout(location=2)in float aTemperature;uniform vec2 uWorldSize;uniform float uPixelScale,uRadiusScale;out float vTemperature;void main(){gl_Position=vec4(aPosition.x/uWorldSize.x*2.0-1.0,1.0-aPosition.y/uWorldSize.y*2.0,0,1);gl_PointSize=max(2.0,aRadius*2.0*uPixelScale*uRadiusScale);vTemperature=aTemperature;}`;
+precision highp float;layout(location=0)in vec2 aPosition;layout(location=1)in float aRadius;layout(location=2)in float aTemperature;layout(location=3)in float aColorSeed;layout(location=4)in vec2 aVelocity;uniform vec2 uWorldSize;uniform float uPixelScale,uRadiusScale;uniform int uColorMode;out float vTemperature;out float vMaterial;float seedHash(float value){return fract(sin(value*12.9898)*43758.5453);}float materialValue(float temperature,float colorSeed,vec2 velocity){if(uColorMode==1||uColorMode==4)return seedHash(colorSeed+1.0);if(uColorMode==2)return smoothstep(80.0,1200.0,length(velocity));if(uColorMode==3)return clamp(temperature,0.0,1.0);return 0.0;}void main(){gl_Position=vec4(aPosition.x/uWorldSize.x*2.0-1.0,1.0-aPosition.y/uWorldSize.y*2.0,0,1);gl_PointSize=max(2.0,aRadius*2.0*uPixelScale*uRadiusScale);vTemperature=aTemperature;vMaterial=materialValue(aTemperature,aColorSeed,aVelocity);}`;
 const GRID_SPLAT_VERTEX = `#version 300 es
-precision highp float;precision highp int;uniform sampler2D uParticleA,uParticleB;uniform ivec2 uParticleStateSize;uniform int uParticleCount;uniform vec2 uWorldSize;uniform float uPixelScale,uRadiusScale;out float vTemperature;ivec2 particleTexel(int index){return ivec2(index%uParticleStateSize.x,index/uParticleStateSize.x);}void main(){int index=gl_VertexID;if(index>=uParticleCount){gl_Position=vec4(2,2,0,1);gl_PointSize=0.0;vTemperature=0.0;return;}ivec2 texel=particleTexel(index);vec4 a=texelFetch(uParticleA,texel,0);vec4 b=texelFetch(uParticleB,texel,0);if(a.w<=0.0){gl_Position=vec4(2,2,0,1);gl_PointSize=0.0;vTemperature=0.0;return;}gl_Position=vec4(a.x/uWorldSize.x*2.0-1.0,1.0-a.y/uWorldSize.y*2.0,0,1);gl_PointSize=max(2.0,b.z*2.0*uPixelScale*uRadiusScale);vTemperature=a.z;}`;
+precision highp float;precision highp int;uniform sampler2D uParticleA,uParticleB;uniform ivec2 uParticleStateSize;uniform int uParticleCount;uniform vec2 uWorldSize;uniform float uPixelScale,uRadiusScale;uniform int uColorMode;out float vTemperature;out float vMaterial;float seedHash(float value){return fract(sin(value*12.9898)*43758.5453);}float materialValue(float temperature,float colorSeed,vec2 velocity){if(uColorMode==1||uColorMode==4)return seedHash(colorSeed+1.0);if(uColorMode==2)return smoothstep(80.0,1200.0,length(velocity));if(uColorMode==3)return clamp(temperature,0.0,1.0);return 0.0;}ivec2 particleTexel(int index){return ivec2(index%uParticleStateSize.x,index/uParticleStateSize.x);}void main(){int index=gl_VertexID;if(index>=uParticleCount){gl_Position=vec4(2,2,0,1);gl_PointSize=0.0;vTemperature=0.0;vMaterial=0.0;return;}ivec2 texel=particleTexel(index);vec4 a=texelFetch(uParticleA,texel,0);vec4 b=texelFetch(uParticleB,texel,0);if(a.w<=0.0){gl_Position=vec4(2,2,0,1);gl_PointSize=0.0;vTemperature=0.0;vMaterial=0.0;return;}gl_Position=vec4(a.x/uWorldSize.x*2.0-1.0,1.0-a.y/uWorldSize.y*2.0,0,1);gl_PointSize=max(2.0,b.z*2.0*uPixelScale*uRadiusScale);vTemperature=a.z;vMaterial=materialValue(a.z,b.w,b.xy);}`;
 const SPLAT_FRAGMENT = `#version 300 es
-precision highp float;in float vTemperature;out vec4 outColor;void main(){vec2 p=gl_PointCoord*2.0-1.0;float d=dot(p,p);if(d>1.0)discard;float om=1.0-d;float density=(om*om*(.72+.28*om)*.42+smoothstep(.86,.06,d)*.055);outColor=vec4(density,density*(.72+.22*om),density*clamp(vTemperature,0.0,1.0),density);}`;
+precision highp float;in float vTemperature;in float vMaterial;out vec4 outColor;void main(){vec2 p=gl_PointCoord*2.0-1.0;float d=dot(p,p);if(d>1.0)discard;float om=1.0-d;float density=(om*om*(.72+.28*om)*.42+smoothstep(.86,.06,d)*.055);outColor=vec4(density,density*(.72+.22*om),density*clamp(vTemperature,0.0,1.0),density*clamp(vMaterial,0.0,1.0));}`;
 const SCREEN_VERTEX = `#version 300 es
 const vec2 P[3]=vec2[3](vec2(-1,-1),vec2(3,-1),vec2(-1,3));out vec2 vUv;void main(){vec2 p=P[gl_VertexID];vUv=p*.5+.5;gl_Position=vec4(p,0,1);}`;
 function compositeFragmentSource(): string {
@@ -374,7 +425,7 @@ function compositeFragmentSource(): string {
     .replaceAll(',0,8)', ',0.0,8.0)');
 }
 const COMPOSITE_FRAGMENT_SOURCE = `#version 300 es
-precision highp float;in vec2 vUv;out vec4 outColor;uniform sampler2D uDensity;uniform vec2 uTexel;uniform vec3 uPalette[4],uBackground;uniform int uPaletteCount;uniform float uThreshold,uSoftness,uTightness,uThermalContrast,uThermalStrength,uPaletteMapping,uRefraction,uGloss,uRim,uOpacity,uTime,uBackgroundDepth,uAspect,uUltra,uFoamStrength,uBloomStrength,uHeatShimmer,uDepthDiffusion;
+precision highp float;in vec2 vUv;out vec4 outColor;uniform sampler2D uDensity;uniform vec2 uTexel;uniform vec3 uPalette[4],uBackground;uniform int uPaletteCount,uFluidColorMode;uniform float uThreshold,uSoftness,uTightness,uThermalContrast,uThermalStrength,uPaletteMapping,uRefraction,uGloss,uRim,uOpacity,uTime,uBackgroundDepth,uAspect,uUltra,uFoamStrength,uBloomStrength,uHeatShimmer,uDepthDiffusion,uFluidColorStrength;
 ${PALETTE_GRADIENT_BACKDROP_GLSL}
 vec4 field(vec2 uv){return texture(uDensity,clamp(uv,vec2(.001),vec2(.999)));}float hash(vec2 p){vec3 q=fract(vec3(p.xyx)*.1031);q+=dot(q,q.yzx+33.33);return fract((q.x+q.y)*q.z);}vec3 paletteColor(float value){float scaled=clamp(value,0.0,1.0)*float(max(1,uPaletteCount-1));int lo=int(floor(scaled)),hi=min(lo+1,uPaletteCount-1);vec3 a=uPalette[0],b=uPalette[0];for(int i=0;i<4;i++){if(i==lo)a=uPalette[i];if(i==hi)b=uPalette[i];}return mix(a,b,fract(scaled));}vec3 backdrop(vec2 uv){vec3 primary=uPalette[0],secondary=uPalette[min(1,uPaletteCount-1)],accent=uPalette[min(3,uPaletteCount-1)];vec3 base=mix(uBackground,mix(primary,secondary,.45),${DEFAULT_PALETTE_GRADIENT_BLEND_STRENGTH});return paletteGradientBackdrop(uv,base,primary,secondary,accent,${DEFAULT_PALETTE_GRADIENT_TIER});}
-void main(){vec4 packed=field(vUv);float d=packed.r;vec3 deep=uPalette[min(2,uPaletteCount-1)];vec3 bg=mix(uBackground,backdrop(vUv),.72);bg=mix(bg,deep*(.26+.04/uAspect),clamp(uBackgroundDepth,0,1)*.22);if(d<uThreshold*.42){outColor=vec4(bg,1);return;}float l=field(vUv-vec2(uTexel.x,0)).r,r=field(vUv+vec2(uTexel.x,0)).r,b=field(vUv-vec2(0,uTexel.y)).r,t=field(vUv+vec2(0,uTexel.y)).r;vec2 grad=.5*vec2(r-l,t-b);float signedPx=(d-uThreshold)/max(length(grad),.0018);float aa=mix(1.08,.26,clamp(uTightness,0,1))*(1.0+uSoftness*uSoftness*mix(2.1,4.8,uUltra));float alpha=smoothstep(-aa,aa,signedPx);if(alpha<.002){outColor=vec4(bg,1);return;}float thickness=max(packed.g,d*.68),thermal=clamp((packed.b/max(.001,d)-.5)*uThermalContrast+.5,0,1);vec3 N=normalize(vec3(-grad*mix(155.0,325.0,clamp(thickness*1.25,0,1)),1));vec3 V=vec3(0,0,1),L=normalize(vec3(-.34,-.52,.78)),H=normalize(L+V);float NoV=max(dot(N,V),.001),NoL=max(dot(N,L),0.0),fresnel=pow(1.0-NoV,5.0);float rough=mix(.34,.08,clamp(uGloss,0,1));float a=rough*rough,a2=a*a,NoH=max(dot(N,H),0.0),den=NoH*NoH*(a2-1.0)+1.0,spec=a2/max(3.14159*den*den,1e-5)*NoL;vec3 surface=uPalette[min(1,uPaletteCount-1)],foam=uPalette[min(3,uPaletteCount-1)];vec3 thermalColor=mix(deep,surface,smoothstep(.05,.55,thermal));thermalColor=mix(thermalColor,foam,smoothstep(.48,.98,thermal));thermalColor=mix(thermalColor,paletteColor(thermal),uPaletteMapping);vec3 body=mix(mix(surface,deep,.36),thermalColor,clamp(uThermalStrength,0,1));vec2 shimmer=vec2(sin(vUv.y*31.0+thermal*5.4+uTime*1.35),cos(vUv.x*27.0+thermal*4.2-uTime*1.18))*uHeatShimmer*uUltra*.003;vec2 refractUv=clamp(vUv+shimmer+N.xy*uRefraction*mix(.012,.042,clamp(thickness,0,1))*mix(1.0,1.95,uUltra),vec2(.001),vec2(.999));vec3 refracted=mix(body,body*.7+backdrop(refractUv)*.48,mix(.32,.58,uUltra));vec3 water=mix(refracted,mix(surface,foam,.16),fresnel*.12);water+=spec*vec3(1,.96,.86)*.16*uGloss;float rim=pow(1.0-NoV,1.55)*uRim*uUltra;water+=mix(surface,foam,.68)*rim*.7;water=mix(water,mix(deep,body,.54),smoothstep(.1,1.15,thickness)*uDepthDiffusion*uUltra*.58);float edge=alpha*(1.0-alpha)*4.0;float sparkle=smoothstep(.78,.99,hash(floor((vUv+grad*.018)*vec2(340,210))+floor(uTime*1.7)));float foamLine=edge*clamp(uFoamStrength,0,8)*uUltra;water+=max(foam,vec3(.94))*foamLine*(.22+sparkle*1.8)*uGloss;water+=mix(surface,foam,.5)*(spec*.08+edge*fresnel*.28)*uBloomStrength*uUltra;float outAlpha=alpha*uOpacity*mix(.82+.18*smoothstep(.02,.72,thickness),.58+.28*smoothstep(.04,.9,thickness),uUltra);outColor=vec4(mix(bg,water,outAlpha),1);}`;
+void main(){vec4 packed=field(vUv);float d=packed.r;vec3 deep=uPalette[min(2,uPaletteCount-1)];vec3 bg=mix(uBackground,backdrop(vUv),.72);bg=mix(bg,deep*(.26+.04/uAspect),clamp(uBackgroundDepth,0,1)*.22);if(d<uThreshold*.42){outColor=vec4(bg,1);return;}float l=field(vUv-vec2(uTexel.x,0)).r,r=field(vUv+vec2(uTexel.x,0)).r,b=field(vUv-vec2(0,uTexel.y)).r,t=field(vUv+vec2(0,uTexel.y)).r;vec2 grad=.5*vec2(r-l,t-b);float signedPx=(d-uThreshold)/max(length(grad),.0018);float aa=mix(1.08,.26,clamp(uTightness,0,1))*(1.0+uSoftness*uSoftness*mix(2.1,4.8,uUltra));float alpha=smoothstep(-aa,aa,signedPx);if(alpha<.002){outColor=vec4(bg,1);return;}float thickness=max(packed.g,d*.68),thermal=clamp((packed.b/max(.001,d)-.5)*uThermalContrast+.5,0,1),material=clamp(packed.a/max(.001,d),0,1);if(uFluidColorMode==4)material=fract(material+(hash(floor((vUv+grad*.012)*vec2(96,96)+uTime*.08))-.5)*.24);vec3 N=normalize(vec3(-grad*mix(155.0,325.0,clamp(thickness*1.25,0,1)),1));vec3 V=vec3(0,0,1),L=normalize(vec3(-.34,-.52,.78)),H=normalize(L+V);float NoV=max(dot(N,V),.001),NoL=max(dot(N,L),0.0),fresnel=pow(1.0-NoV,5.0);float rough=mix(.34,.08,clamp(uGloss,0,1));float a=rough*rough,a2=a*a,NoH=max(dot(N,H),0.0),den=NoH*NoH*(a2-1.0)+1.0,spec=a2/max(3.14159*den*den,1e-5)*NoL;vec3 surface=uPalette[min(1,uPaletteCount-1)],foam=uPalette[min(3,uPaletteCount-1)];vec3 thermalColor=mix(deep,surface,smoothstep(.05,.55,thermal));thermalColor=mix(thermalColor,foam,smoothstep(.48,.98,thermal));thermalColor=mix(thermalColor,paletteColor(thermal),uPaletteMapping);vec3 body=mix(mix(surface,deep,.36),thermalColor,clamp(uThermalStrength,0,1));float colorMix=clamp(uFluidColorStrength,0,1)*float(uFluidColorMode>0);body=mix(body,mix(body,paletteColor(material),.82),colorMix);vec2 shimmer=vec2(sin(vUv.y*31.0+thermal*5.4+uTime*1.35),cos(vUv.x*27.0+thermal*4.2-uTime*1.18))*uHeatShimmer*uUltra*.003;vec2 refractUv=clamp(vUv+shimmer+N.xy*uRefraction*mix(.012,.042,clamp(thickness,0,1))*mix(1.0,1.95,uUltra),vec2(.001),vec2(.999));vec3 refracted=mix(body,body*.7+backdrop(refractUv)*.48,mix(.32,.58,uUltra));vec3 water=mix(refracted,mix(surface,foam,.16),fresnel*.12);water+=spec*vec3(1,.96,.86)*.16*uGloss;float rim=pow(1.0-NoV,1.55)*uRim*uUltra;water+=mix(surface,foam,.68)*rim*.7;water=mix(water,mix(deep,body,.54),smoothstep(.1,1.15,thickness)*uDepthDiffusion*uUltra*.58);float edge=alpha*(1.0-alpha)*4.0;float sparkle=smoothstep(.78,.99,hash(floor((vUv+grad*.018)*vec2(340,210))+floor(uTime*1.7)));float foamLine=edge*clamp(uFoamStrength,0,8)*uUltra;water+=max(foam,vec3(.94))*foamLine*(.22+sparkle*1.8)*uGloss;water+=mix(surface,foam,.5)*(spec*.08+edge*fresnel*.28)*uBloomStrength*uUltra;float outAlpha=alpha*uOpacity*mix(.82+.18*smoothstep(.02,.72,thickness),.58+.28*smoothstep(.04,.9,thickness),uUltra);outColor=vec4(mix(bg,water,outAlpha),1);}`;

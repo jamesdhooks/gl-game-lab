@@ -18,6 +18,7 @@ export interface GpuUniformEncoder2D {
   uniformTexture(location: GpuUniformLocation2D, texture: GpuTexture2D, unit: number): void;
 }
 export type GpuUniformBinder2D = (encoder: GpuUniformEncoder2D, uniform: GpuUniformLookup2D) => void;
+export type FluidColorMode2D = 'solid' | 'palette-flow' | 'velocity' | 'foam' | 'marbled';
 
 /** Opaque render destination. Content can inspect dimensions but cannot access backend handles. */
 export interface GpuRenderTarget2D {
@@ -197,6 +198,8 @@ export interface GpuParticleGridMetaballOptions2D {
   readonly bloomStrength?: number;
   readonly heatShimmer?: number;
   readonly depthDiffusion?: number;
+  readonly fluidColorMode?: FluidColorMode2D;
+  readonly fluidColorStrength?: number;
   readonly renderStyle?: 'enhanced' | 'ultra';
   readonly opacity: number;
   readonly time?: number;

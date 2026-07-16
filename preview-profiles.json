@@ -377,14 +377,15 @@
       "modeId": "pour",
       "styleId": "clear-lagoon",
       "settings": {
-        "timeScale": 1,
+        "timeScale": 0.25,
         "renderStyle": "enhanced",
         "maxParticles": 8192,
         "particleRadius": 4.8,
         "gravity": 1450,
-        "viscosity": 0.18,
+        "viscosity": 0.2,
         "viscositySigma": 0.9,
         "viscosityBeta": 0.3,
+        "fluidity": 0.72,
         "supportRadiusScale": 1.35,
         "fluidGridResolution": 512,
         "restDensity": 0.72,
@@ -398,9 +399,9 @@
         "obstaclePegs": 3,
         "pourRate": 500,
         "pourRadius": 22,
-        "buildRadius": 18,
         "interactionRadius": 76,
         "interactionStrength": 18,
+        "buildRadius": 18,
         "metaballBlend": 0.76,
         "liquidFieldScale": 0.78,
         "liquidSurfaceThreshold": 0.18,
@@ -408,6 +409,8 @@
         "liquidEdgeSoftness": 0.46,
         "liquidSplatDensity": 1.28,
         "liquidParticleRadius": 1.2,
+        "fluidColorMode": "palette-flow",
+        "fluidColorStrength": 0.55,
         "liquidRefraction": 0.58,
         "liquidGloss": 0.78,
         "liquidFoamStrength": 2.4,
@@ -420,27 +423,75 @@
       "variation": {
         "intensity": 0.25,
         "lockedKeys": [],
-        "seed": 3391492608
+        "seed": 3695562177
       },
       "generationMode": "varied",
       "renderPolicy": "auto",
       "image": {
         "src": "previews/water-tank.webp",
-        "revision": "1fb4bd2e1636e928",
+        "revision": "b506b1b859eeeb16",
         "width": 512,
         "height": 512,
-        "profileHash": "6e875bb1"
+        "profileHash": "65fc5b4b"
       }
     },
     "splash-mpm": {
-      "settings": {},
+      "modeId": "pour",
+      "styleId": "violet-current",
+      "settings": {
+        "timeScale": 1,
+        "renderStyle": "ultra",
+        "particleRadius": 6.7,
+        "maxParticles": 131072,
+        "resolution": 256,
+        "stiffness": 42,
+        "restDensity": 5.6,
+        "particleSeparation": 37.79,
+        "viscosity": 0.56,
+        "flipness": 0.8,
+        "gravity": 600,
+        "obstacleRamps": 4,
+        "obstaclePegs": 3,
+        "surfaceSmoothing": 0.26,
+        "opacity": 1,
+        "enhancedQuality": 1.55,
+        "enhancedSplatSize": 1.35,
+        "enhancedDepth": 0.69,
+        "enhancedEdge": 0.71,
+        "liquidFieldScale": 0.6,
+        "liquidSurfaceThreshold": 0.105,
+        "liquidEdgeTightness": 0.15,
+        "liquidEdgeSoftness": 0.09,
+        "liquidSplatDensity": 0.45,
+        "liquidParticleRadius": 0.7,
+        "fluidColorMode": "velocity",
+        "fluidColorStrength": 0.55,
+        "liquidRefraction": 0.44,
+        "liquidGloss": 1,
+        "liquidFoamStrength": 0.97,
+        "liquidBloomStrength": 0,
+        "liquidHeatShimmer": 0.38,
+        "liquidDepthDiffusion": 0.6,
+        "emitRate": 520,
+        "pourRadius": 34,
+        "inputRadius": 62,
+        "inputForce": 5,
+        "buildRadius": 18
+      },
       "variation": {
         "intensity": 0.25,
         "lockedKeys": [],
         "seed": 2806831539
       },
       "generationMode": "varied",
-      "renderPolicy": "auto"
+      "renderPolicy": "auto",
+      "image": {
+        "src": "previews/splash-mpm.webp",
+        "revision": "3a1ba7b85a0b67dd",
+        "width": 512,
+        "height": 512,
+        "profileHash": "c9974676"
+      }
     }
   }
 }

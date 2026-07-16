@@ -91,6 +91,25 @@ export const WATER_TANK_SETTINGS: readonly ExperienceSetting[] = Object.freeze([
     'enhanced',
     'ultra'
   ]),
+  {
+    key: 'fluidColorMode',
+    label: 'Fluid Color Mode',
+    section: r,
+    type: 'select',
+    options: [
+      { label: 'Solid', value: 'solid' },
+      { label: 'Palette Flow', value: 'palette-flow' },
+      { label: 'Velocity', value: 'velocity' },
+      { label: 'Foam', value: 'foam' },
+      { label: 'Marbled', value: 'marbled' }
+    ],
+    default: 'palette-flow',
+    visibleRenderStyles: ['enhanced', 'ultra']
+  },
+  v(n('fluidColorStrength', 'Fluid Color Strength', r, 0, 1, 0.01, 0.55), [
+    'enhanced',
+    'ultra'
+  ]),
   v(n('liquidRefraction', 'Refraction', r, 0, 1, 0.01, 0.58), [
     'enhanced',
     'ultra'

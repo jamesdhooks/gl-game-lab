@@ -4,7 +4,7 @@ import {
   createComponentType,
   type World,
 } from '@hooksjam/gl-game-lab-core';
-import type { GpuTexture2D } from './Gpu2D.js';
+import type { FluidColorMode2D, GpuTexture2D } from './Gpu2D.js';
 
 export type BlendMode2D = 'alpha' | 'additive' | 'multiply' | 'opaque';
 export type UvRect = readonly [number, number, number, number];
@@ -125,6 +125,8 @@ export interface MetaballBatch2D {
   readonly positions: Float32Array;
   readonly radii: Float32Array;
   readonly temperatures: Float32Array;
+  readonly colorSeeds?: Float32Array;
+  readonly velocities?: Float32Array;
   readonly worldWidth: number;
   readonly worldHeight: number;
   readonly fieldScale: number;
@@ -144,6 +146,8 @@ export interface MetaballBatch2D {
   readonly bloomStrength?: number;
   readonly heatShimmer?: number;
   readonly depthDiffusion?: number;
+  readonly fluidColorMode?: FluidColorMode2D;
+  readonly fluidColorStrength?: number;
   readonly renderStyle?: 'enhanced' | 'ultra';
   readonly opacity: number;
   readonly time?: number;

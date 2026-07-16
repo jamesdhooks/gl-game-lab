@@ -15,5 +15,5 @@ export function triangleMeshUploadBytes(batch: TriangleMeshBatch2D): number {
 }
 
 export function metaballUploadBytes(batch: MetaballBatch2D): number {
-  return batch.count * 4 * FLOAT_BYTES;
+  return batch.count * (4 + (batch.colorSeeds ? 1 : 0) + (batch.velocities ? 2 : 0)) * FLOAT_BYTES;
 }
