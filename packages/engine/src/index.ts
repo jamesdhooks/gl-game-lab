@@ -264,6 +264,10 @@ export {
   type ParticleReplayEvent2D,
 } from './ParticleEffectTools2D.js';
 export {
+  ParticleGraphScheduler2D,
+  type ParticleGraphSchedulerCallbacks2D,
+} from './ParticleGraphScheduler2D.js';
+export {
   ExperienceRegistry,
   ExperiencePreviewCycleControllerService,
   ExperienceRuntimeControllerService,

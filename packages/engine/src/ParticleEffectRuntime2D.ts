@@ -7,6 +7,7 @@ import type {
 } from './ParticleEffectGraph2D.js';
 import type { ParticleEffectDiagnostics2D, ParticlePalette2D, ParticleRenderTier2D } from './ParticleEffects2D.js';
 import type { GpuRenderTarget2D } from './Gpu2D.js';
+import { ParticleGraphScheduler2D } from './ParticleGraphScheduler2D.js';
 
 export type ParticleEffectInstanceStatus2D = 'idle' | 'running' | 'paused' | 'draining' | 'complete' | 'disposed';
 
@@ -171,7 +172,11 @@ export class EngineParticleEffects2D implements ParticleEffects2D {
     this.assertUsable();
     const record = this.programs.get(effectId);
     if (!record) throw new Error(`Unknown compiled particle effect: ${effectId}`);
-    const instance = new RuntimeParticleEffectInstance2D(this.nextInstanceId++, record.program, record.backend, options, (id) => { this.removeInstance(effectId, id); });
+    const instance = new RuntimeParticleEffectInstance2D(
+      this.nextInstanceId++, record.program, record.backend, options,
+      (id) => { this.removeInstance(effectId, id); },
+      (referenceId) => { const child = this.createInstance(referenceId); child.start(); },
+    );
     this.instances.set(instance.id, instance);
     record.instances.add(instance);
     return instance;
@@ -255,6 +260,7 @@ class RuntimeParticleEffectInstance2D implements ParticleEffectInstance2D {
   private timescale: number;
   private tier: ParticleRenderTier2D;
   private readonly emitters: EmitterRuntime[];
+  private readonly scheduler: ParticleGraphScheduler2D;
 
   constructor(
     readonly id: number,
@@ -262,6 +268,7 @@ class RuntimeParticleEffectInstance2D implements ParticleEffectInstance2D {
     backend: ParticleEffectBackendResource2D,
     options: ParticleEffectInstanceOptions2D,
     private readonly onDispose: (id: number) => void,
+    onReference: (effectId: string) => void,
   ) {
     this.program = program; this.backend = backend; this.seed = options.seed ?? mixSeed(id, 0x9e3779b9);
     this.transform = options.transform ?? DEFAULT_TRANSFORM;
@@ -269,6 +276,17 @@ class RuntimeParticleEffectInstance2D implements ParticleEffectInstance2D {
     this.palette = options.palette ?? EMPTY_PALETTE; this.timescale = validateTimescale(options.timescale ?? 1);
     this.tier = options.qualityTier ?? program.effect.source.quality.defaultTier;
     this.emitters = program.effect.source.emitters.map((entry, index) => new EmitterRuntime(entry, index));
+    this.scheduler = new ParticleGraphScheduler2D(
+      program.effect.source,
+      () => this.parameters,
+      {
+        emit: (emitterId) => { this.activateGraphEmitter(emitterId); },
+        stop: (emitterId, mode) => { if (emitterId) { const emitter = this.emitters.find((entry) => entry.definition.id === emitterId); if (emitter) emitter.active = false; } else this.stop(mode); },
+        signal: (signal) => { this.scheduler.trigger({ kind: 'signal', signal }); },
+        reference: onReference,
+      },
+      this.seed,
+    );
     backend.setPalette(this.palette);
   }
 
@@ -281,12 +299,8 @@ class RuntimeParticleEffectInstance2D implements ParticleEffectInstance2D {
     this.assertUsable();
     if (this.statusValue === 'running') return;
     this.statusValue = 'running';
-    for (const emitter of this.emitters) {
-      const timeline = emitter.definition.timeline;
-      emitter.active = timeline.manual !== true;
-      emitter.elapsed = -(timeline.startDelay ?? 0);
-      if (timeline.prewarm && (timeline.duration ?? 0) > 0) this.advanceEmitter(emitter, timeline.duration ?? 0);
-    }
+    this.emitters.forEach((emitter) => { emitter.reset(); });
+    this.scheduler.start();
   }
 
   stop(mode: ParticleEmitterStopMode2D = 'drain'): void {
@@ -300,14 +314,14 @@ class RuntimeParticleEffectInstance2D implements ParticleEffectInstance2D {
   resume(): void { this.assertUsable(); if (this.statusValue === 'paused') this.statusValue = 'running'; }
 
   restart(seed = mixSeed(this.seed, 0x85ebca6b)): void {
-    this.assertUsable(); this.seed = seed >>> 0; this.elapsed = 0; this.backend.clear(); this.emitters.forEach((emitter) => { emitter.reset(); }); this.statusValue = 'idle'; this.start();
+    this.assertUsable(); this.seed = seed >>> 0; this.elapsed = 0; this.backend.clear(); this.emitters.forEach((emitter) => { emitter.reset(); }); this.scheduler.reset(this.seed); this.statusValue = 'idle'; this.start();
   }
 
   trigger(signal: string, payload: ParticleSignalPayload2D = {}): void {
     this.assertUsable();
     if (signal.trim().length === 0) throw new Error('Particle effect signal cannot be empty');
     if (payload.position) this.transform = { ...this.transform, position: payload.position };
-    this.visitSignalGates(this.program.effect.source.graph.root, signal);
+    this.scheduler.trigger({ kind: 'signal', signal });
   }
 
   emit(emitterId: string, override: ParticleEmissionOverride2D = {}): void {
@@ -333,6 +347,7 @@ class RuntimeParticleEffectInstance2D implements ParticleEffectInstance2D {
     if (!this.isAdvancing) return;
     const delta = deltaSeconds * this.timescale;
     this.elapsed += delta;
+    this.scheduler.update(delta);
     let active = false;
     for (const emitter of this.emitters) { if (emitter.active) { active = true; this.advanceEmitter(emitter, delta); } }
     if (!active && this.statusValue === 'running') this.statusValue = 'draining';
@@ -382,19 +397,13 @@ class RuntimeParticleEffectInstance2D implements ParticleEffectInstance2D {
     this.backend.emit(emission);
   }
 
-  private visitSignalGates(node: import('./ParticleEffectGraph2D.js').ParticleEmitterGraphNode2D, signal: string): void {
-    if (node.kind === 'gate' && node.event.kind === 'signal' && node.event.signal === signal) this.executeImmediate(node.child);
-    if (node.kind === 'sequence' || node.kind === 'parallel' || node.kind === 'random-choice') node.children.forEach((child) => { this.visitSignalGates(child, signal); });
-    else if (node.kind === 'weighted-choice') node.choices.forEach((choice) => { this.visitSignalGates(choice.child, signal); });
-    else if (node.kind === 'delay' || node.kind === 'repeat' || node.kind === 'timeline' || node.kind === 'parameter-remap' || node.kind === 'transform') this.visitSignalGates(node.child, signal);
-    else if (node.kind === 'condition') { this.visitSignalGates(node.then, signal); if (node.otherwise) this.visitSignalGates(node.otherwise, signal); }
-  }
-
-  private executeImmediate(node: import('./ParticleEffectGraph2D.js').ParticleEmitterGraphNode2D): void {
-    if (node.kind === 'emit') this.emit(node.emitterId);
-    else if (node.kind === 'sequence' || node.kind === 'parallel') node.children.forEach((child) => { this.executeImmediate(child); });
-    else if (node.kind === 'repeat') for (let index = 0; index < node.count; index += 1) this.executeImmediate(node.child);
-    else if (node.kind === 'condition') this.executeImmediate(node.then);
+  private activateGraphEmitter(emitterId: string): void {
+    const emitter = this.emitters.find((entry) => entry.definition.id === emitterId);
+    if (!emitter) throw new Error(`Unknown particle emitter: ${emitterId}`);
+    const timeline = emitter.definition.timeline;
+    if (timeline.manual) { this.submit(emitter, firstBurstCount(emitter.definition)); return; }
+    emitter.reset(); emitter.active = true; emitter.elapsed = -(timeline.startDelay ?? 0);
+    if (timeline.prewarm && (timeline.duration ?? 0) > 0) this.advanceEmitter(emitter, timeline.duration ?? 0);
   }
 
   private assertUsable(): void { if (this.statusValue === 'disposed') throw new Error('Particle effect instance is disposed'); }
