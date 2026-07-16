@@ -65,6 +65,7 @@ export interface GpuFieldSystem2D {
 export interface GpuParticleSeed2D {
   readonly positions?: Float32Array;
   readonly velocities?: Float32Array;
+  readonly metadata?: Float32Array;
 }
 
 export interface GpuParticleSystem2DOptions {
@@ -73,6 +74,7 @@ export interface GpuParticleSystem2DOptions {
   readonly height?: number;
   readonly precision?: 'half-float' | 'float';
   readonly simulationFragmentSource: string;
+  readonly eventFragmentSource?: string;
   readonly particleVertexSource: string;
   readonly particleFragmentSource: string;
   /**
@@ -85,6 +87,8 @@ export interface GpuParticleSystem2DOptions {
   readonly trails?: boolean;
   /** Enables one-pass spawning from a compact RGBA32F command texture. */
   readonly commandCapacity?: number;
+  /** Allocates the versioned archetype/generation/color/flags state attachment. */
+  readonly metadata?: boolean;
 }
 
 export interface GpuParticleCommandBatch2D {
@@ -101,6 +105,7 @@ export interface GpuParticleSystemDiagnostics2D {
   readonly droppedCommands: number;
   readonly spawnedParticles: number;
   readonly simulationPasses: number;
+  readonly eventPasses: number;
   readonly renderPasses: number;
   readonly uploadBytes: number;
   readonly contextGeneration: number;
@@ -123,6 +128,7 @@ export interface GpuParticleSystem2D {
   uploadSeed(seed: GpuParticleSeed2D): void;
   step(uniforms?: GpuUniforms2D | GpuUniformBinder2D): void;
   stepBatch(batch: GpuParticleCommandBatch2D, uniforms?: GpuUniforms2D | GpuUniformBinder2D): void;
+  stepEvents(uniforms?: GpuUniforms2D | GpuUniformBinder2D): void;
   render(target: GpuRenderTarget2D, uniforms?: GpuUniforms2D | GpuUniformBinder2D): void;
   renderPass(id: string, target: GpuRenderTarget2D, uniforms?: GpuUniforms2D | GpuUniformBinder2D): void;
   beginTrails(width: number, height: number, fade: number): GpuRenderTarget2D;
@@ -293,6 +299,11 @@ export interface GpuParticleGridCapabilities2D {
 
 export interface Gpu2DCapabilities {
   readonly particleGrid: GpuParticleGridCapabilities2D;
+  readonly particleEffects?: {
+    readonly metadataState: boolean;
+    readonly maxDrawBuffers: number;
+    readonly maxColorAttachments: number;
+  };
 }
 
 export interface GpuParticleGridValidation2D {

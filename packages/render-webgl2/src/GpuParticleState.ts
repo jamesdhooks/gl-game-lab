@@ -5,11 +5,13 @@ export interface GpuParticleStateOptions {
   readonly width?: number;
   readonly height?: number;
   readonly precision?: GpuTexturePrecision;
+  readonly metadata?: boolean;
 }
 
 export interface GpuParticleStateSeed {
   readonly positions?: Float32Array;
   readonly velocities?: Float32Array;
+  readonly metadata?: Float32Array;
   readonly uploadWriteTargets?: boolean;
 }
 
@@ -38,6 +40,7 @@ export class GpuParticleState {
   readonly precision: GpuTexturePrecision;
   readonly positions: GpuDoubleRenderTarget;
   readonly velocities: GpuDoubleRenderTarget;
+  readonly metadata: GpuDoubleRenderTarget | undefined;
   private readonly writeFramebuffer: WebGLFramebuffer;
   private framebufferChecked = false;
   private scratch = new Float32Array(0);
@@ -57,10 +60,18 @@ export class GpuParticleState {
       this.positions.dispose();
       throw error;
     }
+    try {
+      this.metadata = options.metadata ? createGpuDoubleRenderTarget(gl, targets) : undefined;
+    } catch (error) {
+      this.positions.dispose();
+      this.velocities.dispose();
+      throw error;
+    }
     const framebuffer = gl.createFramebuffer();
     if (!framebuffer) {
       this.positions.dispose();
       this.velocities.dispose();
+      this.metadata?.dispose();
       throw new Error('Unable to allocate GPU particle MRT framebuffer');
     }
     this.writeFramebuffer = framebuffer;
@@ -73,7 +84,10 @@ export class GpuParticleState {
     gl.bindFramebuffer(gl.FRAMEBUFFER, this.writeFramebuffer);
     gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.positions.write.texture, 0);
     gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT1, gl.TEXTURE_2D, this.velocities.write.texture, 0);
-    gl.drawBuffers([gl.COLOR_ATTACHMENT0, gl.COLOR_ATTACHMENT1]);
+    if (this.metadata) gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT2, gl.TEXTURE_2D, this.metadata.write.texture, 0);
+    gl.drawBuffers(this.metadata
+      ? [gl.COLOR_ATTACHMENT0, gl.COLOR_ATTACHMENT1, gl.COLOR_ATTACHMENT2]
+      : [gl.COLOR_ATTACHMENT0, gl.COLOR_ATTACHMENT1]);
     if (!this.framebufferChecked) {
       const status = gl.checkFramebufferStatus(gl.FRAMEBUFFER);
       if (status !== gl.FRAMEBUFFER_COMPLETE) throw new Error(`GPU particle MRT framebuffer is incomplete: ${status}`);
@@ -81,15 +95,19 @@ export class GpuParticleState {
     }
   }
 
-  swap(): void { this.positions.swap(); this.velocities.swap(); }
+  swap(): void { this.positions.swap(); this.velocities.swap(); this.metadata?.swap(); }
 
-  clear(): void { this.positions.clear(); this.velocities.clear(); }
+  clear(): void { this.positions.clear(); this.velocities.clear(); this.metadata?.clear(); }
 
   uploadSeed(seed: GpuParticleStateSeed): void {
     this.assertUsable();
     if (this.precision !== 'float') throw new Error('GPU particle seed uploads require float precision');
     if (seed.positions) this.upload(this.positions, seed.positions, seed.uploadWriteTargets ?? true);
     if (seed.velocities) this.upload(this.velocities, seed.velocities, seed.uploadWriteTargets ?? true);
+    if (seed.metadata) {
+      if (!this.metadata) throw new Error('GPU particle metadata seed requires metadata state');
+      this.upload(this.metadata, seed.metadata, seed.uploadWriteTargets ?? true);
+    }
   }
 
   dispose(): void {
@@ -98,6 +116,7 @@ export class GpuParticleState {
     this.gl.deleteFramebuffer(this.writeFramebuffer);
     this.positions.dispose();
     this.velocities.dispose();
+    this.metadata?.dispose();
   }
 
   private upload(target: GpuDoubleRenderTarget, source: Float32Array, includeWrite: boolean): void {

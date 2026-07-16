@@ -29,6 +29,12 @@ export class GpuSimulationPass {
     gl.activeTexture(gl.TEXTURE1);
     gl.bindTexture(gl.TEXTURE_2D, state.velocities.read.texture);
     gl.uniform1i(this.uniform('uVelocityState'), 1);
+    if (state.metadata) {
+      gl.activeTexture(gl.TEXTURE2);
+      gl.bindTexture(gl.TEXTURE_2D, state.metadata.read.texture);
+      gl.uniform1i(this.uniform('uMetadataState'), 2);
+      gl.uniform1i(this.uniform('uHasMetadataState'), 1);
+    } else gl.uniform1i(this.uniform('uHasMetadataState'), 0);
     gl.uniform2i(this.uniform('uStateSize'), state.width, state.height);
     bind(gl, (name) => this.uniform(name));
     gl.drawArrays(gl.TRIANGLES, 0, 3);

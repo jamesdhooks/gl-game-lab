@@ -56,6 +56,7 @@ interface FieldBundle {
 interface ParticleBundle {
   readonly state: GpuParticleState;
   readonly stepper: GpuSimulationPass;
+  readonly eventStepper: GpuSimulationPass | undefined;
   readonly points: GpuParticleRenderer;
   readonly renderPasses: ReadonlyMap<string, GpuParticleRenderer>;
   readonly trails: TrailFeedbackRenderer | undefined;
@@ -144,6 +145,7 @@ class WebGLGpuParticleSystem implements GpuParticleSystem2D {
   private droppedCommands = 0;
   private spawnedParticles = 0;
   private simulationPasses = 0;
+  private eventPasses = 0;
   private renderPasses = 0;
   private uploadedBytes = 0;
 
@@ -180,9 +182,10 @@ class WebGLGpuParticleSystem implements GpuParticleSystem2D {
     this.retainedSeed = {
       ...(seed.positions ? { positions: seed.positions.slice() } : {}),
       ...(seed.velocities ? { velocities: seed.velocities.slice() } : {}),
+      ...(seed.metadata ? { metadata: seed.metadata.slice() } : {}),
     };
     this.owner.value.state.uploadSeed(this.retainedSeed);
-    this.countUpload(((seed.positions?.byteLength ?? 0) + (seed.velocities?.byteLength ?? 0)) * 2);
+    this.countUpload(((seed.positions?.byteLength ?? 0) + (seed.velocities?.byteLength ?? 0) + (seed.metadata?.byteLength ?? 0)) * 2);
   }
   step(uniforms: GpuUniforms2D | GpuUniformBinder2D = {}): void {
     const bundle = this.owner.value;
@@ -200,14 +203,22 @@ class WebGLGpuParticleSystem implements GpuParticleSystem2D {
     this.uploadedBytes += uploadBytes;
     this.countUpload(uploadBytes);
     bundle.stepper.run(bundle.state, (gl, uniform) => {
-      bundle.commands.bind(2);
-      gl.uniform1i(uniform('uParticleCommandData'), 2);
+      bundle.commands.bind(3);
+      gl.uniform1i(uniform('uParticleCommandData'), 3);
       gl.uniform1i(uniform('uParticleCommandCount'), normalized.count);
       gl.uniform1i(uniform('uParticleCommandTexels'), 4);
       applyBindings(gl, uniform, uniforms);
     });
     this.countDraw();
     this.simulationPasses += 1;
+  }
+  stepEvents(uniforms: GpuUniforms2D | GpuUniformBinder2D = {}): void {
+    const bundle = this.owner.value;
+    if (!bundle.eventStepper) throw new Error('GPU particle system was created without an event pass');
+    bundle.eventStepper.run(bundle.state, (gl, uniform) => { applyBindings(gl, uniform, uniforms); });
+    this.countDraw();
+    this.simulationPasses += 1;
+    this.eventPasses += 1;
   }
   render(target: GpuRenderTarget2D, uniforms: GpuUniforms2D | GpuUniformBinder2D = {}): void {
     const native = requireTarget(target);
@@ -245,6 +256,7 @@ class WebGLGpuParticleSystem implements GpuParticleSystem2D {
       droppedCommands: this.droppedCommands,
       spawnedParticles: this.spawnedParticles,
       simulationPasses: this.simulationPasses,
+      eventPasses: this.eventPasses,
       renderPasses: this.renderPasses,
       uploadBytes: this.uploadedBytes,
       contextGeneration: this.currentGeneration,
@@ -421,6 +433,7 @@ export class WebGLGpu2DService implements Gpu2DService {
   createParticleSystem(id: string, options: GpuParticleSystem2DOptions): GpuParticleSystem2D {
     const normalized = id.trim();
     if (normalized.length === 0) throw new Error('GPU particle system id cannot be empty');
+    if (options.metadata && this.capabilities.particleEffects?.metadataState !== true) throw new Error('GPU particle metadata state requires at least three draw buffers and color attachments');
     let particles: WebGLGpuParticleSystem | undefined;
     particles = new WebGLGpuParticleSystem(
       this.device,
@@ -500,6 +513,10 @@ function createParticleBundle(gl: WebGL2RenderingContext, options: GpuParticleSy
   try {
     const state = new GpuParticleState(gl, options); disposers.push(() => { state.dispose(); });
     const stepper = new GpuSimulationPass(gl, options.simulationFragmentSource, `${label}.simulation`); disposers.push(() => { stepper.dispose(); });
+    const eventStepper = options.eventFragmentSource
+      ? new GpuSimulationPass(gl, options.eventFragmentSource, `${label}.events`)
+      : undefined;
+    if (eventStepper) disposers.push(() => { eventStepper.dispose(); });
     const points = new GpuParticleRenderer(gl, {
       label: `${label}.particles`,
       vertexSource: options.particleVertexSource,
@@ -523,7 +540,7 @@ function createParticleBundle(gl: WebGL2RenderingContext, options: GpuParticleSy
     if (trails) disposers.push(() => { trails.dispose(); });
     const commands = new GpuParticleCommandBuffer(gl, options.commandCapacity ?? GPU_PARTICLE_COMMAND_CAPACITY);
     disposers.push(() => { commands.dispose(); });
-    return { state, stepper, points, renderPasses, trails, commands };
+    return { state, stepper, eventStepper, points, renderPasses, trails, commands };
   } catch (error) {
     for (const dispose of disposers.reverse()) dispose();
     throw error;
@@ -532,6 +549,7 @@ function createParticleBundle(gl: WebGL2RenderingContext, options: GpuParticleSy
 
 function disposeParticleBundle(bundle: ParticleBundle): void {
   bundle.commands.dispose();
+  bundle.eventStepper?.dispose();
   bundle.trails?.dispose();
   for (const pass of bundle.renderPasses.values()) pass.dispose();
   bundle.points.dispose();
@@ -633,7 +651,7 @@ function fieldBytes(options: GpuFieldSystem2DOptions): number {
 function particleBytes(options: GpuParticleSystem2DOptions): number {
   const width = options.width ?? Math.ceil(Math.sqrt(options.capacity));
   const height = options.height ?? Math.ceil(options.capacity / width);
-  return width * height * (options.precision === 'half-float' ? 8 : 16) * 4
+  return width * height * (options.precision === 'half-float' ? 8 : 16) * (options.metadata ? 6 : 4)
     + (options.commandCapacity ?? GPU_PARTICLE_COMMAND_CAPACITY) * GPU_PARTICLE_COMMAND_FLOATS * Float32Array.BYTES_PER_ELEMENT;
 }
 
@@ -694,6 +712,11 @@ export function detectGpu2DCapabilities(gl: WebGL2RenderingContext): Gpu2DCapabi
   const multipleRenderTargets = maxDrawBuffers >= 2 && maxColorAttachments >= 2;
   const vertexTextureFetch = maxVertexTextureImageUnits >= 1;
   return Object.freeze({
+    particleEffects: Object.freeze({
+      metadataState: maxDrawBuffers >= 3 && maxColorAttachments >= 3,
+      maxDrawBuffers,
+      maxColorAttachments,
+    }),
     particleGrid: Object.freeze({
       supported: floatRenderTargets && floatBlend && multipleRenderTargets && vertexTextureFetch,
       floatRenderTargets,

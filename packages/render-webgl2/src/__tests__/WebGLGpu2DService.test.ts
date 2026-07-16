@@ -18,6 +18,22 @@ describe('detectGpu2DCapabilities', () => {
       multipleRenderTargets: true,
       vertexTextureFetch: true,
     });
+    expect(detectGpu2DCapabilities(gl).particleEffects).toEqual({
+      metadataState: true,
+      maxDrawBuffers: 4,
+      maxColorAttachments: 4,
+    });
+  });
+
+  it('does not advertise metadata state with only two draw buffers', () => {
+    const gl = mockGl({
+      EXT_color_buffer_float: {},
+      EXT_float_blend: {},
+      maxDrawBuffers: 2,
+      maxColorAttachments: 2,
+      maxVertexTextureImageUnits: 8,
+    });
+    expect(detectGpu2DCapabilities(gl).particleEffects?.metadataState).toBe(false);
   });
 
   it('does not claim particle-grid support when additive float blending is missing', () => {
