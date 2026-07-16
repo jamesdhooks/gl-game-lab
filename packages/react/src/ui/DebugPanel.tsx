@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Bug, X } from 'lucide-react';
-import { ExperienceRuntimeControllerService, type EngineDiagnosticsSnapshot, type GameEngine } from '@hooksjam/gl-game-lab-engine';
+import { EngineParticleEffects, ExperienceRuntimeControllerService, type EngineDiagnosticsSnapshot, type GameEngine } from '@hooksjam/gl-game-lab-engine';
 
 export interface DebugPanelProps {
   readonly engine: GameEngine | undefined;
@@ -25,6 +25,7 @@ export function DebugPanel({ engine }: DebugPanelProps): JSX.Element {
 
   const renderer = stats?.renderer;
   const runtimeDiagnostics = engine?.kernel.tryGet(ExperienceRuntimeControllerService)?.runtimeDiagnostics;
+  const particleDiagnostics = engine?.kernel.tryGet(EngineParticleEffects)?.diagnostics();
   const uploads = (renderer?.bufferUploadBytes ?? 0) + (renderer?.textureUploadBytes ?? 0);
   const systems = [...(stats?.systems ?? [])].sort((left, right) => right.cpuMs - left.cpuMs);
 
@@ -71,6 +72,18 @@ export function DebugPanel({ engine }: DebugPanelProps): JSX.Element {
               {runtimeDiagnostics && Object.keys(runtimeDiagnostics).length > 0 && (
                 <DebugSection title="Runtime">
                   {Object.entries(runtimeDiagnostics).map(([key, value]) => <StatRow key={key} label={key} value={String(value)} />)}
+                </DebugSection>
+              )}
+              {particleDiagnostics && particleDiagnostics.registeredPrograms > 0 && (
+                <DebugSection title="Particle effects">
+                  <StatRow label="backend" value={particleDiagnostics.backend} />
+                  <StatRow label="instances" value={formatInteger(particleDiagnostics.activeInstances)} />
+                  <StatRow label="programs" value={formatInteger(particleDiagnostics.registeredPrograms)} />
+                  <StatRow label="active / capacity" value={`${formatInteger(particleDiagnostics.activeEstimate)} / ${formatInteger(particleDiagnostics.capacity)}`} />
+                  <StatRow label="spawned / dropped" value={`${formatInteger(particleDiagnostics.spawnedParticles)} / ${formatInteger(particleDiagnostics.droppedParticles)}`} />
+                  <StatRow label="sim / render passes" value={`${formatInteger(particleDiagnostics.simulationPasses)} / ${formatInteger(particleDiagnostics.renderPasses)}`} />
+                  <StatRow label="uploads" value={formatBytes(particleDiagnostics.uploadBytes)} />
+                  <StatRow label="allocated" value={formatBytes(particleDiagnostics.allocatedBytes)} />
                 </DebugSection>
               )}
               {systems.length > 0 && (

@@ -16,6 +16,7 @@ export {
   EngineRenderer,
   EngineRender2D,
   EngineGpu2D,
+  EngineParticleEffects,
   EngineSchedule,
   EngineScenes,
   EngineSchemas,

@@ -14,6 +14,7 @@ import {
 import { InputSourceRegistry } from './InputSourceRegistry.js';
 import type { Render2DService } from './Render2D.js';
 import type { Gpu2DService } from './Gpu2D.js';
+import type { ParticleEffects2D } from './ParticleEffectRuntime2D.js';
 import type { EngineDiagnostics } from './Diagnostics.js';
 import type { AdaptiveQualityService } from './Quality.js';
 
@@ -63,6 +64,7 @@ export interface RenderBackend {
 export const EngineRenderer = createExtensionToken<RenderBackend>('gl-game-lab.engine.renderer');
 export const EngineRender2D = createExtensionToken<Render2DService>('gl-game-lab.engine.render-2d');
 export const EngineGpu2D = createExtensionToken<Gpu2DService>('gl-game-lab.engine.gpu-2d');
+export const EngineParticleEffects = createExtensionToken<ParticleEffects2D>('gl-game-lab.engine.particle-effects');
 
 export type PlatformServiceState = 'ready' | 'suspended' | 'destroyed';
 

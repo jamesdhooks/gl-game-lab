@@ -2,6 +2,8 @@ import { createExtensionToken, type EnginePlugin } from '@hooksjam/gl-game-lab-c
 import {
   EngineRender2D,
   EngineGpu2D,
+  EngineParticleEffects,
+  EngineParticleEffects2D,
   EngineDiagnosticsService,
   EngineRenderer,
   EngineSchedule,
@@ -27,6 +29,7 @@ import {
   type Texture2DHandle,
   type RendererDiagnostics,
 } from '@hooksjam/gl-game-lab-engine';
+import { WebGLParticleEffectRuntimeBackend2D } from './WebGLParticleEffectRuntime2D.js';
 import {
   SpriteRenderer,
   buildSpriteDrawPlan,
@@ -624,6 +627,7 @@ export function createWebGL2RendererPlugin(
   options: WebGL2RendererOptions = {},
 ): EnginePlugin {
   const renderer = new WebGL2Renderer(canvas, options);
+  const particleEffects = new EngineParticleEffects2D(new WebGLParticleEffectRuntimeBackend2D(renderer.gpu2D));
   return {
     id: WEBGL2_RENDERER_PLUGIN_ID,
     version: '1.0.0',
@@ -632,6 +636,7 @@ export function createWebGL2RendererPlugin(
       const diagnostics = context.get(EngineDiagnosticsService);
       context.provide(EngineRender2D, renderer);
       context.provide(EngineGpu2D, renderer.gpu2D);
+      context.provide(EngineParticleEffects, particleEffects);
       context.provide(EngineRenderer, renderer);
       context.provide(WebGL2RendererService, renderer);
       context.provide(SpriteRenderQueueService, renderer.sprites);
@@ -661,6 +666,6 @@ export function createWebGL2RendererPlugin(
         },
       });
     },
-    dispose: () => { renderer.destroy(); },
+    dispose: () => { particleEffects.dispose(); renderer.destroy(); },
   };
 }
