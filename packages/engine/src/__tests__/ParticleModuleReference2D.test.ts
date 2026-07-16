@@ -1,0 +1,9 @@
+import { describe,expect,it } from 'vitest';
+import { allocateParticleEventClaims2D, collideCapsuleReference2D, collideCircleReference2D, evaluateParticleScalarCurve2D, integrateParticleReference2D, sampleParticleSpawnReference2D } from '../index.js';
+
+describe('ParticleModuleReference2D',()=>{
+  it('integrates gravity, drag, radial force, and rotation deterministically',()=>{const state={x:0,y:0,vx:10,vy:0,age:0,lifetime:2,rotation:0,angularVelocity:2};integrateParticleReference2D(state,{gravity:10,drag:0,radialAcceleration:5,tangentialAcceleration:0},1,{x:10,y:0,radius:1});expect(state).toMatchObject({x:15,y:10,age:1,rotation:2});});
+  it('samples every built-in distribution without non-finite output',()=>{for(const shape of ['point','disc','line','cone','arc','ring','radial','spiral','pinwheel','shower'] as const)expect(Object.values(sampleParticleSpawnReference2D(shape,2,8,.25,.75,10,20,Math.PI,0,1)).every(Number.isFinite)).toBe(true);});
+  it('resolves circle and capsule contacts including kill mode',()=>{const profile={restitution:1,friction:0};const circle={x:2,y:0,vx:-2,vy:0,age:0,lifetime:2,rotation:0,angularVelocity:0};expect(collideCircleReference2D(circle,{x:0,y:0,radius:4},profile)).toBe(true);expect(circle.vx).toBe(2);const capsule={x:5,y:1,vx:0,vy:-1,age:0,lifetime:2,rotation:0,angularVelocity:0};expect(collideCapsuleReference2D(capsule,{ax:0,ay:0,bx:10,by:0,radius:2,mode:'kill'},profile)).toBe(true);expect(capsule.age).toBe(2);});
+  it('evaluates curves and resolves event contention by priority then parent',()=>{expect(evaluateParticleScalarCurve2D({start:0,end:10,exponent:2},.5)).toBe(2.5);expect([...allocateParticleEventClaims2D([{target:1,priority:1,parent:4},{target:1,priority:2,parent:2},{target:1,priority:2,parent:5}],4)]).toEqual([-1,5,-1,-1]);});
+});

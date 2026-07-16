@@ -278,6 +278,16 @@ export {
   type ParticleReplayEvent2D,
 } from './ParticleEffectTools2D.js';
 export {
+  allocateParticleEventClaims2D,
+  collideCapsuleReference2D,
+  collideCircleReference2D,
+  evaluateParticleScalarCurve2D,
+  integrateParticleReference2D,
+  sampleParticleSpawnReference2D,
+  type ParticleReferenceSpawn2D,
+  type ParticleReferenceState2D,
+} from './ParticleModuleReference2D.js';
+export {
   ParticleGraphScheduler2D,
   type ParticleGraphSchedulerCallbacks2D,
 } from './ParticleGraphScheduler2D.js';
