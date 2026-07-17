@@ -17,6 +17,7 @@ import { registerSimulationRuntime } from '../SimulationPluginLifecycle.js';
 import { createSparksConfig, SPARKS_DEFAULTS, sparksBloomIntensity, sparksNumber, sparksString, type SparksConfig } from './config.js';
 import { SPARKS_PARTICLE_PROGRAM } from '../particlePrograms.js';
 import { SPARKS_RAIL_SHADER } from './shaders.js';
+import { resolveSparksEmissionCone } from './emission.js';
 import {
   createPreviewSparksConfig,
   createSparksDefaultRails,
@@ -391,12 +392,18 @@ export function createCompiledSparksPlugin(initial: SparksConfig = SPARKS_DEFAUL
         const power = sparksNumber(config, 'sparkPower') * sparksNumber(config, 'primarySparkSpeedScale');
         const inheritance = mode === 'shower' ? 0 : burst ? 0.62 : 0.32;
         const emitter = mode === 'pinwheel' ? 'pinwheel' : mode === 'shower' ? 'shower' : 'welding';
-        const direction = mode === 'shower' ? Math.PI * 0.5 : -Math.PI * 0.5;
         const chaos = sparksNumber(config, 'sparkDirectionChaos');
+        const cone = resolveSparksEmissionCone(
+          mode === 'pinwheel' || mode === 'shower' ? mode : 'welding',
+          chaos,
+          elapsed,
+          nextRandom(),
+          nextRandom(),
+        );
         effect.emitter(emitter).writer()
           .position(contact.x, contact.y)
-          .direction(direction + (mode === 'pinwheel' ? elapsed * 4.8 : 0))
-          .spread(mode === 'shower' ? Math.PI * 0.12 * chaos : Math.PI * (0.16 + 1.64 * chaos))
+          .direction(cone.direction)
+          .spread(cone.spread)
           .power(power * (mode === 'pinwheel' ? 1.08 : burst ? 1.18 : 0.98))
           .inheritedVelocity(contact.velocityX * inheritance, mode === 'shower' ? 0 : contact.velocityY * inheritance - power * 0.05)
           .lifetime(Math.max(0.001, clamp(0.42 + scaledHeat * 0.1, 0.24, 0.92) * sparksNumber(config, 'primarySparkLifespan')))

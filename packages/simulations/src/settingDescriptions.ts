@@ -249,7 +249,7 @@ const EXPERIENCE_DESCRIPTIONS: Readonly<Record<string, DescriptionCatalog>> = Ob
     emissionRate: 'Controls how many primary sparks are emitted per second while drawing.',
     contactHeat: 'Controls how much heat is deposited at the active contact point.',
     sparkPower: 'Controls the initial speed of newly emitted sparks.',
-    sparkDirectionChaos: 'Controls random variation in spark emission direction.',
+    sparkDirectionChaos: 'Controls per-particle scatter plus burst-to-burst changes in welding direction and cone width.',
     torchRadius: 'Sets the radius of the bright source around the pointer.',
     coreSparkTorchPositionVariability: 'Controls how far core sparks vary from the exact torch position.',
     bounceRestitution: 'Controls how much normal speed sparks retain after hitting a wall or rail.',

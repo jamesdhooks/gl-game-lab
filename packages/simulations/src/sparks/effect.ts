@@ -110,8 +110,10 @@ const sparksEmitter = (
   archetypeId: string,
   importance: 'critical' | 'primary' | 'secondary',
   source: { readonly kind: 'point' } | { readonly kind: 'disc'; readonly radius: number } | { readonly kind: 'cone'; readonly spread: number } | { readonly kind: 'pinwheel'; readonly arms: number; readonly turns: number } | { readonly kind: 'shower'; readonly width: number },
+  powerVariability = 0,
 ) => ({
   id, archetypeId, timeline: { manual: true as const }, source,
+  ...(powerVariability > 0 ? { initialization: { powerVariability } } : {}),
   transform: { space: 'scene' as const }, limits: { importance, maxPerFrame: 500_000 },
 });
 
@@ -138,10 +140,10 @@ export const SPARKS_PARTICLE_GRAPH = defineParticleEffect2D({
     { id: 'bounce-length-variability', kind: 'number', defaultValue: 0.52, min: 0, max: 2 },
   ],
   emitters: [
-    sparksEmitter('core-contact', 'core', 'critical', { kind: 'disc', radius: 1 }),
-    sparksEmitter('welding', 'primary', 'primary', { kind: 'cone', spread: Math.PI * 0.9 }),
-    sparksEmitter('pinwheel', 'primary', 'primary', { kind: 'pinwheel', arms: 4, turns: 1 }),
-    sparksEmitter('shower', 'primary', 'primary', { kind: 'shower', width: 1 }),
+    sparksEmitter('core-contact', 'core', 'critical', { kind: 'disc', radius: 1 }, 0.34),
+    sparksEmitter('welding', 'primary', 'primary', { kind: 'cone', spread: Math.PI * 0.9 }, 0.62),
+    sparksEmitter('pinwheel', 'primary', 'primary', { kind: 'pinwheel', arms: 4, turns: 1 }, 0.38),
+    sparksEmitter('shower', 'primary', 'primary', { kind: 'shower', width: 1 }, 0.46),
     sparksEmitter('collision-bounce', 'bounce', 'secondary', { kind: 'point' }),
   ],
   graph: {

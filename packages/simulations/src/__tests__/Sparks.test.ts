@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { ExperienceRegistry } from '@hooksjam/gl-game-lab-engine';
-import { COMPILED_SPARKS_PLUGIN_ID, createSparksConfig, createSparksDefaultRails, createSparksPreviewRails, SPARKS_DEFAULTS, SPARKS_PARTICLE_EFFECT, SPARKS_PARTICLE_PROGRAM, SPARKS_PARTICLE_SETTING_BINDINGS, SPARKS_SETTINGS, SPARKS_STYLE_MANIFEST, sparksDefinition } from '../index.js';
+import { COMPILED_SPARKS_PLUGIN_ID, createSparksConfig, createSparksDefaultRails, createSparksPreviewRails, resolveSparksEmissionCone, SPARKS_DEFAULTS, SPARKS_PARTICLE_EFFECT, SPARKS_PARTICLE_PROGRAM, SPARKS_PARTICLE_SETTING_BINDINGS, SPARKS_SETTINGS, SPARKS_STYLE_MANIFEST, sparksDefinition } from '../index.js';
 import { SPARKS_POINT_FRAGMENT_SHADER, SPARKS_POINT_VERTEX_SHADER, SPARKS_STEP_SHADER, SPARKS_TRAIL_VERTEX_SHADER } from '../sparks/shaders.js';
 import { sparksBloomIntensity } from '../sparks/config.js';
 describe('Sparks', () => {
@@ -63,6 +63,17 @@ describe('Sparks', () => {
     expect(first.length).toBeGreaterThanOrEqual(4);
     expect(first.some(rail => rail.x1 === rail.x2 && rail.y1 === rail.y2)).toBe(true);
     expect(first.some(rail => Math.abs(rail.y2 - rail.y1) > 8 && Math.hypot(rail.x2 - rail.x1, rail.y2 - rail.y1) > 80)).toBe(true);
+  });
+
+  it('varies welding burst headings and widths without changing zero-chaos output', () => {
+    const stableA = resolveSparksEmissionCone('welding', 0, 0, 0.1, 0.2);
+    const stableB = resolveSparksEmissionCone('welding', 0, 0, 0.9, 0.8);
+    const variedA = resolveSparksEmissionCone('welding', 1, 0, 0.1, 0.2);
+    const variedB = resolveSparksEmissionCone('welding', 1, 0, 0.9, 0.8);
+    expect(stableA).toEqual(stableB);
+    expect(variedA.direction).not.toBe(variedB.direction);
+    expect(variedA.spread).not.toBe(variedB.spread);
+    expect(SPARKS_PARTICLE_PROGRAM.effect.source.emitters.find((emitter) => emitter.id === 'welding')?.initialization?.powerVariability).toBeGreaterThan(0.5);
   });
 
   it('keeps contextual settings scoped to the relevant input and render modes', () => {
