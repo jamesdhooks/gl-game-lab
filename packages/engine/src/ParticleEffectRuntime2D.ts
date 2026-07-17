@@ -71,6 +71,7 @@ export interface ParticleColliderSet2D {
 }
 
 export type ParticleForceFalloff2D = 'constant' | 'inverse' | 'inverse-square';
+export type ParticleForceEnvelope2D = 'none' | 'linear' | 'smooth';
 export interface ParticleAttractor2D {
   readonly x: number;
   readonly y: number;
@@ -82,10 +83,34 @@ export interface ParticleAttractor2D {
   readonly falloff?: ParticleForceFalloff2D;
   /** Additional tangential acceleration independent of the archetype profile. */
   readonly tangentialStrength?: number;
+  /** Finite influence radius. Omit or use zero for an unbounded field. */
+  readonly radius?: number;
+  /** Attenuation from the center to the finite radius. */
+  readonly envelope?: ParticleForceEnvelope2D;
+  /** Optional target velocity injected by moving/drag fields. */
+  readonly velocity?: readonly [number, number];
+  /** Per-second coupling toward `velocity`, multiplied by the envelope. */
+  readonly velocityCoupling?: number;
 }
 export interface ParticleForceFieldSet2D {
   readonly attractors: readonly ParticleAttractor2D[];
   readonly revision: number;
+}
+
+export type ParticleDomainShape2D = 'rectangle' | 'circle';
+export type ParticleDomainBehavior2D = 'none' | 'kill' | 'bounce' | 'wrap';
+export interface ParticleDomain2D {
+  readonly revision: number;
+  readonly shape: ParticleDomainShape2D;
+  readonly behavior: ParticleDomainBehavior2D;
+  readonly center: readonly [number, number];
+  /** Rectangle half-extents. Required for rectangle domains. */
+  readonly halfExtents?: readonly [number, number];
+  /** Circle radius. Required for circle domains. */
+  readonly radius?: number;
+  readonly margin?: number;
+  /** Retained velocity/position scale after bounce or wrap. */
+  readonly damping?: number;
 }
 
 export interface ParticleRuntimeEmission2D {
@@ -119,6 +144,7 @@ export interface ParticleEffectBackendResource2D {
   setParameters?(parameters: Readonly<Record<string, ParticleParameterValue2D>>): void;
   setColliders?(colliders: ParticleColliderSet2D): void;
   setForceFields?(fields: ParticleForceFieldSet2D): void;
+  setDomain?(domain: ParticleDomain2D): void;
   setRenderScale?(scale: number): void;
   update(deltaSeconds: number, timescale: number): void;
   render(target: GpuRenderTarget2D, tier: ParticleRenderTier2D): void;
@@ -166,6 +192,7 @@ class RecoveringParticleEffectBackendResource2D implements ParticleEffectBackend
   setParameters(value: Readonly<Record<string, ParticleParameterValue2D>>): void { this.invoke((resource) => { resource.setParameters?.(value); }); }
   setColliders(value: ParticleColliderSet2D): void { this.invoke((resource) => { resource.setColliders?.(value); }); }
   setForceFields(value: ParticleForceFieldSet2D): void { this.invoke((resource) => { resource.setForceFields?.(value); }); }
+  setDomain(value: ParticleDomain2D): void { this.invoke((resource) => { resource.setDomain?.(value); }); }
   setRenderScale(value: number): void { this.invoke((resource) => { resource.setRenderScale?.(value); }); }
   update(deltaSeconds: number, timescale: number): void { this.invoke((resource) => { resource.update(deltaSeconds, timescale); }); }
   render(target: GpuRenderTarget2D, tier: ParticleRenderTier2D): void { this.invoke((resource) => { resource.render(target, tier); }); }
@@ -213,6 +240,7 @@ export interface ParticleEffectInstance2D {
   setPalette(palette: ParticlePalette2D): void;
   setColliders(colliders: ParticleColliderSet2D): void;
   setForceFields(fields: ParticleForceFieldSet2D): void;
+  setDomain(domain: ParticleDomain2D): void;
   setTimescale(value: number): void;
   setQualityTier(tier: ParticleRenderTier2D): void;
   setRenderScale(scale: number): void;
@@ -494,6 +522,7 @@ class RuntimeParticleEffectInstance2D implements ParticleEffectInstance2D {
     backend.setParameters?.(this.parameters);
     backend.setColliders?.({ revision: 0, circles: [], capsules: [] });
     backend.setForceFields?.({ revision: 0, attractors: [] });
+    backend.setDomain?.({ revision: 0, shape: 'rectangle', behavior: 'none', center: [0, 0], halfExtents: [1, 1] });
     backend.setRenderScale?.(this.renderScale);
   }
 
@@ -554,10 +583,23 @@ class RuntimeParticleEffectInstance2D implements ParticleEffectInstance2D {
     if (!Number.isSafeInteger(fields.revision) || fields.revision < 0) throw new Error('Particle force-field revision must be a non-negative integer');
     if (fields.attractors.length > 16) throw new Error('Particle effects support at most 16 dynamic attractors');
     for (const field of fields.attractors) {
-      if (![field.x, field.y, field.strength, field.softening ?? 1, field.tangentialStrength ?? 0].every(Number.isFinite)) throw new Error('Particle attractor values must be finite');
+      if (![field.x, field.y, field.strength, field.softening ?? 1, field.tangentialStrength ?? 0, field.radius ?? 0, field.velocity?.[0] ?? 0, field.velocity?.[1] ?? 0, field.velocityCoupling ?? 0].every(Number.isFinite)) throw new Error('Particle attractor values must be finite');
       if ((field.softening ?? 1) < 0) throw new Error('Particle attractor softening must be non-negative');
+      if ((field.radius ?? 0) < 0) throw new Error('Particle attractor radius must be non-negative');
+      if ((field.velocityCoupling ?? 0) < 0) throw new Error('Particle attractor velocity coupling must be non-negative');
     }
     this.backend.setForceFields?.(fields);
+  }
+  setDomain(domain: ParticleDomain2D): void {
+    this.assertUsable();
+    if (!Number.isSafeInteger(domain.revision) || domain.revision < 0) throw new Error('Particle domain revision must be a non-negative integer');
+    const halfExtents = domain.halfExtents ?? [0, 0];
+    if (![domain.center[0], domain.center[1], halfExtents[0], halfExtents[1], domain.radius ?? 0, domain.margin ?? 0, domain.damping ?? 1].every(Number.isFinite)) throw new Error('Particle domain values must be finite');
+    if (domain.shape === 'rectangle' && (halfExtents[0] <= 0 || halfExtents[1] <= 0)) throw new Error('Rectangle particle domains require positive half-extents');
+    if (domain.shape === 'circle' && (domain.radius ?? 0) <= 0) throw new Error('Circle particle domains require a positive radius');
+    if ((domain.margin ?? 0) < 0) throw new Error('Particle domain margin must be non-negative');
+    if ((domain.damping ?? 1) < 0 || (domain.damping ?? 1) > 1) throw new Error('Particle domain damping must be between zero and one');
+    this.backend.setDomain?.(domain);
   }
   setTimescale(value: number): void { this.assertUsable(); this.timescale = validateTimescale(value); }
   setQualityTier(tier: ParticleRenderTier2D): void { this.assertUsable(); if (!this.program.effect.source.renderRecipes.recipes.some((entry) => entry.tier === tier)) throw new Error(`Particle effect does not render tier: ${tier}`); this.tier = tier; }

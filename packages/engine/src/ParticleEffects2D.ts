@@ -10,7 +10,7 @@ export const PARTICLE_EFFECT_STATE_LAYOUT = Object.freeze({
   metadata: Object.freeze(['archetypeId', 'generation', 'colorSeed', 'flags'] as const),
 });
 
-export type ParticleSpawnShape2D = 'point' | 'disc' | 'line' | 'cone' | 'arc' | 'ring' | 'radial' | 'spiral' | 'pinwheel' | 'shower';
+export type ParticleSpawnShape2D = 'point' | 'disc' | 'line' | 'cone' | 'arc' | 'ring' | 'radial' | 'spiral' | 'pinwheel' | 'shower' | 'annulus';
 export type ParticleEventTrigger2D = 'birth' | 'age' | 'death' | 'collision';
 export type ParticleBlendMode2D = 'opaque' | 'alpha' | 'additive' | 'multiply';
 export type ParticleRenderTier2D = 'basic' | 'enhanced' | 'ultra';
@@ -47,6 +47,8 @@ export interface ParticleMotionProfile2D {
   readonly tangentialAcceleration?: number;
   readonly inheritedVelocity?: number;
   readonly angularVelocity?: number;
+  /** Optional logical-pixels-per-second ceiling applied after all forces. */
+  readonly maxSpeed?: number;
 }
 
 export interface ParticleLifecycleProfile2D {
@@ -348,6 +350,7 @@ function validateCapacity(capacity: ParticleCapacityPolicy2D): void {
 function validateArchetype(archetype: ParticleArchetype2D): void {
   if (!Number.isFinite(archetype.lifecycle.lifetime) || archetype.lifecycle.lifetime <= 0) throw new Error(`Particle archetype ${archetype.id} requires a positive lifetime`);
   if (!Number.isFinite(archetype.motion.drag) || archetype.motion.drag < 0) throw new Error(`Particle archetype ${archetype.id} requires non-negative drag`);
+  if (archetype.motion.maxSpeed !== undefined && (!Number.isFinite(archetype.motion.maxSpeed) || archetype.motion.maxSpeed <= 0)) throw new Error(`Particle archetype ${archetype.id} requires a positive maximum speed`);
   for (const event of archetype.events ?? []) {
     if (!Number.isFinite(event.probability) || event.probability < 0 || event.probability > 1) throw new Error(`Particle event probability for ${archetype.id} must be between 0 and 1`);
     if (!Number.isSafeInteger(event.count) || event.count < 0) throw new Error(`Particle event count for ${archetype.id} must be a non-negative integer`);
@@ -355,4 +358,4 @@ function validateArchetype(archetype: ParticleArchetype2D): void {
   }
 }
 
-const SPAWN_SHAPES: readonly ParticleSpawnShape2D[] = Object.freeze(['point', 'disc', 'line', 'cone', 'arc', 'ring', 'radial', 'spiral', 'pinwheel', 'shower']);
+const SPAWN_SHAPES: readonly ParticleSpawnShape2D[] = Object.freeze(['point', 'disc', 'line', 'cone', 'arc', 'ring', 'radial', 'spiral', 'pinwheel', 'shower', 'annulus']);

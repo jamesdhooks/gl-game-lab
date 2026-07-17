@@ -148,9 +148,13 @@ uniform vec4 uArchetypeMotion[${Math.max(1, effect.source.archetypes.length)}];
 uniform vec4 uArchetypeForce[${Math.max(1, effect.source.archetypes.length)}];
 uniform vec4 uAttractorData[16];
 uniform vec4 uAttractorOptions[16];
+uniform vec4 uAttractorVelocity[16];
 uniform int uAttractorCount;
+uniform vec4 uParticleDomainData;
+uniform vec4 uParticleDomainOptions;
 uniform vec4 uArchetypeCollision[${Math.max(1, effect.source.archetypes.length)}];
 uniform vec4 uEmitterSource[${Math.max(1, effect.source.emitters.length)}];
+uniform vec4 uEmitterInitialization[${Math.max(1, effect.source.emitters.length)}];
 uniform vec4 uCircleColliders[16];
 uniform vec4 uCapsuleA[16];
 uniform vec4 uCapsuleB[16];
@@ -197,11 +201,13 @@ void main() {
     stateA.z += uDt;
     stateB.y += motion.x * uDt;
     stateB.xy *= exp(-max(0.0, motion.y) * uDt);
-    if (abs(force.x)+abs(force.y) > 0.0 && uAttractorCount > 0) for(int fieldIndex=0;fieldIndex<16;fieldIndex++){if(fieldIndex>=uAttractorCount)break;vec4 field=uAttractorData[fieldIndex],options=uAttractorOptions[fieldIndex];vec2 delta=field.xy-stateA.xy;float rawDistance=length(delta),distance=max(max(rawDistance,options.x),.0001);vec2 radial=rawDistance>.0001?delta/rawDistance:vec2(0);float falloffMode=options.y<0.0?force.z:options.y;float falloff=falloffMode<.5?1.0:falloffMode<1.5?1.0/distance:1.0/(distance*distance);float radialStrength=force.x*field.z,tangentialStrength=force.y*field.z+options.z;stateB.xy+=(radial*radialStrength+vec2(-radial.y,radial.x)*tangentialStrength)*falloff*uDt;}
+    if (uAttractorCount > 0) for(int fieldIndex=0;fieldIndex<16;fieldIndex++){if(fieldIndex>=uAttractorCount)break;vec4 field=uAttractorData[fieldIndex],options=uAttractorOptions[fieldIndex],velocityField=uAttractorVelocity[fieldIndex];vec2 delta=field.xy-stateA.xy;float rawDistance=length(delta);if(field.w>0.0&&rawDistance>=field.w)continue;float envelope=1.0;if(field.w>0.0&&options.w>.5){float t=clamp(1.0-rawDistance/field.w,0.0,1.0);envelope=options.w>1.5?t*t*(3.0-2.0*t):t;}float distance=max(max(rawDistance,options.x),.0001);vec2 radial=rawDistance>.0001?delta/rawDistance:vec2(0);float falloffMode=options.y<0.0?force.z:options.y;float falloff=falloffMode<.5?1.0:falloffMode<1.5?1.0/distance:1.0/(distance*distance);float radialStrength=force.x*field.z,tangentialStrength=force.y*field.z+options.z;stateB.xy+=((radial*radialStrength+vec2(-radial.y,radial.x)*tangentialStrength)*falloff+velocityField.xy*velocityField.z)*envelope*uDt;}
     ${turbulence ? 'float noise = hash21(stateA.xy + stateC.zz); stateB.xy += vec2(cos(noise * 6.2831853), sin(noise * 6.2831853)) * motion.z * uDt;' : ''}
     stateB.w += motion.w * uDt;
     stateB.z += stateB.w * uDt;
+    float particleSpeed=length(stateB.xy);if(force.w>0.0&&particleSpeed>force.w)stateB.xy*=force.w/particleSpeed;
     stateA.xy += stateB.xy * uDt;
+    int domainShape=int(uParticleDomainOptions.x+.5),domainBehavior=int(uParticleDomainOptions.y+.5);float domainDamping=uParticleDomainOptions.z,domainMargin=uParticleDomainOptions.w;if(domainBehavior>0){if(domainShape==1){vec2 domainDelta=stateA.xy-uParticleDomainData.xy;float domainDistance=length(domainDelta),domainRadius=uParticleDomainData.z+domainMargin;if(domainDistance>domainRadius){vec2 normal=domainDistance>.0001?domainDelta/domainDistance:vec2(1,0);if(domainBehavior==1)stateA.z=stateA.w;else if(domainBehavior==2){stateA.xy=uParticleDomainData.xy+normal*uParticleDomainData.z;stateB.xy=(stateB.xy-2.0*normal*dot(stateB.xy,normal))*domainDamping;}else{stateA.xy=uParticleDomainData.xy-normal*uParticleDomainData.z;stateB.xy*=domainDamping;}}}else{vec2 domainMin=uParticleDomainData.xy-uParticleDomainData.zw-vec2(domainMargin),domainMax=uParticleDomainData.xy+uParticleDomainData.zw+vec2(domainMargin);bool outside=any(lessThan(stateA.xy,domainMin))||any(greaterThan(stateA.xy,domainMax));if(outside){if(domainBehavior==1)stateA.z=stateA.w;else if(domainBehavior==2){if(stateA.x<domainMin.x||stateA.x>domainMax.x)stateB.x=-stateB.x*domainDamping;if(stateA.y<domainMin.y||stateA.y>domainMax.y)stateB.y=-stateB.y*domainDamping;stateA.xy=clamp(stateA.xy,domainMin,domainMax);}else{if(stateA.x<domainMin.x)stateA.x=domainMax.x;else if(stateA.x>domainMax.x)stateA.x=domainMin.x;if(stateA.y<domainMin.y)stateA.y=domainMax.y;else if(stateA.y>domainMax.y)stateA.y=domainMin.y;stateB.xy*=domainDamping;}}}}
     ${collisions ? `int collisionFlags=int(collision.w+.5);
     if ((collisionFlags & 1) != 0) { if(stateA.x<0.0||stateA.x>uCanvasSize.x){collided=true;stateA.x=clamp(stateA.x,0.0,uCanvasSize.x);stateB.x=-stateB.x*collision.x;} if(stateA.y<0.0||stateA.y>uCanvasSize.y){collided=true;stateA.y=clamp(stateA.y,0.0,uCanvasSize.y);stateB.y=-stateB.y*collision.x;} }
     if ((collisionFlags & 2) != 0) for(int collider=0;collider<16;collider++){if(collider>=uCircleColliderCount)break;vec4 circle=uCircleColliders[collider];vec2 delta=stateA.xy-circle.xy;float distance=length(delta);if(distance<circle.z){collided=true;if(circle.w>.5){stateA.z=stateA.w;}else{vec2 normal=distance>.0001?delta/distance:vec2(0,-1);stateA.xy=circle.xy+normal*circle.z;stateB.xy-=normal*(1.0+collision.x)*dot(stateB.xy,normal);stateB.xy*=max(0.0,1.0-collision.y);stateA.z+=stateA.w*collision.z;}}}
@@ -214,6 +220,7 @@ void main() {
     int packedShape = int(commandA.w + .5), shape = packedShape % 32, overflowPolicy = packedShape / 32;
     int emitter = clamp(int(commandD.w + .5), 0, ${Math.max(0, effect.source.emitters.length - 1)});
     vec4 source = uEmitterSource[emitter];
+    vec4 initialization = uEmitterInitialization[emitter];
     float angle = commandC.x + (randomA - .5) * commandC.y;
     vec2 offset = vec2(0.0);
     if (shape == 1) { float a=randomA*6.2831853; offset=vec2(cos(a),sin(a))*sqrt(randomB)*source.x; }
@@ -223,7 +230,10 @@ void main() {
     else if (shape == 7) { angle=commandC.x+6.2831853*(float(relative)/max(1.0,commandA.z))*max(1.0,source.z/6.2831853)+(randomB-.5)*commandC.y; }
     else if (shape == 8) { angle=commandC.x+float(relative%4)*1.5707963+float(relative)*.075+(randomA-.5)*commandC.y; }
     else if (shape == 9) { offset=vec2((randomA-.5)*source.y,0.0); angle=commandC.x+(randomB-.5)*commandC.y; }
-    float power = commandC.z * mix(.72, 1.28, hash21(vec2(commandD.x + float(relative), 2.0)));
+    else if (shape == 10) { float a=randomA*6.2831853;float radius=sqrt(max(0.0,source.y*source.y+(source.x*source.x-source.y*source.y)*randomB));offset=vec2(cos(a),sin(a))*radius;angle=a; }
+    if(initialization.x>.5&&length(offset)>.0001){angle=atan(offset.y,offset.x)+(initialization.x>2.5?-1.5707963:initialization.x>1.5?1.5707963:0.0);}
+    float radialPower=abs(initialization.y)>.0001&&length(offset)>.0001?pow(max(length(offset),.0001)/max(initialization.z,.0001),initialization.y):1.0;
+    float power = commandC.z * radialPower * mix(.72, 1.28, hash21(vec2(commandD.x + float(relative), 2.0)));
     if (overflowPolicy != 1 || stateA.z >= stateA.w) {
       stateA = vec4(commandB.xy+offset, 0.0, commandC.w * mix(max(.05, 1.0-commandD.z), 1.0+commandD.z, hash21(vec2(commandD.x + float(relative), 3.0))));
       stateB = vec4(commandB.zw + vec2(cos(angle), sin(angle)) * power, 0.0, 0.0);
@@ -407,7 +417,8 @@ function buildWgslSimulation(effect: CompiledParticleEffect2D, extensions: reado
 struct ParticleB { velocity: vec2<f32>, rotation: f32, angularVelocity: f32 }
 struct ParticleC { archetype: f32, generation: f32, colorSeed: f32, flags: f32 }
 struct Frame { delta: f32, capacity: u32, viewport: vec2<f32>, commandCount: u32, commandTexels: u32, attractorCount: u32, padding: u32 }
-struct Attractor { data: vec4<f32>, options: vec4<f32> }
+struct Attractor { data: vec4<f32>, options: vec4<f32>, velocity: vec4<f32> }
+struct ParticleDomain { data: vec4<f32>, options: vec4<f32> }
 @group(0) @binding(0) var<storage, read_write> stateA: array<ParticleA>;
 @group(0) @binding(1) var<storage, read_write> stateB: array<ParticleB>;
 @group(0) @binding(2) var<storage, read_write> stateC: array<ParticleC>;
@@ -417,6 +428,8 @@ struct Attractor { data: vec4<f32>, options: vec4<f32> }
 @group(0) @binding(6) var<storage, read> emitterSource: array<vec4<f32>>;
 @group(0) @binding(7) var<storage, read> archetypeForce: array<vec4<f32>>;
 @group(0) @binding(8) var<storage, read> attractors: array<Attractor>;
+@group(0) @binding(9) var<storage, read> domain: ParticleDomain;
+@group(0) @binding(10) var<storage, read> emitterInitialization: array<vec4<f32>>;
 fn hash11(value: f32) -> f32 { return fract(sin(value * 91.3458 + 17.123) * 47453.5453); }
 @compute @workgroup_size(256)
 fn simulate(@builtin(global_invocation_id) gid: vec3<u32>) {
@@ -429,9 +442,11 @@ fn simulate(@builtin(global_invocation_id) gid: vec3<u32>) {
     stateA[i].age += frame.delta;
     stateB[i].velocity.y += motion.x * frame.delta;
     stateB[i].velocity *= exp(-max(0.0, motion.y) * frame.delta);
-    if (abs(force.x) + abs(force.y) > 0.0) { for (var fieldIndex=0u; fieldIndex<min(frame.attractorCount,16u); fieldIndex+=1u) { let field=attractors[fieldIndex];let delta=field.data.xy-stateA[i].position;let rawDistance=length(delta);let distance=max(max(rawDistance,field.options.x),0.0001);let radial=select(vec2<f32>(0.0),delta/rawDistance,rawDistance>0.0001);let falloffMode=select(force.z,field.options.y,field.options.y>=0.0);let falloff=select(select(1.0/distance,1.0/(distance*distance),falloffMode>=1.5),1.0,falloffMode<0.5);let radialStrength=force.x*field.data.z;let tangentialStrength=force.y*field.data.z+field.options.z;stateB[i].velocity+=(radial*radialStrength+vec2<f32>(-radial.y,radial.x)*tangentialStrength)*falloff*frame.delta; } }
+    for (var fieldIndex=0u; fieldIndex<min(frame.attractorCount,16u); fieldIndex+=1u) { let field=attractors[fieldIndex];let delta=field.data.xy-stateA[i].position;let rawDistance=length(delta);if(field.data.w<=0.0||rawDistance<field.data.w){var envelope=1.0;if(field.data.w>0.0&&field.options.w>0.5){let t=clamp(1.0-rawDistance/field.data.w,0.0,1.0);envelope=select(t,t*t*(3.0-2.0*t),field.options.w>1.5);}let distance=max(max(rawDistance,field.options.x),0.0001);let radial=select(vec2<f32>(0.0),delta/rawDistance,rawDistance>0.0001);let falloffMode=select(force.z,field.options.y,field.options.y>=0.0);let falloff=select(select(1.0/distance,1.0/(distance*distance),falloffMode>=1.5),1.0,falloffMode<0.5);let radialStrength=force.x*field.data.z;let tangentialStrength=force.y*field.data.z+field.options.z;stateB[i].velocity+=((radial*radialStrength+vec2<f32>(-radial.y,radial.x)*tangentialStrength)*falloff+field.velocity.xy*field.velocity.z)*envelope*frame.delta;} }
     stateB[i].rotation += stateB[i].angularVelocity * frame.delta;
+    let particleSpeed=length(stateB[i].velocity);if(force.w>0.0&&particleSpeed>force.w){stateB[i].velocity*=force.w/particleSpeed;}
     stateA[i].position += stateB[i].velocity * frame.delta;
+    let domainShape=u32(domain.options.x+0.5);let domainBehavior=u32(domain.options.y+0.5);let domainDamping=domain.options.z;let domainMargin=domain.options.w;if(domainBehavior>0u){if(domainShape==1u){let domainDelta=stateA[i].position-domain.data.xy;let domainDistance=length(domainDelta);if(domainDistance>domain.data.z+domainMargin){let normal=select(vec2<f32>(1.0,0.0),domainDelta/domainDistance,domainDistance>0.0001);if(domainBehavior==1u){stateA[i].age=stateA[i].lifetime;}else if(domainBehavior==2u){stateA[i].position=domain.data.xy+normal*domain.data.z;stateB[i].velocity=(stateB[i].velocity-2.0*normal*dot(stateB[i].velocity,normal))*domainDamping;}else{stateA[i].position=domain.data.xy-normal*domain.data.z;stateB[i].velocity*=domainDamping;}}}else{let domainMin=domain.data.xy-domain.data.zw-vec2<f32>(domainMargin);let domainMax=domain.data.xy+domain.data.zw+vec2<f32>(domainMargin);let outside=any(stateA[i].position<domainMin)||any(stateA[i].position>domainMax);if(outside){if(domainBehavior==1u){stateA[i].age=stateA[i].lifetime;}else if(domainBehavior==2u){if(stateA[i].position.x<domainMin.x||stateA[i].position.x>domainMax.x){stateB[i].velocity.x=-stateB[i].velocity.x*domainDamping;}if(stateA[i].position.y<domainMin.y||stateA[i].position.y>domainMax.y){stateB[i].velocity.y=-stateB[i].velocity.y*domainDamping;}stateA[i].position=clamp(stateA[i].position,domainMin,domainMax);}else{if(stateA[i].position.x<domainMin.x){stateA[i].position.x=domainMax.x;}else if(stateA[i].position.x>domainMax.x){stateA[i].position.x=domainMin.x;}if(stateA[i].position.y<domainMin.y){stateA[i].position.y=domainMax.y;}else if(stateA[i].position.y>domainMax.y){stateA[i].position.y=domainMin.y;}stateB[i].velocity*=domainDamping;}}}}
     ${collisions ? 'stateA[i].position = clamp(stateA[i].position, vec2<f32>(0.0), frame.viewport);' : ''}
   }
   ${turbulence ? '// Turbulence is generated from the stable color seed in the backend module.' : ''}
@@ -449,7 +464,7 @@ fn simulate(@builtin(global_invocation_id) gid: vec3<u32>) {
       if (i >= start && i < start + count) {
       let b = commandData[offset + 1u]; let c = commandData[offset + 2u];
       let seed = d.x + f32(relative) * 1.6180339; let randomA = hash11(seed); let randomB = hash11(seed + 5.0);
-      let packedShape=u32(a.w+0.5);let shape=packedShape%32u;let overflowPolicy=packedShape/32u;let emitter = min(u32(d.w + 0.5), ${Math.max(0, effect.source.emitters.length - 1)}u); let source = emitterSource[emitter];
+      let packedShape=u32(a.w+0.5);let shape=packedShape%32u;let overflowPolicy=packedShape/32u;let emitter = min(u32(d.w + 0.5), ${Math.max(0, effect.source.emitters.length - 1)}u); let source = emitterSource[emitter];let initialization=emitterInitialization[emitter];
       var angle = c.x + (randomA - 0.5) * c.y; var offsetPosition = vec2<f32>(0.0);
       if (shape == 1u) { let arc=randomA*6.2831853; offsetPosition=vec2<f32>(cos(arc),sin(arc))*sqrt(randomB)*source.x; }
       else if (shape == 2u) { offsetPosition=vec2<f32>(cos(c.x),sin(c.x))*(randomA-0.5)*source.y; }
@@ -458,7 +473,10 @@ fn simulate(@builtin(global_invocation_id) gid: vec3<u32>) {
       else if (shape == 7u) { angle=c.x+6.2831853*(f32(relative)/max(1.0,a.z))*max(1.0,source.z/6.2831853)+(randomB-0.5)*c.y; }
       else if (shape == 8u) { angle=c.x+f32(relative%4u)*1.5707963+f32(relative)*0.075+(randomA-0.5)*c.y; }
       else if (shape == 9u) { offsetPosition=vec2<f32>((randomA-0.5)*source.y,0.0); angle=c.x+(randomB-0.5)*c.y; }
-      let power = c.z * mix(0.72, 1.28, hash11(seed + 2.0));
+      else if (shape == 10u) { let sourceAngle=randomA*6.2831853;let sourceRadius=sqrt(max(0.0,source.y*source.y+(source.x*source.x-source.y*source.y)*randomB));offsetPosition=vec2<f32>(cos(sourceAngle),sin(sourceAngle))*sourceRadius;angle=sourceAngle; }
+      if(initialization.x>0.5&&length(offsetPosition)>0.0001){angle=atan2(offsetPosition.y,offsetPosition.x)+select(select(0.0,1.5707963,initialization.x>1.5),-1.5707963,initialization.x>2.5);}
+      let radialPower=select(1.0,pow(max(length(offsetPosition),0.0001)/max(initialization.z,0.0001),initialization.y),abs(initialization.y)>0.0001&&length(offsetPosition)>0.0001);
+      let power = c.z * radialPower * mix(0.72, 1.28, hash11(seed + 2.0));
       if(overflowPolicy!=1u||stateA[i].age>=stateA[i].lifetime){stateA[i] = ParticleA(b.xy+offsetPosition, 0.0, c.w * mix(max(0.05, 1.0-d.z), 1.0+d.z, hash11(seed+3.0)));
       stateB[i] = ParticleB(b.zw + vec2<f32>(cos(angle), sin(angle)) * power, 0.0, 0.0);
       stateC[i] = ParticleC(a.x, 0.0, hash11(seed+4.0), 0.0);}
@@ -578,9 +596,13 @@ function baseBindings(targets: 2 | 3, collisions: boolean, events: boolean, exte
     { name: 'uArchetypeForce', kind: 'uniform', dataType: 'vec4[]', required: true },
     { name: 'uAttractorData', kind: 'uniform', dataType: 'vec4[16]', required: true },
     { name: 'uAttractorOptions', kind: 'uniform', dataType: 'vec4[16]', required: true },
+    { name: 'uAttractorVelocity', kind: 'uniform', dataType: 'vec4[16]', required: true },
     { name: 'uAttractorCount', kind: 'uniform', dataType: 'i32', required: true },
+    { name: 'uParticleDomainData', kind: 'uniform', dataType: 'vec4', required: true },
+    { name: 'uParticleDomainOptions', kind: 'uniform', dataType: 'vec4', required: true },
     { name: 'uArchetypeCollision', kind: 'uniform', dataType: 'vec4[]', required: collisions },
     { name: 'uEmitterSource', kind: 'uniform', dataType: 'vec4[]', required: true },
+    { name: 'uEmitterInitialization', kind: 'uniform', dataType: 'vec4[]', required: true },
     { name: 'uArchetypeSize', kind: 'uniform', dataType: 'vec4[]', required: true },
     { name: 'uArchetypeLength', kind: 'uniform', dataType: 'vec4[]', required: true },
     { name: 'uArchetypeAlpha', kind: 'uniform', dataType: 'vec4[]', required: true },

@@ -11,6 +11,7 @@ import type {
   ParticleEffectRuntimeBackend2D,
   ParticleColliderSet2D,
   ParticleForceFieldSet2D,
+  ParticleDomain2D,
   ParticlePalette2D,
   ParticleOverflowPolicy2D,
   ParticleRenderTier2D,
@@ -57,6 +58,7 @@ class WebGLParticleEffectResource2D implements ParticleEffectBackendResource2D {
   private readonly archetypeForce: Float32Array;
   private readonly archetypeCollision: Float32Array;
   private readonly emitterSource: Float32Array;
+  private readonly emitterInitialization: Float32Array;
   private readonly archetypeSize: Float32Array;
   private readonly archetypeLength: Float32Array;
   private readonly archetypeAlpha: Float32Array;
@@ -67,6 +69,9 @@ class WebGLParticleEffectResource2D implements ParticleEffectBackendResource2D {
   private readonly capsuleB = new Float32Array(MAX_COLLIDERS * 4);
   private readonly attractorData = new Float32Array(MAX_ATTRACTORS * 4);
   private readonly attractorOptions = new Float32Array(MAX_ATTRACTORS * 4);
+  private readonly attractorVelocity = new Float32Array(MAX_ATTRACTORS * 4);
+  private readonly domainData = new Float32Array(4);
+  private readonly domainOptions = new Float32Array([0, 0, 1, 0]);
   private circleCount = 0;
   private capsuleCount = 0;
   private attractorCount = 0;
@@ -135,6 +140,7 @@ class WebGLParticleEffectResource2D implements ParticleEffectBackendResource2D {
     this.archetypeForce = new Float32Array(Math.max(1, program.effect.source.archetypes.length) * 4);
     this.archetypeCollision = new Float32Array(Math.max(1, program.effect.source.archetypes.length) * 4);
     this.emitterSource = new Float32Array(Math.max(1, program.effect.source.emitters.length) * 4);
+    this.emitterInitialization = new Float32Array(Math.max(1, program.effect.source.emitters.length) * 4);
     this.archetypeSize = new Float32Array(Math.max(1, program.effect.source.archetypes.length) * 4);
     this.archetypeLength = new Float32Array(Math.max(1, program.effect.source.archetypes.length) * 4);
     this.archetypeAlpha = new Float32Array(Math.max(1, program.effect.source.archetypes.length) * 4);
@@ -147,6 +153,7 @@ class WebGLParticleEffectResource2D implements ParticleEffectBackendResource2D {
       this.archetypeForce[index * 4] = archetype.motion.radialAcceleration ?? 0;
       this.archetypeForce[index * 4 + 1] = archetype.motion.tangentialAcceleration ?? 0;
       this.archetypeForce[index * 4 + 2] = archetype.motion.radialFalloff === 'inverse-square' ? 2 : archetype.motion.radialFalloff === 'inverse' ? 1 : 0;
+      this.archetypeForce[index * 4 + 3] = archetype.motion.maxSpeed ?? 0;
       const collision = archetype.collision;
       this.archetypeCollision[index * 4] = collision?.restitution ?? 0;
       this.archetypeCollision[index * 4 + 1] = collision?.friction ?? 0;
@@ -160,9 +167,11 @@ class WebGLParticleEffectResource2D implements ParticleEffectBackendResource2D {
     program.effect.source.emitters.forEach((emitter, index) => {
       const source = emitter.source;
       this.emitterSource[index * 4] = 'radius' in source ? source.radius ?? 0 : 'width' in source ? source.width * 0.5 : 0;
-      this.emitterSource[index * 4 + 1] = 'length' in source ? source.length ?? 0 : 'height' in source ? source.height * 0.5 : 0;
+      this.emitterSource[index * 4 + 1] = 'innerRadius' in source ? source.innerRadius ?? ('length' in source ? source.length ?? 0 : 0) : 'length' in source ? source.length ?? 0 : 'height' in source ? source.height * 0.5 : 0;
       this.emitterSource[index * 4 + 2] = 'arc' in source ? source.arc ?? Math.PI * 2 : Math.PI * 2;
       this.emitterSource[index * 4 + 3] = 'spread' in source ? source.spread ?? 0 : 0;
+      const initialization=emitter.initialization,mode=initialization?.directionMode;
+      this.emitterInitialization.set([mode==='radial'?1:mode==='tangent-ccw'?2:mode==='tangent-cw'?3:0,initialization?.radialPowerExponent??0,'radius' in source?source.radius??1:1,0],index*4);
     });
     this.palette.set([1, 1, 1]);
     const owner = this;
@@ -263,13 +272,20 @@ class WebGLParticleEffectResource2D implements ParticleEffectBackendResource2D {
   setForceFields(value: ParticleForceFieldSet2D): void {
     this.assertUsable();
     if (value.revision === this.forceFieldRevision) return;
-    this.forceFieldRevision = value.revision; this.attractorData.fill(0); this.attractorOptions.fill(0);
+    this.forceFieldRevision = value.revision; this.attractorData.fill(0); this.attractorOptions.fill(0); this.attractorVelocity.fill(0);
     this.attractorCount = Math.min(MAX_ATTRACTORS, value.attractors.length);
     for (let index = 0; index < this.attractorCount; index += 1) {
       const field = value.attractors[index]!, offset = index * 4;
-      this.attractorData.set([field.x, field.y, field.strength, 0], offset);
-      this.attractorOptions.set([field.softening ?? 1, forceFalloffCode(field.falloff), field.tangentialStrength ?? 0, 0], offset);
+      this.attractorData.set([field.x, field.y, field.strength, field.radius ?? 0], offset);
+      this.attractorOptions.set([field.softening ?? 1, forceFalloffCode(field.falloff), field.tangentialStrength ?? 0, forceEnvelopeCode(field.envelope)], offset);
+      this.attractorVelocity.set([field.velocity?.[0] ?? 0, field.velocity?.[1] ?? 0, field.velocityCoupling ?? 0, 0], offset);
     }
+  }
+
+  setDomain(value: ParticleDomain2D): void {
+    this.assertUsable(); const extents=value.halfExtents??[0,0];
+    this.domainData.set([value.center[0],value.center[1],value.shape==='circle'?(value.radius??0):extents[0],value.shape==='circle'?0:extents[1]]);
+    this.domainOptions.set([value.shape==='circle'?1:0,domainBehaviorCode(value.behavior),value.damping??1,value.margin??0]);
   }
 
   setRenderScale(scale: number): void {
@@ -385,10 +401,14 @@ class WebGLParticleEffectResource2D implements ParticleEffectBackendResource2D {
     gl.uniform4fv(uniform('uArchetypeForce[0]'), this.archetypeForce);
     gl.uniform4fv(uniform('uAttractorData[0]'), this.attractorData);
     gl.uniform4fv(uniform('uAttractorOptions[0]'), this.attractorOptions);
+    gl.uniform4fv(uniform('uAttractorVelocity[0]'), this.attractorVelocity);
     gl.uniform1i(uniform('uAttractorCount'), this.attractorCount);
+    gl.uniform4fv(uniform('uParticleDomainData'), this.domainData);
+    gl.uniform4fv(uniform('uParticleDomainOptions'), this.domainOptions);
     gl.uniform4fv(uniform('uArchetypeCollision[0]'), this.archetypeCollision);
     gl.uniform4fv(uniform('uArchetypePools[0]'), this.poolData);
     gl.uniform4fv(uniform('uEmitterSource[0]'), this.emitterSource);
+    gl.uniform4fv(uniform('uEmitterInitialization[0]'), this.emitterInitialization);
     gl.uniform1i(uniform('uCircleColliderCount'), this.circleCount);
     gl.uniform1i(uniform('uCapsuleColliderCount'), this.capsuleCount);
     gl.uniform4fv(uniform('uCircleColliders[0]'), this.circles);
@@ -421,7 +441,7 @@ function lowestPriorityIndex(priorities: Int8Array): number {
 }
 
 function spawnShapeCode(shape: string): number {
-  const index = ['point', 'disc', 'line', 'cone', 'arc', 'ring', 'radial', 'spiral', 'pinwheel', 'shower', 'rectangle', 'path', 'texture-mask', 'mesh', 'particles', 'collision-contacts', 'external-points', 'custom'].indexOf(shape);
+  const index = ['point', 'disc', 'line', 'cone', 'arc', 'ring', 'radial', 'spiral', 'pinwheel', 'shower', 'annulus', 'rectangle', 'path', 'texture-mask', 'mesh', 'particles', 'collision-contacts', 'external-points', 'custom'].indexOf(shape);
   return Math.max(0, index);
 }
 
@@ -432,6 +452,8 @@ function overflowPolicyCode(policy: ParticleOverflowPolicy2D): number {
 function forceFalloffCode(value: import('@hooksjam/gl-game-lab-engine').ParticleForceFalloff2D | undefined): number {
   return value === undefined ? -1 : value === 'constant' ? 0 : value === 'inverse' ? 1 : 2;
 }
+function forceEnvelopeCode(value: import('@hooksjam/gl-game-lab-engine').ParticleForceEnvelope2D | undefined): number { return value===undefined||value==='none'?0:value==='linear'?1:2; }
+function domainBehaviorCode(value: import('@hooksjam/gl-game-lab-engine').ParticleDomainBehavior2D): number { return value==='none'?0:value==='kill'?1:value==='bounce'?2:3; }
 
 function maximumEventCandidateLanes(program: CompiledParticleProgram2D): number { return Math.max(1, ...program.effect.source.archetypes.map((archetype) => archetype.events?.length ?? 0)); }
 
@@ -439,6 +461,6 @@ function writeCurve(target: Float32Array, index: number, curve: { readonly start
   const offset = index * 4; target[offset] = curve.start; target[offset + 1] = curve.end; target[offset + 2] = curve.exponent ?? 1; target[offset + 3] = 0;
 }
 
-function writeBoundMotion(motion: Float32Array, force: Float32Array, index: number, field: string, value: number): void { const offset=index*4;if(field==='gravity')motion[offset]=value;else if(field==='drag')motion[offset+1]=value;else if(field==='turbulence')motion[offset+2]=value;else if(field==='angularVelocity')motion[offset+3]=value;else if(field==='radialAcceleration')force[offset]=value;else if(field==='tangentialAcceleration')force[offset+1]=value; }
+function writeBoundMotion(motion: Float32Array, force: Float32Array, index: number, field: string, value: number): void { const offset=index*4;if(field==='gravity')motion[offset]=value;else if(field==='drag')motion[offset+1]=value;else if(field==='turbulence')motion[offset+2]=value;else if(field==='angularVelocity')motion[offset+3]=value;else if(field==='radialAcceleration')force[offset]=value;else if(field==='tangentialAcceleration')force[offset+1]=value;else if(field==='maxSpeed')force[offset+3]=value; }
 function writeBoundCollision(target: Float32Array,index:number,field:string,value:number):void{const offset=index*4;if(field==='restitution')target[offset]=value;else if(field==='friction')target[offset+1]=value;else if(field==='lifetimeLoss')target[offset+2]=value;}
 function writeBoundAppearance(size:Float32Array,length:Float32Array,alpha:Float32Array,intensity:Float32Array,index:number,field:string,value:number):void{const [curve,component]=field.split('.');const target=curve==='size'?size:curve==='length'?length:curve==='alpha'?alpha:curve==='intensity'?intensity:undefined;if(!target)return;const slot=component==='start'?0:component==='end'?1:component==='exponent'?2:-1;if(slot>=0)target[index*4+slot]=value;}

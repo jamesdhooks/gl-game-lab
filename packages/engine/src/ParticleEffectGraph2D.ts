@@ -9,7 +9,7 @@ import type {
 } from './ParticleEffects2D.js';
 
 export const PARTICLE_EFFECT_GRAPH_SCHEMA_VERSION = 1;
-export const PARTICLE_EFFECT_COMPILER_VERSION = 1;
+export const PARTICLE_EFFECT_COMPILER_VERSION = 2;
 
 export type ParticleParameterValue2D = ParticleSettingValue2D | readonly [number, number] | readonly [number, number, number, number];
 export type ParticleParameterKind2D = 'number' | 'boolean' | 'enum' | 'vector2' | 'color' | 'palette';
@@ -46,7 +46,7 @@ export type ParticleValueSource2D =
   | { readonly kind: 'curve'; readonly curve: ParticleCurve2D };
 
 export type ParticleSpawnSource2D =
-  | { readonly kind: ParticleSpawnShape2D; readonly radius?: number; readonly length?: number; readonly arc?: number; readonly spread?: number }
+  | { readonly kind: ParticleSpawnShape2D; readonly radius?: number; readonly innerRadius?: number; readonly length?: number; readonly arc?: number; readonly spread?: number }
   | { readonly kind: 'rectangle'; readonly width: number; readonly height: number }
   | { readonly kind: 'path'; readonly points: readonly (readonly [number, number])[]; readonly closed?: boolean }
   | { readonly kind: 'texture-mask'; readonly textureId: string; readonly threshold?: number }
@@ -104,6 +104,10 @@ export interface ParticleInitialization2D {
   readonly power?: ParticleValueSource2D;
   readonly lifetimeScale?: ParticleValueSource2D;
   readonly paletteSeed?: ParticleValueSource2D;
+  /** Reorients velocity relative to the sampled source position. */
+  readonly directionMode?: 'authored' | 'radial' | 'tangent-cw' | 'tangent-ccw';
+  /** Scales power by `(sampleRadius / referenceRadius) ^ exponent`. */
+  readonly radialPowerExponent?: number;
 }
 
 export interface ParticleParameterBinding2D {
@@ -348,7 +352,7 @@ export function compileParticleEffect2D(graph: ParticleEffectGraph2D): CompiledP
     minimumDrawBuffers: maximumEventGeneration > 0 || graph.archetypes.some((entry) => entry.events?.length) ? 3 : 2,
   });
   const graphHash = hashParticleGraph2D(graph);
-  const abiHash = hashText2D(JSON.stringify({ state: 1, archetypes: graph.archetypes.map((entry) => entry.id), metadata: backendRequirements.metadata }));
+  const abiHash = hashText2D(JSON.stringify({ state: 1, resources: 2, archetypes: graph.archetypes.map((entry) => entry.id), metadata: backendRequirements.metadata }));
   return Object.freeze({
     compilerVersion: PARTICLE_EFFECT_COMPILER_VERSION,
     stateAbiVersion: 1,
@@ -467,7 +471,9 @@ function validateEmitter(emitter: ParticleEmitterDefinition2D, parameters: Reado
   }
   if (emitter.limits.maxGeneration !== undefined && (!Number.isSafeInteger(emitter.limits.maxGeneration) || emitter.limits.maxGeneration < 0)) throw new Error(`Particle emitter ${emitter.id} has an invalid generation limit`);
   validateSource(emitter.source, archetypes, emitter.id);
-  for (const source of Object.values(emitter.initialization ?? {})) if (source) validateValueSource(source, parameters, emitter.id);
+  const initialization=emitter.initialization;
+  for(const source of [initialization?.direction,initialization?.spread,initialization?.power,initialization?.lifetimeScale,initialization?.paletteSeed])if(source)validateValueSource(source,parameters,emitter.id);
+  if(initialization?.radialPowerExponent!==undefined&&!Number.isFinite(initialization.radialPowerExponent))throw new Error(`Particle emitter ${emitter.id} has an invalid radial power exponent`);
   for (const binding of emitter.parameters ?? []) validateValueSource(binding.source, parameters, emitter.id);
 }
 
@@ -475,6 +481,8 @@ function validateSource(source: ParticleSpawnSource2D, archetypes: ReadonlySet<s
   if (source.kind === 'path' && source.points.length < 2) throw new Error(`Particle emitter ${emitterId} path requires at least two points`);
   if (source.kind === 'particles' && source.archetypeId && !archetypes.has(source.archetypeId)) throw new Error(`Particle emitter ${emitterId} samples unknown archetype ${source.archetypeId}`);
   if (source.kind === 'rectangle' && (source.width < 0 || source.height < 0)) throw new Error(`Particle emitter ${emitterId} rectangle dimensions must be non-negative`);
+  if ('radius' in source && source.radius !== undefined && (!Number.isFinite(source.radius) || source.radius < 0)) throw new Error(`Particle emitter ${emitterId} radius must be non-negative`);
+  if ('innerRadius' in source && source.innerRadius !== undefined && (!Number.isFinite(source.innerRadius) || source.innerRadius < 0 || source.innerRadius > (source.radius ?? Infinity))) throw new Error(`Particle emitter ${emitterId} inner radius is invalid`);
 }
 
 function validateValueSource(source: ParticleValueSource2D, parameters: ReadonlySet<string>, owner: string): void {

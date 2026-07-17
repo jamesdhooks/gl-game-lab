@@ -84,6 +84,8 @@ describe('EngineParticleEffects2D', () => {
     instance.setForceFields({ revision: 1, attractors: [{ x: 10, y: 20, strength: 1, softening: 4, falloff: 'inverse-square' }] });
     expect(() => instance.setForceFields({ revision: 2, attractors: [{ x: 0, y: 0, strength: 1, softening: -1 }] })).toThrow('softening');
     expect(() => instance.setForceFields({ revision: 3, attractors: Array.from({ length: 17 }, () => ({ x: 0, y: 0, strength: 1 })) })).toThrow('at most 16');
+    instance.setDomain({revision:1,shape:'circle',behavior:'wrap',center:[10,20],radius:30});
+    expect(()=>instance.setDomain({revision:2,shape:'circle',behavior:'wrap',center:[0,0],radius:0})).toThrow('positive radius');
     const handle = instance.emitter('spark');
     expect(handle).toBe(instance.emitter('spark'));
     handle.writer().position(12, 18).count(3).power(7).submit();

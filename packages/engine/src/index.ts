@@ -281,7 +281,11 @@ export {
   type ParticleColliderSet2D,
   type ParticleAttractor2D,
   type ParticleForceFalloff2D,
+  type ParticleForceEnvelope2D,
   type ParticleForceFieldSet2D,
+  type ParticleDomain2D,
+  type ParticleDomainShape2D,
+  type ParticleDomainBehavior2D,
   type ParticleSignalPayload2D,
   type ParticleTransform2D,
 } from './ParticleEffectRuntime2D.js';
@@ -296,6 +300,7 @@ export {
 } from './ParticleEffectTools2D.js';
 export {
   allocateParticleEventClaims2D,
+  applyParticleDomainReference2D,
   collideCapsuleReference2D,
   collideCircleReference2D,
   evaluateParticleScalarCurve2D,

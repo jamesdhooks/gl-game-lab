@@ -34,7 +34,7 @@ describe('WebGpuParticleEffectRuntimeBackend2D', () => {
     const resource = backend.create(program, 512);
     resource.emit({ instanceId: 1, emitterIndex: 0, count: 40, positionX: 10, positionY: 20, direction: 0, spread: 1, power: 30, seed: 8, importance: 3 });
     resource.update(1 / 60, 1);
-    expect(fixture.writeBuffer).toHaveBeenCalledTimes(7);
+    expect(fixture.writeBuffer).toHaveBeenCalledTimes(9);
     expect(fixture.dispatchWorkgroups).toHaveBeenCalledWith(2);
     expect(fixture.submit).toHaveBeenCalledTimes(1);
     resource.render({ width: 384, height: 384 } as GpuRenderTarget2D, 'basic');
@@ -99,14 +99,16 @@ describe('WebGpuParticleEffectRuntimeBackend2D', () => {
     const fixture=deviceFixture(),backend=new WebGpuParticleEffectRuntimeBackend2D(fixture.device,{render:vi.fn()});
     const program=compileParticleProgram2D(compileParticleEffect2D(adaptParticleEffectDefinition2D(definition))),resource=backend.create(program,16);
     fixture.writeBuffer.mockClear();
-    const fields={revision:1,attractors:[{x:8,y:9,strength:2,softening:4,falloff:'inverse' as const,tangentialStrength:3}]};
+    const fields={revision:1,attractors:[{x:8,y:9,strength:2,softening:4,falloff:'inverse' as const,tangentialStrength:3,radius:50,envelope:'smooth' as const,velocity:[6,7] as const,velocityCoupling:.5}]};
     resource.setForceFields?.(fields);resource.setForceFields?.(fields);
     expect(fixture.writeBuffer).toHaveBeenCalledTimes(1);
     const upload=fixture.writeBuffer.mock.calls[0]![2] as Float32Array;
-    expect([...upload.slice(0,8)]).toEqual([8,9,2,0,4,1,3,0]);
+    expect([...upload.slice(0,12)]).toEqual([8,9,2,50,4,1,3,2,6,7,.5,0]);
     resource.update(1/60,1);
     const frameCall=fixture.writeBuffer.mock.calls.find((call)=>(call[2] as ArrayBufferView).byteLength===32);
     expect(new Uint32Array((frameCall?.[2] as Uint8Array).buffer)[6]).toBe(1);
     resource.dispose();
   });
+
+  it('uploads circle wrap domains as backend-neutral policy data',()=>{const fixture=deviceFixture(),backend=new WebGpuParticleEffectRuntimeBackend2D(fixture.device,{render:vi.fn()}),program=compileParticleProgram2D(compileParticleEffect2D(adaptParticleEffectDefinition2D(definition))),resource=backend.create(program,16);fixture.writeBuffer.mockClear();resource.setDomain?.({revision:1,shape:'circle',behavior:'wrap',center:[100,80],radius:70,margin:4,damping:.9});expect(fixture.writeBuffer).toHaveBeenCalledTimes(1);const values=[...(fixture.writeBuffer.mock.calls[0]![2] as Float32Array)];expect(values.slice(0,6)).toEqual([100,80,70,0,1,3]);expect(values[6]).toBeCloseTo(.9);expect(values[7]).toBe(4);resource.dispose();});
 });
