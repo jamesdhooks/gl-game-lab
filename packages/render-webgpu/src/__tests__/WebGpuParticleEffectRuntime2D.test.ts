@@ -5,7 +5,7 @@ import { WebGpuParticleEffectRuntimeBackend2D, type ParticleWebGpuBuffer2D, type
 class Buffer implements ParticleWebGpuBuffer2D { destroy = vi.fn(); constructor(readonly label?:string){} }
 
 function deviceFixture() {
-  const dispatchWorkgroups = vi.fn(), submit = vi.fn(), writeBuffer = vi.fn();
+  const dispatchWorkgroups = vi.fn(), submit = vi.fn(), writeBuffer = vi.fn(), setBindGroup = vi.fn(), createBindGroup = vi.fn(() => ({}));
   const buffers:Buffer[]=[]; const device: ParticleWebGpuDevice2D = {
     queue: { writeBuffer, submit },
     createBuffer: (options) => { const buffer=new Buffer(options.label);buffers.push(buffer);return buffer; },
@@ -14,14 +14,14 @@ function deviceFixture() {
     createRenderPipeline: () => ({ getBindGroupLayout: () => ({}) }),
     createTexture: () => ({ createView: () => ({}), destroy: vi.fn() }),
     createSampler: () => ({}),
-    createBindGroup: () => ({}),
+    createBindGroup,
     createCommandEncoder: () => ({
-      beginComputePass: () => ({ setPipeline: vi.fn(), setBindGroup: vi.fn(), dispatchWorkgroups, end: vi.fn() }),
+      beginComputePass: () => ({ setPipeline: vi.fn(), setBindGroup, dispatchWorkgroups, end: vi.fn() }),
       beginRenderPass: () => ({ setPipeline: vi.fn(), setBindGroup: vi.fn(), draw: vi.fn(), drawIndirect: vi.fn(), end: vi.fn() }),
       finish: () => ({}),
     }),
   };
-  return { device, dispatchWorkgroups, submit, writeBuffer, buffers };
+  return { device, dispatchWorkgroups, submit, writeBuffer, buffers, setBindGroup, createBindGroup };
 }
 
 const definition: ParticleEffectDefinition2D = {
@@ -31,6 +31,30 @@ const definition: ParticleEffectDefinition2D = {
 };
 
 describe('WebGpuParticleEffectRuntimeBackend2D', () => {
+  it('uploads extension uniforms and binds reflected group-one resources by stage', () => {
+    const fixture = deviceFixture(), render = vi.fn();
+    const base = adaptParticleEffectDefinition2D(definition);
+    const extension = {
+      id: 'wind-module', supports: ['webgl2', 'webgpu'] as const, cpuReference: () => undefined,
+      glslSimulation: 'stateB.xy += uWind;', glslVertex: 'vIntensity *= uGain;',
+      wgslSimulation: 'stateB[i].velocity += uWind;', wgslVertex: 'out.color.rgb *= uGain;',
+      bindings: [
+        { name: 'uWind', kind: 'uniform' as const, dataType: 'vec2', required: true, stages: ['simulation'] as const },
+        { name: 'uGain', kind: 'uniform' as const, dataType: 'f32', required: true, stages: ['render'] as const },
+      ],
+    };
+    const program = compileParticleProgram2D(compileParticleEffect2D({ ...base, customModules: [extension.id] }), [extension]);
+    const resource = new WebGpuParticleEffectRuntimeBackend2D(fixture.device, { render }).create(program, 16);
+    resource.setExtensionBindings?.({ uWind: [2, -1], uGain: 0.75 });
+    expect(fixture.buffers.filter((buffer) => buffer.label?.includes('.extension.')).map((buffer) => buffer.label)).toEqual([
+      'webgpu-test.extension.uWind', 'webgpu-test.extension.uGain',
+    ]);
+    resource.update(1 / 60, 1);
+    expect(fixture.setBindGroup).toHaveBeenCalledWith(1, expect.anything());
+    resource.render({ width: 64, height: 64 }, 'basic');
+    expect(render.mock.calls[0]![4].extensionEntries).toHaveLength(1);
+    resource.dispose();
+  });
   it('uploads commands, dispatches compute, and delegates direct GPU rendering', () => {
     const fixture = deviceFixture(), render = vi.fn();
     const backend = new WebGpuParticleEffectRuntimeBackend2D(fixture.device, { render });

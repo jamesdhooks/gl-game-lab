@@ -207,7 +207,12 @@ describe('ParticleEffectCompiler2D', () => {
     expect(program.webgl2.vertex.source).toContain('uniform sampler2D uRamp;');
     expect(program.webgpu.simulation.source).toContain('@group(1) @binding(0) var<uniform> uBias: f32;');
     expect(program.webgpu.render.source).toContain('@group(1) @binding(0) var uRamp: texture_2d<f32>;');
+    const corruptedArtifact = JSON.parse(JSON.stringify(program)) as { reflection: { bindings: Array<{ name: string; stages?: string[] }> } };
+    corruptedArtifact.reflection.bindings.find((binding) => binding.name === 'uRamp')!.stages = ['event'];
+    expect(() => hydrateCompiledParticleProgram2D(corruptedArtifact)).toThrow('extension binding');
     const invalid = { ...extension, bindings: [{ name: 'particles', kind: 'storage' as const, dataType: 'vec4', required: true, stages: ['simulation'] as const }] };
     expect(() => compileParticleProgram2D(compileParticleEffect2D({ ...base, customModules: [invalid.id] }), [invalid])).toThrow('not WebGL2-compatible');
+    const optionalResource = { ...extension, supports: ['webgpu'] as const, bindings: [{ name: 'optionalTexture', kind: 'texture' as const, dataType: 'rgba8unorm', required: false, stages: ['render'] as const }] };
+    expect(() => compileParticleProgram2D(compileParticleEffect2D({ ...base, fallbackPolicy: 'fail', customModules: [optionalResource.id] }), [optionalResource])).toThrow('requires an explicit fallback provider');
   });
 });

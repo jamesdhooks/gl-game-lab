@@ -654,7 +654,7 @@ fn buildParticleVertex(vertex: u32, instance: u32, streak: bool) -> VertexOut {
 @vertex fn particleStreakVertex(@builtin(vertex_index) vertex: u32, @builtin(instance_index) instance: u32) -> VertexOut { return buildParticleVertex(vertex,instance,true); }
 @fragment fn particleFragment(input: VertexOut) -> @location(0) vec4<f32> {
   let distance=length(input.local); let coverage=1.0-smoothstep(0.72,1.0,distance); var color=vec4<f32>(input.color.rgb,input.color.a*coverage);
-  
+
   return color;
 }",
     "simulation": "struct ParticleA { position: vec2<f32>, age: f32, lifetime: f32 }

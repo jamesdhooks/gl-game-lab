@@ -12,9 +12,11 @@ export type GpuUniformLookup2D = (name: string) => GpuUniformLocation2D;
 export interface GpuUniformEncoder2D {
   uniform1f(location: GpuUniformLocation2D, value: number): void;
   uniform1i(location: GpuUniformLocation2D, value: number): void;
+  uniform1ui(location: GpuUniformLocation2D, value: number): void;
   uniform2f(location: GpuUniformLocation2D, x: number, y: number): void;
   uniform3fv(location: GpuUniformLocation2D, value: Float32Array): void;
   uniform4fv(location: GpuUniformLocation2D, value: Float32Array): void;
+  uniformMatrix4fv(location: GpuUniformLocation2D, value: Float32Array): void;
   uniformTexture(location: GpuUniformLocation2D, texture: GpuTexture2D, unit: number): void;
 }
 export type GpuUniformBinder2D = (encoder: GpuUniformEncoder2D, uniform: GpuUniformLookup2D) => void;

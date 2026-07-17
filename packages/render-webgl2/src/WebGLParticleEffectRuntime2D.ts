@@ -5,6 +5,7 @@ import type {
   ParticleForceFieldSet2D, ParticleDomain2D, ParticleEmitterSourceOverride2D,
   ParticleEventParameters2D, ParticleViewport2D, ParticleRenderParameters2D, ParticlePalette2D,
   ParticleOverflowPolicy2D, ParticleRenderTier2D, ParticleRuntimeEmission2D, ParticleParameterValue2D,
+  ParticleExtensionBindingSet2D, ParticleExtensionBindingValue2D, ParticleShaderBinding2D, GpuTexture2D,
 } from "@hooksjam/gl-game-lab-engine";
 import { ParticleEventWindowScheduler2D, planParticleSpawnCommands2D, resolveParticleArchetypePartitions2D } from "@hooksjam/gl-game-lab-engine";
 
@@ -106,6 +107,7 @@ class WebGLParticleEffectResource2D implements ParticleEffectBackendResource2D {
   private readonly eventWindows: ParticleEventWindowScheduler2D;
   private simulationTime = 0;
   private disposed = false;
+  private readonly extensionBindings = new Map<string, ParticleExtensionBindingValue2D>();
 
   constructor(
     gpu: Gpu2DService,
@@ -550,6 +552,12 @@ class WebGLParticleEffectResource2D implements ParticleEffectBackendResource2D {
     this.particles.dispose();
   }
 
+  setExtensionBindings(bindings: ParticleExtensionBindingSet2D): void {
+    this.assertUsable();
+    this.extensionBindings.clear();
+    for (const [name, value] of Object.entries(bindings)) this.extensionBindings.set(name, normalizeWebGlExtensionValue(value));
+  }
+
   private readonly bindRender = (gl: GpuUniformEncoder2D, uniform: GpuUniformLookup2D): void => {
     gl.uniform2f(uniform("uCanvasSize"), this.viewportWidth, this.viewportHeight);
     gl.uniform1i(uniform("uParticleCapacity"), this.particles.capacity);
@@ -566,6 +574,7 @@ class WebGLParticleEffectResource2D implements ParticleEffectBackendResource2D {
     gl.uniform4fv(uniform("uArchetypeLength[0]"), this.archetypeLength);
     gl.uniform4fv(uniform("uArchetypeAlpha[0]"), this.archetypeAlpha);
     gl.uniform4fv(uniform("uArchetypeIntensity[0]"), this.archetypeIntensity);
+    this.bindExtensions("render", gl, uniform);
   };
 
   private bindSimulation(gl: GpuUniformEncoder2D, uniform: GpuUniformLookup2D, delta: number): void {
@@ -593,6 +602,21 @@ class WebGLParticleEffectResource2D implements ParticleEffectBackendResource2D {
     gl.uniform4fv(uniform("uCircleColliders[0]"), this.circles);
     gl.uniform4fv(uniform("uCapsuleA[0]"), this.capsuleA);
     gl.uniform4fv(uniform("uCapsuleB[0]"), this.capsuleB);
+    this.bindExtensions("simulation", gl, uniform);
+  }
+
+  private bindExtensions(stage: "simulation" | "render", gl: GpuUniformEncoder2D, uniform: GpuUniformLookup2D): void {
+    let textureUnit = 8;
+    for (const binding of this.program.reflection.bindings) {
+      if (!binding.stages?.includes(stage)) continue;
+      const value = this.extensionBindings.get(binding.name);
+      if (value === undefined) {
+        if (binding.required) throw new Error(`Missing required particle extension binding: ${binding.name}`);
+        continue;
+      }
+      bindWebGlExtensionValue(binding, value, gl, uniform, textureUnit);
+      if (binding.kind === "texture") textureUnit += 1;
+    }
   }
 
   private prepareCommands(): void {
@@ -619,6 +643,36 @@ function lowestPriorityIndex(priorities: Int8Array): number {
   let result = 0;
   for (let index = 1; index < priorities.length; index += 1) if (priorities[index]! < priorities[result]!) result = index;
   return result;
+}
+
+function normalizeWebGlExtensionValue(value: ParticleExtensionBindingValue2D): ParticleExtensionBindingValue2D {
+  if (value instanceof Float32Array) return new Float32Array(value);
+  if (Array.isArray(value)) return new Float32Array(value);
+  return value;
+}
+
+function bindWebGlExtensionValue(
+  binding: ParticleShaderBinding2D,
+  value: ParticleExtensionBindingValue2D,
+  gl: GpuUniformEncoder2D,
+  uniform: GpuUniformLookup2D,
+  textureUnit: number,
+): void {
+  const location = uniform(binding.name);
+  if (binding.kind === "texture") {
+    gl.uniformTexture(location, value as GpuTexture2D, textureUnit);
+    return;
+  }
+  if (binding.kind !== "uniform") throw new Error(`WebGL2 cannot bind particle extension resource ${binding.name} (${binding.kind})`);
+  if (binding.dataType === "f32") gl.uniform1f(location, value as number);
+  else if (binding.dataType === "i32") gl.uniform1i(location, value as number);
+  else if (binding.dataType === "u32") gl.uniform1ui(location, value as number);
+  else if (binding.dataType === "bool") gl.uniform1i(location, value ? 1 : 0);
+  else if (binding.dataType === "vec2") gl.uniform2f(location, (value as Float32Array)[0]!, (value as Float32Array)[1]!);
+  else if (binding.dataType === "vec3") gl.uniform3fv(location, value as Float32Array);
+  else if (binding.dataType === "vec4") gl.uniform4fv(location, value as Float32Array);
+  else if (binding.dataType === "mat4") gl.uniformMatrix4fv(location, value as Float32Array);
+  else throw new Error(`Unsupported WebGL2 particle extension uniform type: ${binding.dataType}`);
 }
 
 function spawnShapeCode(shape: string): number {

@@ -673,9 +673,11 @@ function applyBindings(
   const encoder: GpuUniformEncoder2D = {
     uniform1f: (location, value) => { gl.uniform1f(nativeLocation(location, uniform), value); },
     uniform1i: (location, value) => { gl.uniform1i(nativeLocation(location, uniform), value); },
+    uniform1ui: (location, value) => { gl.uniform1ui(nativeLocation(location, uniform), value); },
     uniform2f: (location, x, y) => { gl.uniform2f(nativeLocation(location, uniform), x, y); },
     uniform3fv: (location, value) => { gl.uniform3fv(nativeLocation(location, uniform), value); },
     uniform4fv: (location, value) => { gl.uniform4fv(nativeLocation(location, uniform), value); },
+    uniformMatrix4fv: (location, value) => { gl.uniformMatrix4fv(nativeLocation(location, uniform), false, value); },
     uniformTexture: (location, texture, unit) => {
       if (!(texture instanceof WebGLGpuTexture2D)) throw new Error('GPU texture belongs to another backend');
       if (!Number.isSafeInteger(unit) || unit < 2 || unit > 31) throw new Error('GPU texture unit must be an integer between 2 and 31');

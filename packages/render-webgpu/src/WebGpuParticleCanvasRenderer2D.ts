@@ -193,6 +193,14 @@ export class WebGpuParticleCanvasRenderer2D {
         job.bindings.renderConfig,
       ].map((buffer, binding) => ({ binding, resource: { buffer } })),
     });
+    const bindExtensions = (pass: import('./WebGpuParticleEffectRuntime2D.js').ParticleWebGpuRenderPass2D, pipeline: ParticleWebGpuRenderPipeline2D): void => {
+      if (!job.bindings.extensionEntries || job.bindings.extensionEntries.length === 0) return;
+      pass.setBindGroup(1, this.device.createBindGroup({
+        label: `${job.program.effect.source.id}.render-extension-bindings`,
+        layout: pipeline.getBindGroupLayout(1),
+        entries: job.bindings.extensionEntries,
+      }));
+    };
     const pass = encoder.beginRenderPass({
       colorAttachments: [{ view, clearValue: TRANSPARENT, loadOp: load ? 'load' : 'clear', storeOp: 'store' }],
     });
@@ -200,12 +208,14 @@ export class WebGpuParticleCanvasRenderer2D {
     if (recipe.some((entry) => entry.kind === 'streaks')) {
       pass.setPipeline(set.streaks);
       pass.setBindGroup(0, createBindings(set.streaks));
+      bindExtensions(pass, set.streaks);
       pass.drawIndirect(job.bindings.indirectDraw, 0);
       this.particleDraws += 1;
     }
     if (recipe.some((entry) => entry.kind === 'points')) {
       pass.setPipeline(set.points);
       pass.setBindGroup(0, createBindings(set.points));
+      bindExtensions(pass, set.points);
       pass.drawIndirect(job.bindings.indirectDraw, 0);
       this.particleDraws += 1;
     }

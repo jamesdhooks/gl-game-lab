@@ -1,10 +1,10 @@
 import { resolveParticleParameters2D } from "./ParticleEffectAuthoring2D.js";
 import { compileParticleEffect2D, type ParticleEffectGraph2D } from "./ParticleEffectGraph2D.js";
 import { compileParticleProgram2D, type ParticleModuleCompilerExtension2D } from "./ParticleEffectCompiler2D.js";
-import type { CompiledParticleProgram2D } from "./ParticleEffectCompiler2D.js";
+import type { CompiledParticleProgram2D, ParticleShaderBinding2D } from "./ParticleEffectCompiler2D.js";
 import type { ParticleCoordinateSpace2D, ParticleEmitterDefinition2D, ParticleEmitterStopMode2D, ParticleParameterValue2D } from "./ParticleEffectGraph2D.js";
 import type { ParticleEffectDiagnostics2D, ParticlePalette2D, ParticleRenderTier2D } from "./ParticleEffects2D.js";
-import type { GpuParticleStateSnapshot2D, GpuRenderTarget2D } from "./Gpu2D.js";
+import type { GpuParticleStateSnapshot2D, GpuRenderTarget2D, GpuTexture2D } from "./Gpu2D.js";
 import { ParticleGraphScheduler2D, type ParticleGraphEffectReference2D, type ParticleGraphExecutionContext2D } from "./ParticleGraphScheduler2D.js";
 
 export type ParticleEffectInstanceStatus2D = "idle" | "running" | "paused" | "draining" | "complete" | "disposed";
@@ -28,7 +28,27 @@ export interface ParticleEffectInstanceOptions2D {
   readonly adaptiveTargetFps?: 30 | 45 | 60;
   /** Default velocity inherited by graph-referenced child effects. */
   readonly inheritedVelocity?: readonly [number, number];
+  /** Values for bindings declared by graph-selected compiler extensions. */
+  readonly extensionBindings?: ParticleExtensionBindingSet2D;
 }
+
+export type ParticleExtensionUniformValue2D =
+  | number
+  | boolean
+  | readonly [number, number]
+  | readonly [number, number, number]
+  | readonly [number, number, number, number]
+  | Float32Array;
+
+/** Backend-owned resource explicitly tagged so incompatible handles fail early. */
+export interface ParticleExtensionGpuResource2D {
+  readonly backend: "webgpu";
+  readonly kind: "texture" | "sampler" | "storage" | "render-target";
+  readonly resource: object;
+}
+
+export type ParticleExtensionBindingValue2D = ParticleExtensionUniformValue2D | GpuTexture2D | ParticleExtensionGpuResource2D;
+export type ParticleExtensionBindingSet2D = Readonly<Record<string, ParticleExtensionBindingValue2D>>;
 
 export interface ParticleEmissionOverride2D {
   readonly count?: number;
@@ -215,6 +235,7 @@ export interface ParticleEffectBackendResource2D {
   setRenderParameters?(parameters: ParticleRenderParameters2D): void;
   setRenderScale?(scale: number): void;
   setDetailedDiagnostics?(enabled: boolean): void;
+  setExtensionBindings?(bindings: ParticleExtensionBindingSet2D): void;
   update(deltaSeconds: number, timescale: number): void;
   render(target: GpuRenderTarget2D, tier: ParticleRenderTier2D): void;
   clear(): void;
@@ -261,6 +282,7 @@ class RecoveringParticleEffectBackendResource2D implements ParticleEffectBackend
   private renderParameters: ParticleRenderParameters2D | undefined;
   private renderScale: number | undefined;
   private detailedDiagnostics: boolean | undefined;
+  private extensionBindings: ParticleExtensionBindingSet2D | undefined;
   private readonly emitterSources = new Map<number, ParticleEmitterSourceOverride2D>();
   private readonly eventParameters = new Map<string, Readonly<{ archetypeIndex: number; eventIndex: number; parameters: ParticleEventParameters2D }>>();
   constructor(
@@ -344,6 +366,10 @@ class RecoveringParticleEffectBackendResource2D implements ParticleEffectBackend
       resource.setDetailedDiagnostics?.(enabled);
     });
   }
+  setExtensionBindings(bindings: ParticleExtensionBindingSet2D): void {
+    this.extensionBindings = cloneParticleExtensionBindings(bindings);
+    this.invoke((resource) => resource.setExtensionBindings?.(this.extensionBindings!));
+  }
   update(deltaSeconds: number, timescale: number): void {
     this.invoke((resource) => {
       resource.update(deltaSeconds, timescale);
@@ -403,7 +429,16 @@ class RecoveringParticleEffectBackendResource2D implements ParticleEffectBackend
     if (this.renderParameters) resource.setRenderParameters?.(this.renderParameters);
     if (this.renderScale !== undefined) resource.setRenderScale?.(this.renderScale);
     if (this.detailedDiagnostics !== undefined) resource.setDetailedDiagnostics?.(this.detailedDiagnostics);
+    if (this.extensionBindings) resource.setExtensionBindings?.(this.extensionBindings);
   }
+}
+
+function cloneParticleExtensionBindings(bindings: ParticleExtensionBindingSet2D): ParticleExtensionBindingSet2D {
+  const result: Record<string, ParticleExtensionBindingValue2D> = {};
+  for (const [name, value] of Object.entries(bindings)) {
+    result[name] = value instanceof Float32Array ? new Float32Array(value) : Array.isArray(value) ? Object.freeze([...value]) as ParticleExtensionBindingValue2D : value;
+  }
+  return Object.freeze(result);
 }
 
 function cloneParticleColliders(value: ParticleColliderSet2D): ParticleColliderSet2D {
@@ -427,6 +462,42 @@ function cloneParticleDomain(value: ParticleDomain2D): ParticleDomain2D {
     center: Object.freeze([...value.center] as [number, number]),
     ...(value.halfExtents ? { halfExtents: Object.freeze([...value.halfExtents] as [number, number]) } : {}),
   });
+}
+
+function extensionBindingTable(program: CompiledParticleProgram2D): ReadonlyMap<string, ParticleShaderBinding2D> {
+  return new Map(program.reflection.bindings.filter((binding) => binding.stages !== undefined).map((binding) => [binding.name, binding]));
+}
+
+function validateParticleExtensionBindingValue(binding: ParticleShaderBinding2D, value: ParticleExtensionBindingValue2D): void {
+  if (binding.kind === "uniform") {
+    const finiteArray = (length: number): boolean => (Array.isArray(value) || value instanceof Float32Array) && value.length === length && Array.from(value).every(Number.isFinite);
+    const valid = binding.dataType === "bool" ? typeof value === "boolean"
+      : binding.dataType === "f32" ? typeof value === "number" && Number.isFinite(value)
+        : binding.dataType === "i32" ? typeof value === "number" && Number.isInteger(value) && value >= -2147483648 && value <= 2147483647
+          : binding.dataType === "u32" ? typeof value === "number" && Number.isInteger(value) && value >= 0 && value <= 4294967295
+        : binding.dataType === "vec2" ? finiteArray(2)
+          : binding.dataType === "vec3" ? finiteArray(3)
+            : binding.dataType === "vec4" ? finiteArray(4)
+              : binding.dataType === "mat4" ? value instanceof Float32Array && finiteArray(16) : false;
+    if (!valid) throw new Error(`Particle extension binding ${binding.name} requires ${binding.dataType}`);
+    return;
+  }
+  if (binding.kind === "texture" && typeof value === "object" && value !== null && "width" in value && "height" in value) return;
+  if (typeof value === "object" && value !== null && "backend" in value && value.backend === "webgpu" && "kind" in value && value.kind === binding.kind && "resource" in value) return;
+  throw new Error(`Particle extension binding ${binding.name} requires a ${binding.kind} resource`);
+}
+
+function validateParticleExtensionBindings(program: CompiledParticleProgram2D, bindings: ParticleExtensionBindingSet2D): void {
+  const reflected = extensionBindingTable(program);
+  for (const name of Object.keys(bindings)) if (!reflected.has(name)) throw new Error(`Unknown particle extension binding: ${name}`);
+  for (const binding of reflected.values()) {
+    const value = bindings[binding.name];
+    if (value === undefined) {
+      if (binding.required) throw new Error(`Missing required particle extension binding: ${binding.name}`);
+      continue;
+    }
+    validateParticleExtensionBindingValue(binding, value);
+  }
 }
 
 export interface ParticleEffectInstanceState2D {
@@ -477,6 +548,8 @@ export interface ParticleEffectInstance2D {
   setQualityTier(tier: ParticleRenderTier2D): void;
   setRenderScale(scale: number): void;
   setDetailedDiagnostics(enabled: boolean): void;
+  setExtensionBinding(name: string, value: ParticleExtensionBindingValue2D): void;
+  setExtensionBindings(bindings: ParticleExtensionBindingSet2D): void;
   state(): ParticleEffectInstanceState2D;
   diagnostics(): ParticleEffectBackendDiagnostics2D;
   debugSnapshot(): GpuParticleStateSnapshot2D;
@@ -519,7 +592,7 @@ export interface ParticleEffectProgramInspection2D {
   }[];
   readonly renderPasses: Readonly<Record<ParticleRenderTier2D, readonly string[]>>;
   readonly capabilityRequirements: readonly string[];
-  readonly resources: readonly { readonly name: string; readonly kind: string; readonly required: boolean }[];
+  readonly resources: readonly { readonly name: string; readonly kind: string; readonly dataType: string; readonly required: boolean; readonly stages?: readonly string[] }[];
   readonly shaders: readonly { readonly backend: string; readonly stage: string; readonly entryPoint: string; readonly hash: string; readonly source: string }[];
 }
 
@@ -649,6 +722,7 @@ export class EngineParticleEffects2D implements ParticleEffects2D {
       this.register(program);
       return { instances: 0, preserved: 0 };
     }
+    for (const instance of previous.instances) instance.validateReplacementProgram(program);
     for (const resource of previous.pooled.splice(0)) resource.dispose();
     previous.program = program;
     let preserved = 0;
@@ -678,6 +752,7 @@ export class EngineParticleEffects2D implements ParticleEffects2D {
     this.assertUsable();
     const record = this.programs.get(effectId);
     if (!record) throw new Error(`Unknown compiled particle effect: ${effectId}`);
+    validateParticleExtensionBindings(record.program, options.extensionBindings ?? {});
     let instance!: RuntimeParticleEffectInstance2D;
     instance = new RuntimeParticleEffectInstance2D(
       this.nextInstanceId++,
@@ -786,7 +861,7 @@ export class EngineParticleEffects2D implements ParticleEffects2D {
         persistedBindings: Object.freeze(record.program.effect.persistedBindings.map((entry) => Object.freeze({ parameterId: entry.parameterId, key: entry.key }))),
         renderPasses: Object.freeze(Object.fromEntries((["basic", "enhanced", "ultra"] as const).map((tier) => [tier, Object.freeze(record.program.renderPasses[tier].map((pass) => pass.kind))])) as Readonly<Record<ParticleRenderTier2D, readonly string[]>>),
         capabilityRequirements: Object.freeze(particleCapabilityRequirements(record.program)),
-        resources: Object.freeze(record.program.reflection.bindings.map((entry) => Object.freeze({ name: entry.name, kind: entry.kind, required: entry.required }))),
+        resources: Object.freeze(record.program.reflection.bindings.map((entry) => Object.freeze({ name: entry.name, kind: entry.kind, dataType: entry.dataType, required: entry.required, ...(entry.stages ? { stages: Object.freeze([...entry.stages]) } : {}) }))),
         shaders: Object.freeze(compiledShaderInspection(record.program)),
       }),
     );
@@ -1069,6 +1144,7 @@ class RuntimeParticleEffectInstance2D implements ParticleEffectInstance2D {
   private tier: ParticleRenderTier2D;
   private renderScale = 1;
   private detailedDiagnostics = false;
+  private extensionBindings: ParticleExtensionBindingSet2D = {};
   private appliedRenderScale = 1;
   private effectiveTier: ParticleRenderTier2D;
   private readonly adaptiveLod: boolean;
@@ -1140,6 +1216,7 @@ class RuntimeParticleEffectInstance2D implements ParticleEffectInstance2D {
     backend.setForceFields?.(this.forceFields);
     backend.setDomain?.(this.domain);
     backend.setRenderScale?.(this.renderScale);
+    this.setExtensionBindings(options.extensionBindings ?? {});
     for (const emitter of this.emitters) this.applyEmitterSource(emitter);
   }
 
@@ -1276,6 +1353,26 @@ class RuntimeParticleEffectInstance2D implements ParticleEffectInstance2D {
     this.assertUsable();
     this.palette = palette;
     this.backend.setPalette(palette);
+  }
+  setExtensionBinding(name: string, value: ParticleExtensionBindingValue2D): void {
+    this.setExtensionBindings({ ...this.extensionBindings, [name]: value });
+  }
+  setExtensionBindings(bindings: ParticleExtensionBindingSet2D): void {
+    this.assertUsable();
+    validateParticleExtensionBindings(this.program, bindings);
+    const reflected = extensionBindingTable(this.program);
+    const next: Record<string, ParticleExtensionBindingValue2D> = {};
+    for (const [name, binding] of reflected) {
+      const value = bindings[name];
+      if (value === undefined) {
+        if (binding.required) throw new Error(`Missing required particle extension binding: ${name}`);
+        continue;
+      }
+      validateParticleExtensionBindingValue(binding, value);
+      next[name] = value;
+    }
+    this.extensionBindings = cloneParticleExtensionBindings(next);
+    this.backend.setExtensionBindings?.(this.extensionBindings);
   }
   setColliders(colliders: ParticleColliderSet2D): void {
     this.assertUsable();
@@ -1496,6 +1593,10 @@ class RuntimeParticleEffectInstance2D implements ParticleEffectInstance2D {
     backend.setRenderParameters?.(this.renderParameters);
     backend.setRenderScale?.(this.renderScale);
     backend.setDetailedDiagnostics?.(this.detailedDiagnostics);
+    const compatibleBindings: Record<string, ParticleExtensionBindingValue2D> = Object.fromEntries(Object.entries(this.extensionBindings).filter(([name]) => extensionBindingTable(program).has(name)));
+    this.extensionBindings = cloneParticleExtensionBindings(compatibleBindings);
+    this.validateRequiredExtensionBindings();
+    backend.setExtensionBindings?.(this.extensionBindings);
     this.applyAdaptiveLod();
     this.scheduler.reset(this.seed);
     if (!stateTransferred) {
@@ -1507,6 +1608,15 @@ class RuntimeParticleEffectInstance2D implements ParticleEffectInstance2D {
       this.start();
     } else if (this.statusValue === "running") this.scheduler.start();
     return stateTransferred;
+  }
+
+  validateReplacementProgram(program: CompiledParticleProgram2D): void {
+    const compatibleBindings: Record<string, ParticleExtensionBindingValue2D> = Object.fromEntries(Object.entries(this.extensionBindings).filter(([name]) => extensionBindingTable(program).has(name)));
+    validateParticleExtensionBindings(program, compatibleBindings);
+  }
+
+  private validateRequiredExtensionBindings(): void {
+    for (const binding of extensionBindingTable(this.program).values()) if (binding.required && this.extensionBindings[binding.name] === undefined) throw new Error(`Missing required particle extension binding: ${binding.name}`);
   }
 
   private rebuildControlGraph(previousProgram: CompiledParticleProgram2D, program: CompiledParticleProgram2D): void {

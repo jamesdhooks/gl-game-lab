@@ -7,6 +7,7 @@ import {
   type ParticleDomain2D, type ParticleEmitterSourceOverride2D, type ParticleEventParameters2D,
   type ParticleForceFieldSet2D, type ParticlePalette2D, type ParticleRenderParameters2D,
   type ParticleRuntimeEmission2D, type ParticleRenderTier2D, type ParticleViewport2D,
+  type ParticleExtensionBindingSet2D,
 } from "../index.js";
 
 class TestResource implements ParticleEffectBackendResource2D {
@@ -26,6 +27,7 @@ class TestResource implements ParticleEffectBackendResource2D {
   emitterSources = new Map<number, ParticleEmitterSourceOverride2D>();
   eventParameters = new Map<string, ParticleEventParameters2D>();
   disposed = false;
+  extensionBindings?: ParticleExtensionBindingSet2D;
   emit(emission: ParticleRuntimeEmission2D): void {
     this.emissions.push({ ...emission });
   }
@@ -58,6 +60,9 @@ class TestResource implements ParticleEffectBackendResource2D {
   }
   setRenderScale(scale: number): void {
     this.renderScale = scale;
+  }
+  setExtensionBindings(bindings: ParticleExtensionBindingSet2D): void {
+    this.extensionBindings = bindings;
   }
   update(): void {
     this.updates += 1;
@@ -136,6 +141,45 @@ const definition: ParticleEffectDefinition2D = {
 };
 
 describe("EngineParticleEffects2D", () => {
+  it("validates, applies, and updates compiled extension bindings", () => {
+    const backend = new TestBackend();
+    const runtime = new EngineParticleEffects2D(backend);
+    const graph = { ...adaptParticleEffectDefinition2D(definition), customModules: ["wind-module"] };
+    const extension = {
+      id: "wind-module", supports: ["webgl2", "webgpu"] as const, cpuReference: () => undefined,
+      glslSimulation: "stateB.xy += uWind * uStrength;", wgslSimulation: "stateB[i].velocity += uWind * uStrength;",
+      bindings: [
+        { name: "uWind", kind: "uniform" as const, dataType: "vec2", required: true, stages: ["simulation"] as const },
+        { name: "uStrength", kind: "uniform" as const, dataType: "f32", required: true, stages: ["simulation"] as const },
+      ],
+    };
+    runtime.register(compileParticleProgram2D(compileParticleEffect2D(graph), [extension]));
+    expect(() => runtime.createInstance(definition.id)).toThrow("Missing required particle extension binding: uWind");
+    expect(backend.resources).toHaveLength(0);
+    const instance = runtime.createInstance(definition.id, { extensionBindings: { uWind: [2, -1], uStrength: 0.5 } });
+    expect(backend.resources[0]!.extensionBindings).toEqual({ uWind: [2, -1], uStrength: 0.5 });
+    instance.setExtensionBinding("uStrength", 0.75);
+    expect(backend.resources[0]!.extensionBindings).toEqual({ uWind: [2, -1], uStrength: 0.75 });
+    expect(() => instance.setExtensionBinding("uWind", [1, 2, 3] as unknown as readonly [number, number])).toThrow("requires vec2");
+    expect(() => instance.setExtensionBinding("unknown", 1)).toThrow("Unknown particle extension binding");
+  });
+
+  it("rejects a hot reload that introduces an unsatisfied required resource without destroying live state", () => {
+    const backend = new TestBackend(), runtime = new EngineParticleEffects2D(backend);
+    const base = adaptParticleEffectDefinition2D(definition);
+    runtime.register(compileParticleProgram2D(compileParticleEffect2D(base)));
+    const instance = runtime.createInstance(definition.id);
+    instance.start();
+    const original = backend.resources[0]!;
+    const extension = {
+      id: "required-module", supports: ["webgl2", "webgpu"] as const, cpuReference: () => undefined,
+      glslSimulation: "stateA.x += uRequired;", wgslSimulation: "stateA[i].position.x += uRequired;",
+      bindings: [{ name: "uRequired", kind: "uniform" as const, dataType: "f32", required: true, stages: ["simulation"] as const }],
+    };
+    expect(() => runtime.reloadGraph({ ...base, customModules: [extension.id] }, [extension])).toThrow("Missing required particle extension binding: uRequired");
+    expect(original.disposed).toBe(false);
+    expect(instance.state().status).toBe("running");
+  });
   it("owns instance lifecycle, timeline emission, update, and render", () => {
     const backend = new TestBackend();
     const runtime = new EngineParticleEffects2D(backend);
@@ -566,8 +610,13 @@ describe("EngineParticleEffects2D", () => {
       return resource;
     };
     const fallback = new TestBackend(), runtime = new EngineParticleEffects2D(new FallbackParticleEffectRuntimeBackend2D(preferred, fallback));
-    runtime.register(compileParticleProgram2D(compileParticleEffect2D(adaptParticleEffectDefinition2D(definition))));
-    const instance = runtime.createInstance("runtime-test", { palette: { revision: 9, colors: [[0.2, 0.4, 0.8]] } });
+    const base = adaptParticleEffectDefinition2D(definition), extension = {
+      id: "fallback-module", supports: ["webgl2", "webgpu"] as const, cpuReference: () => undefined,
+      glslSimulation: "stateA.x += uFallbackGain;", wgslSimulation: "stateA[i].position.x += uFallbackGain;",
+      bindings: [{ name: "uFallbackGain", kind: "uniform" as const, dataType: "f32", required: true, stages: ["simulation"] as const }],
+    };
+    runtime.register(compileParticleProgram2D(compileParticleEffect2D({ ...base, customModules: [extension.id] }), [extension]));
+    const instance = runtime.createInstance("runtime-test", { palette: { revision: 9, colors: [[0.2, 0.4, 0.8]] }, extensionBindings: { uFallbackGain: 0.75 } });
     instance.setColliders({ revision: 4, circles: [{ x: 10, y: 20, radius: 5, mode: "kill" }], capsules: [{ ax: 1, ay: 2, bx: 3, by: 4, radius: 2 }] });
     instance.setForceFields({ revision: 6, attractors: [{ x: 50, y: 60, strength: 7, velocity: [2, 3] }] });
     instance.setDomain({ revision: 3, shape: "circle", behavior: "wrap", center: [100, 80], radius: 70, damping: 0.9 });
@@ -587,6 +636,7 @@ describe("EngineParticleEffects2D", () => {
     expect(recovered.viewport).toEqual({ width: 640, height: 360, dpr: 2 });
     expect(recovered.renderParameters).toEqual({ pointScale: 3, trailFade: 0.92, trailBackground: [0.1, 0.2, 0.3] });
     expect(recovered.renderScale).toBe(0.5);
+    expect(recovered.extensionBindings).toEqual({ uFallbackGain: 0.75 });
     expect(instance.diagnostics()).toMatchObject({ backendFallbackCount: 1, validationFailures: 1 });
     runtime.dispose();
   });

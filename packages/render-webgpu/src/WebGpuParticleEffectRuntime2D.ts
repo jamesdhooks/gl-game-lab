@@ -1,4 +1,11 @@
-import type { CompiledParticleProgram2D, GpuRenderTarget2D, ParticleColliderSet2D, ParticleDomain2D, ParticleEmitterSourceOverride2D, ParticleViewport2D, ParticleRenderParameters2D, ParticleEffectBackendDiagnostics2D, ParticleEffectBackendResource2D, ParticleEffectRuntimeBackend2D, ParticleForceFieldSet2D, ParticlePalette2D, ParticleRenderTier2D, ParticleRuntimeEmission2D, ParticleParameterValue2D, ParticleEventParameters2D } from "@hooksjam/gl-game-lab-engine";
+import type {
+  CompiledParticleProgram2D, GpuRenderTarget2D, ParticleColliderSet2D, ParticleDomain2D,
+  ParticleEmitterSourceOverride2D, ParticleViewport2D, ParticleRenderParameters2D,
+  ParticleEffectBackendDiagnostics2D, ParticleEffectBackendResource2D, ParticleEffectRuntimeBackend2D,
+  ParticleForceFieldSet2D, ParticlePalette2D, ParticleRenderTier2D, ParticleRuntimeEmission2D,
+  ParticleParameterValue2D, ParticleEventParameters2D, ParticleExtensionBindingSet2D,
+  ParticleExtensionBindingValue2D, ParticleExtensionGpuResource2D, ParticleShaderBinding2D,
+} from "@hooksjam/gl-game-lab-engine";
 import { ParticleEventWindowScheduler2D, planParticleSpawnCommands2D, resolveParticleArchetypePartitions2D } from "@hooksjam/gl-game-lab-engine";
 
 const COMMAND_CAPACITY = 64;
@@ -14,6 +21,10 @@ export interface ParticleWebGpuBuffer2D {
 }
 export interface ParticleWebGpuShaderModule2D {}
 export interface ParticleWebGpuBindGroup2D {}
+export interface ParticleWebGpuBindGroupEntry2D {
+  readonly binding: number;
+  readonly resource: { readonly buffer: ParticleWebGpuBuffer2D } | ParticleWebGpuSampler2D | ParticleWebGpuTextureView2D;
+}
 export interface ParticleWebGpuTextureView2D {}
 export interface ParticleWebGpuTexture2D {
   createView(): ParticleWebGpuTextureView2D;
@@ -78,10 +89,7 @@ export interface ParticleWebGpuDevice2D {
   createBindGroup(options: {
     readonly label?: string;
     readonly layout: unknown;
-    readonly entries: readonly {
-      readonly binding: number;
-      readonly resource: { readonly buffer: ParticleWebGpuBuffer2D } | ParticleWebGpuSampler2D | ParticleWebGpuTextureView2D;
-    }[];
+    readonly entries: readonly ParticleWebGpuBindGroupEntry2D[];
   }): ParticleWebGpuBindGroup2D;
   createCommandEncoder(options?: { readonly label?: string }): ParticleWebGpuCommandEncoder2D;
 }
@@ -97,6 +105,7 @@ export interface WebGpuParticleEffectRenderBindings2D {
   readonly indirectDraw: ParticleWebGpuBuffer2D;
   readonly paletteCount: number;
   readonly capacity: number;
+  readonly extensionEntries?: readonly ParticleWebGpuBindGroupEntry2D[];
 }
 
 export type WebGpuParticleEffectRender2D = (program: CompiledParticleProgram2D, state: readonly [ParticleWebGpuBuffer2D, ParticleWebGpuBuffer2D, ParticleWebGpuBuffer2D], target: GpuRenderTarget2D, tier: ParticleRenderTier2D, bindings: WebGpuParticleEffectRenderBindings2D) => void;
@@ -224,6 +233,9 @@ class WebGpuParticleEffectResource2D implements ParticleEffectBackendResource2D 
   private paletteRevision = -1;
   private simulationTime = 0;
   private disposed = false;
+  private readonly extensionUniformBuffers = new Map<string, ParticleWebGpuBuffer2D>();
+  private simulationExtensionBindGroup: ParticleWebGpuBindGroup2D | undefined;
+  private renderExtensionEntries: readonly ParticleWebGpuBindGroupEntry2D[] | undefined;
 
   constructor(
     private readonly device: ParticleWebGpuDevice2D,
@@ -693,6 +705,7 @@ class WebGpuParticleEffectResource2D implements ParticleEffectBackendResource2D 
       pass = encoder.beginComputePass();
     pass.setPipeline(this.pipeline);
     pass.setBindGroup(0, this.bindGroup);
+    if (this.simulationExtensionBindGroup) pass.setBindGroup(1, this.simulationExtensionBindGroup);
     pass.dispatchWorkgroups(Math.ceil(this.capacity / 256));
     pass.end();
     if (runEvents && this.eventPipeline && this.eventResolvePipeline && this.eventBindGroup && this.eventResolveBindGroup) {
@@ -750,6 +763,7 @@ class WebGpuParticleEffectResource2D implements ParticleEffectBackendResource2D 
       indirectDraw: this.indirectDraw,
       paletteCount: this.paletteCount,
       capacity: this.capacity,
+      ...(this.renderExtensionEntries ? { extensionEntries: this.renderExtensionEntries } : {}),
     });
     this.renderPasses += 1;
     this.cpuRenderMs = particleCpuNow() - cpuStarted;
@@ -775,6 +789,48 @@ class WebGpuParticleEffectResource2D implements ParticleEffectBackendResource2D 
     for (const trigger of ["birth", "age", "death", "collision"] as const) this.eventAttemptsByTrigger[trigger] = 0;
     for (const priority of ["primary", "secondary", "cosmetic"] as const) this.eventAttemptsByPriority[priority] = 0;
     for (let index = 0; index < this.poolCursor.length; index += 1) this.poolCursor[index] = Math.round(this.poolData[index * 4] ?? 0);
+  }
+
+  setExtensionBindings(bindings: ParticleExtensionBindingSet2D): void {
+    this.assertUsable();
+    const simulationEntries = this.createExtensionEntries("simulation", bindings);
+    const renderEntries = this.createExtensionEntries("render", bindings);
+    this.simulationExtensionBindGroup = simulationEntries.length === 0 ? undefined : this.device.createBindGroup({
+      label: `${this.program.effect.source.id}.simulation-extension-bindings`,
+      layout: this.pipeline.getBindGroupLayout(1),
+      entries: simulationEntries,
+    });
+    this.renderExtensionEntries = renderEntries.length === 0 ? undefined : Object.freeze(renderEntries);
+  }
+
+  private createExtensionEntries(stage: "simulation" | "render", values: ParticleExtensionBindingSet2D): ParticleWebGpuBindGroupEntry2D[] {
+    const entries: ParticleWebGpuBindGroupEntry2D[] = [];
+    let bindingIndex = 0;
+    for (const binding of this.program.reflection.bindings) {
+      if (!binding.stages?.includes(stage)) continue;
+      const value = values[binding.name] ?? optionalWebGpuUniformValue(binding);
+      if (value === undefined) throw new Error(`Missing WebGPU particle extension binding: ${binding.name}`);
+      entries.push({ binding: bindingIndex++, resource: this.extensionResource(binding, value) });
+    }
+    return entries;
+  }
+
+  private extensionResource(binding: ParticleShaderBinding2D, value: ParticleExtensionBindingValue2D): ParticleWebGpuBindGroupEntry2D["resource"] {
+    if (binding.kind === "uniform") {
+      const data = encodeWebGpuExtensionUniform(binding, value);
+      let buffer = this.extensionUniformBuffers.get(binding.name);
+      if (!buffer) {
+        buffer = this.device.createBuffer({ label: `${this.program.effect.source.id}.extension.${binding.name}`, size: data.byteLength, usage: UNIFORM_COPY_USAGE });
+        this.extensionUniformBuffers.set(binding.name, buffer);
+      }
+      this.device.queue.writeBuffer(buffer, 0, data);
+      this.uploadBytes += data.byteLength;
+      return { buffer };
+    }
+    const resource = value as ParticleExtensionGpuResource2D;
+    if (resource.backend !== "webgpu" || resource.kind !== binding.kind) throw new Error(`Particle extension binding ${binding.name} is not a compatible WebGPU ${binding.kind}`);
+    if (binding.kind === "storage") return { buffer: resource.resource as ParticleWebGpuBuffer2D };
+    return resource.resource as ParticleWebGpuSampler2D | ParticleWebGpuTextureView2D;
   }
   diagnostics(): ParticleEffectBackendDiagnostics2D {
     return Object.freeze({
@@ -857,6 +913,8 @@ class WebGpuParticleEffectResource2D implements ParticleEffectBackendResource2D 
     this.eventQueue?.destroy();
     this.eventCounters?.destroy();
     this.eventParameters?.destroy();
+    for (const buffer of this.extensionUniformBuffers.values()) buffer.destroy();
+    this.extensionUniformBuffers.clear();
   }
   private prepareCommands(): void {
     const result = planParticleSpawnCommands2D(this.commandData, this.commandCount, this.preparedCommandData, COMMAND_CAPACITY, this.poolData, this.poolCursor);
@@ -890,6 +948,34 @@ function domainBehaviorCode(value: import("@hooksjam/gl-game-lab-engine").Partic
 }
 function colorModeCode(value: NonNullable<ParticleRenderParameters2D["colorMode"]>): number {
   return value === "seeded" ? 0 : value === "over-life" ? 1 : value === "generation" ? 2 : 3;
+}
+
+function encodeWebGpuExtensionUniform(binding: ParticleShaderBinding2D, value: ParticleExtensionBindingValue2D): ArrayBufferView {
+  const length = binding.dataType === "mat4" ? 16 : 4;
+  if (binding.dataType === "i32") {
+    const data = new Int32Array(length);
+    data[0] = value as number;
+    return data;
+  }
+  if (binding.dataType === "u32" || binding.dataType === "bool") {
+    const data = new Uint32Array(length);
+    data[0] = binding.dataType === "bool" ? Number(value) : value as number;
+    return data;
+  }
+  const data = new Float32Array(length);
+  if (typeof value === "number") data[0] = value;
+  else data.set(value as ArrayLike<number>);
+  return data;
+}
+
+function optionalWebGpuUniformValue(binding: ParticleShaderBinding2D): ParticleExtensionBindingValue2D | undefined {
+  if (binding.required || binding.kind !== "uniform") return undefined;
+  if (binding.dataType === "bool") return false;
+  if (binding.dataType === "vec2") return [0, 0];
+  if (binding.dataType === "vec3") return [0, 0, 0];
+  if (binding.dataType === "vec4") return [0, 0, 0, 0];
+  if (binding.dataType === "mat4") return new Float32Array(16);
+  return 0;
 }
 function createStorageBuffer(device: ParticleWebGpuDevice2D, label: string, data: Float32Array): ParticleWebGpuBuffer2D {
   const buffer = device.createBuffer({ label, size: data.byteLength, usage: STORAGE_COPY_USAGE });

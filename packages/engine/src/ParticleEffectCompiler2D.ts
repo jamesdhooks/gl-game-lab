@@ -973,9 +973,14 @@ fn buildParticleVertex(vertex: u32, instance: u32, streak: bool) -> VertexOut {
 @vertex fn particleStreakVertex(@builtin(vertex_index) vertex: u32, @builtin(instance_index) instance: u32) -> VertexOut { return buildParticleVertex(vertex,instance,true); }
 @fragment fn particleFragment(input: VertexOut) -> @location(0) vec4<f32> {
   let distance=length(input.local); let coverage=1.0-smoothstep(0.72,1.0,distance); var color=vec4<f32>(input.color.rgb,input.color.a*coverage);
-  ${extensions.map((entry) => entry.wgslFragment ?? "").filter(Boolean).join("\n  ")}
+${indentShaderExtension(extensions.map((entry) => entry.wgslFragment ?? ""))}
   return color;
 }`;
+}
+
+function indentShaderExtension(snippets: readonly string[]): string {
+  const source = snippets.filter(Boolean).join("\n");
+  return source.length === 0 ? "" : `  ${source.replaceAll("\n", "\n  ")}\n`;
 }
 
 function compileRenderPasses(effect: CompiledParticleEffect2D): Readonly<Record<ParticleRenderTier2D, readonly CompiledParticleRenderPass2D[]>> {
@@ -1223,6 +1228,12 @@ function validateArtifactBinding(value: unknown): void {
     || typeof value.dataType !== "string" || typeof value.required !== "boolean") {
     throw new Error("Invalid compiled particle shader binding");
   }
+  if (!["uniform", "texture", "sampler", "storage", "render-target"].includes(value.kind)) throw new Error("Invalid compiled particle shader binding kind");
+  if (value.stages !== undefined) {
+    if (!Array.isArray(value.stages) || value.stages.length === 0 || value.stages.some((stage) => stage !== "simulation" && stage !== "render") || !CUSTOM_BINDING_TYPES.has(value.dataType)) {
+      throw new Error("Invalid compiled particle extension binding");
+    }
+  }
 }
 
 function validateArtifactRenderPasses(value: unknown, tier: ParticleRenderTier2D): void {
@@ -1272,6 +1283,7 @@ function validateExtensionBinding(extension: ParticleModuleCompilerExtension2D, 
   if (extension.supports.includes("webgl2") && (binding.kind === "storage" || binding.kind === "sampler" || binding.kind === "render-target")) {
     throw new Error(`Particle compiler extension ${extension.id} binding ${binding.name} is not WebGL2-compatible`);
   }
+  if (!binding.required && binding.kind !== "uniform") throw new Error(`Particle compiler extension ${extension.id} optional resource ${binding.name} requires an explicit fallback provider`);
 }
 
 function customGlslBindingDeclarations(extensions: readonly ParticleModuleCompilerExtension2D[], stage: ParticleExtensionBindingStage2D): string {
