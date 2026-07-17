@@ -1,41 +1,41 @@
 {
   "schemaVersion": 1,
   "configuration": {
-    "effectId": "orbital",
-    "capacity": 262144,
-    "tier": "enhanced",
+    "effectId": "fireworks",
+    "capacity": 147456,
+    "tier": "basic",
     "renderScale": 1,
     "warmupMs": 1000,
     "sampleMs": 4000
   },
   "samples": 38,
   "fps": {
-    "average": 59.694,
-    "p05": 58.956
+    "average": 59.693,
+    "p05": 58.962
   },
   "frameCpuMs": {
-    "average": 1.374,
-    "p95": 2.5
+    "average": 0.8,
+    "p95": 1.2
   },
   "gpuMs": {
     "available": true,
-    "average": 0.453,
-    "p95": 0.529
+    "average": 0.074,
+    "p95": 0.123
   },
   "particle": {
     "backend": "webgl2",
     "activeInstances": 1,
     "registeredPrograms": 1,
-    "capacity": 262144,
-    "activeEstimate": 96256,
-    "spawnedParticles": 96256,
+    "capacity": 147456,
+    "activeEstimate": 99328,
+    "spawnedParticles": 99328,
     "droppedParticles": 0,
-    "simulationPasses": 310,
-    "renderPasses": 622,
-    "uploadBytes": 6016,
-    "allocatedBytes": 16777216,
-    "eventPasses": 0,
-    "eventAttempts": 0,
+    "simulationPasses": 566,
+    "renderPasses": 312,
+    "uploadBytes": 6272,
+    "allocatedBytes": 14155776,
+    "eventPasses": 255,
+    "eventAttempts": 198656,
     "eventLosses": 0,
     "backendFallbackCount": 0,
     "allocationsAfterWarmup": 0,

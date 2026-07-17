@@ -1,0 +1,171 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-07-17T04:15:03.751Z",
+  "browser": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
+  "mode": "mobile-preview-gate",
+  "results": [
+    {
+      "schemaVersion": 1,
+      "configuration": {
+        "effectId": "sparks",
+        "capacity": 65536,
+        "tier": "enhanced",
+        "renderScale": 0.5,
+        "warmupMs": 1000,
+        "sampleMs": 4000
+      },
+      "samples": 38,
+      "fps": {
+        "average": 59.953,
+        "p05": 59.94
+      },
+      "frameCpuMs": {
+        "average": 1.529,
+        "p95": 1.5
+      },
+      "gpuMs": {
+        "available": true,
+        "average": 2.464,
+        "p95": 3.873
+      },
+      "particle": {
+        "backend": "webgl2",
+        "activeInstances": 1,
+        "registeredPrograms": 1,
+        "capacity": 65536,
+        "activeEstimate": 65536,
+        "spawnedParticles": 96256,
+        "droppedParticles": 0,
+        "simulationPasses": 618,
+        "renderPasses": 620,
+        "uploadBytes": 6272,
+        "allocatedBytes": 6291456,
+        "eventPasses": 309,
+        "eventAttempts": 97280,
+        "eventLosses": 0,
+        "backendFallbackCount": 0,
+        "allocationsAfterWarmup": 0,
+        "diagnosticAccuracy": "estimated"
+      },
+      "pageErrors": [],
+      "gate": {
+        "budget": {
+          "fps": 30,
+          "gpuP95": 33.34
+        },
+        "fpsPass": true,
+        "gpuPass": true,
+        "passed": true
+      }
+    },
+    {
+      "schemaVersion": 1,
+      "configuration": {
+        "effectId": "fireworks",
+        "capacity": 65536,
+        "tier": "enhanced",
+        "renderScale": 0.5,
+        "warmupMs": 1000,
+        "sampleMs": 4000
+      },
+      "samples": 38,
+      "fps": {
+        "average": 59.236,
+        "p05": 58.005
+      },
+      "frameCpuMs": {
+        "average": 1.545,
+        "p95": 3.7
+      },
+      "gpuMs": {
+        "available": true,
+        "average": 0.039,
+        "p95": 0.044
+      },
+      "particle": {
+        "backend": "webgl2",
+        "activeInstances": 1,
+        "registeredPrograms": 1,
+        "capacity": 65536,
+        "activeEstimate": 65536,
+        "spawnedParticles": 98304,
+        "droppedParticles": 0,
+        "simulationPasses": 557,
+        "renderPasses": 614,
+        "uploadBytes": 6272,
+        "allocatedBytes": 6291456,
+        "eventPasses": 251,
+        "eventAttempts": 198656,
+        "eventLosses": 0,
+        "backendFallbackCount": 0,
+        "allocationsAfterWarmup": 0,
+        "diagnosticAccuracy": "estimated"
+      },
+      "pageErrors": [],
+      "gate": {
+        "budget": {
+          "fps": 30,
+          "gpuP95": 33.34
+        },
+        "fpsPass": true,
+        "gpuPass": true,
+        "passed": true
+      }
+    },
+    {
+      "schemaVersion": 1,
+      "configuration": {
+        "effectId": "orbital",
+        "capacity": 65536,
+        "tier": "enhanced",
+        "renderScale": 0.5,
+        "warmupMs": 1000,
+        "sampleMs": 4000
+      },
+      "samples": 38,
+      "fps": {
+        "average": 59.953,
+        "p05": 59.94
+      },
+      "frameCpuMs": {
+        "average": 0.721,
+        "p95": 1.2
+      },
+      "gpuMs": {
+        "available": true,
+        "average": 0.045,
+        "p95": 0.055
+      },
+      "particle": {
+        "backend": "webgl2",
+        "activeInstances": 1,
+        "registeredPrograms": 1,
+        "capacity": 65536,
+        "activeEstimate": 65536,
+        "spawnedParticles": 97280,
+        "droppedParticles": 0,
+        "simulationPasses": 307,
+        "renderPasses": 616,
+        "uploadBytes": 6144,
+        "allocatedBytes": 4194304,
+        "eventPasses": 0,
+        "eventAttempts": 0,
+        "eventLosses": 0,
+        "backendFallbackCount": 0,
+        "allocationsAfterWarmup": 0,
+        "diagnosticAccuracy": "estimated"
+      },
+      "pageErrors": [],
+      "gate": {
+        "budget": {
+          "fps": 30,
+          "gpuP95": 33.34
+        },
+        "fpsPass": true,
+        "gpuPass": true,
+        "passed": true
+      }
+    }
+  ],
+  "passed": true
+}

@@ -14,7 +14,10 @@ const effects = ['sparks', 'fireworks', 'orbital'];
 const capacities = [65_536, 147_456, 262_144, 589_824];
 const tiers = ['basic', 'enhanced', 'ultra'];
 const gateOnly = process.argv.includes('--gates');
-const workloads = gateOnly
+const mobile = process.argv.includes('--mobile');
+const workloads = mobile
+  ? effects.map((effect) => ({ effect, capacity: 65_536, tier: 'enhanced' }))
+  : gateOnly
   ? effects.flatMap((effect) => [
       { effect, capacity: 65_536, tier: 'ultra' },
       { effect, capacity: 147_456, tier: 'ultra' },
@@ -32,14 +35,16 @@ try {
     headless: true,
     args: ['--disable-background-timer-throttling', '--disable-renderer-backgrounding'],
   });
-  const context = await browser.newContext({ viewport: { width: 1280, height: 720 }, deviceScaleFactor: 1 });
+  const context = await browser.newContext(mobile
+    ? { viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true }
+    : { viewport: { width: 1280, height: 720 }, deviceScaleFactor: 1 });
   const results = [];
   for (const workload of workloads) {
     process.stderr.write(`Benchmarking ${workload.effect} ${workload.capacity} ${workload.tier}\n`);
     const page = await context.newPage(), errors = [];
     page.on('pageerror', (error) => { errors.push(error.message); });
     try {
-      const query = new URLSearchParams({ particleBenchmark: '1', effect: workload.effect, capacity: String(workload.capacity), tier: workload.tier });
+      const query = new URLSearchParams({ particleBenchmark: '1', effect: workload.effect, capacity: String(workload.capacity), tier: workload.tier, backend: 'webgl2', ...(mobile ? { renderScale: '0.5' } : {}) });
       await page.goto(`http://127.0.0.1:${port}/?${query}`, { waitUntil: 'domcontentloaded', timeout: 120_000 });
       const run = page.getByRole('button', { name: 'Run 5s benchmark' });
       await run.waitFor({ state: 'visible', timeout: 120_000 });
@@ -50,7 +55,7 @@ try {
       const report = JSON.parse(await reportElement.textContent());
       await page.getByRole('button', { name: 'Save report' }).click();
       await page.waitForFunction(() => [...document.querySelectorAll('p')].some((entry) => entry.textContent?.startsWith('Saved docs/benchmarks/particle/')), undefined, { timeout: 10_000 });
-      results.push({ ...report, pageErrors: errors, gate: evaluateGate(report) });
+      results.push({ ...report, pageErrors: errors, gate: evaluateGate(report, mobile) });
     } finally {
       await page.close();
     }
@@ -60,20 +65,21 @@ try {
     schemaVersion: 1,
     generatedAt: new Date().toISOString(),
     browser: executablePath,
-    mode: gateOnly ? 'release-gates' : 'full-matrix',
+    mode: mobile ? 'mobile-preview-gate' : gateOnly ? 'release-gates' : 'full-matrix',
     results,
     passed: results.every((entry) => entry.pageErrors.length === 0 && entry.gate.passed),
   };
-  await writeFile(path.join(output, `${new Date().toISOString().slice(0, 10)}-matrix-${gateOnly ? 'gates' : 'full'}.json`), `${JSON.stringify(report, null, 2)}\n`);
+  await writeFile(path.join(output, `${new Date().toISOString().slice(0, 10)}-matrix-${mobile ? 'mobile' : gateOnly ? 'gates' : 'full'}.json`), `${JSON.stringify(report, null, 2)}\n`);
   process.stdout.write(`${JSON.stringify({ workloads: results.length, errors: results.reduce((sum, entry) => sum + entry.pageErrors.length, 0) })}\n`);
 } finally {
   server.stop();
   await browser?.close().catch(() => undefined);
 }
 
-function evaluateGate(report) {
+function evaluateGate(report, mobileMode) {
   const { capacity, tier } = report.configuration;
-  const budget = capacity === 65_536 && tier === 'ultra' ? { fps: 60, gpuP95: 8 }
+  const budget = mobileMode ? { fps: 30, gpuP95: 33.34 }
+    : capacity === 65_536 && tier === 'ultra' ? { fps: 60, gpuP95: 8 }
     : capacity === 147_456 && tier === 'ultra' ? { fps: 60, gpuP95: 12 }
       : capacity === 262_144 && tier === 'enhanced' ? { fps: 55, gpuP95: 15 }
         : capacity === 589_824 && tier === 'basic' ? { fps: 45, gpuP95: 20 }

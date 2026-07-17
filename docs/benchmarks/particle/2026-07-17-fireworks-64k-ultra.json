@@ -8,19 +8,19 @@
     "warmupMs": 1000,
     "sampleMs": 4000
   },
-  "samples": 38,
+  "samples": 39,
   "fps": {
-    "average": 59.925,
+    "average": 59.953,
     "p05": 59.94
   },
   "frameCpuMs": {
-    "average": 0.611,
-    "p95": 0.9
+    "average": 0.851,
+    "p95": 1.3
   },
   "gpuMs": {
     "available": true,
-    "average": 2.039,
-    "p95": 3.159
+    "average": 2.193,
+    "p95": 3.299
   },
   "particle": {
     "backend": "webgl2",
@@ -28,14 +28,14 @@
     "registeredPrograms": 1,
     "capacity": 65536,
     "activeEstimate": 65536,
-    "spawnedParticles": 102400,
+    "spawnedParticles": 100352,
     "droppedParticles": 0,
-    "simulationPasses": 557,
-    "renderPasses": 1830,
-    "uploadBytes": 6528,
+    "simulationPasses": 568,
+    "renderPasses": 1878,
+    "uploadBytes": 6400,
     "allocatedBytes": 6291456,
-    "eventPasses": 253,
-    "eventAttempts": 0,
+    "eventPasses": 256,
+    "eventAttempts": 202752,
     "eventLosses": 0,
     "backendFallbackCount": 0,
     "allocationsAfterWarmup": 0,
