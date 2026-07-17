@@ -1,6 +1,6 @@
 import type { ExperienceDefinition } from '@hooksjam/gl-game-lab-engine';
 import { createFireworksConfig, FIREWORKS_DEFAULTS, FIREWORKS_SETTINGS } from './config.js';
-import { createFireworksPlugin } from './FireworksPlugin.js';
+import { createCompiledFireworksPlugin } from './CompiledFireworksPlugin.js';
 import { FIREWORKS_STYLE_MANIFEST } from './styles.js';
 import { describeSimulationSettings } from '../settingDescriptions.js';
 
@@ -27,5 +27,5 @@ export const fireworksDefinition: ExperienceDefinition = {
     reusableFor: ['high-count GPU particle stepping', 'trail feedback compositing', 'event-command particle spawning'],
     caveats: ['Launch shells are CPU-scheduled actors; dense spark motion and rendering stay GPU-resident.'],
   },
-  createPlugins: (options = {}) => [createFireworksPlugin(createFireworksConfig(options.settings), options)],
+  createPlugins: (options = {}) => [createCompiledFireworksPlugin(createFireworksConfig(options.settings), options)],
 };

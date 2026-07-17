@@ -16,16 +16,16 @@ export const FIREWORKS_PARTICLE_EFFECT: ParticleEffectDefinition2D = validatePar
   archetypes: [
     {
       id: 'shell', spawn: { shape: 'point', spread: 0 },
-      motion: { gravity: 360, drag: 0.34 }, lifecycle: { lifetime: 1.28, lifetimeVariability: 0.12, killMargin: 100 },
+      motion: { gravity: 360, drag: 0 }, lifecycle: { lifetime: 1.28, lifetimeVariability: 0.12, killMargin: 100 },
       appearance: { size: { start: 2.4, end: 1 }, length: { start: 1.2, end: 0.3 }, alpha: { start: 1, end: 0.7 }, intensity: { start: 1.8, end: 1 }, paletteMode: 'seeded' },
-      events: [{ trigger: 'death', childArchetypeId: 'primary', probability: 1, count: 512, maxGeneration: 0, priority: 'primary' }],
+      events: [],
     },
     {
       id: 'primary', spawn: { shape: 'radial', spread: Math.PI * 2 },
       motion: { gravity: 360, drag: 0.34, inheritedVelocity: 0.18 }, lifecycle: { lifetime: 2.4, lifetimeVariability: 0.28, killMargin: 140 },
       appearance: { size: { start: 1.45, end: 0.2 }, length: { start: 1.2, end: 0.1 }, alpha: { start: 1, end: 0, exponent: 1.4 }, intensity: { start: 1.4, end: 0.15 }, paletteMode: 'gradient' },
       events: [
-        { trigger: 'age', childArchetypeId: 'secondary', probability: 0.42, count: 5, maxGeneration: 2, delay: 0.48, velocityInheritance: 0.32, powerScale: 0.56, priority: 'secondary' },
+        { trigger: 'age', childArchetypeId: 'secondary', probability: 0.42, count: 5, maxGeneration: 2, delay: 0.9, velocityInheritance: 0.32, powerScale: 0.56, priority: 'secondary' },
         { trigger: 'death', childArchetypeId: 'sparkle', probability: 0.52, count: 7, maxGeneration: 3, powerScale: 0.26, priority: 'cosmetic' },
       ],
     },
@@ -34,7 +34,7 @@ export const FIREWORKS_PARTICLE_EFFECT: ParticleEffectDefinition2D = validatePar
       motion: { gravity: 360, drag: 0.42, inheritedVelocity: 0.32 }, lifecycle: { lifetime: 1.3, lifetimeVariability: 0.32, killMargin: 140 },
       appearance: { size: { start: 0.8, end: 0.12 }, length: { start: 0.7, end: 0.05 }, alpha: { start: 1, end: 0, exponent: 1.3 }, intensity: { start: 1.2, end: 0.12 }, paletteMode: 'generation' },
       events: [
-        { trigger: 'age', childArchetypeId: 'secondary', probability: 0.32, count: 4, maxGeneration: 2, delay: 0.42, velocityInheritance: 0.32, powerScale: 0.56, priority: 'secondary' },
+        { trigger: 'age', childArchetypeId: 'secondary', probability: 0.32, count: 4, maxGeneration: 2, delay: 0.9, velocityInheritance: 0.32, powerScale: 0.56, priority: 'secondary' },
         { trigger: 'death', childArchetypeId: 'sparkle', probability: 0.52, count: 7, maxGeneration: 3, powerScale: 0.26, priority: 'cosmetic' },
       ],
     },
@@ -74,25 +74,38 @@ const fireworksEmitter = (id: string, archetypeId: string, importance: 'critical
   id, archetypeId, timeline: { manual: true as const }, source: { kind: archetypeId === 'shell' ? 'point' as const : 'radial' as const },
   transform: { space: 'scene' as const },
   inheritance: { velocity: archetypeId === 'shell' ? 0 : 0.32, palette: true, seed: true, timescale: true },
-  limits: { importance, maxPerFrame: archetypeId === 'primary' ? 16_384 : 4_096, maxGeneration: archetypeId === 'sparkle' ? 3 : 2 },
+  limits: { importance, maxPerFrame: archetypeId === 'primary' ? 131_072 : 4_096, maxGeneration: archetypeId === 'sparkle' ? 3 : 2 },
 });
 
 export const FIREWORKS_PARTICLE_GRAPH = defineParticleEffect2D({
   ...fireworksGraphBase,
+  archetypeCapacity: [
+    { archetypeId: 'shell', share: 0.02, overflow: 'reserve-priority' },
+    { archetypeId: 'primary', share: 0.56, overflow: 'recycle-oldest' },
+    { archetypeId: 'secondary', share: 0.28, overflow: 'recycle-oldest' },
+    { archetypeId: 'sparkle', share: 0.14, overflow: 'drop-new' },
+  ],
   parameters: [
     { id: 'gravity', kind: 'number', defaultValue: 360, min: 0, max: 2000 }, { id: 'air-drag', kind: 'number', defaultValue: 0.34, min: 0, max: 4 },
     { id: 'particle-size', kind: 'number', defaultValue: 1.45, min: 0, max: 8 }, { id: 'particle-length', kind: 'number', defaultValue: 1.2, min: 0, max: 12 },
+    { id: 'secondary-size', kind: 'number', defaultValue: 0.8, min: 0, max: 8 }, { id: 'sparkle-size', kind: 'number', defaultValue: 0.82, min: 0, max: 8 },
   ],
   emitters: [
     fireworksEmitter('shell-launch', 'shell', 'critical'),
-    fireworksEmitter('primary-burst', 'primary', 'primary'),
+    { ...fireworksEmitter('primary-peony', 'primary', 'primary'), source: { kind: 'radial' as const, spread: Math.PI * 2 }, initialization: { powerVariability: 0.18 } },
+    { ...fireworksEmitter('primary-ring', 'primary', 'primary'), source: { kind: 'ring' as const, radius: 1 }, initialization: { powerVariability: 0.04 } },
+    { ...fireworksEmitter('primary-chrysanthemum', 'primary', 'primary'), source: { kind: 'radial' as const, spread: Math.PI * 2 }, initialization: { powerVariability: 0.42 } },
+    { ...fireworksEmitter('primary-willow', 'primary', 'primary'), source: { kind: 'shower' as const, spread: Math.PI * 2 }, initialization: { powerVariability: 0.58 } },
+    { ...fireworksEmitter('primary-palm', 'primary', 'primary'), source: { kind: 'pinwheel' as const, spread: Math.PI * 2 }, initialization: { powerVariability: 0.22 } },
+    { ...fireworksEmitter('primary-spiral', 'primary', 'primary'), source: { kind: 'spiral' as const, spread: Math.PI * 2 }, initialization: { powerVariability: 0.16 } },
+    { ...fireworksEmitter('primary-crossette', 'primary', 'primary'), source: { kind: 'pinwheel' as const, spread: Math.PI * 2 }, initialization: { powerVariability: 0.08 } },
+    { ...fireworksEmitter('primary-comet', 'primary', 'primary'), source: { kind: 'cone' as const, spread: 0.42 }, initialization: { powerVariability: 0.34 } },
     fireworksEmitter('secondary-burst', 'secondary', 'secondary'),
     fireworksEmitter('terminal-sparkle', 'sparkle', 'cosmetic'),
   ],
   graph: {
     root: particleGraph2D.sequence(
       particleGraph2D.gate({ kind: 'signal', signal: 'launch' }, particleGraph2D.emit('shell-launch')),
-      particleGraph2D.gate({ kind: 'particle-death', archetypeId: 'shell' }, particleGraph2D.emit('primary-burst')),
       particleGraph2D.gate({ kind: 'particle-age', archetypeId: 'primary', age: 0.48 }, particleGraph2D.emit('secondary-burst')),
       particleGraph2D.gate({ kind: 'particle-death', archetypeId: 'primary' }, particleGraph2D.emit('terminal-sparkle')),
     ),
@@ -100,12 +113,13 @@ export const FIREWORKS_PARTICLE_GRAPH = defineParticleEffect2D({
   persistedBindings: [
     { parameterId: 'gravity', key: 'gravity' }, { parameterId: 'air-drag', key: 'airDrag' },
     { parameterId: 'particle-size', key: 'particleSize' }, { parameterId: 'particle-length', key: 'particleLength' },
+    { parameterId: 'secondary-size', key: 'secondaryScale' }, { parameterId: 'sparkle-size', key: 'terminalSparkleSize' },
   ],
   moduleBindings: [
-    ...['shell','primary','secondary','sparkle'].flatMap((id) => [
-      { target: `archetype.${id}.motion.gravity`, parameterId: 'gravity' }, { target: `archetype.${id}.motion.drag`, parameterId: 'air-drag' },
-    ]),
+    ...['shell','primary','secondary','sparkle'].map((id) => ({ target: `archetype.${id}.motion.gravity`, parameterId: 'gravity' })),
+    ...['primary','secondary','sparkle'].map((id) => ({ target: `archetype.${id}.motion.drag`, parameterId: 'air-drag' })),
     { target: 'archetype.primary.appearance.size.start', parameterId: 'particle-size' }, { target: 'archetype.primary.appearance.length.start', parameterId: 'particle-length' },
+    { target: 'archetype.secondary.appearance.size.start', parameterId: 'secondary-size' }, { target: 'archetype.sparkle.appearance.size.start', parameterId: 'sparkle-size' },
   ],
 });
 

@@ -53,7 +53,19 @@ describe("shared particle effect acceptance", () => {
 
   it("compiles all three proof scenes through the reusable emitter graph architecture", () => {
     expect(SPARKS_PARTICLE_GRAPH.emitters.map((emitter) => emitter.id)).toEqual(["core-contact", "welding", "pinwheel", "shower", "collision-bounce"]);
-    expect(FIREWORKS_PARTICLE_GRAPH.emitters.map((emitter) => emitter.id)).toEqual(["shell-launch", "primary-burst", "secondary-burst", "terminal-sparkle"]);
+    expect(FIREWORKS_PARTICLE_GRAPH.emitters.map((emitter) => emitter.id)).toEqual([
+      "shell-launch",
+      "primary-peony",
+      "primary-ring",
+      "primary-chrysanthemum",
+      "primary-willow",
+      "primary-palm",
+      "primary-spiral",
+      "primary-crossette",
+      "primary-comet",
+      "secondary-burst",
+      "terminal-sparkle",
+    ]);
     expect(ORBITAL_SHRAPNEL_PARTICLE_GRAPH.emitters.map((emitter) => emitter.id)).toEqual(["debris-field", "debris-add", "asteroid-stream"]);
     expect(SPARKS_PARTICLE_PROGRAM.reflection).toMatchObject({
       stateTargets: 3,
