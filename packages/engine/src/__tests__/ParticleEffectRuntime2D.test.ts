@@ -147,4 +147,17 @@ describe('EngineParticleEffects2D', () => {
     instance.emitter('spark').emit(2);
     expect(instance.diagnostics().backendFallbackCount).toBe(1);
   });
+
+  it('exposes immutable compiled graph and instance inspection data', () => {
+    const backend = new TestBackend(); const runtime = new EngineParticleEffects2D(backend);
+    const program = compileParticleProgram2D(compileParticleEffect2D(adaptParticleEffectDefinition2D(definition)));
+    runtime.register(program); runtime.prewarm('runtime-test');
+    const instance = runtime.createInstance('runtime-test', { qualityTier: 'enhanced' });
+    const inspection = runtime.inspect();
+    expect(inspection.backend).toBe('test');
+    expect(inspection.programs[0]).toMatchObject({ id: 'runtime-test', graphHash: program.effect.graphHash, abiHash: program.effect.abiHash, archetypes: ['spark'], emitters: ['spark'] });
+    expect(inspection.instances[0]).toMatchObject({ id: instance.id, effectId: 'runtime-test', qualityTier: 'enhanced' });
+    expect(Object.isFrozen(inspection.programs)).toBe(true);
+    runtime.dispose();
+  });
 });

@@ -221,6 +221,26 @@ export interface ParticleEffectsDiagnostics2D {
   readonly diagnosticAccuracy: 'exact' | 'delayed' | 'estimated';
 }
 
+export interface ParticleEffectProgramInspection2D {
+  readonly id: string;
+  readonly graphHash: string;
+  readonly abiHash: string;
+  readonly stateAbiVersion: number;
+  readonly capacity: number;
+  readonly pooledResources: number;
+  readonly archetypes: readonly string[];
+  readonly emitters: readonly string[];
+  readonly parameters: readonly string[];
+  readonly persistedBindings: readonly { readonly parameterId: string; readonly key: string }[];
+  readonly renderPasses: Readonly<Record<ParticleRenderTier2D, readonly string[]>>;
+}
+
+export interface ParticleEffectsInspection2D {
+  readonly backend: ParticleEffectRuntimeBackend2D['kind'];
+  readonly programs: readonly ParticleEffectProgramInspection2D[];
+  readonly instances: readonly ParticleEffectInstanceState2D[];
+}
+
 export interface ParticleEffects2D {
   register(program: CompiledParticleProgram2D, options?: { readonly capacity?: number }): void;
   prewarm(effectId: string, count?: number): void;
@@ -229,6 +249,7 @@ export interface ParticleEffects2D {
   update(deltaSeconds: number): void;
   render(target: GpuRenderTarget2D): void;
   diagnostics(): ParticleEffectsDiagnostics2D;
+  inspect(): ParticleEffectsInspection2D;
   dispose(): void;
 }
 
@@ -325,6 +346,24 @@ export class EngineParticleEffects2D implements ParticleEffects2D {
       else if (diagnostics.diagnosticAccuracy === 'delayed' && diagnosticAccuracy === 'exact') diagnosticAccuracy = 'delayed';
     }
     return Object.freeze({ backend: this.backend.kind, activeInstances: this.instances.size, registeredPrograms: this.programs.size, capacity, activeEstimate, spawnedParticles, droppedParticles, simulationPasses, renderPasses, uploadBytes, allocatedBytes, eventPasses, eventAttempts, eventLosses, backendFallbackCount, allocationsAfterWarmup, diagnosticAccuracy });
+  }
+
+  inspect(): ParticleEffectsInspection2D {
+    this.assertUsable();
+    const programs = [...this.programs.entries()].map(([id, record]) => Object.freeze({
+      id,
+      graphHash: record.program.effect.graphHash,
+      abiHash: record.program.effect.abiHash,
+      stateAbiVersion: record.program.effect.stateAbiVersion,
+      capacity: record.capacity,
+      pooledResources: record.pooled.length,
+      archetypes: Object.freeze(record.program.effect.source.archetypes.map((entry) => entry.id)),
+      emitters: Object.freeze(record.program.effect.source.emitters.map((entry) => entry.id)),
+      parameters: Object.freeze(record.program.effect.source.parameters.map((entry) => entry.id)),
+      persistedBindings: Object.freeze(record.program.effect.persistedBindings.map((entry) => Object.freeze({ parameterId: entry.parameterId, key: entry.key }))),
+      renderPasses: Object.freeze(Object.fromEntries((['basic', 'enhanced', 'ultra'] as const).map((tier) => [tier, Object.freeze(record.program.renderPasses[tier].map((pass) => pass.kind))])) as Readonly<Record<ParticleRenderTier2D, readonly string[]>>),
+    }));
+    return Object.freeze({ backend: this.backend.kind, programs: Object.freeze(programs), instances: Object.freeze([...this.instances.values()].map((instance) => instance.state())) });
   }
 
   dispose(): void {

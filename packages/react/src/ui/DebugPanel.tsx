@@ -26,6 +26,7 @@ export function DebugPanel({ engine }: DebugPanelProps): JSX.Element {
   const renderer = stats?.renderer;
   const runtimeDiagnostics = engine?.kernel.tryGet(ExperienceRuntimeControllerService)?.runtimeDiagnostics;
   const particleDiagnostics = engine?.kernel.tryGet(EngineParticleEffects)?.diagnostics();
+  const particleInspection = engine?.kernel.tryGet(EngineParticleEffects)?.inspect();
   const uploads = (renderer?.bufferUploadBytes ?? 0) + (renderer?.textureUploadBytes ?? 0);
   const systems = [...(stats?.systems ?? [])].sort((left, right) => right.cpuMs - left.cpuMs);
 
@@ -89,6 +90,23 @@ export function DebugPanel({ engine }: DebugPanelProps): JSX.Element {
                   <StatRow label="warm allocations" value={formatInteger(particleDiagnostics.allocationsAfterWarmup)} />
                   <StatRow label="uploads" value={formatBytes(particleDiagnostics.uploadBytes)} />
                   <StatRow label="allocated" value={formatBytes(particleDiagnostics.allocatedBytes)} />
+                </DebugSection>
+              )}
+              {particleInspection && particleInspection.programs.length > 0 && (
+                <DebugSection title="Particle inspector">
+                  {particleInspection.programs.map((program) => (
+                    <div key={program.id} className="mb-2 rounded-lg bg-white/5 p-2">
+                      <StatRow label="effect" value={program.id} />
+                      <StatRow label="ABI" value={`v${program.stateAbiVersion} · ${program.abiHash.slice(0, 8)}`} />
+                      <StatRow label="graph" value={program.graphHash.slice(0, 8)} />
+                      <StatRow label="capacity / pooled" value={`${formatInteger(program.capacity)} / ${program.pooledResources}`} />
+                      <StatRow label="archetypes" value={program.archetypes.join(', ')} />
+                      <StatRow label="emitters" value={program.emitters.join(', ')} />
+                      <StatRow label="parameters" value={String(program.parameters.length)} />
+                      <StatRow label="bindings" value={String(program.persistedBindings.length)} />
+                    </div>
+                  ))}
+                  {particleInspection.instances.map((instance) => <StatRow key={instance.id} label={`#${instance.id} ${instance.effectId}`} value={`${instance.status} · ${instance.qualityTier}`} />)}
                 </DebugSection>
               )}
               {systems.length > 0 && (
