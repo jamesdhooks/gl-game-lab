@@ -938,6 +938,21 @@ class EmitterRuntime {
   }
 }
 
+function createEmitterRuntimePools(program: CompiledParticleProgram2D): {
+  readonly primary: EmitterRuntime[];
+  readonly runs: EmitterRuntime[];
+  readonly pools: Map<string, EmitterRuntime[]>;
+} {
+  const primary: EmitterRuntime[] = [], runs: EmitterRuntime[] = [], pools = new Map<string, EmitterRuntime[]>();
+  program.effect.source.emitters.forEach((definition, index) => {
+    const pool = Array.from({ length: definition.limits.maxConcurrent ?? 4 }, () => new EmitterRuntime(definition, index));
+    primary.push(pool[0]!);
+    runs.push(...pool);
+    pools.set(definition.id, pool);
+  });
+  return { primary, runs, pools };
+}
+
 class MutableEmissionOverride implements ParticleEmissionOverride2D {
   count?: number;
   position?: readonly [number, number];
@@ -1079,6 +1094,8 @@ class RuntimeParticleEffectInstance2D implements ParticleEffectInstance2D {
   private readonly eventParameters = new Map<string, ParticleEventParameters2D>();
   private drainRemaining = 0;
   private emitters: EmitterRuntime[];
+  private emitterRuns: EmitterRuntime[];
+  private emitterPools: Map<string, EmitterRuntime[]>;
   private emitterHandles: Map<string, RuntimeParticleEmitterHandle2D>;
   private scheduler: ParticleGraphScheduler2D;
 
@@ -1106,7 +1123,10 @@ class RuntimeParticleEffectInstance2D implements ParticleEffectInstance2D {
     this.effectiveTier = this.tier;
     this.adaptiveLod = options.adaptiveLod ?? true;
     this.adaptiveTargetFrameSeconds = 1 / (options.adaptiveTargetFps ?? (options.preview ? 30 : 60));
-    this.emitters = program.effect.source.emitters.map((entry, index) => new EmitterRuntime(entry, index));
+    const emitterRuntime = createEmitterRuntimePools(program);
+    this.emitters = emitterRuntime.primary;
+    this.emitterRuns = emitterRuntime.runs;
+    this.emitterPools = emitterRuntime.pools;
     this.emitterHandles = new Map(this.emitters.map((entry) => [entry.definition.id, new RuntimeParticleEmitterHandle2D(entry.definition.id, this)]));
     this.scheduler = this.createScheduler(program);
     backend.setPalette(this.palette);
@@ -1128,8 +1148,7 @@ class RuntimeParticleEffectInstance2D implements ParticleEffectInstance2D {
         },
         stop: (emitterId, mode) => {
           if (emitterId) {
-            const emitter = this.emitters.find((entry) => entry.definition.id === emitterId);
-            if (emitter) emitter.active = false;
+            for (const emitter of this.emitterPools.get(emitterId) ?? []) emitter.active = false;
           } else this.stop(mode);
         },
         signal: (signal) => {
@@ -1137,8 +1156,8 @@ class RuntimeParticleEffectInstance2D implements ParticleEffectInstance2D {
         },
         reference: this.onReference,
         complete: (emitterId) => emitterId === undefined
-          ? this.emitters.every((entry) => !entry.active && entry.aliveEstimate === 0)
-          : this.emitters.some((entry) => entry.definition.id === emitterId && !entry.active && entry.aliveEstimate === 0),
+          ? this.emitterRuns.every((entry) => !entry.active && entry.aliveEstimate === 0)
+          : (this.emitterPools.get(emitterId)?.every((entry) => !entry.active && entry.aliveEstimate === 0) ?? false),
       },
       this.seed,
     );
@@ -1161,7 +1180,7 @@ class RuntimeParticleEffectInstance2D implements ParticleEffectInstance2D {
     this.assertUsable();
     if (this.statusValue === "running") return;
     this.statusValue = "running";
-    this.emitters.forEach((emitter) => {
+    this.emitterRuns.forEach((emitter) => {
       emitter.reset();
     });
     this.scheduler.start();
@@ -1169,7 +1188,7 @@ class RuntimeParticleEffectInstance2D implements ParticleEffectInstance2D {
 
   stop(mode: ParticleEmitterStopMode2D = "drain"): void {
     this.assertUsable();
-    for (const emitter of this.emitters) {
+    for (const emitter of this.emitterRuns) {
       if (emitter.active) this.scheduler.trigger({ kind: "emitter-stop", emitterId: emitter.definition.id });
       emitter.active = false;
     }
@@ -1195,7 +1214,7 @@ class RuntimeParticleEffectInstance2D implements ParticleEffectInstance2D {
     this.seed = seed >>> 0;
     this.elapsed = 0;
     this.backend.clear();
-    this.emitters.forEach((emitter) => {
+    this.emitterRuns.forEach((emitter) => {
       emitter.reset();
     });
     this.scheduler.reset(this.seed);
@@ -1381,7 +1400,7 @@ class RuntimeParticleEffectInstance2D implements ParticleEffectInstance2D {
       effectiveQualityTier: this.effectiveTier,
       renderScale: this.appliedRenderScale,
       adaptiveLodLevel: this.adaptiveLodLevel,
-      activeEmitters: this.emitters.reduce((count, emitter) => count + Number(emitter.active), 0),
+      activeEmitters: this.emitterRuns.reduce((count, emitter) => count + Number(emitter.active), 0),
       parameters: Object.freeze({ ...this.parameters }),
       diagnostics: this.backend.diagnostics(),
     });
@@ -1424,7 +1443,7 @@ class RuntimeParticleEffectInstance2D implements ParticleEffectInstance2D {
     this.elapsed += delta;
     this.scheduler.update(delta);
     let active = false;
-    for (const emitter of this.emitters) {
+    for (const emitter of this.emitterRuns) {
       emitter.prepareFrame(this.elapsed);
       if (emitter.active) {
         active = true;
@@ -1442,7 +1461,7 @@ class RuntimeParticleEffectInstance2D implements ParticleEffectInstance2D {
   }
 
   finishFrame(): void {
-    for (const emitter of this.emitters) emitter.finishFrame();
+    for (const emitter of this.emitterRuns) emitter.finishFrame();
   }
 
   replaceProgram(program: CompiledParticleProgram2D, backend: ParticleEffectBackendResource2D): boolean {
@@ -1474,7 +1493,7 @@ class RuntimeParticleEffectInstance2D implements ParticleEffectInstance2D {
     this.scheduler.reset(this.seed);
     if (!stateTransferred) {
       this.elapsed = 0;
-      this.emitters.forEach((emitter) => {
+      this.emitterRuns.forEach((emitter) => {
         emitter.reset();
       });
       this.statusValue = "idle";
@@ -1495,7 +1514,10 @@ class RuntimeParticleEffectInstance2D implements ParticleEffectInstance2D {
       const id = previousProgram.effect.source.archetypes[archetypeIndex!]?.id;
       if (id !== undefined) eventsById.set(`${id}:${eventIndex}`, parameters);
     }
-    this.emitters = program.effect.source.emitters.map((entry, index) => new EmitterRuntime(entry, index));
+    const emitterRuntime = createEmitterRuntimePools(program);
+    this.emitters = emitterRuntime.primary;
+    this.emitterRuns = emitterRuntime.runs;
+    this.emitterPools = emitterRuntime.pools;
     this.emitterHandles = new Map(this.emitters.map((entry) => [entry.definition.id, new RuntimeParticleEmitterHandle2D(entry.definition.id, this)]));
     this.emitterSources.clear();
     for (const emitter of this.emitters) {
@@ -1577,11 +1599,14 @@ class RuntimeParticleEffectInstance2D implements ParticleEffectInstance2D {
     if (override.lifetimeVariability !== undefined && (!Number.isFinite(override.lifetimeVariability) || override.lifetimeVariability < 0 || override.lifetimeVariability > 1)) throw new Error("Particle emission lifetime variability must be between zero and one");
     const qualityScale = emitter.definition.limits.qualityScale?.[this.tier] ?? 1;
     const requested = Math.max(0, Math.round(requestedCount * qualityScale));
-    const count = emitter.admit(
+    const pool = this.emitterPools.get(emitter.definition.id) ?? [emitter];
+    const emittedThisFrame = pool.reduce((sum, entry) => sum + entry.emittedThisFrame, 0);
+    const aliveEstimate = pool.reduce((sum, entry) => sum + entry.aliveEstimate, 0);
+    const count = Math.max(0, Math.min(
       requested,
-      emitter.definition.limits.maxPerFrame ?? Number.MAX_SAFE_INTEGER,
-      emitter.definition.limits.maxAlive ?? Number.MAX_SAFE_INTEGER,
-    );
+      (emitter.definition.limits.maxPerFrame ?? Number.MAX_SAFE_INTEGER) - emittedThisFrame,
+      (emitter.definition.limits.maxAlive ?? Number.MAX_SAFE_INTEGER) - aliveEstimate,
+    ));
     if (count === 0) return;
     const emission = emitter.emission;
     const pose = resolveEmitterPose(emitter.definition, emitter.graphContext, this.transform, this.coordinateTransforms);
@@ -1610,15 +1635,18 @@ class RuntimeParticleEffectInstance2D implements ParticleEffectInstance2D {
   }
 
   private activateGraphEmitter(emitterId: string, graphContext: ParticleGraphExecutionContext2D = EMPTY_GRAPH_CONTEXT): void {
-    const emitter = this.emitters.find((entry) => entry.definition.id === emitterId);
-    if (!emitter) throw new Error(`Unknown particle emitter: ${emitterId}`);
-    const timeline = emitter.definition.timeline;
+    const pool = this.emitterPools.get(emitterId);
+    if (!pool) throw new Error(`Unknown particle emitter: ${emitterId}`);
+    const timeline = pool[0]!.definition.timeline;
     if (timeline.manual) {
+      const emitter = pool[0]!;
       emitter.graphContext = graphContext;
       this.applyEmitterSource(emitter);
       this.submit(emitter, firstBurstCount(emitter.definition));
       return;
     }
+    const emitter = pool.find((entry) => !entry.active && entry.aliveEstimate === 0);
+    if (!emitter) return;
     emitter.reset();
     emitter.graphContext = graphContext;
     this.applyEmitterSource(emitter);

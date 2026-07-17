@@ -44,7 +44,7 @@ export interface ParticleModuleCompilerExtension2D {
   readonly id: string;
   readonly supports: readonly ParticleShaderBackend2D[];
   readonly parameters?: Readonly<Record<string, "number" | "boolean" | "vector2" | "color">>;
-  readonly cpuReference: (state: Float32Array, parameters: Readonly<Record<string, number>>, deltaSeconds: number) => void;
+  readonly cpuReference: (state: Float32Array, parameters: Readonly<Record<string, ParticleModuleReferenceValue2D>>, deltaSeconds: number) => void;
   readonly glslSimulation?: string;
   readonly glslRender?: string;
   readonly wgslSimulation?: string;
@@ -54,6 +54,34 @@ export interface ParticleModuleCompilerExtension2D {
   readonly runsAfter?: readonly string[];
   /** Required extension ids that must appear later in the graph's customModules list. */
   readonly runsBefore?: readonly string[];
+}
+
+export type ParticleModuleReferenceValue2D = number | boolean | readonly [number, number] | readonly [number, number, number, number];
+
+/**
+ * Executes graph-selected custom modules through their required CPU reference
+ * evaluators in exactly the same compiler order used by GLSL and WGSL. This is
+ * the authoritative small-state parity path for extension authors and tests.
+ */
+export function evaluateParticleModuleExtensionsReference2D(
+  effect: CompiledParticleEffect2D,
+  extensions: readonly ParticleModuleCompilerExtension2D[],
+  state: Float32Array,
+  parameters: Readonly<Record<string, ParticleModuleReferenceValue2D>>,
+  deltaSeconds: number,
+): void {
+  if (!Number.isFinite(deltaSeconds) || deltaSeconds < 0) throw new Error("Particle extension reference delta must be finite and non-negative");
+  const selected = resolveRequiredExtensions(effect, extensions);
+  for (const extension of selected) {
+    const values: Record<string, ParticleModuleReferenceValue2D> = {};
+    for (const [name, type] of Object.entries(extension.parameters ?? {})) {
+      const value = parameters[name];
+      if (value === undefined) throw new Error(`Particle compiler extension ${extension.id} is missing reference parameter ${name}`);
+      if (!matchesReferenceParameterType(value, type)) throw new Error(`Particle compiler extension ${extension.id} reference parameter ${name} must be ${type}`);
+      values[name] = value;
+    }
+    extension.cpuReference(state, Object.freeze(values), deltaSeconds);
+  }
 }
 
 export interface CompiledParticleProgram2D {
@@ -1221,6 +1249,13 @@ function validateExtensions(extensions: readonly ParticleModuleCompilerExtension
     for (const dependency of [...(extension.runsAfter ?? []), ...(extension.runsBefore ?? [])]) if (!/^[a-z][a-z0-9-]*$/.test(dependency) || dependency === extension.id) throw new Error(`Particle compiler extension ${extension.id} has an invalid ordering dependency`);
     ids.add(extension.id);
   }
+}
+
+function matchesReferenceParameterType(value: ParticleModuleReferenceValue2D, type: "number" | "boolean" | "vector2" | "color"): boolean {
+  if (type === "number") return typeof value === "number" && Number.isFinite(value);
+  if (type === "boolean") return typeof value === "boolean";
+  if (!Array.isArray(value) || value.some((entry) => !Number.isFinite(entry))) return false;
+  return value.length === (type === "vector2" ? 2 : 4);
 }
 
 function resolveRequiredExtensions(effect: CompiledParticleEffect2D, extensions: readonly ParticleModuleCompilerExtension2D[]): readonly ParticleModuleCompilerExtension2D[] {

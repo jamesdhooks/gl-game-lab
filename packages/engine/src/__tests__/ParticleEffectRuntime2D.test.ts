@@ -332,6 +332,28 @@ describe("EngineParticleEffects2D", () => {
     runtime.dispose();
   });
 
+  it("preallocates independent overlapping activations for repeated emitter graphs", () => {
+    const backend = new TestBackend(), runtime = new EngineParticleEffects2D(backend);
+    const base = adaptParticleEffectDefinition2D(definition);
+    const emitter = {
+      ...base.emitters[0]!,
+      timeline: { duration: 1, rate: { kind: "constant" as const, value: 10 } },
+      limits: { ...base.emitters[0]!.limits, maxConcurrent: 2 },
+    };
+    const graph = {
+      ...base,
+      emitters: [emitter],
+      graph: { root: { kind: "parallel" as const, children: [{ kind: "emit" as const, emitterId: emitter.id }, { kind: "emit" as const, emitterId: emitter.id }] } },
+    };
+    runtime.register(compileParticleProgram2D(compileParticleEffect2D(graph)));
+    const instance = runtime.createInstance(definition.id);
+    instance.start();
+    runtime.update(0.15);
+    expect(instance.state().activeEmitters).toBe(2);
+    expect(backend.resources[0]!.emissions.reduce((sum, emission) => sum + emission.count, 0)).toBe(2);
+    runtime.dispose();
+  });
+
   it("instantiates referenced effects with mapped parameters and explicit inheritance, then reclaims them", () => {
     const backend = new TestBackend();
     const runtime = new EngineParticleEffects2D(backend);

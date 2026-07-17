@@ -118,6 +118,8 @@ export interface ParticleEmitterLimits2D {
   readonly maxAlive?: number;
   readonly maxPerFrame?: number;
   readonly maxGeneration?: number;
+  /** Preallocated overlapping timeline activations for this emitter definition. */
+  readonly maxConcurrent?: number;
   readonly importance: ParticleEmitterImportance2D;
   readonly qualityScale?: Partial<Record<ParticleRenderTier2D, number>>;
 }
@@ -617,6 +619,7 @@ function validateEmitter(emitter: ParticleEmitterDefinition2D, parameters: Reado
   }
   for (const limit of [emitter.limits.maxAlive, emitter.limits.maxPerFrame]) if (limit !== undefined && (!Number.isSafeInteger(limit) || limit < 0)) throw new Error(`Particle emitter ${emitter.id} has an invalid particle limit`);
   if (emitter.limits.maxGeneration !== undefined && (!Number.isSafeInteger(emitter.limits.maxGeneration) || emitter.limits.maxGeneration < 0)) throw new Error(`Particle emitter ${emitter.id} has an invalid generation limit`);
+  if (emitter.limits.maxConcurrent !== undefined && (!Number.isSafeInteger(emitter.limits.maxConcurrent) || emitter.limits.maxConcurrent < 1 || emitter.limits.maxConcurrent > 32)) throw new Error(`Particle emitter ${emitter.id} maxConcurrent must be between 1 and 32`);
   validateSource(emitter.source, archetypes, customModules, emitter.id);
   const initialization = emitter.initialization;
   for (const source of [initialization?.direction, initialization?.spread, initialization?.power, initialization?.lifetimeScale, initialization?.paletteSeed]) if (source) validateValueSource(source, parameters, emitter.id);

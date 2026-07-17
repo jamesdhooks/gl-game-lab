@@ -3,6 +3,7 @@ import {
   adaptParticleEffectDefinition2D,
   compileParticleEffect2D,
   compileParticleProgram2D,
+  evaluateParticleModuleExtensionsReference2D,
   hydrateCompiledParticleProgram2D,
   validateParticleShaderBindings2D,
   type ParticleEffectDefinition2D,
@@ -167,5 +168,26 @@ describe('ParticleEffectCompiler2D', () => {
     expect(program.webgl2.simulation.source).not.toContain('99.0');
     expect(program.webgpu.simulation.source).not.toContain('99.0');
     expect(program.webgpu.render.source).toContain('out.color.rgb *= 0.5;');
+  });
+
+  it('executes selected CPU extension references in compiler order with typed parameters', () => {
+    const base = adaptParticleEffectDefinition2D(definition);
+    const first = {
+      id: 'first-module', supports: ['webgl2', 'webgpu'] as const,
+      parameters: { amount: 'number' } as const,
+      cpuReference: (state: Float32Array, parameters: Readonly<Record<string, number | boolean | readonly [number, number] | readonly [number, number, number, number]>>) => { state[0] = (state[0] ?? 0) + Number(parameters.amount); },
+      glslSimulation: 'stateA.x += 1.0;', wgslSimulation: 'stateA[i].position.x += 1.0;',
+    };
+    const second = {
+      id: 'second-module', supports: ['webgl2', 'webgpu'] as const, runsAfter: ['first-module'],
+      parameters: { enabled: 'boolean', axis: 'vector2' } as const,
+      cpuReference: (state: Float32Array, parameters: Readonly<Record<string, number | boolean | readonly [number, number] | readonly [number, number, number, number]>>) => { if (parameters.enabled) state[0] = (state[0] ?? 0) * (parameters.axis as readonly [number, number])[0]; },
+      glslSimulation: 'stateA.x *= 2.0;', wgslSimulation: 'stateA[i].position.x *= 2.0;',
+    };
+    const effect = compileParticleEffect2D({ ...base, customModules: ['first-module', 'second-module'] });
+    const state = new Float32Array([1]);
+    evaluateParticleModuleExtensionsReference2D(effect, [second, first], state, { amount: 2, enabled: true, axis: [3, 0] }, 1 / 60);
+    expect(state[0]).toBe(9);
+    expect(() => evaluateParticleModuleExtensionsReference2D(effect, [first, second], state, { amount: 2, enabled: true, axis: [3, 0, 1, 1] }, 1 / 60)).toThrow('axis must be vector2');
   });
 });

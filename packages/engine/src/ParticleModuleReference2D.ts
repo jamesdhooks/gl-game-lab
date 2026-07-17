@@ -22,31 +22,30 @@ export interface ParticleReferenceIntegrationContext2D {
   readonly turbulenceBackend?: "webgl2" | "webgpu";
 }
 
-export function integrateParticleReference2D(state: ParticleReferenceState2D, motion: ParticleMotionProfile2D, delta: number, attractor?: ParticleAttractor2D, context: ParticleReferenceIntegrationContext2D = {}): void {
+export function integrateParticleReference2D(state: ParticleReferenceState2D, motion: ParticleMotionProfile2D, delta: number, attractor?: ParticleAttractor2D | readonly ParticleAttractor2D[], context: ParticleReferenceIntegrationContext2D = {}): void {
   state.age += delta;
   state.vy += motion.gravity * delta;
   const damping = Math.exp(-Math.max(0, motion.drag) * delta);
   state.vx *= damping;
   state.vy *= damping;
-  if (attractor && ((motion.radialAcceleration ?? 0) !== 0 || (motion.tangentialAcceleration ?? 0) !== 0 || (attractor.velocityCoupling ?? 0) !== 0)) {
-    const dx = attractor.x - state.x,
-      dy = attractor.y - state.y,
+  const attractors = attractor === undefined ? [] : Array.isArray(attractor) ? attractor : [attractor];
+  for (const field of attractors) {
+    if ((motion.radialAcceleration ?? 0) === 0 && (motion.tangentialAcceleration ?? 0) === 0 && (field.velocityCoupling ?? 0) === 0 && (field.radialStrength ?? 0) === 0 && (field.tangentialStrength ?? 0) === 0) continue;
+    const dx = field.x - state.x,
+      dy = field.y - state.y,
       rawLength = Math.hypot(dx, dy),
-      length = Math.max(attractor.softening ?? 1, rawLength, 1e-6),
+      length = Math.max(field.softening ?? 1, rawLength, 1e-6),
       nx = rawLength > 1e-6 ? dx / rawLength : 0,
       ny = rawLength > 1e-6 ? dy / rawLength : 0;
-    const radius = attractor.radius ?? 0;
-    if (radius > 0 && rawLength >= radius) {
-      applyMotionTail(state, motion, delta, context);
-      return;
-    }
-    const envelope = forceEnvelope(attractor, rawLength),
-      mode = attractor.falloff ?? motion.radialFalloff,
+    const radius = field.radius ?? 0;
+    if (radius > 0 && rawLength >= radius) continue;
+    const envelope = forceEnvelope(field, rawLength),
+      mode = field.falloff ?? motion.radialFalloff,
       falloff = mode === "inverse-square" ? 1 / (length * length) : mode === "inverse" ? 1 / length : 1;
-    const radial = (motion.radialAcceleration ?? 0) * attractor.strength + (attractor.radialStrength ?? 0),
-      tangential = (motion.tangentialAcceleration ?? 0) * attractor.strength + (attractor.tangentialStrength ?? 0);
-    state.vx += ((nx * radial - ny * tangential) * falloff + (attractor.velocity?.[0] ?? 0) * (attractor.velocityCoupling ?? 0)) * envelope * delta;
-    state.vy += ((ny * radial + nx * tangential) * falloff + (attractor.velocity?.[1] ?? 0) * (attractor.velocityCoupling ?? 0)) * envelope * delta;
+    const radial = (motion.radialAcceleration ?? 0) * field.strength + (field.radialStrength ?? 0),
+      tangential = (motion.tangentialAcceleration ?? 0) * field.strength + (field.tangentialStrength ?? 0);
+    state.vx += ((nx * radial - ny * tangential) * falloff + (field.velocity?.[0] ?? 0) * (field.velocityCoupling ?? 0)) * envelope * delta;
+    state.vy += ((ny * radial + nx * tangential) * falloff + (field.velocity?.[1] ?? 0) * (field.velocityCoupling ?? 0)) * envelope * delta;
   }
   applyMotionTail(state, motion, delta, context);
 }
