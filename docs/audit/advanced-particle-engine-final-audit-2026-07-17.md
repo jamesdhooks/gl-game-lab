@@ -184,3 +184,16 @@ The internal WebGPU-to-WebGL2 recovery wrapper was also corrected to replay all 
 The final in-repo compiler caveat was subsequently closed. The simulations build now imports graph definitions directly, emits deterministic ignored production modules under `src/.generated`, and scene plugins import those programs through `particlePrograms.ts`. `hydrateCompiledParticleProgram2D` rejects stale compiler versions, mismatched graph hashes, malformed reflection, incorrect shader roles, and corrupted shader sources before deep-freezing an artifact. Tests compile from a missing generated source, compare generated graph hashes with the authoring graphs, reject tampered payloads, and verify repeated generation is byte-identical. Runtime shader composition is no longer part of ordinary production scene imports.
 
 The completion audit then closed two additional concrete plan gaps. WebGPU resources now own an indirect draw-argument buffer (`vertexCount`, `instanceCount`, first vertex, first instance), upload it once, include it in resource accounting and disposal, and use `drawIndirect` for both point and streak presentation. The benchmark runner now shares a tested refresh-tolerant gate policy with a standalone re-evaluator. Existing raw measurements were re-evaluated without modification, and the release, full desktop, and emulated mobile matrices all persist a passing policy result.
+
+The last implementation pass corrected additional issues found by reading and running the completed system rather than accepting the earlier audit at face value:
+
+- GLSL and WGSL now agree on authored angular velocity; the CPU reference applies drag and turbulence in backend order.
+- Rectangle sources execute on CPU, WebGL2, and WebGPU. Advertised but unimplemented advanced source samplers fail validation instead of degrading to point emission.
+- Graph completion barriers block sequence continuation until tracked particles drain.
+- Coordinate-space transforms and position/rotation/scale inheritance execute rather than remaining declarative metadata.
+- ABI-compatible hot reload rebuilds the scheduler/emitter control graph and remaps dynamic overrides by stable ids while preserving transferable GPU state.
+- Emitter definitions preallocate bounded concurrent activation pools, share per-frame/alive budgets, and report pool exhaustion.
+- CPU reference evaluation accepts the full dynamic-attractor set and custom module evaluators run in compiler order with typed validation.
+- Diagnostic teardown is idempotent after engine disposal, eliminating a React passive-effect lifecycle crash found during live scene navigation.
+
+Final validation after these changes passed the complete workspace suite: engine 100 tests, WebGL2 83, WebGPU 13, simulations 132, and every other package test; recursive typecheck and production build; benchmark policy; package boundaries; source hygiene; and `git diff --check`. Live browser startup checks mounted canvases for Sparks, Fireworks, and Orbital Shrapnel and loaded the gallery with simulation previews without new warning/error logs. The production build still reports the existing large demo chunk and static/dynamic simulations-import warnings; neither is a particle-runtime correctness failure, but both remain demo delivery debt.
