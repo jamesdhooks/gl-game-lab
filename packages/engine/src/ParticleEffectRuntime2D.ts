@@ -1747,7 +1747,16 @@ class RuntimeParticleEffectInstance2D implements ParticleEffectInstance2D {
       const lifetime = (override.lifetime ?? archetype.lifecycle.lifetime)
         * (1 + (override.lifetimeVariability ?? archetype.lifecycle.lifetimeVariability ?? 0));
       emitter.recordAlive(count, this.elapsed + lifetime);
-      this.drainRemaining = Math.max(this.drainRemaining, particleDrainDuration(this.program, emitter.definition.archetypeId, override.lifetime));
+      this.drainRemaining = Math.max(
+        this.drainRemaining,
+        particleDrainDuration(
+          this.program,
+          emitter.definition.archetypeId,
+          this.eventParameters,
+          override.lifetime,
+          override.lifetimeVariability,
+        ),
+      );
     }
   }
 
@@ -1883,17 +1892,33 @@ function compiledShaderInspection(program: CompiledParticleProgram2D): { backend
   }));
 }
 
-function particleDrainDuration(program: CompiledParticleProgram2D, archetypeId: string, lifetimeOverride?: number, generation = 0): number {
+function particleDrainDuration(
+  program: CompiledParticleProgram2D,
+  archetypeId: string,
+  eventParameters: ReadonlyMap<string, ParticleEventParameters2D>,
+  lifetimeOverride?: number,
+  lifetimeVariabilityOverride?: number,
+  generation = 0,
+): number {
   const archetypeIndex = program.effect.archetypeIds[archetypeId];
   const archetype = archetypeIndex === undefined ? undefined : program.effect.source.archetypes[archetypeIndex];
   if (!archetype) return 0;
-  const lifetime = (lifetimeOverride ?? archetype.lifecycle.lifetime) * (1 + (archetype.lifecycle.lifetimeVariability ?? 0));
+  const lifetime = (lifetimeOverride ?? archetype.lifecycle.lifetime)
+    * (1 + (lifetimeVariabilityOverride ?? archetype.lifecycle.lifetimeVariability ?? 0));
   if (generation >= 8) return lifetime;
   let descendants = 0;
-  for (const event of archetype.events ?? []) {
-    if (generation > event.maxGeneration) continue;
-    const triggerTime = event.trigger === "birth" ? 0 : event.trigger === "age" ? (event.delay ?? 0) : lifetime;
-    descendants = Math.max(descendants, triggerTime + particleDrainDuration(program, event.childArchetypeId, undefined, generation + 1));
+  for (const [eventIndex, event] of (archetype.events ?? []).entries()) {
+    const parameters = eventParameters.get(`${archetypeIndex}:${eventIndex}`);
+    if (generation > (parameters?.maxGeneration ?? event.maxGeneration)) continue;
+    const triggerTime = event.trigger === "birth" ? 0 : event.trigger === "age" ? (parameters?.delay ?? event.delay ?? 0) : lifetime;
+    descendants = Math.max(descendants, triggerTime + particleDrainDuration(
+      program,
+      event.childArchetypeId,
+      eventParameters,
+      parameters?.lifetime,
+      parameters?.lifetimeVariability,
+      generation + 1,
+    ));
   }
   return Math.max(lifetime, descendants);
 }

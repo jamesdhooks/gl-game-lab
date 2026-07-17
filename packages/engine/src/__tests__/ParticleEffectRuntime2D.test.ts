@@ -306,6 +306,69 @@ describe("EngineParticleEffects2D", () => {
     expect(() => handle.writer().lifetimeVariability(1.1).submit()).toThrow("between zero and one");
     expect(instance.state().status).toBe("running");
     runtime.update(2.6);
+    expect(instance.state().status).toBe("draining");
+    runtime.update(0.91);
+    expect(instance.state().status).toBe("complete");
+  });
+
+  it("keeps manually emitted particles advancing through their overridden lifetime variability", () => {
+    const backend = new TestBackend();
+    const runtime = new EngineParticleEffects2D(backend);
+    runtime.register(compileParticleProgram2D(compileParticleEffect2D(adaptParticleEffectDefinition2D(definition))));
+    const instance = runtime.createInstance("runtime-test");
+
+    instance.emit("spark", { count: 1, lifetime: 1, lifetimeVariability: 1 });
+    runtime.update(0.9);
+    runtime.render({} as GpuRenderTarget2D);
+    runtime.update(0.9);
+    runtime.render({} as GpuRenderTarget2D);
+
+    expect(instance.state().status).toBe("draining");
+    expect(backend.resources[0]).toMatchObject({ updates: 2, renders: 2 });
+
+    runtime.update(0.21);
+    runtime.render({} as GpuRenderTarget2D);
+    expect(instance.state().status).toBe("complete");
+    expect(backend.resources[0]).toMatchObject({ updates: 3, renders: 2 });
+  });
+
+  it("keeps collision children advancing through their live event lifetime overrides", () => {
+    const backend = new TestBackend();
+    const runtime = new EngineParticleEffects2D(backend);
+    const eventDefinition: ParticleEffectDefinition2D = {
+      ...definition,
+      id: "runtime-event-test",
+      archetypes: [
+        {
+          ...definition.archetypes[0]!,
+          events: [{ trigger: "collision", childArchetypeId: "bounce", probability: 1, count: 1, maxGeneration: 1 }],
+        },
+        {
+          id: "bounce",
+          spawn: { shape: "point", spread: 0 },
+          motion: { gravity: 0, drag: 0 },
+          lifecycle: { lifetime: 0.5 },
+          appearance: {
+            size: { start: 1, end: 0 },
+            alpha: { start: 1, end: 0 },
+            intensity: { start: 1, end: 0 },
+          },
+        },
+      ],
+      modules: { motion: true, lifecycle: true, collisions: true, events: true },
+    };
+    runtime.register(compileParticleProgram2D(compileParticleEffect2D(adaptParticleEffectDefinition2D(eventDefinition))));
+    const instance = runtime.createInstance(eventDefinition.id);
+
+    instance.setEventParameters("spark", 0, { lifetime: 3, lifetimeVariability: 1 });
+    instance.emit("spark", { count: 1, lifetime: 1 });
+    runtime.update(5);
+    runtime.render({} as GpuRenderTarget2D);
+
+    expect(instance.state().status).toBe("draining");
+    expect(backend.resources[0]).toMatchObject({ updates: 1, renders: 1 });
+
+    runtime.update(2.01);
     expect(instance.state().status).toBe("complete");
   });
 
