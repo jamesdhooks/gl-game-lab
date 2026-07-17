@@ -1,0 +1,44 @@
+{
+  "schemaVersion": 1,
+  "configuration": {
+    "effectId": "sparks",
+    "capacity": 147456,
+    "tier": "ultra",
+    "renderScale": 1,
+    "warmupMs": 1000,
+    "sampleMs": 4000
+  },
+  "samples": 39,
+  "fps": {
+    "average": 59.726,
+    "p05": 58.968
+  },
+  "frameCpuMs": {
+    "average": 0.646,
+    "p95": 0.9
+  },
+  "gpuMs": {
+    "available": true,
+    "average": 2.207,
+    "p95": 3.263
+  },
+  "particle": {
+    "backend": "webgl2",
+    "activeInstances": 1,
+    "registeredPrograms": 1,
+    "capacity": 147456,
+    "activeEstimate": 101376,
+    "spawnedParticles": 101376,
+    "droppedParticles": 0,
+    "simulationPasses": 618,
+    "renderPasses": 1860,
+    "uploadBytes": 6336,
+    "allocatedBytes": 14155776,
+    "eventPasses": 309,
+    "eventAttempts": 0,
+    "eventLosses": 0,
+    "backendFallbackCount": 0,
+    "allocationsAfterWarmup": 0,
+    "diagnosticAccuracy": "estimated"
+  }
+}

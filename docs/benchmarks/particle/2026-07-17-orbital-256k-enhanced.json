@@ -1,0 +1,44 @@
+{
+  "schemaVersion": 1,
+  "configuration": {
+    "effectId": "orbital",
+    "capacity": 262144,
+    "tier": "enhanced",
+    "renderScale": 1,
+    "warmupMs": 1000,
+    "sampleMs": 4000
+  },
+  "samples": 38,
+  "fps": {
+    "average": 59.95,
+    "p05": 59.94
+  },
+  "frameCpuMs": {
+    "average": 1.263,
+    "p95": 0.9
+  },
+  "gpuMs": {
+    "available": true,
+    "average": 0.454,
+    "p95": 0.572
+  },
+  "particle": {
+    "backend": "webgl2",
+    "activeInstances": 1,
+    "registeredPrograms": 1,
+    "capacity": 262144,
+    "activeEstimate": 101376,
+    "spawnedParticles": 101376,
+    "droppedParticles": 0,
+    "simulationPasses": 306,
+    "renderPasses": 614,
+    "uploadBytes": 6336,
+    "allocatedBytes": 16777216,
+    "eventPasses": 0,
+    "eventAttempts": 0,
+    "eventLosses": 0,
+    "backendFallbackCount": 0,
+    "allocationsAfterWarmup": 0,
+    "diagnosticAccuracy": "estimated"
+  }
+}

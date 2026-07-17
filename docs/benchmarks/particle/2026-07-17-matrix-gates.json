@@ -1,0 +1,548 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-07-17T02:34:09.412Z",
+  "browser": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
+  "mode": "release-gates",
+  "results": [
+    {
+      "schemaVersion": 1,
+      "configuration": {
+        "effectId": "sparks",
+        "capacity": 65536,
+        "tier": "ultra",
+        "renderScale": 1,
+        "warmupMs": 1000,
+        "sampleMs": 4000
+      },
+      "samples": 39,
+      "fps": {
+        "average": 59.553,
+        "p05": 59.94
+      },
+      "frameCpuMs": {
+        "average": 1.167,
+        "p95": 0.8
+      },
+      "gpuMs": {
+        "available": true,
+        "average": 2.474,
+        "p95": 4.09
+      },
+      "particle": {
+        "backend": "webgl2",
+        "activeInstances": 1,
+        "registeredPrograms": 1,
+        "capacity": 65536,
+        "activeEstimate": 65536,
+        "spawnedParticles": 103424,
+        "droppedParticles": 0,
+        "simulationPasses": 610,
+        "renderPasses": 1836,
+        "uploadBytes": 6720,
+        "allocatedBytes": 6291456,
+        "eventPasses": 305,
+        "eventAttempts": 0,
+        "eventLosses": 0,
+        "backendFallbackCount": 0,
+        "allocationsAfterWarmup": 0,
+        "diagnosticAccuracy": "estimated"
+      },
+      "pageErrors": []
+    },
+    {
+      "schemaVersion": 1,
+      "configuration": {
+        "effectId": "sparks",
+        "capacity": 147456,
+        "tier": "ultra",
+        "renderScale": 1,
+        "warmupMs": 1000,
+        "sampleMs": 4000
+      },
+      "samples": 39,
+      "fps": {
+        "average": 59.726,
+        "p05": 58.968
+      },
+      "frameCpuMs": {
+        "average": 0.646,
+        "p95": 0.9
+      },
+      "gpuMs": {
+        "available": true,
+        "average": 2.207,
+        "p95": 3.263
+      },
+      "particle": {
+        "backend": "webgl2",
+        "activeInstances": 1,
+        "registeredPrograms": 1,
+        "capacity": 147456,
+        "activeEstimate": 101376,
+        "spawnedParticles": 101376,
+        "droppedParticles": 0,
+        "simulationPasses": 618,
+        "renderPasses": 1860,
+        "uploadBytes": 6336,
+        "allocatedBytes": 14155776,
+        "eventPasses": 309,
+        "eventAttempts": 0,
+        "eventLosses": 0,
+        "backendFallbackCount": 0,
+        "allocationsAfterWarmup": 0,
+        "diagnosticAccuracy": "estimated"
+      },
+      "pageErrors": []
+    },
+    {
+      "schemaVersion": 1,
+      "configuration": {
+        "effectId": "sparks",
+        "capacity": 262144,
+        "tier": "enhanced",
+        "renderScale": 1,
+        "warmupMs": 1000,
+        "sampleMs": 4000
+      },
+      "samples": 38,
+      "fps": {
+        "average": 59.442,
+        "p05": 58.016
+      },
+      "frameCpuMs": {
+        "average": 0.611,
+        "p95": 0.8
+      },
+      "gpuMs": {
+        "available": true,
+        "average": 0.376,
+        "p95": 0.44
+      },
+      "particle": {
+        "backend": "webgl2",
+        "activeInstances": 1,
+        "registeredPrograms": 1,
+        "capacity": 262144,
+        "activeEstimate": 103424,
+        "spawnedParticles": 103424,
+        "droppedParticles": 0,
+        "simulationPasses": 606,
+        "renderPasses": 608,
+        "uploadBytes": 6528,
+        "allocatedBytes": 25165824,
+        "eventPasses": 303,
+        "eventAttempts": 0,
+        "eventLosses": 0,
+        "backendFallbackCount": 0,
+        "allocationsAfterWarmup": 0,
+        "diagnosticAccuracy": "estimated"
+      },
+      "pageErrors": []
+    },
+    {
+      "schemaVersion": 1,
+      "configuration": {
+        "effectId": "sparks",
+        "capacity": 589824,
+        "tier": "basic",
+        "renderScale": 1,
+        "warmupMs": 1000,
+        "sampleMs": 4000
+      },
+      "samples": 38,
+      "fps": {
+        "average": 59.2,
+        "p05": 57.088
+      },
+      "frameCpuMs": {
+        "average": 0.655,
+        "p95": 1
+      },
+      "gpuMs": {
+        "available": true,
+        "average": 0.511,
+        "p95": 0.605
+      },
+      "particle": {
+        "backend": "webgl2",
+        "activeInstances": 1,
+        "registeredPrograms": 1,
+        "capacity": 589824,
+        "activeEstimate": 101376,
+        "spawnedParticles": 101376,
+        "droppedParticles": 0,
+        "simulationPasses": 610,
+        "renderPasses": 306,
+        "uploadBytes": 6336,
+        "allocatedBytes": 56623104,
+        "eventPasses": 305,
+        "eventAttempts": 0,
+        "eventLosses": 0,
+        "backendFallbackCount": 0,
+        "allocationsAfterWarmup": 0,
+        "diagnosticAccuracy": "estimated"
+      },
+      "pageErrors": []
+    },
+    {
+      "schemaVersion": 1,
+      "configuration": {
+        "effectId": "fireworks",
+        "capacity": 65536,
+        "tier": "ultra",
+        "renderScale": 1,
+        "warmupMs": 1000,
+        "sampleMs": 4000
+      },
+      "samples": 38,
+      "fps": {
+        "average": 59.925,
+        "p05": 59.94
+      },
+      "frameCpuMs": {
+        "average": 0.611,
+        "p95": 0.9
+      },
+      "gpuMs": {
+        "available": true,
+        "average": 2.039,
+        "p95": 3.159
+      },
+      "particle": {
+        "backend": "webgl2",
+        "activeInstances": 1,
+        "registeredPrograms": 1,
+        "capacity": 65536,
+        "activeEstimate": 65536,
+        "spawnedParticles": 102400,
+        "droppedParticles": 0,
+        "simulationPasses": 557,
+        "renderPasses": 1830,
+        "uploadBytes": 6528,
+        "allocatedBytes": 6291456,
+        "eventPasses": 253,
+        "eventAttempts": 0,
+        "eventLosses": 0,
+        "backendFallbackCount": 0,
+        "allocationsAfterWarmup": 0,
+        "diagnosticAccuracy": "estimated"
+      },
+      "pageErrors": []
+    },
+    {
+      "schemaVersion": 1,
+      "configuration": {
+        "effectId": "fireworks",
+        "capacity": 147456,
+        "tier": "ultra",
+        "renderScale": 1,
+        "warmupMs": 1000,
+        "sampleMs": 4000
+      },
+      "samples": 39,
+      "fps": {
+        "average": 59.699,
+        "p05": 58.962
+      },
+      "frameCpuMs": {
+        "average": 0.592,
+        "p95": 0.8
+      },
+      "gpuMs": {
+        "available": true,
+        "average": 2.263,
+        "p95": 3.353
+      },
+      "particle": {
+        "backend": "webgl2",
+        "activeInstances": 1,
+        "registeredPrograms": 1,
+        "capacity": 147456,
+        "activeEstimate": 101376,
+        "spawnedParticles": 101376,
+        "droppedParticles": 0,
+        "simulationPasses": 558,
+        "renderPasses": 1854,
+        "uploadBytes": 6400,
+        "allocatedBytes": 14155776,
+        "eventPasses": 250,
+        "eventAttempts": 0,
+        "eventLosses": 0,
+        "backendFallbackCount": 0,
+        "allocationsAfterWarmup": 0,
+        "diagnosticAccuracy": "estimated"
+      },
+      "pageErrors": []
+    },
+    {
+      "schemaVersion": 1,
+      "configuration": {
+        "effectId": "fireworks",
+        "capacity": 262144,
+        "tier": "enhanced",
+        "renderScale": 1,
+        "warmupMs": 1000,
+        "sampleMs": 4000
+      },
+      "samples": 39,
+      "fps": {
+        "average": 59.22,
+        "p05": 57.094
+      },
+      "frameCpuMs": {
+        "average": 0.651,
+        "p95": 1.1
+      },
+      "gpuMs": {
+        "available": true,
+        "average": 0.378,
+        "p95": 0.443
+      },
+      "particle": {
+        "backend": "webgl2",
+        "activeInstances": 1,
+        "registeredPrograms": 1,
+        "capacity": 262144,
+        "activeEstimate": 101376,
+        "spawnedParticles": 101376,
+        "droppedParticles": 0,
+        "simulationPasses": 554,
+        "renderPasses": 614,
+        "uploadBytes": 6336,
+        "allocatedBytes": 25165824,
+        "eventPasses": 248,
+        "eventAttempts": 0,
+        "eventLosses": 0,
+        "backendFallbackCount": 0,
+        "allocationsAfterWarmup": 0,
+        "diagnosticAccuracy": "estimated"
+      },
+      "pageErrors": []
+    },
+    {
+      "schemaVersion": 1,
+      "configuration": {
+        "effectId": "fireworks",
+        "capacity": 589824,
+        "tier": "basic",
+        "renderScale": 1,
+        "warmupMs": 1000,
+        "sampleMs": 4000
+      },
+      "samples": 38,
+      "fps": {
+        "average": 58.966,
+        "p05": 56.201
+      },
+      "frameCpuMs": {
+        "average": 0.597,
+        "p95": 0.9
+      },
+      "gpuMs": {
+        "available": true,
+        "average": 0.564,
+        "p95": 0.693
+      },
+      "particle": {
+        "backend": "webgl2",
+        "activeInstances": 1,
+        "registeredPrograms": 1,
+        "capacity": 589824,
+        "activeEstimate": 102400,
+        "spawnedParticles": 102400,
+        "droppedParticles": 0,
+        "simulationPasses": 559,
+        "renderPasses": 308,
+        "uploadBytes": 6400,
+        "allocatedBytes": 56623104,
+        "eventPasses": 252,
+        "eventAttempts": 0,
+        "eventLosses": 0,
+        "backendFallbackCount": 0,
+        "allocationsAfterWarmup": 0,
+        "diagnosticAccuracy": "estimated"
+      },
+      "pageErrors": []
+    },
+    {
+      "schemaVersion": 1,
+      "configuration": {
+        "effectId": "orbital",
+        "capacity": 65536,
+        "tier": "ultra",
+        "renderScale": 1,
+        "warmupMs": 1000,
+        "sampleMs": 4000
+      },
+      "samples": 39,
+      "fps": {
+        "average": 59.596,
+        "p05": 59.946
+      },
+      "frameCpuMs": {
+        "average": 0.585,
+        "p95": 0.8
+      },
+      "gpuMs": {
+        "available": true,
+        "average": 1.093,
+        "p95": 3.413
+      },
+      "particle": {
+        "backend": "webgl2",
+        "activeInstances": 1,
+        "registeredPrograms": 1,
+        "capacity": 65536,
+        "activeEstimate": 65536,
+        "spawnedParticles": 103424,
+        "droppedParticles": 0,
+        "simulationPasses": 306,
+        "renderPasses": 1842,
+        "uploadBytes": 6528,
+        "allocatedBytes": 4194304,
+        "eventPasses": 0,
+        "eventAttempts": 0,
+        "eventLosses": 0,
+        "backendFallbackCount": 0,
+        "allocationsAfterWarmup": 0,
+        "diagnosticAccuracy": "estimated"
+      },
+      "pageErrors": []
+    },
+    {
+      "schemaVersion": 1,
+      "configuration": {
+        "effectId": "orbital",
+        "capacity": 147456,
+        "tier": "ultra",
+        "renderScale": 1,
+        "warmupMs": 1000,
+        "sampleMs": 4000
+      },
+      "samples": 38,
+      "fps": {
+        "average": 59.953,
+        "p05": 59.946
+      },
+      "frameCpuMs": {
+        "average": 0.668,
+        "p95": 1.2
+      },
+      "gpuMs": {
+        "available": true,
+        "average": 0.903,
+        "p95": 2.813
+      },
+      "particle": {
+        "backend": "webgl2",
+        "activeInstances": 1,
+        "registeredPrograms": 1,
+        "capacity": 147456,
+        "activeEstimate": 101376,
+        "spawnedParticles": 101376,
+        "droppedParticles": 0,
+        "simulationPasses": 308,
+        "renderPasses": 1854,
+        "uploadBytes": 6336,
+        "allocatedBytes": 9437184,
+        "eventPasses": 0,
+        "eventAttempts": 0,
+        "eventLosses": 0,
+        "backendFallbackCount": 0,
+        "allocationsAfterWarmup": 0,
+        "diagnosticAccuracy": "estimated"
+      },
+      "pageErrors": []
+    },
+    {
+      "schemaVersion": 1,
+      "configuration": {
+        "effectId": "orbital",
+        "capacity": 262144,
+        "tier": "enhanced",
+        "renderScale": 1,
+        "warmupMs": 1000,
+        "sampleMs": 4000
+      },
+      "samples": 38,
+      "fps": {
+        "average": 59.95,
+        "p05": 59.94
+      },
+      "frameCpuMs": {
+        "average": 1.263,
+        "p95": 0.9
+      },
+      "gpuMs": {
+        "available": true,
+        "average": 0.454,
+        "p95": 0.572
+      },
+      "particle": {
+        "backend": "webgl2",
+        "activeInstances": 1,
+        "registeredPrograms": 1,
+        "capacity": 262144,
+        "activeEstimate": 101376,
+        "spawnedParticles": 101376,
+        "droppedParticles": 0,
+        "simulationPasses": 306,
+        "renderPasses": 614,
+        "uploadBytes": 6336,
+        "allocatedBytes": 16777216,
+        "eventPasses": 0,
+        "eventAttempts": 0,
+        "eventLosses": 0,
+        "backendFallbackCount": 0,
+        "allocationsAfterWarmup": 0,
+        "diagnosticAccuracy": "estimated"
+      },
+      "pageErrors": []
+    },
+    {
+      "schemaVersion": 1,
+      "configuration": {
+        "effectId": "orbital",
+        "capacity": 589824,
+        "tier": "basic",
+        "renderScale": 1,
+        "warmupMs": 1000,
+        "sampleMs": 4000
+      },
+      "samples": 38,
+      "fps": {
+        "average": 59.694,
+        "p05": 58.968
+      },
+      "frameCpuMs": {
+        "average": 0.576,
+        "p95": 0.9
+      },
+      "gpuMs": {
+        "available": true,
+        "average": 0.667,
+        "p95": 0.745
+      },
+      "particle": {
+        "backend": "webgl2",
+        "activeInstances": 1,
+        "registeredPrograms": 1,
+        "capacity": 589824,
+        "activeEstimate": 101376,
+        "spawnedParticles": 101376,
+        "droppedParticles": 0,
+        "simulationPasses": 307,
+        "renderPasses": 308,
+        "uploadBytes": 6336,
+        "allocatedBytes": 37748736,
+        "eventPasses": 0,
+        "eventAttempts": 0,
+        "eventLosses": 0,
+        "backendFallbackCount": 0,
+        "allocationsAfterWarmup": 0,
+        "diagnosticAccuracy": "estimated"
+      },
+      "pageErrors": []
+    }
+  ]
+}

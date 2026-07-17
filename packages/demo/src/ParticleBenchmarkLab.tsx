@@ -9,7 +9,8 @@ const CAPACITIES = [65_536, 147_456, 262_144, 589_824] as const;
 const BENCHMARK_ENDPOINT = '/__gl-game-lab-particle-benchmark';
 
 export function ParticleBenchmarkLab(): JSX.Element {
-  const [effectId,setEffectId]=useState<keyof typeof EFFECTS>('sparks'),[capacity,setCapacity]=useState<number>(65_536),[tier,setTier]=useState<ParticleRenderTier2D>('ultra'),[renderScale,setRenderScale]=useState(1);
+  const initial=useMemo(readBenchmarkQuery,[]);
+  const [effectId,setEffectId]=useState<keyof typeof EFFECTS>(initial.effectId),[capacity,setCapacity]=useState<number>(initial.capacity),[tier,setTier]=useState<ParticleRenderTier2D>(initial.tier),[renderScale,setRenderScale]=useState(initial.renderScale);
   const [particleDiagnostics,setParticleDiagnostics]=useState<ParticleEffectsDiagnostics2D>();
   const [debugArchetypes,setDebugArchetypes]=useState<Readonly<Record<string,number>>>();
   const [engine,setEngine]=useState<GameEngine>(),[benchmarkRunning,setBenchmarkRunning]=useState(false),[report,setReport]=useState<ParticleBenchmarkReport2D>();
@@ -34,6 +35,16 @@ export function ParticleBenchmarkLab(): JSX.Element {
     <pre data-testid="particle-debug-archetypes" className="mx-auto mt-3 max-w-5xl overflow-auto rounded-xl bg-black/30 p-3 text-xs text-white/60">{debugArchetypes?JSON.stringify(debugArchetypes,null,2):'Waiting for one development-only GPU state sample…'}</pre>
     <pre data-testid="particle-benchmark-report" className="mx-auto mt-3 max-w-5xl overflow-auto rounded-xl bg-black/30 p-3 text-xs text-white/60">{report?JSON.stringify(report,null,2):'Run the fixed benchmark to produce a portable JSON report.'}</pre>
   </main>;
+}
+
+function readBenchmarkQuery(): { readonly effectId: keyof typeof EFFECTS; readonly capacity: number; readonly tier: ParticleRenderTier2D; readonly renderScale: number } {
+  const query = new URLSearchParams(window.location.search), effect = query.get('effect'), requestedCapacity = Number(query.get('capacity')), requestedTier = query.get('tier'), requestedScale = Number(query.get('renderScale'));
+  return {
+    effectId: effect !== null && Object.prototype.hasOwnProperty.call(EFFECTS, effect) ? effect as keyof typeof EFFECTS : 'sparks',
+    capacity: CAPACITIES.includes(requestedCapacity as typeof CAPACITIES[number]) ? requestedCapacity : 65_536,
+    tier: requestedTier === 'basic' || requestedTier === 'enhanced' || requestedTier === 'ultra' ? requestedTier : 'ultra',
+    renderScale: requestedScale === .25 || requestedScale === .5 || requestedScale === 1 ? requestedScale : 1,
+  };
 }
 
 interface ParticleBenchmarkReport2D {

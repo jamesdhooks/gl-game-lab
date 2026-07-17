@@ -1,0 +1,44 @@
+{
+  "schemaVersion": 1,
+  "configuration": {
+    "effectId": "fireworks",
+    "capacity": 262144,
+    "tier": "enhanced",
+    "renderScale": 1,
+    "warmupMs": 1000,
+    "sampleMs": 4000
+  },
+  "samples": 39,
+  "fps": {
+    "average": 59.22,
+    "p05": 57.094
+  },
+  "frameCpuMs": {
+    "average": 0.651,
+    "p95": 1.1
+  },
+  "gpuMs": {
+    "available": true,
+    "average": 0.378,
+    "p95": 0.443
+  },
+  "particle": {
+    "backend": "webgl2",
+    "activeInstances": 1,
+    "registeredPrograms": 1,
+    "capacity": 262144,
+    "activeEstimate": 101376,
+    "spawnedParticles": 101376,
+    "droppedParticles": 0,
+    "simulationPasses": 554,
+    "renderPasses": 614,
+    "uploadBytes": 6336,
+    "allocatedBytes": 25165824,
+    "eventPasses": 248,
+    "eventAttempts": 0,
+    "eventLosses": 0,
+    "backendFallbackCount": 0,
+    "allocationsAfterWarmup": 0,
+    "diagnosticAccuracy": "estimated"
+  }
+}
