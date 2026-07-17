@@ -4,9 +4,9 @@
 
 The particle subsystem is now an executable engine feature, not a collection of scene shaders behind common interfaces. Typed graphs compile into reflected backend programs; a shared runtime owns emission, parameters, capacity, events, render recipes, recovery, diagnostics, replay, inspection, and hot replacement. Sparks, Fireworks, and Orbital Shrapnel prove the general runtime, while Splash PIC/FLIP proves that a specialized GPU solver can reuse shared particle appearance without surrendering its numerical model.
 
-The WebGL2 path is production-credible. The WebGPU path is a real development prototype with compute, GPU-resident presentation, feedback trails, bloom, bounds/circle/capsule collisions, capability selection, and verified device-loss fallback. The normal production host continues to prefer WebGL2 as required by the plan; broader physical-device and vendor certification is still required before changing that policy.
+The WebGL2 path is production-credible for the built-in module set used by the migrated scenes. The WebGPU path is a real development prototype with compute, GPU-resident presentation, feedback trails, bloom, bounds/circle/capsule collisions, capability selection, and tested device-loss fallback. The normal production host continues to prefer WebGL2 as required by the plan; broader physical-device and vendor certification is still required before changing that policy.
 
-No major rewrite is warranted. The remaining work is external acceptance: physical mobile certification, human visual parity approval, and broader WebGPU driver coverage.
+No major rewrite is warranted, but the plan is not literally complete. Resource-bearing custom compiler extensions are reflected but do not yet have a backend-neutral runtime resource-binding API. Several advanced spawn-source shapes deliberately fail validation instead of silently degrading, but remain unimplemented. Cross-backend tests strongly cover generated contracts and mocked execution, not a fully automated physical GPU tolerance matrix. External acceptance also remains: physical mobile certification, human visual parity approval, and broader WebGPU driver coverage.
 
 ## Closure of the previous audit
 
@@ -22,7 +22,7 @@ No major rewrite is warranted. The remaining work is external acceptance: physic
 
 | Plan area | Assessment |
 |---|---|
-| Executable effect graph | Pass. Archetypes, capacity shares, spawn distributions, motion, lifecycle, collision, events, appearance, render recipes, parameters, curves, aliases, preview limits, and quality overrides are compiled and validated. Registered custom modules require typed resources, backend implementations, compatibility declarations, and CPU reference behavior. |
+| Executable effect graph | Pass for built-ins; partial for extensions. Archetypes, capacity shares, executable built-in spawn distributions, motion, lifecycle, collision, events, appearance, render recipes, parameters, curves, aliases, preview limits, and quality overrides are compiled and validated. Custom modules have ordered GLSL/WGSL hooks and an executable typed CPU-reference runner, but arbitrary reflected textures/storage/render targets are not yet bindable through the public runtime. |
 | Build-time compiler | Pass with a maintainability caveat. Deterministic graph/ABI hashes, GLSL/WGSL, reflection, diagnostics, manifests, and production TypeScript modules are emitted and cache-keyed. Production scenes consume validated generated programs; the compiler still generates long shader strings rather than a typed shader IR. |
 | Shared runtime | Pass. Capacity, command rings, overflow, dirty ranges, palettes, event windows, render recipes, pooling, prewarming, recovery, inspection, replay, and disposal are centralized. |
 | WebGL2 execution | Pass. Direct emission uses bounded binary command lookup; spawn budgets cannot overlap capacity; archetype partitions and overflow policies are explicit; event allocation is deterministic and bounded; production execution performs no full-state readback. |
@@ -31,7 +31,7 @@ No major rewrite is warranted. The remaining work is external acceptance: physic
 | Diagnostics/tooling | Pass. Inspector, replay, hot-reload explanations, upload/pass/allocation/timing/cache/resource data, event outcomes, and development controls exist. GPU timings remain platform-extension dependent. |
 | Scene migrations | Pass pending human parity. Sparks, Fireworks, and Orbital use the graph runtime; scene code retains low-count interpretation/planning and authored collider/texture concerns. |
 | Specialized solver integration | Pass for the shared boundary. Solvers remain separate; external GPU state can enter the appearance path. Splash is integrated. |
-| Automated correctness | Pass for implemented modules. CPU references, compiler validation, runtime/backend tests, settings migration checks, recovery, allocation, and no-production-readback contracts are covered. Cross-vendor and physical-device coverage remains external. |
+| Automated correctness | Pass for implemented modules, with a scope caveat. CPU references now model the full multi-attractor loop and execute custom evaluators in compiler order. Compiler validation, runtime/backend tests, settings migration checks, recovery, allocation, and no-production-readback contracts are covered. WebGPU tests primarily use deterministic mock devices; real cross-backend numeric tolerance remains a browser/device certification task. |
 | Benchmark lab | Pass. Fixed-seed desktop and emulated-mobile matrices persist reports and complete without page errors. A tested refresh-tolerant policy preserves the requested targets and exact GPU budgets while accounting explicitly for normal 59.x display scheduling. |
 
 ## Architecture and code quality
@@ -41,6 +41,10 @@ The strongest decision is the graph/compiler/runtime/backend split. Scenes decla
 The architecture also avoids a common abstraction mistake: PIC/FLIP and other field solvers are not forced through a generic particle motion model. Their state can reuse appearance and diagnostics through an adapter while their integration and pressure solves remain specialized.
 
 The primary maintainability weakness is `ParticleEffectCompiler2D.ts`. Shader implementation and source generation are still interleaved in large strings. Tests reduce the risk but do not give mature source mapping, typed intermediate representation, or precise compiler diagnostics. Generated programs are now the sole ordinary production import path, eliminating the former duplicate scene-time shader compilation mode.
+
+Emitter composition is substantially stronger than the earlier audit stated. A definition now preallocates a bounded activation pool (`maxConcurrent`, default four, maximum 32), so parallel graph branches can run the same emitter timeline without resetting an earlier activation or allocating during play. Per-frame and alive limits remain shared across the pool, and pool exhaustion is exposed in instance diagnostics.
+
+Custom-module extensibility is not yet production-complete. The compiler can order extensions, validate backend implementations, reflect declared bindings, and run typed CPU evaluators. The ordinary runtime, however, has no generic `setExtensionResource` contract, and WebGPU bind-group layouts are currently fixed. Extensions that require no additional runtime resources are viable; extensions requiring custom textures, storage buffers, or render targets need another targeted backend-binding pass.
 
 The WebGPU renderer/session is deliberately narrower than the WebGL2 backend. That is acceptable for a prototype, but backend capability coverage must remain a tested matrix rather than grow through scene-specific exceptions.
 
@@ -80,13 +84,13 @@ The clearest un-gated scalability warning is Fireworks at 590k: Enhanced average
 
 - Persisted aliases and bindings sanitize visibly and retain legacy keys.
 - Compiler validation rejects cycles, invalid curves/order/resources, unsupported backends, excessive depth, and unsatisfied capacity policies.
-- CPU references cover reusable module semantics; debug-only GPU checks cover small-capacity behavior.
+- CPU references cover reusable module semantics, including all dynamic attractors, and custom evaluators run in compiler order; debug-only GPU checks cover selected small-capacity behavior.
 - Production paths perform no particle-state readback. Compact WebGL2 diagnostic counters are fenced and asynchronous.
 - Context/device loss, rebuild, reset, hot replacement, and disposal have automated coverage. A WebGPU-capable browser device-loss path was exercised live.
 - ABI-compatible replacement attempts state preservation; incompatible changes reset deterministically with an explanation.
 - Floating-point behavior is tolerance-based; bitwise cross-backend determinism is neither promised nor realistic.
 
-Remaining correctness uncertainty is environmental rather than hidden: physical mobile browsers, additional GPU vendors/drivers, and human visual comparison have not passed in this workspace.
+Remaining correctness uncertainty is both environmental and bounded in-repo scope: physical mobile browsers, additional GPU vendors/drivers, and human visual comparison have not passed; resource-bearing custom extensions and several advanced source samplers are not executable yet.
 
 ## Professional-engine comparison
 
@@ -109,16 +113,16 @@ Still below Unity, Unreal, Godot, Wicked Engine, or mature proprietary engines:
 
 | Area | Grade | Rationale |
 |---|---:|---|
-| Architecture | A | The graph/compiler/runtime/backend split is coherent and proven by three scenes plus an external solver adapter. |
-| API design | A | Typed authoring, emitter handles, contextual bindings, replay, inspection, and validated generated runtime artifacts form a coherent boundary. |
+| Architecture | A- | The graph/compiler/runtime/backend split is coherent and proven by three scenes plus an external solver adapter; generic extension resources remain outside the runtime boundary. |
+| API design | B+ | Typed authoring, pooled emitter activations, handles, contextual bindings, replay, inspection, and validated generated artifacts are strong, but custom resources remain incomplete. |
 | Maintainability | B+ | Scene coupling is greatly reduced, but long string-generated shaders remain expensive to evolve. |
 | Performance | A- | Required GPU budgets pass and pass amplification/readback are solved; high-tier 590k Fireworks and physical-mobile behavior remain concerns. |
 | Scalability | A- | Capacity and LOD architecture is sound through 590k; active-list compaction would be needed for much larger or high-fidelity workloads. |
 | Rendering | A | Shared executable tiers, palettes, trails, glow, bloom, LOD, WebGPU presentation, and external-state rendering are substantial. |
 | Diagnostics | A- | Delayed GPU event truth, inspector, timings, uploads, replay, and recovery data are strong; timer/counter fidelity remains capability-dependent. |
-| Extensibility | A | Registered compiler extensions and backend compatibility declarations provide a disciplined route for new modules and effects. |
-| WebGL2 production readiness | A- | Mergeable and production-credible with rollback paths retained until visual acceptance. |
-| Multi-backend production readiness | B+ | WebGPU is executable, collider-capable, and recoverable, but physical-device breadth and production-default selection remain unfinished. |
+| Extensibility | B | Registered compiler extensions, CPU evaluators, and compatibility declarations are disciplined, but resource-bearing extensions and several advertised source samplers are not executable. |
+| WebGL2 production readiness | B+ | Mergeable and production-credible for the built-in migrated effects, with rollback paths retained until visual acceptance. |
+| Multi-backend production readiness | B | WebGPU is executable, collider-capable, and recoverable, but automated real-device parity breadth and production-default selection remain unfinished. |
 
 ## Merge, rewrite, and deletion decision
 
@@ -126,13 +130,13 @@ Still below Unity, Unreal, Godot, Wicked Engine, or mature proprietary engines:
 - Rewrite major portions first: **no**.
 - Remove legacy scene paths now: **no; wait for human parity acceptance**.
 - Advertise WebGPU as a universally certified shipping backend: **no**.
-- Continue with another broad architecture pass: **no**. Only concrete failed or external gates justify more work.
+- Continue with another broad architecture pass: **no**. A narrow completion pass for extension resources, activation-drop diagnostics, and real-device tolerance is justified by concrete failed plan gates.
 
 ## Likely top five senior-review criticisms
 
 1. Shader generation remains a large string-based compiler without typed IR, source locations, or native offline validation.
-2. WebGPU has only one verified desktop adapter in this audit and is not the normal production default, so the multi-backend claim must remain qualified.
-3. The generated-program hydration boundary is runtime validation rather than native offline shader validation, so driver-specific shader failures still require backend fallback and certification.
+2. Reflected custom textures/storage/render targets cannot be supplied through a backend-neutral runtime API, so the custom-extension story is only partly executable.
+3. WebGPU correctness is heavily mock- and contract-tested but lacks an automated multi-vendor physical GPU tolerance matrix.
 4. Physical iOS/Android, broader GPU-vendor, and human parity gates remain external and block deletion of rollback paths.
 5. The 590k Fireworks Enhanced/Ultra cases expose a real high-fidelity scalability limit despite the required release tiers passing.
 
@@ -143,12 +147,14 @@ Still below Unity, Unreal, Godot, Wicked Engine, or mature proprietary engines:
 1. Run the committed physical iOS Safari and Android Chrome certification workflow, including preview fallback and thermal observation.
 2. Have James compare Sparks, Fireworks, and Orbital live against accepted behavior; only then remove legacy rollback implementations.
 3. Run WebGPU collider tolerance and loss-recovery certification across additional physical GPU vendors before changing the production backend preference.
+4. Add a backend-neutral custom extension resource set, validate stage visibility/types, and bind it in both WebGL2 and WebGPU before describing resource-bearing extensions as supported.
 
 ### Medium priority — targeted hardening
 
 1. Add reliable WebGPU hardware benchmark collection before considering broader production selection.
 2. Introduce typed shader modules/source mapping and native offline shader validation; generated artifacts are already the primary production imports.
 3. If 590k high-fidelity Fireworks becomes a product target, add active-particle compaction or culling and update the GPU-owned indirect instance count.
+4. Implement path, texture-mask, mesh, particle, collision-contact, and external-point sampling only as demand arises; until then keep their current hard validation failure.
 
 ### Low priority — future engine scope
 
@@ -158,7 +164,7 @@ Still below Unity, Unreal, Godot, Wicked Engine, or mature proprietary engines:
 
 ## Final assessment
 
-The hardening plan succeeded within its stated local and prototype scope. The WebGL2 subsystem is suitable for production integration; the WebGPU backend is a functioning, collider-capable, loss-recoverable prototype rather than a paper interface; diagnostics and specialized-solver integration are materially complete. The goal should remain open until the explicitly external physical-device and human-parity gates are accepted. Another engineering pass should be driven only by those results or by a decision to make WebGPU the production-default backend.
+The hardening plan succeeded for the built-in engine and the three proving scenes, but not every extensibility promise is complete. The WebGL2 subsystem is suitable for production integration for those effects; the WebGPU backend is a functioning, collider-capable, loss-recoverable prototype rather than a paper interface; diagnostics and specialized-solver integration are materially strong. The goal should remain open for the concrete custom-resource binding gap plus physical-device and human-parity gates. Another broad rewrite is not justified, but a focused extension-resource pass is.
 
 ## Post-audit hardening evidence
 
