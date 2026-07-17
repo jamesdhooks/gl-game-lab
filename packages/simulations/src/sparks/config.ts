@@ -78,8 +78,9 @@ export function resolveSparksBounceEventParameters(config: SparksConfig): Partic
     count: Math.round(sparksNumber(config, 'bounceBurstCount')),
     maxGeneration: 1,
     lifetime: Math.max(0.001, sparksNumber(config, 'bounceSparkLifespan')),
-    velocityInheritance: 0.08,
+    velocityInheritance: 0,
     powerScale: sparksNumber(config, 'bounceSparkSpeedScale'),
+    powerScaleVariability: sparksNumber(config, 'bounceSparkSpeedVariability'),
     impactPowerScale: sparksNumber(config, 'bounceBurstImpactSpeedScale'),
     spread: sparksNumber(config, 'bounceBurstSpread') * Math.PI / 3,
     minimumSpeed: sparksNumber(config, 'bounceBurstMinSpeed'),
@@ -87,7 +88,7 @@ export function resolveSparksBounceEventParameters(config: SparksConfig): Partic
     speedReference: Math.max(1, sparksNumber(config, 'sparkPower') * 1.35),
     basePower: sparksNumber(config, 'sparkPower'),
     lifetimeVariability: Math.max(0, Math.min(1, sparksNumber(config, 'bounceSparkLifespanVariability'))),
-    powerVariability: sparksNumber(config, 'bounceSparkSpeedVariability'),
+    powerVariability: 0,
   });
 }
 

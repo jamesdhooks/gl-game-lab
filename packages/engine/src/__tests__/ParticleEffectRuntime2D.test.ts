@@ -385,8 +385,8 @@ describe("EngineParticleEffects2D", () => {
     };
     runtime.register(compileParticleProgram2D(compileParticleEffect2D(graph)));
     const instance = runtime.createInstance("runtime-test");
-    instance.setEventParameters("spark", 0, { probability: 0.5, count: 7, delay: 0.2, powerScale: 0.8, impactPowerScale: 1.4, minimumSpeed: 40, countSpeedScale: 2, speedReference: 500, basePower: 120, lifetimeVariability: 0.4, powerVariability: 0.6 });
-    expect(backend.resources[0]!.eventParameters.get("0:0")).toEqual({ probability: 0.5, count: 7, delay: 0.2, powerScale: 0.8, impactPowerScale: 1.4, minimumSpeed: 40, countSpeedScale: 2, speedReference: 500, basePower: 120, lifetimeVariability: 0.4, powerVariability: 0.6 });
+    instance.setEventParameters("spark", 0, { probability: 0.5, count: 7, delay: 0.2, powerScale: 0.8, impactPowerScale: 1.4, powerScaleVariability: 0.25, minimumSpeed: 40, countSpeedScale: 2, speedReference: 500, basePower: 120, lifetimeVariability: 0.4, powerVariability: 0.6 });
+    expect(backend.resources[0]!.eventParameters.get("0:0")).toEqual({ probability: 0.5, count: 7, delay: 0.2, powerScale: 0.8, impactPowerScale: 1.4, powerScaleVariability: 0.25, minimumSpeed: 40, countSpeedScale: 2, speedReference: 500, basePower: 120, lifetimeVariability: 0.4, powerVariability: 0.6 });
     expect(() => instance.setEventParameters("spark", 0, { probability: 2 })).toThrow("between zero and one");
     expect(() => instance.setEventParameters("spark", 0, { lifetimeVariability: 1.1 })).toThrow("between zero and one");
     expect(() => instance.setEventParameters("missing", 0, {})).toThrow("Unknown particle event");

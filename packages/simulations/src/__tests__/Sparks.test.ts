@@ -137,6 +137,8 @@ describe('Sparks', () => {
       bounceBurstCountSpeedScale: 1.6,
       bounceBurstImpactSpeedScale: 2.4,
       bounceBurstSpread: 2.25,
+      bounceSparkSpeedScale: 0,
+      bounceSparkSpeedVariability: 0.5,
     });
     expect(resolveSparksBounceEventParameters(config)).toMatchObject({
       probability: 0.73,
@@ -145,6 +147,10 @@ describe('Sparks', () => {
       countSpeedScale: 1.6,
       impactPowerScale: 2.4,
       spread: 2.25 * Math.PI / 3,
+      velocityInheritance: 0,
+      powerScale: 0,
+      powerScaleVariability: 0.5,
+      powerVariability: 0,
     });
     expect(SPARKS_PARTICLE_GRAPH.parameters.find(({ id }) => id === 'restitution')?.max).toBe(1.35);
     expect(SPARKS_PARTICLE_GRAPH.persistedBindings).toEqual(expect.arrayContaining([
