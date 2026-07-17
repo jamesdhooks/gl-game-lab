@@ -71,6 +71,8 @@ describe('Sparks', () => {
     expect(byKey.get('trailFade')?.visibleRenderStyles).toEqual(['ultra']);
     expect(byKey.get('trailContinuity')?.visibleRenderStyles).toEqual(['enhanced', 'ultra']);
     expect(byKey.get('heatRadius')?.visibleRenderStyles).toEqual(['enhanced', 'ultra']);
+    expect(byKey.get('primarySparkLength')).toMatchObject({ min: 0, max: 4 });
+    expect(byKey.get('bounceSparkLength')).toMatchObject({ min: 0, max: 4 });
     for (const key of ['particleFidelity', 'trailFidelity', 'bloomThreshold', 'bloomRadius', 'bloomFidelity', 'bloomSamples', 'environmentLight', 'lightShafts', 'shaftLength', 'heatDistortion', 'lightingFidelity']) {
       expect(byKey.get(key)?.visibleRenderStyles).toEqual(['ultra']);
     }

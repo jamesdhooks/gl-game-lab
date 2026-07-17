@@ -51,6 +51,7 @@ describe('ParticleEffectCompiler2D', () => {
     expect(program.webgl2.event?.source).toContain('uParticleEventC[1]');
     expect(program.webgl2.event?.source).toContain('uParticleEventD[1]');
     expect(program.webgl2.streakVertex.source).toContain('uStreakScale');
+    expect(program.webgl2.streakVertex.source).toContain('min(desiredLength,max(size,length(b.xy)*max(0.0,a.z)))');
     expect(program.webgl2.eventClaimVertex?.source).toContain('gl_VertexID');
     expect(program.webgl2.eventClaimVertex?.source).toContain('priority*4194304');
     expect(program.webgl2.eventClaimVertex?.source).toContain('uArchetypePools');
@@ -85,6 +86,7 @@ describe('ParticleEffectCompiler2D', () => {
     expect(program.webgpu.eventResolve?.source).toContain('record.targetSlot%poolCount');
     expect(program.webgpu.eventResolve?.source).toContain('parametersD');
     expect(program.webgpu.render.source).toContain('fn particleStreakVertex');
+    expect(program.webgpu.render.source).toContain('-direction*backward*streakLength');
     expect(program.webgpu.render.source).toContain('@fragment fn particleFragment');
     expect(program.webgpu.render.source).toContain('archetypeSize[archetype]');
     expect(program.reflection).toMatchObject({ stateTargets: 3, usesCollisions: true, usesEvents: true, usesTurbulence: true });
