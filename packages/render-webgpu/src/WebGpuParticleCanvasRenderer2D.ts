@@ -319,7 +319,12 @@ interface BrowserGpu2D {
 }
 interface BrowserGpuAdapter2D {
   readonly info?: Readonly<{ description?: string; vendor?: string; architecture?: string }>;
-  requestDevice(): Promise<ParticleWebGpuDevice2D & { readonly lost?: Promise<Readonly<{ message?: string }>>; destroy?(): void }>;
+  requestDevice(): Promise<ParticleWebGpuDevice2D & {
+    readonly lost?: Promise<Readonly<{ message?: string }>>;
+    addEventListener?(type: 'uncapturederror', listener: (event: Readonly<{ error?: Readonly<{ message?: string }> }>) => void): void;
+    removeEventListener?(type: 'uncapturederror', listener: (event: Readonly<{ error?: Readonly<{ message?: string }> }>) => void): void;
+    destroy?(): void;
+  }>;
 }
 
 /** Creates the development WebGPU presentation session; returns undefined when unavailable. */
@@ -340,9 +345,17 @@ export async function createWebGpuParticleCanvasSession2D(
   const renderer = new WebGpuParticleCanvasRenderer2D(device, context, gpu.getPreferredCanvasFormat(), canvas);
   const backend = new WebGpuParticleEffectRuntimeBackend2D(device, { render: renderer.render });
   let disposed = false;
+  const onUncapturedError = (event: Readonly<{ error?: Readonly<{ message?: string }> }>): void => {
+    const message = event.error?.message ?? 'WebGPU validation failed';
+    backend.invalidate(new Error(message));
+    renderer.markDeviceLost();
+  };
+  device.addEventListener?.('uncapturederror', onUncapturedError);
   const lost = (device.lost ?? new Promise<Readonly<{ message?: string }>>(() => undefined)).then((info) => {
+    const message = info.message ?? 'WebGPU device lost';
+    backend.invalidate(new Error(message));
     if (!disposed) renderer.markDeviceLost();
-    return info.message ?? 'WebGPU device lost';
+    return message;
   });
   const description = adapter.info?.description || adapter.info?.vendor || adapter.info?.architecture || 'WebGPU adapter';
   return Object.freeze({
@@ -353,6 +366,7 @@ export async function createWebGpuParticleCanvasSession2D(
     dispose: () => {
       if (disposed) return;
       disposed = true;
+      device.removeEventListener?.('uncapturederror', onUncapturedError);
       renderer.dispose();
       device.destroy?.();
     },

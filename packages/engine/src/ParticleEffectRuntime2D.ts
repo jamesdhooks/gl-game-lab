@@ -247,7 +247,19 @@ export class FallbackParticleEffectRuntimeBackend2D implements ParticleEffectRun
 class RecoveringParticleEffectBackendResource2D implements ParticleEffectBackendResource2D {
   private resource: ParticleEffectBackendResource2D;
   private fallbackCount: number;
+  private validationFailures = 0;
   private failed = false;
+  private palette: ParticlePalette2D | undefined;
+  private parameters: Readonly<Record<string, ParticleParameterValue2D>> | undefined;
+  private colliders: ParticleColliderSet2D | undefined;
+  private forceFields: ParticleForceFieldSet2D | undefined;
+  private domain: ParticleDomain2D | undefined;
+  private viewport: ParticleViewport2D | undefined;
+  private renderParameters: ParticleRenderParameters2D | undefined;
+  private renderScale: number | undefined;
+  private detailedDiagnostics: boolean | undefined;
+  private readonly emitterSources = new Map<number, ParticleEmitterSourceOverride2D>();
+  private readonly eventParameters = new Map<string, Readonly<{ archetypeIndex: number; eventIndex: number; parameters: ParticleEventParameters2D }>>();
   constructor(
     private readonly program: CompiledParticleProgram2D,
     private readonly capacity: number,
@@ -264,56 +276,67 @@ class RecoveringParticleEffectBackendResource2D implements ParticleEffectBackend
     });
   }
   setPalette(value: ParticlePalette2D): void {
+    this.palette = Object.freeze({ revision: value.revision, colors: Object.freeze(value.colors.map((color) => Object.freeze([...color] as [number, number, number]))) });
     this.invoke((resource) => {
       resource.setPalette(value);
     });
   }
   setParameters(value: Readonly<Record<string, ParticleParameterValue2D>>): void {
+    this.parameters = Object.freeze({ ...value });
     this.invoke((resource) => {
       resource.setParameters?.(value);
     });
   }
   setColliders(value: ParticleColliderSet2D): void {
+    this.colliders = cloneParticleColliders(value);
     this.invoke((resource) => {
       resource.setColliders?.(value);
     });
   }
   setForceFields(value: ParticleForceFieldSet2D): void {
+    this.forceFields = cloneParticleForceFields(value);
     this.invoke((resource) => {
       resource.setForceFields?.(value);
     });
   }
   setDomain(value: ParticleDomain2D): void {
+    this.domain = cloneParticleDomain(value);
     this.invoke((resource) => {
       resource.setDomain?.(value);
     });
   }
   setEmitterSource(emitterIndex: number, value: ParticleEmitterSourceOverride2D): void {
+    this.emitterSources.set(emitterIndex, Object.freeze({ ...value }));
     this.invoke((resource) => {
       resource.setEmitterSource?.(emitterIndex, value);
     });
   }
   setEventParameters(archetypeIndex: number, eventIndex: number, value: ParticleEventParameters2D): void {
+    this.eventParameters.set(`${archetypeIndex}:${eventIndex}`, Object.freeze({ archetypeIndex, eventIndex, parameters: Object.freeze({ ...value }) }));
     this.invoke((resource) => {
       resource.setEventParameters?.(archetypeIndex, eventIndex, value);
     });
   }
   setViewport(value: ParticleViewport2D): void {
+    this.viewport = Object.freeze({ ...value });
     this.invoke((resource) => {
       resource.setViewport?.(value);
     });
   }
   setRenderParameters(value: ParticleRenderParameters2D): void {
+    this.renderParameters = Object.freeze({ ...value, ...(value.trailBackground ? { trailBackground: Object.freeze([...value.trailBackground] as [number, number, number]) } : {}) });
     this.invoke((resource) => {
       resource.setRenderParameters?.(value);
     });
   }
   setRenderScale(value: number): void {
+    this.renderScale = value;
     this.invoke((resource) => {
       resource.setRenderScale?.(value);
     });
   }
   setDetailedDiagnostics(enabled: boolean): void {
+    this.detailedDiagnostics = enabled;
     this.invoke((resource) => {
       resource.setDetailedDiagnostics?.(enabled);
     });
@@ -345,6 +368,7 @@ class RecoveringParticleEffectBackendResource2D implements ParticleEffectBackend
     return {
       ...this.resource.diagnostics(),
       backendFallbackCount: this.fallbackCount,
+      validationFailures: this.validationFailures,
     };
   }
   dispose(): void {
@@ -359,9 +383,47 @@ class RecoveringParticleEffectBackendResource2D implements ParticleEffectBackend
       this.resource.dispose();
       this.resource = this.fallback.create(this.program, this.capacity);
       this.fallbackCount += 1;
+      this.validationFailures += 1;
+      this.replayConfiguration(this.resource);
       operation(this.resource);
     }
   }
+  private replayConfiguration(resource: ParticleEffectBackendResource2D): void {
+    if (this.palette) resource.setPalette(this.palette);
+    if (this.parameters) resource.setParameters?.(this.parameters);
+    if (this.colliders) resource.setColliders?.(this.colliders);
+    if (this.forceFields) resource.setForceFields?.(this.forceFields);
+    if (this.domain) resource.setDomain?.(this.domain);
+    for (const [index, source] of this.emitterSources) resource.setEmitterSource?.(index, source);
+    for (const entry of this.eventParameters.values()) resource.setEventParameters?.(entry.archetypeIndex, entry.eventIndex, entry.parameters);
+    if (this.viewport) resource.setViewport?.(this.viewport);
+    if (this.renderParameters) resource.setRenderParameters?.(this.renderParameters);
+    if (this.renderScale !== undefined) resource.setRenderScale?.(this.renderScale);
+    if (this.detailedDiagnostics !== undefined) resource.setDetailedDiagnostics?.(this.detailedDiagnostics);
+  }
+}
+
+function cloneParticleColliders(value: ParticleColliderSet2D): ParticleColliderSet2D {
+  return Object.freeze({
+    revision: value.revision,
+    ...(value.circles ? { circles: Object.freeze(value.circles.map((entry) => Object.freeze({ ...entry }))) } : {}),
+    ...(value.capsules ? { capsules: Object.freeze(value.capsules.map((entry) => Object.freeze({ ...entry }))) } : {}),
+  });
+}
+
+function cloneParticleForceFields(value: ParticleForceFieldSet2D): ParticleForceFieldSet2D {
+  return Object.freeze({
+    revision: value.revision,
+    attractors: Object.freeze(value.attractors.map((entry) => Object.freeze({ ...entry, ...(entry.velocity ? { velocity: Object.freeze([...entry.velocity] as [number, number]) } : {}) }))),
+  });
+}
+
+function cloneParticleDomain(value: ParticleDomain2D): ParticleDomain2D {
+  return Object.freeze({
+    ...value,
+    center: Object.freeze([...value.center] as [number, number]),
+    ...(value.halfExtents ? { halfExtents: Object.freeze([...value.halfExtents] as [number, number]) } : {}),
+  });
 }
 
 export interface ParticleEffectInstanceState2D {

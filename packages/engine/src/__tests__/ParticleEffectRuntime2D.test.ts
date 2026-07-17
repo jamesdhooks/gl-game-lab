@@ -431,6 +431,40 @@ describe("EngineParticleEffects2D", () => {
     expect(instance.diagnostics().backendFallbackCount).toBe(1);
   });
 
+  it("replays semantic configuration when a running preferred backend fails", () => {
+    const preferred = new TestBackend();
+    preferred.create = () => {
+      const resource = new TestResource();
+      resource.update = () => { throw new Error("device validation failed"); };
+      preferred.resources.push(resource);
+      return resource;
+    };
+    const fallback = new TestBackend(), runtime = new EngineParticleEffects2D(new FallbackParticleEffectRuntimeBackend2D(preferred, fallback));
+    runtime.register(compileParticleProgram2D(compileParticleEffect2D(adaptParticleEffectDefinition2D(definition))));
+    const instance = runtime.createInstance("runtime-test", { palette: { revision: 9, colors: [[0.2, 0.4, 0.8]] } });
+    instance.setColliders({ revision: 4, circles: [{ x: 10, y: 20, radius: 5, mode: "kill" }], capsules: [{ ax: 1, ay: 2, bx: 3, by: 4, radius: 2 }] });
+    instance.setForceFields({ revision: 6, attractors: [{ x: 50, y: 60, strength: 7, velocity: [2, 3] }] });
+    instance.setDomain({ revision: 3, shape: "circle", behavior: "wrap", center: [100, 80], radius: 70, damping: 0.9 });
+    instance.setEmitterSource("spark", { radius: 12, spread: 0.4 });
+    instance.setViewport({ width: 640, height: 360, dpr: 2 });
+    instance.setRenderParameters({ pointScale: 3, trailFade: 0.92, trailBackground: [0.1, 0.2, 0.3] });
+    instance.setRenderScale(0.5);
+    instance.setDetailedDiagnostics(true);
+    instance.emitter("spark").emit(1);
+    runtime.update(1 / 60);
+    const recovered = fallback.resources[0]!;
+    expect(recovered.paletteRevision).toBe(9);
+    expect(recovered.colliders).toEqual({ revision: 4, circles: [{ x: 10, y: 20, radius: 5, mode: "kill" }], capsules: [{ ax: 1, ay: 2, bx: 3, by: 4, radius: 2 }] });
+    expect(recovered.forceFields).toEqual({ revision: 6, attractors: [{ x: 50, y: 60, strength: 7, velocity: [2, 3] }] });
+    expect(recovered.domain).toEqual({ revision: 3, shape: "circle", behavior: "wrap", center: [100, 80], radius: 70, damping: 0.9 });
+    expect(recovered.emitterSources.get(0)).toEqual({ radius: 12, spread: 0.4 });
+    expect(recovered.viewport).toEqual({ width: 640, height: 360, dpr: 2 });
+    expect(recovered.renderParameters).toEqual({ pointScale: 3, trailFade: 0.92, trailBackground: [0.1, 0.2, 0.3] });
+    expect(recovered.renderScale).toBe(0.5);
+    expect(instance.diagnostics()).toMatchObject({ backendFallbackCount: 1, validationFailures: 1 });
+    runtime.dispose();
+  });
+
   it("exposes immutable compiled graph and instance inspection data", () => {
     const backend = new TestBackend();
     const runtime = new EngineParticleEffects2D(backend);
