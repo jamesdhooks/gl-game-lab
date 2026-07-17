@@ -393,9 +393,10 @@ describe("EngineParticleEffects2D", () => {
     const runtime = new EngineParticleEffects2D(backend);
     const graph = adaptParticleEffectDefinition2D(definition);
     runtime.register(compileParticleProgram2D(compileParticleEffect2D(graph)));
-    runtime.createInstance("runtime-test");
+    const instance = runtime.createInstance("runtime-test");
     const compatible = runtime.reloadGraph({
       ...graph,
+      emitters: graph.emitters.map((emitter) => ({ ...emitter, timeline: { ...emitter.timeline, bursts: [{ time: 0, count: 9 }] } })),
       archetypes: graph.archetypes.map((archetype) => ({
         ...archetype,
         appearance: { ...archetype.appearance, flicker: 0.2 },
@@ -403,6 +404,8 @@ describe("EngineParticleEffects2D", () => {
     });
     expect(compatible).toMatchObject({ action: "preserved", abiCompatible: true, instances: 1, statePreserved: 1 });
     expect(compatible.explanation).toContain("transferred");
+    instance.start();
+    expect(backend.resources[1]!.emissions.at(-1)?.count).toBe(9);
     const incompatible = runtime.reloadGraph({
       ...graph,
       archetypes: [...graph.archetypes, {

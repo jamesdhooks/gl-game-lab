@@ -1078,9 +1078,9 @@ class RuntimeParticleEffectInstance2D implements ParticleEffectInstance2D {
   private readonly emitterSources = new Map<number, ParticleEmitterSourceOverride2D>();
   private readonly eventParameters = new Map<string, ParticleEventParameters2D>();
   private drainRemaining = 0;
-  private readonly emitters: EmitterRuntime[];
-  private readonly emitterHandles: Map<string, RuntimeParticleEmitterHandle2D>;
-  private readonly scheduler: ParticleGraphScheduler2D;
+  private emitters: EmitterRuntime[];
+  private emitterHandles: Map<string, RuntimeParticleEmitterHandle2D>;
+  private scheduler: ParticleGraphScheduler2D;
 
   constructor(
     readonly id: number,
@@ -1088,7 +1088,7 @@ class RuntimeParticleEffectInstance2D implements ParticleEffectInstance2D {
     backend: ParticleEffectBackendResource2D,
     options: ParticleEffectInstanceOptions2D,
     private readonly onDispose: (id: number, resource: ParticleEffectBackendResource2D) => void,
-    onReference: (reference: ParticleGraphEffectReference2D, context: ParticleGraphExecutionContext2D) => void,
+    private readonly onReference: (reference: ParticleGraphEffectReference2D, context: ParticleGraphExecutionContext2D) => void,
   ) {
     this.program = program;
     this.backend = backend;
@@ -1108,7 +1108,18 @@ class RuntimeParticleEffectInstance2D implements ParticleEffectInstance2D {
     this.adaptiveTargetFrameSeconds = 1 / (options.adaptiveTargetFps ?? (options.preview ? 30 : 60));
     this.emitters = program.effect.source.emitters.map((entry, index) => new EmitterRuntime(entry, index));
     this.emitterHandles = new Map(this.emitters.map((entry) => [entry.definition.id, new RuntimeParticleEmitterHandle2D(entry.definition.id, this)]));
-    this.scheduler = new ParticleGraphScheduler2D(
+    this.scheduler = this.createScheduler(program);
+    backend.setPalette(this.palette);
+    backend.setParameters?.(this.parameters);
+    backend.setColliders?.(this.colliders);
+    backend.setForceFields?.(this.forceFields);
+    backend.setDomain?.(this.domain);
+    backend.setRenderScale?.(this.renderScale);
+    for (const emitter of this.emitters) this.applyEmitterSource(emitter);
+  }
+
+  private createScheduler(program: CompiledParticleProgram2D): ParticleGraphScheduler2D {
+    return new ParticleGraphScheduler2D(
       program.effect.source,
       () => this.parameters,
       {
@@ -1124,20 +1135,13 @@ class RuntimeParticleEffectInstance2D implements ParticleEffectInstance2D {
         signal: (signal) => {
           this.scheduler.trigger({ kind: "signal", signal });
         },
-        reference: onReference,
+        reference: this.onReference,
         complete: (emitterId) => emitterId === undefined
           ? this.emitters.every((entry) => !entry.active && entry.aliveEstimate === 0)
           : this.emitters.some((entry) => entry.definition.id === emitterId && !entry.active && entry.aliveEstimate === 0),
       },
       this.seed,
     );
-    backend.setPalette(this.palette);
-    backend.setParameters?.(this.parameters);
-    backend.setColliders?.(this.colliders);
-    backend.setForceFields?.(this.forceFields);
-    backend.setDomain?.(this.domain);
-    backend.setRenderScale?.(this.renderScale);
-    for (const emitter of this.emitters) this.applyEmitterSource(emitter);
   }
 
   get isAdvancing(): boolean {
@@ -1442,11 +1446,13 @@ class RuntimeParticleEffectInstance2D implements ParticleEffectInstance2D {
   }
 
   replaceProgram(program: CompiledParticleProgram2D, backend: ParticleEffectBackendResource2D): boolean {
+    const previousProgram = this.program;
     const compatible = program.effect.abiHash === this.program.effect.abiHash;
     const stateTransferred = compatible && (this.backend.transferStateTo?.(backend) ?? false);
     this.backend.dispose();
     this.program = program;
     this.backend = backend;
+    this.rebuildControlGraph(previousProgram, program);
     this.parameters = {
       ...resolveParticleParameters2D(program.effect.source, this.parameters),
     };
@@ -1465,16 +1471,45 @@ class RuntimeParticleEffectInstance2D implements ParticleEffectInstance2D {
     backend.setRenderScale?.(this.renderScale);
     backend.setDetailedDiagnostics?.(this.detailedDiagnostics);
     this.applyAdaptiveLod();
+    this.scheduler.reset(this.seed);
     if (!stateTransferred) {
       this.elapsed = 0;
       this.emitters.forEach((emitter) => {
         emitter.reset();
       });
-      this.scheduler.reset(this.seed);
       this.statusValue = "idle";
       this.start();
-    }
+    } else if (this.statusValue === "running") this.scheduler.start();
     return stateTransferred;
+  }
+
+  private rebuildControlGraph(previousProgram: CompiledParticleProgram2D, program: CompiledParticleProgram2D): void {
+    const sourcesById = new Map<string, ParticleEmitterSourceOverride2D>();
+    for (const [index, source] of this.emitterSources) {
+      const id = previousProgram.effect.source.emitters[index]?.id;
+      if (id) sourcesById.set(id, source);
+    }
+    const eventsById = new Map<string, ParticleEventParameters2D>();
+    for (const [key, parameters] of this.eventParameters) {
+      const [archetypeIndex, eventIndex] = key.split(":").map(Number);
+      const id = previousProgram.effect.source.archetypes[archetypeIndex!]?.id;
+      if (id !== undefined) eventsById.set(`${id}:${eventIndex}`, parameters);
+    }
+    this.emitters = program.effect.source.emitters.map((entry, index) => new EmitterRuntime(entry, index));
+    this.emitterHandles = new Map(this.emitters.map((entry) => [entry.definition.id, new RuntimeParticleEmitterHandle2D(entry.definition.id, this)]));
+    this.emitterSources.clear();
+    for (const emitter of this.emitters) {
+      const source = sourcesById.get(emitter.definition.id);
+      if (source) this.emitterSources.set(emitter.index, source);
+    }
+    this.eventParameters.clear();
+    for (const [stableKey, parameters] of eventsById) {
+      const separator = stableKey.lastIndexOf(":");
+      const archetypeId = stableKey.slice(0, separator), eventIndex = Number(stableKey.slice(separator + 1));
+      const archetypeIndex = program.effect.archetypeIds[archetypeId];
+      if (archetypeIndex !== undefined && program.effect.source.archetypes[archetypeIndex]?.events?.[eventIndex]) this.eventParameters.set(`${archetypeIndex}:${eventIndex}`, parameters);
+    }
+    this.scheduler = this.createScheduler(program);
   }
 
   private advanceEmitter(emitter: EmitterRuntime, delta: number): void {
