@@ -41,6 +41,9 @@ export {
   type WorkerTaskOptions,
 } from './Services.js';
 export {
+  ParticleEventWindowScheduler2D,
+} from './ParticleEventWindowScheduler2D.js';
+export {
   resolveParticleArchetypePartitions2D,
   type ParticleArchetypePartition2D,
 } from './ParticleCapacityPartitions2D.js';

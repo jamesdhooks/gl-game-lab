@@ -34,12 +34,49 @@ describe('WebGpuParticleEffectRuntimeBackend2D', () => {
     const resource = backend.create(program, 512);
     resource.emit({ instanceId: 1, emitterIndex: 0, count: 40, positionX: 10, positionY: 20, direction: 0, spread: 1, power: 30, seed: 8, importance: 3 });
     resource.update(1 / 60, 1);
-    expect(fixture.writeBuffer).toHaveBeenCalledTimes(4);
+    expect(fixture.writeBuffer).toHaveBeenCalledTimes(5);
     expect(fixture.dispatchWorkgroups).toHaveBeenCalledWith(2);
     expect(fixture.submit).toHaveBeenCalledTimes(1);
     resource.render({ width: 384, height: 384 } as GpuRenderTarget2D, 'basic');
     expect(render).toHaveBeenCalledTimes(1);
     expect(resource.diagnostics()).toMatchObject({ spawnedParticles: 40, simulationPasses: 1, renderPasses: 1 });
+    resource.dispose();
+  });
+
+  it('dispatches atomic append and priority resolve passes for event graphs', () => {
+    const fixture = deviceFixture(), render = vi.fn();
+    const backend = new WebGpuParticleEffectRuntimeBackend2D(fixture.device, { render });
+    const eventDefinition: ParticleEffectDefinition2D = {
+      ...definition,
+      archetypes: [{
+        ...definition.archetypes[0]!,
+        events: [{ trigger: 'death', childArchetypeId: 'spark', probability: 1, count: 4, maxGeneration: 0, priority: 'primary' }],
+      }],
+      modules: { ...definition.modules, events: true },
+    };
+    const program = compileParticleProgram2D(compileParticleEffect2D(adaptParticleEffectDefinition2D(eventDefinition)));
+    const resource = backend.create(program, 512);
+    resource.emit({ instanceId: 1, emitterIndex: 0, count: 1, positionX: 0, positionY: 0, direction: 0, spread: 0, power: 0, seed: 1, importance: 3 });
+    resource.update(1, 1);
+    expect(fixture.dispatchWorkgroups.mock.calls).toEqual([[2], [2], [6]]);
+    expect(fixture.submit).toHaveBeenCalledTimes(1);
+    expect(resource.diagnostics()).toMatchObject({ eventCount: 1, simulationPasses: 1 });
+    resource.dispose();
+  });
+
+  it('routes direct commands into sorted archetype partitions', () => {
+    const fixture=deviceFixture(),backend=new WebGpuParticleEffectRuntimeBackend2D(fixture.device,{render:vi.fn()});
+    const second={...definition.archetypes[0]!,id:'accent'};
+    const program=compileParticleProgram2D(compileParticleEffect2D(adaptParticleEffectDefinition2D({...definition,capacity:{min:16,default:16,max:16,previewMax:16},archetypes:[definition.archetypes[0]!,second]})));
+    const resource=backend.create(program,16);
+    resource.emit({instanceId:1,emitterIndex:1,count:4,positionX:0,positionY:0,direction:0,spread:0,power:1,seed:2,importance:2});
+    resource.update(1/60,1);
+    const upload=fixture.writeBuffer.mock.calls.find((call)=>call[4]===16);
+    expect(upload).toBeDefined();
+    const commands=upload?.[2] as Float32Array;
+    expect(commands[0]).toBe(1);
+    expect(commands[1]).toBe(8);
+    expect(commands[2]).toBe(4);
     resource.dispose();
   });
 });

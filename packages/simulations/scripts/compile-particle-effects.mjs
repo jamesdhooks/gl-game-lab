@@ -31,6 +31,8 @@ for (const program of [SPARKS_PARTICLE_PROGRAM, FIREWORKS_PARTICLE_PROGRAM, ORBI
       webgl2Vertex: program.webgl2.vertex.hash,
       webgl2Fragment: program.webgl2.fragment.hash,
       webgpuSimulation: program.webgpu.simulation.hash,
+      webgpuEvent: program.webgpu.event?.hash,
+      webgpuEventResolve: program.webgpu.eventResolve?.hash,
       webgpuRender: program.webgpu.render.hash,
     },
   };
@@ -47,6 +49,8 @@ for (const program of [SPARKS_PARTICLE_PROGRAM, FIREWORKS_PARTICLE_PROGRAM, ORBI
     writeFile(resolve(outputRoot, `${id}.vertex.glsl`), program.webgl2.vertex.source),
     writeFile(resolve(outputRoot, `${id}.fragment.glsl`), program.webgl2.fragment.source),
     writeFile(resolve(outputRoot, `${id}.simulation.wgsl`), program.webgpu.simulation.source),
+    writeFile(resolve(outputRoot, `${id}.event.wgsl`), program.webgpu.event?.source ?? ''),
+    writeFile(resolve(outputRoot, `${id}.event-resolve.wgsl`), program.webgpu.eventResolve?.source ?? ''),
     writeFile(resolve(outputRoot, `${id}.render.wgsl`), program.webgpu.render.source),
   ]);
 }

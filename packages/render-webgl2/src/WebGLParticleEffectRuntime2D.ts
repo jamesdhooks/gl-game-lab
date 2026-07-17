@@ -16,8 +16,7 @@ import type {
   ParticleRuntimeEmission2D,
   ParticleParameterValue2D,
 } from '@hooksjam/gl-game-lab-engine';
-import { resolveParticleArchetypePartitions2D } from '@hooksjam/gl-game-lab-engine';
-import { ParticleEventWindowScheduler } from './ParticleEventWindowScheduler.js';
+import { ParticleEventWindowScheduler2D, resolveParticleArchetypePartitions2D } from '@hooksjam/gl-game-lab-engine';
 
 const COMMAND_CAPACITY = 64;
 const COMMAND_FLOATS = 16;
@@ -81,7 +80,7 @@ class WebGLParticleEffectResource2D implements ParticleEffectBackendResource2D {
   private eventAttempts = 0;
   private eventOccupiedDrops = 0;
   private eventBudgetDrops = 0;
-  private readonly eventWindows: ParticleEventWindowScheduler;
+  private readonly eventWindows: ParticleEventWindowScheduler2D;
   private simulationTime = 0;
   private disposed = false;
 
@@ -114,7 +113,7 @@ class WebGLParticleEffectResource2D implements ParticleEffectBackendResource2D {
       commandCapacity: COMMAND_CAPACITY,
       metadata: program.reflection.stateTargets === 3,
     });
-    this.eventWindows = new ParticleEventWindowScheduler(program);
+    this.eventWindows = new ParticleEventWindowScheduler2D(program);
     const partitions = resolveParticleArchetypePartitions2D(program.effect, capacity);
     this.poolData = new Float32Array(Math.max(1, partitions.length) * 4);
     this.poolCursor = new Int32Array(Math.max(1, partitions.length));

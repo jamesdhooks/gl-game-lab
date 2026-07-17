@@ -46,6 +46,10 @@ describe('ParticleEffectCompiler2D', () => {
     expect(program.webgpu.simulation.source).toContain('iteration < 6u');
     expect(program.webgpu.simulation.source).toContain('archetypeMotion[archetype]');
     expect(program.webgpu.simulation.source).toContain('shape == 9u');
+    expect(program.webgpu.event?.source).toContain('atomicAdd');
+    expect(program.webgpu.event?.source).toContain('appendEvents');
+    expect(program.webgpu.eventResolve?.source).toContain('resolveEvents');
+    expect(program.webgpu.eventResolve?.source).toContain('record.targetSlot%poolCount');
     expect(program.reflection).toMatchObject({ stateTargets: 3, usesCollisions: true, usesEvents: true, usesTurbulence: true });
     expect(program.renderPasses.ultra.map((entry) => entry.kind)).toEqual(['points', 'streaks', 'trails', 'bloom']);
   });
