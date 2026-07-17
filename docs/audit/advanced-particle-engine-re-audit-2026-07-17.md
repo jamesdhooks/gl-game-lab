@@ -1,5 +1,7 @@
 # Advanced Unified GPU Particle Engine Re-Audit — 2026-07-17
 
+> Historical intermediate audit. Its WebGPU, counter, external-adapter, benchmark, and generated-import gaps were subsequently closed. See `advanced-particle-engine-final-audit-2026-07-17.md` for the authoritative current assessment.
+
 ## Executive verdict
 
 The WebGL2 particle architecture is now a genuine executable engine subsystem rather than a shared type facade. Typed graphs compile into reflected GLSL/WGSL programs; a common runtime owns emission, scheduling, parameters, palettes, capacity, events, rendering, diagnostics, replay, hot replacement, resource reuse, and adaptive render LOD. Sparks, Fireworks, and Orbital Shrapnel run through it.
