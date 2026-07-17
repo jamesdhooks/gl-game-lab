@@ -57,7 +57,10 @@ export function createFireworksPlugin(initial: FireworksConfig = FIREWORKS_DEFAU
         get mode() { return mode; }, get modeId() { return mode; }, get styleId() { return styleId; },
         get settings() { return Object.freeze({ ...config }); }, get activeShells() { return shells.length; },
         get particleCapacity() { return particles.capacity; }, get entityCount() { return particles.capacity; },
-        get runtimeDiagnostics() { return Object.freeze({ ...particles.diagnostics(), activeShells: shells.length, queuedSceneCommands: commands.length }); },
+        get runtimeDiagnostics() {
+          const { eventCounters: _eventCounters, ...diagnostics } = particles.diagnostics();
+          return Object.freeze({ ...diagnostics, activeShells: shells.length, queuedSceneCommands: commands.length });
+        },
         setMode: (value) => { if (value !== 'single' && value !== 'stream') throw new Error(`Unknown Fireworks mode: ${value}`); mode = value; launchAccumulator = 0; },
         setStyle: (value) => { const next = validStyle(value); if (!next) throw new Error(`Unknown Fireworks style: ${value}`); styleId = next; applyStyle(); },
         setSetting: (key, value) => {

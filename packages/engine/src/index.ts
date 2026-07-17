@@ -147,6 +147,7 @@ export {
   type GpuParticleStateSnapshot2D,
   type GpuParticleCommandBatch2D,
   type GpuParticleSystemDiagnostics2D,
+  type GpuParticleEventCounters2D,
   type GpuParticleSystem2D,
   type GpuParticleSystem2DOptions,
   type GpuRenderTarget2D,

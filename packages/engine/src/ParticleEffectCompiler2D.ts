@@ -379,23 +379,26 @@ function buildGlslEventClaimVertex(effect: CompiledParticleEffect2D): string {
       branches.push(`if(archetype==${archetypeIndex} && lane==${entry.parentSlot}) {
   vec4 eventA=uParticleEventA[${entry.global}],eventC=uParticleEventC[${entry.global}];
   float speed=length(b.xy),impact=smoothstep(eventC.x,max(eventC.x+1.0,eventC.z),speed);
-  if(c.y<=eventA.z && speed>=eventC.x && (${notFired}) && (${trigger}) && hash11(float(parent*31+lane*17+${entry.global}))<=eventA.x) {
+  if(speed>=eventC.x && (${notFired}) && (${trigger}) && hash11(float(parent*31+lane*17+${entry.global}))<=eventA.x) {
     priority=${entry.priority}; slot=${entry.prioritySlot}; child=${entry.child};
-    childCount=int(eventA.y*mix(.16,1.0+impact*eventC.y,impact)+.5); valid=childCount>0;
+    rawChildCount=int(eventA.y*mix(.16,1.0+impact*eventC.y,impact)+.5);triggerCode=${eventTriggerCode(entry.trigger)};triggered=rawChildCount>0;generationValid=c.y<=eventA.z;childCount=generationValid?rawChildCount:0;valid=childCount>0;
   }
 }`);
     }
   }
   return `#version 300 es
 precision highp float;precision highp int;precision highp sampler2D;
-uniform sampler2D uPositionState;uniform sampler2D uVelocityState;uniform sampler2D uMetadataState;uniform ivec2 uStateSize;uniform int uCapacity;uniform float uDt;uniform vec4 uArchetypePools[${Math.max(1, effect.source.archetypes.length)}];uniform vec4 uParticleEventA[${Math.max(1, events.length)}];uniform vec4 uParticleEventC[${Math.max(1, events.length)}];
-flat out float vClaim;flat out float vChildCount;flat out float vPoolStart;flat out float vPoolEnd;flat out float vFallback;
+uniform sampler2D uPositionState;uniform sampler2D uVelocityState;uniform sampler2D uMetadataState;uniform ivec2 uStateSize;uniform int uCapacity;uniform int uDiagnosticMode;uniform float uDt;uniform vec4 uArchetypePools[${Math.max(1, effect.source.archetypes.length)}];uniform vec4 uParticleEventA[${Math.max(1, events.length)}];uniform vec4 uParticleEventC[${Math.max(1, events.length)}];
+flat out float vClaim;flat out float vChildCount;flat out float vPoolStart;flat out float vPoolEnd;flat out float vFallback;flat out float vOverflow;flat out vec4 vDiagnostic;
 float hash11(float value){return fract(sin(value*91.3458+17.123)*47453.5453);}
-void main(){int parent=gl_VertexID/${candidateLanes},lane=gl_VertexID-parent*${candidateLanes};vClaim=12582912.0;vChildCount=0.0;vPoolStart=0.0;vPoolEnd=0.0;vFallback=0.0;gl_PointSize=1.0;
- if(parent>=uCapacity){gl_Position=vec4(2.0);return;}ivec2 uv=ivec2(parent%uStateSize.x,parent/uStateSize.x);vec4 a=texelFetch(uPositionState,uv,0),b=texelFetch(uVelocityState,uv,0),c=texelFetch(uMetadataState,uv,0);int archetype=int(c.x+.5),priority=0,slot=0,child=-1,childCount=0;bool valid=false;
+void main(){int repeat=uDiagnosticMode==1?4:1,candidate=gl_VertexID/repeat,metric=gl_VertexID-candidate*repeat,parent=candidate/${candidateLanes},lane=candidate-parent*${candidateLanes};vClaim=12582912.0;vChildCount=0.0;vPoolStart=0.0;vPoolEnd=0.0;vFallback=0.0;vOverflow=0.0;vDiagnostic=vec4(0.0);gl_PointSize=1.0;
+ if(parent>=uCapacity){gl_Position=vec4(2.0);return;}ivec2 uv=ivec2(parent%uStateSize.x,parent/uStateSize.x);vec4 a=texelFetch(uPositionState,uv,0),b=texelFetch(uVelocityState,uv,0),c=texelFetch(uMetadataState,uv,0);int archetype=int(c.x+.5),priority=0,slot=0,child=-1,childCount=0,rawChildCount=0,triggerCode=0;bool valid=false,triggered=false,generationValid=false;
  ${branches.join("\n ")}
+ if(uDiagnosticMode==1){if(!triggered||child<0){gl_Position=vec4(2.0);return;}vec4 diagnosticPool=uArchetypePools[child];float requested=float(rawChildCount),eligible=generationValid?min(requested,diagnosticPool.y):0.0,capacityLoss=generationValid?max(0.0,requested-diagnosticPool.y):0.0,generationLoss=generationValid?0.0:requested;
+  if(metric==0)vDiagnostic=vec4(requested,0.0,0.0,0.0);else if(metric==1)vDiagnostic=vec4(0.0,capacityLoss,generationLoss,0.0);else if(metric==2)vDiagnostic[triggerCode]=requested;else vDiagnostic[priority]=eligible;
+  float pixel=float(metric);gl_Position=vec4((pixel+.5)/4.0*2.0-1.0,0.0,0.0,1.0);return;}
  if(!valid||child<0){gl_Position=vec4(2.0);return;}
- vec4 pool=uArchetypePools[child]; int poolStart=int(pool.x+.5),poolCount=int(pool.y+.5); childCount=min(childCount,poolCount);
+ vec4 pool=uArchetypePools[child];vOverflow=pool.z; int poolStart=int(pool.x+.5),poolCount=int(pool.y+.5); childCount=min(childCount,poolCount);
  int pointWidth=max(1,int(ceil(sqrt(float(childCount))))); int firstFullRow=(poolStart+uStateSize.x-1)/uStateSize.x;
  int lastExclusive=(poolStart+poolCount)/uStateSize.x,rowCount=max(0,lastExclusive-firstFullRow);
  uint hash=uint(parent)*1664525u+uint(lane)*1013904223u+uint(slot+priority*4)*2246822519u; int originX=0,originY=0;
@@ -409,15 +412,20 @@ void main(){int parent=gl_VertexID/${candidateLanes},lane=gl_VertexID-parent*${c
 function buildGlslEventClaimFragment(): string {
   return `#version 300 es
 precision highp float; precision highp int;
-uniform ivec2 uStateSize;
-flat in float vClaim; flat in float vChildCount; flat in float vPoolStart; flat in float vPoolEnd; flat in float vFallback;
+uniform ivec2 uStateSize;uniform int uDiagnosticMode;
+flat in float vClaim; flat in float vChildCount; flat in float vPoolStart; flat in float vPoolEnd; flat in float vFallback;flat in float vOverflow;flat in vec4 vDiagnostic;
 out vec4 outClaim;
 void main(){
+  if(uDiagnosticMode==1){outClaim=vDiagnostic;return;}
   float id=floor(gl_FragCoord.y)*float(uStateSize.x)+floor(gl_FragCoord.x);
   if(id<vPoolStart||id>=vPoolEnd)discard;
   if(vFallback<.5){float width=ceil(sqrt(vChildCount));vec2 cell=floor(gl_PointCoord*width);float ordinal=cell.y*width+cell.x;if(ordinal>=vChildCount)discard;}
-  outClaim=vec4(vClaim);
+  outClaim=vec4(vClaim,vOverflow,0.0,0.0);
 }`;
+}
+
+function eventTriggerCode(trigger: CompiledEventEntry['trigger']): number {
+  return trigger === 'birth' ? 0 : trigger === 'age' ? 1 : trigger === 'death' ? 2 : 3;
 }
 
 interface CompiledEventEntry {

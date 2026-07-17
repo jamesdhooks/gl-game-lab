@@ -173,6 +173,8 @@ export interface ParticleEffectDiagnostics2D {
   readonly directCommandsAdmitted?: number;
   readonly directCommandsTruncated?: number;
   readonly eventContentionLosses?: number;
+  readonly eventWinners?: number;
+  readonly eventAdmissions?: number;
   readonly eventGenerationDrops?: number;
   readonly eventCapacityDrops?: number;
   readonly trailPasses?: number;

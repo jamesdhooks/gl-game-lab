@@ -211,6 +211,7 @@ export interface ParticleEffectBackendResource2D {
   setViewport?(viewport: ParticleViewport2D): void;
   setRenderParameters?(parameters: ParticleRenderParameters2D): void;
   setRenderScale?(scale: number): void;
+  setDetailedDiagnostics?(enabled: boolean): void;
   update(deltaSeconds: number, timescale: number): void;
   render(target: GpuRenderTarget2D, tier: ParticleRenderTier2D): void;
   clear(): void;
@@ -312,6 +313,11 @@ class RecoveringParticleEffectBackendResource2D implements ParticleEffectBackend
       resource.setRenderScale?.(value);
     });
   }
+  setDetailedDiagnostics(enabled: boolean): void {
+    this.invoke((resource) => {
+      resource.setDetailedDiagnostics?.(enabled);
+    });
+  }
   update(deltaSeconds: number, timescale: number): void {
     this.invoke((resource) => {
       resource.update(deltaSeconds, timescale);
@@ -403,6 +409,7 @@ export interface ParticleEffectInstance2D {
   setTimescale(value: number): void;
   setQualityTier(tier: ParticleRenderTier2D): void;
   setRenderScale(scale: number): void;
+  setDetailedDiagnostics(enabled: boolean): void;
   state(): ParticleEffectInstanceState2D;
   diagnostics(): ParticleEffectBackendDiagnostics2D;
   debugSnapshot(): GpuParticleStateSnapshot2D;
@@ -479,6 +486,7 @@ export interface ParticleEffects2D {
   diagnostics(): ParticleEffectsDiagnostics2D;
   inspect(): ParticleEffectsInspection2D;
   controlInstance(instanceId: number, command: ParticleInspectorCommand2D): void;
+  setDetailedDiagnostics(enabled: boolean): void;
   dispose(): void;
 }
 
@@ -504,6 +512,7 @@ export class EngineParticleEffects2D implements ParticleEffects2D {
   private readonly instances = new Map<number, RuntimeParticleEffectInstance2D>();
   private nextInstanceId = 1;
   private disposed = false;
+  private detailedDiagnostics = false;
   private readonly hotReloadHistory: ParticleEffectHotReloadResult2D[] = [];
 
   constructor(private readonly backend: ParticleEffectRuntimeBackend2D) {}
@@ -615,6 +624,7 @@ export class EngineParticleEffects2D implements ParticleEffects2D {
     );
     this.instances.set(instance.id, instance);
     record.instances.add(instance);
+    instance.setDetailedDiagnostics(this.detailedDiagnostics);
     return instance;
   }
 
@@ -725,6 +735,12 @@ export class EngineParticleEffects2D implements ParticleEffects2D {
     else if (command.action === "reseed") instance.restart(command.seed);
     else if (command.action === "trigger") instance.trigger(command.signal);
     else if (command.action === "step") instance.singleStep(command.deltaSeconds ?? 1 / 60);
+  }
+
+  setDetailedDiagnostics(enabled: boolean): void {
+    this.assertUsable();
+    this.detailedDiagnostics = enabled;
+    for (const instance of this.instances.values()) instance.setDetailedDiagnostics(enabled);
   }
 
   dispose(): void {
@@ -906,6 +922,7 @@ class RuntimeParticleEffectInstance2D implements ParticleEffectInstance2D {
   private timescale: number;
   private tier: ParticleRenderTier2D;
   private renderScale = 1;
+  private detailedDiagnostics = false;
   private appliedRenderScale = 1;
   private effectiveTier: ParticleRenderTier2D;
   private readonly adaptiveLod: boolean;
@@ -1172,6 +1189,12 @@ class RuntimeParticleEffectInstance2D implements ParticleEffectInstance2D {
     this.applyAdaptiveLod();
   }
 
+  setDetailedDiagnostics(enabled: boolean): void {
+    this.assertUsable();
+    this.detailedDiagnostics = enabled;
+    this.backend.setDetailedDiagnostics?.(enabled);
+  }
+
   state(): ParticleEffectInstanceState2D {
     return Object.freeze({
       id: this.id,
@@ -1261,6 +1284,7 @@ class RuntimeParticleEffectInstance2D implements ParticleEffectInstance2D {
     if (this.viewport) backend.setViewport?.(this.viewport);
     backend.setRenderParameters?.(this.renderParameters);
     backend.setRenderScale?.(this.renderScale);
+    backend.setDetailedDiagnostics?.(this.detailedDiagnostics);
     this.applyAdaptiveLod();
     if (!stateTransferred) {
       this.elapsed = 0;

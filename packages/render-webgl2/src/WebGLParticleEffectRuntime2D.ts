@@ -424,6 +424,11 @@ class WebGLParticleEffectResource2D implements ParticleEffectBackendResource2D {
     this.renderPhase %= this.renderStride;
   }
 
+  setDetailedDiagnostics(enabled: boolean): void {
+    this.assertUsable();
+    this.particles.setEventDiagnosticsEnabled?.(enabled);
+  }
+
   update(deltaSeconds: number, timescale: number): void {
     this.assertUsable();
     this.simulationTime += deltaSeconds * timescale;
@@ -484,6 +489,11 @@ class WebGLParticleEffectResource2D implements ParticleEffectBackendResource2D {
 
   diagnostics(): ParticleEffectBackendDiagnostics2D {
     const diagnostics = this.particles.diagnostics();
+    const eventCounters = diagnostics.eventCounters;
+    const hasDelayedCounters = eventCounters?.accuracy === "delayed";
+    const eventAttempts = hasDelayedCounters ? eventCounters.attempts : this.eventAttempts;
+    const eventOccupiedDrops = hasDelayedCounters ? eventCounters.occupiedLosses : this.eventOccupiedDrops;
+    const eventBudgetDrops = hasDelayedCounters ? eventCounters.capacityLosses : this.eventBudgetDrops;
     return Object.freeze({
       capacity: this.particles.capacity,
       activeEstimate: Math.min(this.particles.capacity, diagnostics.spawnedParticles),
@@ -497,11 +507,13 @@ class WebGLParticleEffectResource2D implements ParticleEffectBackendResource2D {
       uploadBytes: diagnostics.uploadBytes,
       contextGeneration: diagnostics.contextGeneration,
       rebuildCount: diagnostics.rebuildCount,
-      diagnosticAccuracy: "estimated",
+      diagnosticAccuracy: hasDelayedCounters ? "delayed" : "estimated",
       directCommandsAdmitted: diagnostics.queuedCommands,
       directCommandsTruncated: this.truncatedCommands,
-      eventContentionLosses: this.eventOccupiedDrops,
-      eventCapacityDrops: this.eventBudgetDrops,
+      eventContentionLosses: hasDelayedCounters ? eventCounters.contentionLosses : this.eventOccupiedDrops,
+      ...(hasDelayedCounters ? { eventWinners: eventCounters.winners, eventAdmissions: eventCounters.admissions } : {}),
+      eventGenerationDrops: hasDelayedCounters ? eventCounters.generationLosses : 0,
+      eventCapacityDrops: eventBudgetDrops,
       trailPasses: this.program.renderPasses.ultra.filter((pass) => pass.kind === "trails").length > 0 ? diagnostics.renderPasses : 0,
       bloomPasses: this.program.renderPasses.ultra.filter((pass) => pass.kind === "bloom").length > 0 ? diagnostics.renderPasses : 0,
       commandUploadBytes: diagnostics.uploadBytes,
@@ -509,12 +521,12 @@ class WebGLParticleEffectResource2D implements ParticleEffectBackendResource2D {
       paletteUploadBytes: 0,
       allocationsAfterWarmup: 0,
       allocatedBytes: this.particles.capacity * 4 * Float32Array.BYTES_PER_ELEMENT * this.program.reflection.stateTargets * 2,
-      eventAttempts: this.eventAttempts,
-      eventOccupiedDrops: this.eventOccupiedDrops,
-      eventBudgetDrops: this.eventBudgetDrops,
+      eventAttempts,
+      eventOccupiedDrops,
+      eventBudgetDrops,
       archetypes: Object.freeze(Object.fromEntries(this.program.effect.source.archetypes.map((archetype, index) => [archetype.id, Object.freeze({ capacity: Math.round(this.poolData[index * 4 + 1] ?? 0), activeEstimate: Math.round(this.archetypeActiveEstimate[index] ?? 0) })]))),
-      eventAttemptsByTrigger: Object.freeze({ ...this.eventAttemptsByTrigger }),
-      eventAttemptsByPriority: Object.freeze({ ...this.eventAttemptsByPriority }),
+      eventAttemptsByTrigger: hasDelayedCounters ? Object.freeze({ birth: eventCounters.attemptsByTrigger[0], age: eventCounters.attemptsByTrigger[1], death: eventCounters.attemptsByTrigger[2], collision: eventCounters.attemptsByTrigger[3] }) : Object.freeze({ ...this.eventAttemptsByTrigger }),
+      eventAttemptsByPriority: hasDelayedCounters ? Object.freeze({ primary: eventCounters.attemptsByPriority[0], secondary: eventCounters.attemptsByPriority[1], cosmetic: eventCounters.attemptsByPriority[2] }) : Object.freeze({ ...this.eventAttemptsByPriority }),
     });
   }
 

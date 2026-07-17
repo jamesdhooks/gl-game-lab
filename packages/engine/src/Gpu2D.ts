@@ -121,6 +121,20 @@ export interface GpuParticleSystemDiagnostics2D {
   readonly uploadBytes: number;
   readonly contextGeneration: number;
   readonly rebuildCount: number;
+  readonly eventCounters?: GpuParticleEventCounters2D;
+}
+
+export interface GpuParticleEventCounters2D {
+  readonly attempts: number;
+  readonly winners: number;
+  readonly admissions: number;
+  readonly contentionLosses: number;
+  readonly occupiedLosses: number;
+  readonly capacityLosses: number;
+  readonly generationLosses: number;
+  readonly attemptsByTrigger: readonly [number, number, number, number];
+  readonly attemptsByPriority: readonly [number, number, number];
+  readonly accuracy: 'delayed' | 'estimated';
 }
 
 export interface GpuParticleRenderPass2DOptions {
@@ -145,6 +159,8 @@ export interface GpuParticleSystem2D {
   beginTrails(width: number, height: number, fade: number): GpuRenderTarget2D;
   compositeTrails(target: GpuRenderTarget2D, background: readonly [number, number, number], bloom: number): void;
   clearTrails(): void;
+  /** Enables compact asynchronous event counters. Disabled by default to avoid diagnostic GPU work. */
+  setEventDiagnosticsEnabled?(enabled: boolean): void;
   /** GPU-to-GPU state transfer used for ABI-compatible shader hot reloads. */
   copyStateTo?(target: GpuParticleSystem2D): boolean;
   debugReadback(): GpuParticleStateSnapshot2D;

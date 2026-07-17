@@ -31,6 +31,11 @@ export function DebugPanel({ engine }: DebugPanelProps): JSX.Element {
   const uploads = (renderer?.bufferUploadBytes ?? 0) + (renderer?.textureUploadBytes ?? 0);
   const systems = [...(stats?.systems ?? [])].sort((left, right) => right.cpuMs - left.cpuMs);
 
+  useEffect(() => {
+    particleEffects?.setDetailedDiagnostics(open);
+    return () => { particleEffects?.setDetailedDiagnostics(false); };
+  }, [open, particleEffects]);
+
   return (
     <div className="pointer-events-auto">
       <AnimatePresence mode="wait">

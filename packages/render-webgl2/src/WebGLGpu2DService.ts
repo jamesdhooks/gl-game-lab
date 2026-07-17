@@ -183,6 +183,7 @@ class WebGLGpuParticleSystem implements GpuParticleSystem2D {
   clear(): void {
     this.retainedSeed = undefined;
     this.owner.value.state.clear();
+    this.owner.value.eventAllocator?.clearCounters();
   }
   uploadSeed(seed: GpuParticleSeed2D): void {
     this.retainedSeed = {
@@ -257,6 +258,9 @@ class WebGLGpuParticleSystem implements GpuParticleSystem2D {
     this.renderPasses += 1;
   }
   clearTrails(): void { this.owner.value.trails?.clear(); }
+  setEventDiagnosticsEnabled(enabled: boolean): void {
+    this.owner.value.eventAllocator?.setDiagnosticsEnabled(enabled);
+  }
   copyStateTo(target: GpuParticleSystem2D): boolean {
     return target instanceof WebGLGpuParticleSystem && this.owner.value.state.copyTo(target.owner.value.state);
   }
@@ -267,6 +271,7 @@ class WebGLGpuParticleSystem implements GpuParticleSystem2D {
     return Object.freeze({ ...state, ...(eventClaims ? { eventClaims } : {}) });
   }
   diagnostics(): GpuParticleSystemDiagnostics2D {
+    const eventCounters = this.owner.value.eventAllocator?.countersSnapshot();
     return Object.freeze({
       commandCapacity: this.owner.value.commands.capacity,
       queuedCommands: this.queuedCommands,
@@ -278,6 +283,7 @@ class WebGLGpuParticleSystem implements GpuParticleSystem2D {
       uploadBytes: this.uploadedBytes,
       contextGeneration: this.currentGeneration,
       rebuildCount: this.currentGeneration,
+      ...(eventCounters ? { eventCounters } : {}),
     });
   }
   dispose(): void {
