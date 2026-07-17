@@ -156,33 +156,54 @@ describe('WebGpuParticleEffectRuntimeBackend2D', () => {
       parameters: [
         { id: 'gravity', kind: 'number' as const, defaultValue: 10, min: -100, max: 100 },
         { id: 'size', kind: 'number' as const, defaultValue: 1, min: 0, max: 10 },
+        { id: 'restitution', kind: 'number' as const, defaultValue: 0.5, min: 0, max: 1 },
       ],
       moduleBindings: [
         { parameterId: 'gravity', target: 'archetype.spark.motion.gravity' },
         { parameterId: 'size', target: 'archetype.spark.appearance.size.start' },
+        { parameterId: 'restitution', target: 'archetype.spark.collision.restitution' },
       ],
     };
     const resource = backend.create(compileParticleProgram2D(compileParticleEffect2D(graph)), 16);
     fixture.writeBuffer.mockClear();
     resource.setPalette({ revision: 2, colors: [[1, 0, 0], [0, 1, 0]] });
-    resource.setParameters?.({ gravity: 25, size: 4 });
+    resource.setParameters?.({ gravity: 25, size: 4, restitution: 0.75 });
     resource.setViewport?.({ width: 320, height: 180, dpr: 2 });
     resource.setRenderParameters?.({ pointScale: 3, intensity: 1.5, streakScale: 0.75, paletteTransition: 0.4, colorMode: 'over-life' });
     resource.render({ width: 320, height: 180 } as GpuRenderTarget2D, 'enhanced');
     const labels = fixture.writeBuffer.mock.calls.map((call) => (call[0] as Buffer).label);
-    expect(labels).toEqual(expect.arrayContaining([expect.stringContaining('palette'), expect.stringContaining('motion'), expect.stringContaining('appearance-size'), expect.stringContaining('render-config')]));
+    expect(labels).toEqual(expect.arrayContaining([expect.stringContaining('palette'), expect.stringContaining('motion'), expect.stringContaining('appearance-size'), expect.stringContaining('collision-profiles'), expect.stringContaining('render-config')]));
     expect(render.mock.calls[0]![4]).toMatchObject({ paletteCount: 2 });
     resource.dispose();
   });
 
-  it('rejects unsupported collider graphs so the engine can fall back without semantic drift', () => {
+  it('uploads collider profiles and dynamic circle/capsule geometry without falling back', () => {
     const fixture = deviceFixture(), backend = new WebGpuParticleEffectRuntimeBackend2D(fixture.device, { render: vi.fn() });
     const colliderDefinition: ParticleEffectDefinition2D = {
       ...definition,
-      archetypes: [{ ...definition.archetypes[0]!, collision: { circles: true, restitution: 0.8, friction: 0.1 } }],
+      archetypes: [{ ...definition.archetypes[0]!, collision: { bounds: true, circles: true, capsules: true, restitution: 0.8, friction: 0.1, lifetimeLoss: 0.2 } }],
       modules: { ...definition.modules, collisions: true },
     };
     const program = compileParticleProgram2D(compileParticleEffect2D(adaptParticleEffectDefinition2D(colliderDefinition)));
-    expect(() => backend.create(program, 16)).toThrow('WebGL2 fallback');
+    const resource = backend.create(program, 16);
+    fixture.writeBuffer.mockClear();
+    resource.setColliders?.({ revision: 2, circles: [{ x: 10, y: 20, radius: 4, mode: 'kill' }], capsules: [{ ax: 1, ay: 2, bx: 8, by: 9, radius: 3 }] });
+    resource.setColliders?.({ revision: 2, circles: [], capsules: [] });
+    expect(fixture.writeBuffer).toHaveBeenCalledTimes(4);
+    const uploads = Object.fromEntries(fixture.writeBuffer.mock.calls.map((call) => [(call[0] as Buffer).label, call[2] as Float32Array]));
+    expect([...uploads[Object.keys(uploads).find((key) => key.includes('collider-counts'))!]!.slice(0, 2)]).toEqual([1, 1]);
+    expect([...uploads[Object.keys(uploads).find((key) => key.includes('circle-colliders'))!]!.slice(0, 4)]).toEqual([10, 20, 4, 1]);
+    expect([...uploads[Object.keys(uploads).find((key) => key.includes('capsule-colliders-a'))!]!.slice(0, 4)]).toEqual([1, 2, 8, 9]);
+    expect([...uploads[Object.keys(uploads).find((key) => key.includes('capsule-colliders-b'))!]!.slice(0, 2)]).toEqual([3, 0]);
+    resource.dispose();
+  });
+
+  it('invalidates resident resources after device loss or validation failure', () => {
+    const fixture = deviceFixture(), backend = new WebGpuParticleEffectRuntimeBackend2D(fixture.device, { render: vi.fn() });
+    const program = compileParticleProgram2D(compileParticleEffect2D(adaptParticleEffectDefinition2D(definition))), resource = backend.create(program, 16);
+    backend.invalidate(new Error('validation failed'));
+    expect(() => resource.update(1 / 60, 1)).toThrow('validation failed');
+    expect(() => backend.create(program, 16)).toThrow('validation failed');
+    resource.dispose();
   });
 });

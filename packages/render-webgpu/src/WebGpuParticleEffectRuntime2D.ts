@@ -1,9 +1,10 @@
-import type { CompiledParticleProgram2D, GpuRenderTarget2D, ParticleDomain2D, ParticleEmitterSourceOverride2D, ParticleViewport2D, ParticleRenderParameters2D, ParticleEffectBackendDiagnostics2D, ParticleEffectBackendResource2D, ParticleEffectRuntimeBackend2D, ParticleForceFieldSet2D, ParticlePalette2D, ParticleRenderTier2D, ParticleRuntimeEmission2D, ParticleParameterValue2D, ParticleEventParameters2D } from "@hooksjam/gl-game-lab-engine";
+import type { CompiledParticleProgram2D, GpuRenderTarget2D, ParticleColliderSet2D, ParticleDomain2D, ParticleEmitterSourceOverride2D, ParticleViewport2D, ParticleRenderParameters2D, ParticleEffectBackendDiagnostics2D, ParticleEffectBackendResource2D, ParticleEffectRuntimeBackend2D, ParticleForceFieldSet2D, ParticlePalette2D, ParticleRenderTier2D, ParticleRuntimeEmission2D, ParticleParameterValue2D, ParticleEventParameters2D } from "@hooksjam/gl-game-lab-engine";
 import { ParticleEventWindowScheduler2D, planParticleSpawnCommands2D, resolveParticleArchetypePartitions2D } from "@hooksjam/gl-game-lab-engine";
 
 const COMMAND_CAPACITY = 64;
 const COMMAND_FLOATS = 16;
 const MAX_PALETTE = 16;
+const MAX_COLLIDERS = 16;
 const STORAGE_COPY_USAGE = 0x80 | 0x08;
 const UNIFORM_COPY_USAGE = 0x40 | 0x08;
 
@@ -104,14 +105,19 @@ export interface WebGpuParticleEffectRuntimeOptions2D {
 export class WebGpuParticleEffectRuntimeBackend2D implements ParticleEffectRuntimeBackend2D {
   readonly kind = "webgpu";
   private serial = 0;
+  private failure: Error | undefined;
   constructor(
     private readonly device: ParticleWebGpuDevice2D,
     private readonly options: WebGpuParticleEffectRuntimeOptions2D,
   ) {}
   create(program: CompiledParticleProgram2D, capacity: number): ParticleEffectBackendResource2D {
-    const unsupportedColliders = program.effect.source.archetypes.some((archetype) => archetype.collision?.circles || archetype.collision?.capsules);
-    if (unsupportedColliders) throw new Error(`WebGPU particle effect ${program.effect.source.id} requires circle or capsule collision support; use the WebGL2 fallback`);
-    return new WebGpuParticleEffectResource2D(this.device, `particle-effect.${program.effect.source.id}.${this.serial++}`, program, capacity, this.options.render);
+    if (this.failure) throw this.failure;
+    return new WebGpuParticleEffectResource2D(this.device, `particle-effect.${program.effect.source.id}.${this.serial++}`, program, capacity, this.options.render, () => this.failure);
+  }
+  /** Invalidates every resource so the engine's recovery wrapper switches to WebGL2 on its next operation. */
+  invalidate(reason: unknown): void {
+    if (this.failure) return;
+    this.failure = reason instanceof Error ? reason : new Error(typeof reason === "string" ? reason : "WebGPU particle backend failed");
   }
 }
 
@@ -126,6 +132,16 @@ class WebGpuParticleEffectResource2D implements ParticleEffectBackendResource2D 
   private readonly sources: ParticleWebGpuBuffer2D;
   private readonly forces: ParticleWebGpuBuffer2D;
   private readonly forceData: Float32Array;
+  private readonly collisionProfiles: ParticleWebGpuBuffer2D;
+  private readonly collisionProfileData: Float32Array;
+  private readonly colliderCounts: ParticleWebGpuBuffer2D;
+  private readonly colliderCountData = new Float32Array(4);
+  private readonly circles: ParticleWebGpuBuffer2D;
+  private readonly circleData = new Float32Array(MAX_COLLIDERS * 4);
+  private readonly capsuleA: ParticleWebGpuBuffer2D;
+  private readonly capsuleAData = new Float32Array(MAX_COLLIDERS * 4);
+  private readonly capsuleB: ParticleWebGpuBuffer2D;
+  private readonly capsuleBData = new Float32Array(MAX_COLLIDERS * 4);
   private readonly archetypeSize: ParticleWebGpuBuffer2D;
   private readonly archetypeLength: ParticleWebGpuBuffer2D;
   private readonly archetypeAlpha: ParticleWebGpuBuffer2D;
@@ -171,6 +187,7 @@ class WebGpuParticleEffectResource2D implements ParticleEffectBackendResource2D 
   private readonly domainData = new Float32Array([0, 0, 1, 1, 0, 0, 1, 0]);
   private attractorCount = 0;
   private forceFieldRevision = -1;
+  private colliderRevision = -1;
   /** Reused reset payload. Clearing is an authoring/lifecycle action, never a per-frame allocation. */
   private readonly zeroState: Float32Array;
   private readonly submissions: unknown[] = [undefined];
@@ -203,6 +220,7 @@ class WebGpuParticleEffectResource2D implements ParticleEffectBackendResource2D 
     private readonly program: CompiledParticleProgram2D,
     private readonly capacity: number,
     private readonly renderEffect: WebGpuParticleEffectRender2D,
+    private readonly backendFailure: () => Error | undefined,
   ) {
     const stateBytes = capacity * 4 * Float32Array.BYTES_PER_ELEMENT;
     this.zeroState = new Float32Array(capacity * 4);
@@ -259,6 +277,17 @@ class WebGpuParticleEffectResource2D implements ParticleEffectBackendResource2D 
       usage: STORAGE_COPY_USAGE,
     });
     device.queue.writeBuffer(this.forces, 0, forceData);
+    this.collisionProfileData = new Float32Array(Math.max(1, program.effect.source.archetypes.length) * 4);
+    program.effect.source.archetypes.forEach((archetype, index) => {
+      const collision = archetype.collision,
+        flags = (collision?.bounds ? 1 : 0) + (collision?.circles ? 2 : 0) + (collision?.capsules ? 4 : 0);
+      this.collisionProfileData.set([collision?.restitution ?? 0, collision?.friction ?? 0, collision?.lifetimeLoss ?? 0, flags], index * 4);
+    });
+    this.collisionProfiles = createStorageBuffer(device, `${id}.collision-profiles`, this.collisionProfileData);
+    this.colliderCounts = createStorageBuffer(device, `${id}.collider-counts`, this.colliderCountData);
+    this.circles = createStorageBuffer(device, `${id}.circle-colliders`, this.circleData);
+    this.capsuleA = createStorageBuffer(device, `${id}.capsule-colliders-a`, this.capsuleAData);
+    this.capsuleB = createStorageBuffer(device, `${id}.capsule-colliders-b`, this.capsuleBData);
     this.sizeData = new Float32Array(Math.max(1, program.effect.source.archetypes.length) * 4);
     this.lengthData = new Float32Array(Math.max(1, program.effect.source.archetypes.length) * 4);
     this.alphaData = new Float32Array(Math.max(1, program.effect.source.archetypes.length) * 4);
@@ -359,7 +388,7 @@ class WebGpuParticleEffectResource2D implements ParticleEffectBackendResource2D 
     this.bindGroup = device.createBindGroup({
       label: `${id}.bindings`,
       layout: this.pipeline.getBindGroupLayout(0),
-      entries: [this.stateA, this.stateB, this.stateC, this.frame, this.commands, this.motion, this.sources, this.forces, this.attractors, this.domain, this.emitterInitialization].map((buffer, binding) => ({ binding, resource: { buffer } })),
+      entries: [this.stateA, this.stateB, this.stateC, this.frame, this.commands, this.motion, this.sources, this.forces, this.attractors, this.domain, this.emitterInitialization, this.collisionProfiles, this.colliderCounts, this.circles, this.capsuleA, this.capsuleB].map((buffer, binding) => ({ binding, resource: { buffer } })),
     });
     if (program.webgpu.event && program.webgpu.eventResolve) {
       this.eventParameters = createStorageBuffer(device, `${id}.event-parameters`, this.eventParameterData);
@@ -497,11 +526,39 @@ class WebGpuParticleEffectResource2D implements ParticleEffectBackendResource2D 
         const target = writeBoundMotion(this.motionData, this.forceData, archetypeIndex, field, value);
         if (target === "motion") this.uploadArchetypeVector(this.motion, this.motionData, archetypeIndex);
         else if (target === "force") this.uploadArchetypeVector(this.forces, this.forceData, archetypeIndex);
+      } else if (section === "collision") {
+        if (writeBoundCollision(this.collisionProfileData, archetypeIndex, field, value)) this.uploadArchetypeVector(this.collisionProfiles, this.collisionProfileData, archetypeIndex);
       } else if (section === "appearance") {
         const target = writeBoundAppearance(this.sizeData, this.lengthData, this.alphaData, this.intensityData, archetypeIndex, field, value);
         if (target) this.uploadArchetypeVector(target.buffer === "size" ? this.archetypeSize : target.buffer === "length" ? this.archetypeLength : target.buffer === "alpha" ? this.archetypeAlpha : this.archetypeIntensity, target.data, archetypeIndex);
       }
     }
+  }
+
+  setColliders(value: ParticleColliderSet2D): void {
+    this.assertUsable();
+    if (value.revision === this.colliderRevision) return;
+    this.colliderRevision = value.revision;
+    this.circleData.fill(0);
+    this.capsuleAData.fill(0);
+    this.capsuleBData.fill(0);
+    const circleCount = Math.min(MAX_COLLIDERS, value.circles?.length ?? 0),
+      capsuleCount = Math.min(MAX_COLLIDERS, value.capsules?.length ?? 0);
+    this.colliderCountData.set([circleCount, capsuleCount, 0, 0]);
+    for (let index = 0; index < circleCount; index += 1) {
+      const circle = value.circles![index]!;
+      this.circleData.set([circle.x, circle.y, circle.radius, circle.mode === "kill" ? 1 : 0], index * 4);
+    }
+    for (let index = 0; index < capsuleCount; index += 1) {
+      const capsule = value.capsules![index]!;
+      this.capsuleAData.set([capsule.ax, capsule.ay, capsule.bx, capsule.by], index * 4);
+      this.capsuleBData.set([capsule.radius, capsule.mode === "kill" ? 1 : 0, 0, 0], index * 4);
+    }
+    this.device.queue.writeBuffer(this.colliderCounts, 0, this.colliderCountData);
+    this.device.queue.writeBuffer(this.circles, 0, this.circleData);
+    this.device.queue.writeBuffer(this.capsuleA, 0, this.capsuleAData);
+    this.device.queue.writeBuffer(this.capsuleB, 0, this.capsuleBData);
+    this.uploadBytes += this.colliderCountData.byteLength + this.circleData.byteLength + this.capsuleAData.byteLength + this.capsuleBData.byteLength;
   }
 
   setForceFields(value: ParticleForceFieldSet2D): void {
@@ -704,7 +761,7 @@ class WebGpuParticleEffectResource2D implements ParticleEffectBackendResource2D 
       uploadBytes: this.uploadBytes,
       contextGeneration: 0,
       rebuildCount: 0,
-      allocatedBytes: this.capacity * 4 * 4 * 3 + this.commandData.byteLength + this.frameData.byteLength + this.attractorData.byteLength + this.domainData.byteLength + this.sizeData.byteLength + this.lengthData.byteLength + this.alphaData.byteLength + this.intensityData.byteLength + this.paletteData.byteLength + this.renderConfigData.byteLength + (this.eventQueue ? this.capacity * 3 * 16 + this.zeroEventCounters.byteLength + this.eventParameterData.byteLength : 0),
+      allocatedBytes: this.capacity * 4 * 4 * 3 + this.commandData.byteLength + this.frameData.byteLength + this.attractorData.byteLength + this.domainData.byteLength + this.collisionProfileData.byteLength + this.colliderCountData.byteLength + this.circleData.byteLength + this.capsuleAData.byteLength + this.capsuleBData.byteLength + this.sizeData.byteLength + this.lengthData.byteLength + this.alphaData.byteLength + this.intensityData.byteLength + this.paletteData.byteLength + this.renderConfigData.byteLength + (this.eventQueue ? this.capacity * 3 * 16 + this.zeroEventCounters.byteLength + this.eventParameterData.byteLength : 0),
       eventAttempts: this.eventAttempts,
       eventOccupiedDrops: 0,
       eventBudgetDrops: 0,
@@ -735,6 +792,11 @@ class WebGpuParticleEffectResource2D implements ParticleEffectBackendResource2D 
     this.renderConfig.destroy();
     this.sources.destroy();
     this.forces.destroy();
+    this.collisionProfiles.destroy();
+    this.colliderCounts.destroy();
+    this.circles.destroy();
+    this.capsuleA.destroy();
+    this.capsuleB.destroy();
     this.attractors.destroy();
     this.domain.destroy();
     this.emitterInitialization.destroy();
@@ -756,6 +818,8 @@ class WebGpuParticleEffectResource2D implements ParticleEffectBackendResource2D 
   }
   private assertUsable(): void {
     if (this.disposed) throw new Error("WebGPU particle effect resource is disposed");
+    const failure = this.backendFailure();
+    if (failure) throw failure;
   }
 }
 
@@ -792,6 +856,14 @@ function writeBoundMotion(motion: Float32Array, force: Float32Array, index: numb
   if (field === "tangentialAcceleration") { force[offset + 1] = value; return "force"; }
   if (field === "maxSpeed") { force[offset + 3] = value; return "force"; }
   return undefined;
+}
+function writeBoundCollision(collision: Float32Array, index: number, field: string, value: number): boolean {
+  const offset = index * 4;
+  if (field === "restitution") collision[offset] = value;
+  else if (field === "friction") collision[offset + 1] = value;
+  else if (field === "lifetimeLoss") collision[offset + 2] = value;
+  else return false;
+  return true;
 }
 function writeBoundAppearance(size: Float32Array, length: Float32Array, alpha: Float32Array, intensity: Float32Array, index: number, field: string, value: number): { readonly buffer: "size" | "length" | "alpha" | "intensity"; readonly data: Float32Array } | undefined {
   const [curve, component] = field.split("."),

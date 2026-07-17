@@ -619,6 +619,11 @@ struct ParticleDomain { data: vec4<f32>, options: vec4<f32> }
 @group(0) @binding(8) var<storage, read> attractors: array<Attractor>;
 @group(0) @binding(9) var<storage, read> domain: ParticleDomain;
 @group(0) @binding(10) var<storage, read> emitterInitialization: array<vec4<f32>>;
+@group(0) @binding(11) var<storage, read> archetypeCollision: array<vec4<f32>>;
+@group(0) @binding(12) var<storage, read> colliderCounts: array<vec4<f32>>;
+@group(0) @binding(13) var<storage, read> circleColliders: array<vec4<f32>>;
+@group(0) @binding(14) var<storage, read> capsuleColliderA: array<vec4<f32>>;
+@group(0) @binding(15) var<storage, read> capsuleColliderB: array<vec4<f32>>;
 fn hash11(value: f32) -> f32 { return fract(sin(value * 91.3458 + 17.123) * 47453.5453); }
 @compute @workgroup_size(256)
 fn simulate(@builtin(global_invocation_id) gid: vec3<u32>) {
@@ -628,6 +633,8 @@ fn simulate(@builtin(global_invocation_id) gid: vec3<u32>) {
     let archetype = min(u32(stateC[i].archetype + 0.5), ${Math.max(0, effect.source.archetypes.length - 1)}u);
     let motion = archetypeMotion[archetype];
     let force = archetypeForce[archetype];
+    let collision = archetypeCollision[archetype];
+    ${collisions ? "stateC[i].flags=f32(u32(stateC[i].flags+0.5)&0xfffffffeu); var collided=false;" : ""}
     stateA[i].age += frame.delta;
     stateB[i].velocity.y += motion.x * frame.delta;
     stateB[i].velocity *= exp(-max(0.0, motion.y) * frame.delta);
@@ -675,7 +682,28 @@ fn simulate(@builtin(global_invocation_id) gid: vec3<u32>) {
         }
       }
     }
-    ${collisions ? "stateA[i].position = clamp(stateA[i].position, vec2<f32>(0.0), frame.viewport);" : ""}
+    ${
+      collisions
+        ? `let collisionFlags=u32(collision.w+0.5);
+    if((collisionFlags&1u)!=0u){
+      if(stateA[i].position.x<0.0||stateA[i].position.x>frame.viewport.x){collided=true;stateA[i].position.x=clamp(stateA[i].position.x,0.0,frame.viewport.x);stateB[i].velocity.x=-stateB[i].velocity.x*collision.x;}
+      if(stateA[i].position.y<0.0||stateA[i].position.y>frame.viewport.y){collided=true;stateA[i].position.y=clamp(stateA[i].position.y,0.0,frame.viewport.y);stateB[i].velocity.y=-stateB[i].velocity.y*collision.x;}
+    }
+    if((collisionFlags&2u)!=0u){
+      let circleCount=min(u32(colliderCounts[0].x+0.5),16u);
+      for(var collider=0u;collider<circleCount;collider+=1u){let circle=circleColliders[collider];let delta=stateA[i].position-circle.xy;let distance=length(delta);
+        if(distance<circle.z){collided=true;if(circle.w>0.5){stateA[i].age=stateA[i].lifetime;}else{let normal=select(vec2<f32>(0.0,-1.0),delta/distance,distance>0.0001);stateA[i].position=circle.xy+normal*circle.z;stateB[i].velocity-=normal*(1.0+collision.x)*dot(stateB[i].velocity,normal);stateB[i].velocity*=max(0.0,1.0-collision.y);stateA[i].age+=stateA[i].lifetime*collision.z;}}
+      }
+    }
+    if((collisionFlags&4u)!=0u){
+      let capsuleCount=min(u32(colliderCounts[0].y+0.5),16u);
+      for(var collider=0u;collider<capsuleCount;collider+=1u){let segment=capsuleColliderA[collider];let data=capsuleColliderB[collider];let ab=segment.zw-segment.xy;let t=clamp(dot(stateA[i].position-segment.xy,ab)/max(dot(ab,ab),0.0001),0.0,1.0);let closest=segment.xy+ab*t;let delta=stateA[i].position-closest;let distance=length(delta);
+        if(distance<data.x){collided=true;if(data.y>0.5){stateA[i].age=stateA[i].lifetime;}else{let normal=select(vec2<f32>(0.0,-1.0),delta/distance,distance>0.0001);stateA[i].position=closest+normal*data.x;stateB[i].velocity-=normal*(1.0+collision.x)*dot(stateB[i].velocity,normal);stateB[i].velocity*=max(0.0,1.0-collision.y);stateA[i].age+=stateA[i].lifetime*collision.z;}}
+      }
+    }
+    if(collided){stateC[i].flags=f32(u32(stateC[i].flags+0.5)|1u);}`
+        : ""
+    }
   }
   if (frame.commandCount > 0u) {
     var low = 0u; var high = frame.commandCount;

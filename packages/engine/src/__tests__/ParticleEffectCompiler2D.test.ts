@@ -66,6 +66,10 @@ describe('ParticleEffectCompiler2D', () => {
     expect(program.webgpu.simulation.source).toContain('emitterInitialization[emitter]');
     expect(program.webgpu.simulation.source).toContain('turbulenceAngle');
     expect(program.webgpu.simulation.source).toContain('frame.attractorCount');
+    expect(program.webgpu.simulation.source).toContain('archetypeCollision[archetype]');
+    expect(program.webgpu.simulation.source).toContain('circleColliders[collider]');
+    expect(program.webgpu.simulation.source).toContain('capsuleColliderA[collider]');
+    expect(program.webgpu.simulation.source).toContain('stateC[i].flags=f32');
     expect(program.webgpu.simulation.source).toContain('shape == 9u');
     expect(program.webgpu.event?.source).toContain('atomicAdd');
     expect(program.webgpu.event?.source).toContain('appendEvents');
