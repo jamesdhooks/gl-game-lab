@@ -90,8 +90,13 @@ const bindings: readonly ParticleSettingBinding2D[] = [
 export const SPARKS_PARTICLE_SETTING_BINDINGS = validateParticleSettingBindings2D(SPARKS_PARTICLE_EFFECT, bindings);
 
 const sparksGraphBase = adaptParticleEffectDefinition2D(SPARKS_PARTICLE_EFFECT);
-const sparksEmitter = (id: string, archetypeId: string, importance: 'critical' | 'primary' | 'secondary') => ({
-  id, archetypeId, timeline: { manual: true as const }, source: { kind: 'point' as const },
+const sparksEmitter = (
+  id: string,
+  archetypeId: string,
+  importance: 'critical' | 'primary' | 'secondary',
+  source: { readonly kind: 'point' } | { readonly kind: 'disc'; readonly radius: number } | { readonly kind: 'cone'; readonly spread: number } | { readonly kind: 'pinwheel'; readonly arms: number; readonly turns: number } | { readonly kind: 'shower'; readonly width: number },
+) => ({
+  id, archetypeId, timeline: { manual: true as const }, source,
   transform: { space: 'scene' as const }, limits: { importance, maxPerFrame: 500_000 },
 });
 
@@ -104,15 +109,25 @@ export const SPARKS_PARTICLE_GRAPH = defineParticleEffect2D({
     { id: 'turbulence', kind: 'number', defaultValue: 0.22, min: 0, max: 4 },
     { id: 'restitution', kind: 'number', defaultValue: 0.58, min: 0, max: 1 },
     { id: 'friction', kind: 'number', defaultValue: 0.18, min: 0, max: 1 },
+    { id: 'collision-life-loss', kind: 'number', defaultValue: 0.12, min: 0, max: 1 },
+    { id: 'core-size', kind: 'number', defaultValue: 1, min: 0.02, max: 10 },
+    { id: 'core-size-variability', kind: 'number', defaultValue: 0.56, min: 0, max: 2 },
+    { id: 'core-intensity', kind: 'number', defaultValue: 3.65, min: 0, max: 8 },
     { id: 'primary-size', kind: 'number', defaultValue: 1, min: 0, max: 3 },
+    { id: 'primary-size-variability', kind: 'number', defaultValue: 0.56, min: 0, max: 2 },
     { id: 'primary-length', kind: 'number', defaultValue: 1, min: 0, max: 8 },
+    { id: 'primary-length-variability', kind: 'number', defaultValue: 0.38, min: 0, max: 2 },
+    { id: 'bounce-size', kind: 'number', defaultValue: 0.42, min: 0.02, max: 3 },
+    { id: 'bounce-size-variability', kind: 'number', defaultValue: 0.72, min: 0, max: 2 },
+    { id: 'bounce-length', kind: 'number', defaultValue: 0.72, min: 0, max: 12 },
+    { id: 'bounce-length-variability', kind: 'number', defaultValue: 0.52, min: 0, max: 2 },
   ],
   emitters: [
-    sparksEmitter('core-contact', 'core', 'critical'),
-    sparksEmitter('welding', 'primary', 'primary'),
-    sparksEmitter('pinwheel', 'primary', 'primary'),
-    sparksEmitter('shower', 'primary', 'primary'),
-    sparksEmitter('collision-bounce', 'bounce', 'secondary'),
+    sparksEmitter('core-contact', 'core', 'critical', { kind: 'disc', radius: 1 }),
+    sparksEmitter('welding', 'primary', 'primary', { kind: 'cone', spread: Math.PI * 0.9 }),
+    sparksEmitter('pinwheel', 'primary', 'primary', { kind: 'pinwheel', arms: 4, turns: 1 }),
+    sparksEmitter('shower', 'primary', 'primary', { kind: 'shower', width: 1 }),
+    sparksEmitter('collision-bounce', 'bounce', 'secondary', { kind: 'point' }),
   ],
   graph: {
     root: particleGraph2D.parallel(
@@ -125,7 +140,12 @@ export const SPARKS_PARTICLE_GRAPH = defineParticleEffect2D({
   persistedBindings: [
     { parameterId: 'gravity', key: 'gravity' }, { parameterId: 'air-drag', key: 'airDrag' }, { parameterId: 'turbulence', key: 'sparkTurbulence' },
     { parameterId: 'restitution', key: 'bounceRestitution' }, { parameterId: 'friction', key: 'surfaceFriction' },
-    { parameterId: 'primary-size', key: 'primarySparkSize' }, { parameterId: 'primary-length', key: 'primarySparkLength' },
+    { parameterId: 'collision-life-loss', key: 'bounceLifeDecay' },
+    { parameterId: 'core-size', key: 'coreSparkSize' }, { parameterId: 'core-size-variability', key: 'coreSparkSizeVariability' }, { parameterId: 'core-intensity', key: 'coreSparkIntensity' },
+    { parameterId: 'primary-size', key: 'primarySparkSize' }, { parameterId: 'primary-size-variability', key: 'primarySparkSizeVariability' },
+    { parameterId: 'primary-length', key: 'primarySparkLength' }, { parameterId: 'primary-length-variability', key: 'primarySparkLengthVariability' },
+    { parameterId: 'bounce-size', key: 'bounceSparkSize' }, { parameterId: 'bounce-size-variability', key: 'bounceSparkSizeVariability' },
+    { parameterId: 'bounce-length', key: 'bounceSparkLength' }, { parameterId: 'bounce-length-variability', key: 'bounceSparkLengthVariability' },
   ],
   moduleBindings: [
     ...['core','primary','bounce'].flatMap((id) => [
@@ -134,7 +154,13 @@ export const SPARKS_PARTICLE_GRAPH = defineParticleEffect2D({
     { target: 'archetype.primary.motion.turbulence', parameterId: 'turbulence' }, { target: 'archetype.bounce.motion.turbulence', parameterId: 'turbulence' },
     { target: 'archetype.primary.collision.restitution', parameterId: 'restitution' }, { target: 'archetype.bounce.collision.restitution', parameterId: 'restitution' },
     { target: 'archetype.primary.collision.friction', parameterId: 'friction' }, { target: 'archetype.bounce.collision.friction', parameterId: 'friction' },
+    { target: 'archetype.primary.collision.lifetimeLoss', parameterId: 'collision-life-loss' }, { target: 'archetype.bounce.collision.lifetimeLoss', parameterId: 'collision-life-loss' },
+    { target: 'archetype.core.appearance.size.start', parameterId: 'core-size' }, { target: 'archetype.core.appearance.size.variability', parameterId: 'core-size-variability' },
+    { target: 'archetype.core.appearance.intensity.start', parameterId: 'core-intensity' },
     { target: 'archetype.primary.appearance.size.start', parameterId: 'primary-size' }, { target: 'archetype.primary.appearance.length.start', parameterId: 'primary-length' },
+    { target: 'archetype.primary.appearance.size.variability', parameterId: 'primary-size-variability' }, { target: 'archetype.primary.appearance.length.variability', parameterId: 'primary-length-variability' },
+    { target: 'archetype.bounce.appearance.size.start', parameterId: 'bounce-size' }, { target: 'archetype.bounce.appearance.size.variability', parameterId: 'bounce-size-variability' },
+    { target: 'archetype.bounce.appearance.length.start', parameterId: 'bounce-length' }, { target: 'archetype.bounce.appearance.length.variability', parameterId: 'bounce-length-variability' },
   ],
 });
 

@@ -1,6 +1,6 @@
 import type { ExperienceDefinition } from '@hooksjam/gl-game-lab-engine';
 import { createSparksConfig, SPARKS_DEFAULTS, SPARKS_SETTINGS } from './config.js';
-import { createSparksPlugin } from './SparksPlugin.js';
+import { createCompiledSparksPlugin } from './CompiledSparksPlugin.js';
 import { SPARKS_STYLE_MANIFEST } from './styles.js';
 import { describeSimulationSettings } from '../settingDescriptions.js';
 export const sparksDefinition: ExperienceDefinition = {
@@ -105,6 +105,6 @@ export const sparksDefinition: ExperienceDefinition = {
     ]
   },
   createPlugins: (options = {}) => [
-    createSparksPlugin(createSparksConfig(options.settings), options)
+    createCompiledSparksPlugin(createSparksConfig(options.settings), options)
   ],
 };

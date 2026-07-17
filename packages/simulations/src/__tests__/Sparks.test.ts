@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { ExperienceRegistry } from '@hooksjam/gl-game-lab-engine';
-import { createSparksConfig, createSparksDefaultRails, createSparksPreviewRails, SPARKS_DEFAULTS, SPARKS_PARTICLE_EFFECT, SPARKS_PARTICLE_SETTING_BINDINGS, SPARKS_SETTINGS, SPARKS_STYLE_MANIFEST, sparksDefinition } from '../index.js';
+import { COMPILED_SPARKS_PLUGIN_ID, createSparksConfig, createSparksDefaultRails, createSparksPreviewRails, SPARKS_DEFAULTS, SPARKS_PARTICLE_EFFECT, SPARKS_PARTICLE_PROGRAM, SPARKS_PARTICLE_SETTING_BINDINGS, SPARKS_SETTINGS, SPARKS_STYLE_MANIFEST, sparksDefinition } from '../index.js';
 import { SPARKS_POINT_FRAGMENT_SHADER, SPARKS_POINT_VERTEX_SHADER, SPARKS_STEP_SHADER, SPARKS_TRAIL_VERTEX_SHADER } from '../sparks/shaders.js';
 describe('Sparks', () => {
   it('registers four interaction modes and six styles', () => {
@@ -83,5 +83,12 @@ describe('Sparks', () => {
     expect(SPARKS_STEP_SHADER).toContain('commandIndex<64');
     expect(SPARKS_STEP_SHADER).not.toContain('uSpawnActive');
     expect(SPARKS_STEP_SHADER).not.toContain('fract(pv.z)');
+  });
+
+  it('launches through the compiled graph while retaining the legacy rollback plugin', () => {
+    expect(sparksDefinition.createPlugins?.()[0]?.id).toBe(COMPILED_SPARKS_PLUGIN_ID);
+    expect(SPARKS_PARTICLE_PROGRAM.webgl2.eventClaimVertex?.source).toContain('uParticleEventC[1]');
+    expect(SPARKS_PARTICLE_PROGRAM.webgl2.eventClaimVertex?.source).toContain('uVelocityState');
+    expect(SPARKS_PARTICLE_PROGRAM.webgl2.vertex.source).toContain('sizeCurve.w');
   });
 });

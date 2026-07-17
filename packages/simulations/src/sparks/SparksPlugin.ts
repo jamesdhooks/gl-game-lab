@@ -715,7 +715,7 @@ function autonomousSparksMode(requested: SparksMode | undefined, seed: number): 
   const modes: readonly SparksMode[] = ['welding', 'pinwheel', 'shower'];
   return modes[normalizeSeed(seed) % modes.length] ?? 'welding';
 }
-function createPreviewSparksConfig(config: SparksConfig): SparksConfig {
+export function createPreviewSparksConfig(config: SparksConfig): SparksConfig {
   return createSparksConfig({
     ...config,
     emissionRate: clampPreviewNumber(config, 'emissionRate', 9_000, 32_000),
