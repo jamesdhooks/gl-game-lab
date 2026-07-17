@@ -13,7 +13,7 @@ export const SPARKS_PARTICLE_EFFECT: ParticleEffectDefinition2D = validatePartic
   capacity: {
     min: 128 * 128,
     default: 256 * 256,
-    max: 768 * 768,
+    max: 2048 * 2048,
     previewMax: 256 * 256,
     commandCapacity: 64,
   },
@@ -65,11 +65,14 @@ export const SPARKS_PARTICLE_EFFECT: ParticleEffectDefinition2D = validatePartic
     defaultTier: 'enhanced',
     recipes: [
       {
-        tier: 'basic', points: true, blend: 'additive',
-        layers: [{ id: 'particles', kind: 'point', sizeScale: 1, intensityScale: 0.92, alphaScale: 0.94 }],
+        tier: 'basic', points: true, streaks: true, blend: 'additive',
+        layers: [
+          { id: 'length', kind: 'streak', sizeScale: 0.82, lengthScale: 1, intensityScale: 0.78, alphaScale: 0.8 },
+          { id: 'particles', kind: 'point', sizeScale: 1, intensityScale: 0.92, alphaScale: 0.94 },
+        ],
       },
       {
-        tier: 'enhanced', points: true, streaks: true, blend: 'additive',
+        tier: 'enhanced', points: true, streaks: true, trails: true, blend: 'additive',
         layers: [
           { id: 'halos', kind: 'halo', sizeScale: 2.35, intensityScale: 0.25, alphaScale: 0.34 },
           { id: 'streaks', kind: 'streak', sizeScale: 0.72, lengthScale: 1, intensityScale: 0.82, alphaScale: 0.78 },
@@ -94,12 +97,15 @@ const bindings: readonly ParticleSettingBinding2D[] = [
   { parameter: 'motion.turbulence', persistedKey: 'sparkTurbulence', label: 'Turbulence', section: 'Physics' },
   { parameter: 'collision.restitution', persistedKey: 'bounceRestitution', label: 'Restitution', section: 'Physics' },
   { parameter: 'collision.friction', persistedKey: 'surfaceFriction', label: 'Surface Friction', section: 'Physics' },
-  { parameter: 'render.trailPersistence', persistedKey: 'trailFade', label: 'Trail Fade', section: 'Rendering', tiers: ['ultra'] },
+  { parameter: 'render.trailPersistence', persistedKey: 'trailFade', label: 'Trail Fade', section: 'Rendering', tiers: ['enhanced', 'ultra'] },
   { parameter: 'appearance.size', persistedKey: 'coreSparkSize', label: 'Core Size', section: 'Core Sparks', archetypeId: 'core' },
+  { parameter: 'appearance.alpha', persistedKey: 'coreSparkOpacity', label: 'Core Opacity', section: 'Core Sparks', archetypeId: 'core' },
   { parameter: 'appearance.size', persistedKey: 'primarySparkSize', label: 'Primary Size', section: 'Primary Sparks', archetypeId: 'primary' },
   { parameter: 'appearance.length', persistedKey: 'primarySparkLength', label: 'Primary Length', section: 'Primary Sparks', archetypeId: 'primary' },
+  { parameter: 'appearance.alpha', persistedKey: 'primarySparkOpacity', label: 'Primary Opacity', section: 'Primary Sparks', archetypeId: 'primary' },
   { parameter: 'appearance.size', persistedKey: 'bounceSparkSize', label: 'Bounce Size', section: 'Bounce Sparks', archetypeId: 'bounce' },
   { parameter: 'appearance.length', persistedKey: 'bounceSparkLength', label: 'Bounce Length', section: 'Bounce Sparks', archetypeId: 'bounce' },
+  { parameter: 'appearance.alpha', persistedKey: 'bounceSparkOpacity', label: 'Bounce Opacity', section: 'Bounce Sparks', archetypeId: 'bounce' },
 ];
 
 export const SPARKS_PARTICLE_SETTING_BINDINGS = validateParticleSettingBindings2D(SPARKS_PARTICLE_EFFECT, bindings);
@@ -130,14 +136,19 @@ export const SPARKS_PARTICLE_GRAPH = defineParticleEffect2D({
     { id: 'core-size', kind: 'number', defaultValue: 1, min: 0.02, max: 10 },
     { id: 'core-size-variability', kind: 'number', defaultValue: 0.56, min: 0, max: 2 },
     { id: 'core-intensity', kind: 'number', defaultValue: 3.65, min: 0, max: 8 },
+    { id: 'core-opacity', kind: 'number', defaultValue: 1, min: 0, max: 1 },
     { id: 'primary-size', kind: 'number', defaultValue: 1, min: 0, max: 3 },
     { id: 'primary-size-variability', kind: 'number', defaultValue: 0.56, min: 0, max: 2 },
     { id: 'primary-length', kind: 'number', defaultValue: 1, min: 0, max: 12 },
+    { id: 'primary-length-end', kind: 'number', defaultValue: 0.18, min: 0, max: 2.16 },
     { id: 'primary-length-variability', kind: 'number', defaultValue: 0.38, min: 0, max: 2 },
+    { id: 'primary-opacity', kind: 'number', defaultValue: 1, min: 0, max: 1 },
     { id: 'bounce-size', kind: 'number', defaultValue: 0.42, min: 0.02, max: 3 },
     { id: 'bounce-size-variability', kind: 'number', defaultValue: 0.72, min: 0, max: 2 },
     { id: 'bounce-length', kind: 'number', defaultValue: 0.72, min: 0, max: 12 },
+    { id: 'bounce-length-end', kind: 'number', defaultValue: 0.072, min: 0, max: 1.2 },
     { id: 'bounce-length-variability', kind: 'number', defaultValue: 0.52, min: 0, max: 2 },
+    { id: 'bounce-opacity', kind: 'number', defaultValue: 1, min: 0, max: 1 },
   ],
   emitters: [
     sparksEmitter('core-contact', 'core', 'critical', { kind: 'disc', radius: 1 }, 0.34),
@@ -158,11 +169,11 @@ export const SPARKS_PARTICLE_GRAPH = defineParticleEffect2D({
     { parameterId: 'gravity', key: 'gravity' }, { parameterId: 'air-drag', key: 'airDrag' }, { parameterId: 'turbulence', key: 'sparkTurbulence' },
     { parameterId: 'restitution', key: 'bounceRestitution' }, { parameterId: 'friction', key: 'surfaceFriction' },
     { parameterId: 'collision-life-loss', key: 'bounceLifeDecay' },
-    { parameterId: 'core-size', key: 'coreSparkSize' }, { parameterId: 'core-size-variability', key: 'coreSparkSizeVariability' }, { parameterId: 'core-intensity', key: 'coreSparkIntensity' },
+    { parameterId: 'core-size', key: 'coreSparkSize' }, { parameterId: 'core-size-variability', key: 'coreSparkSizeVariability' }, { parameterId: 'core-intensity', key: 'coreSparkIntensity' }, { parameterId: 'core-opacity', key: 'coreSparkOpacity' },
     { parameterId: 'primary-size', key: 'primarySparkSize' }, { parameterId: 'primary-size-variability', key: 'primarySparkSizeVariability' },
-    { parameterId: 'primary-length', key: 'primarySparkLength' }, { parameterId: 'primary-length-variability', key: 'primarySparkLengthVariability' },
+    { parameterId: 'primary-length', key: 'primarySparkLength' }, { parameterId: 'primary-length-variability', key: 'primarySparkLengthVariability' }, { parameterId: 'primary-opacity', key: 'primarySparkOpacity' },
     { parameterId: 'bounce-size', key: 'bounceSparkSize' }, { parameterId: 'bounce-size-variability', key: 'bounceSparkSizeVariability' },
-    { parameterId: 'bounce-length', key: 'bounceSparkLength' }, { parameterId: 'bounce-length-variability', key: 'bounceSparkLengthVariability' },
+    { parameterId: 'bounce-length', key: 'bounceSparkLength' }, { parameterId: 'bounce-length-variability', key: 'bounceSparkLengthVariability' }, { parameterId: 'bounce-opacity', key: 'bounceSparkOpacity' },
   ],
   moduleBindings: [
     ...['core','primary','bounce'].flatMap((id) => [
@@ -174,9 +185,14 @@ export const SPARKS_PARTICLE_GRAPH = defineParticleEffect2D({
     { target: 'archetype.primary.collision.lifetimeLoss', parameterId: 'collision-life-loss' }, { target: 'archetype.bounce.collision.lifetimeLoss', parameterId: 'collision-life-loss' },
     { target: 'archetype.core.appearance.size.start', parameterId: 'core-size' }, { target: 'archetype.core.appearance.size.variability', parameterId: 'core-size-variability' },
     { target: 'archetype.core.appearance.intensity.start', parameterId: 'core-intensity' },
+    { target: 'archetype.core.appearance.alpha.start', parameterId: 'core-opacity' },
     { target: 'archetype.primary.appearance.size.start', parameterId: 'primary-size' }, { target: 'archetype.primary.appearance.length.start', parameterId: 'primary-length' },
+    { target: 'archetype.primary.appearance.length.end', parameterId: 'primary-length-end' },
     { target: 'archetype.primary.appearance.size.variability', parameterId: 'primary-size-variability' }, { target: 'archetype.primary.appearance.length.variability', parameterId: 'primary-length-variability' },
+    { target: 'archetype.primary.appearance.alpha.start', parameterId: 'primary-opacity' },
     { target: 'archetype.bounce.appearance.size.start', parameterId: 'bounce-size' }, { target: 'archetype.bounce.appearance.size.variability', parameterId: 'bounce-size-variability' },
     { target: 'archetype.bounce.appearance.length.start', parameterId: 'bounce-length' }, { target: 'archetype.bounce.appearance.length.variability', parameterId: 'bounce-length-variability' },
+    { target: 'archetype.bounce.appearance.length.end', parameterId: 'bounce-length-end' },
+    { target: 'archetype.bounce.appearance.alpha.start', parameterId: 'bounce-opacity' },
   ],
 });

@@ -1,5 +1,5 @@
 import { createExtensionToken, type EnginePlugin, type PointerInputEvent } from '@hooksjam/gl-game-lab-core';
-import { EngineGpu2D, EngineInput, EngineRender2D, EngineSchedule, ExperiencePreviewCycleControllerService, ParticleCommandQueue2D, type ExperienceLaunchOptions, type ExperiencePreviewCycleRequest, type ExperienceRuntimeController, type ExperienceSettingValue, type GpuParticleSystem2D, type GpuUniformEncoder2D, type GpuUniformLookup2D } from '@hooksjam/gl-game-lab-engine';
+import { applyPaletteGradientBackdrop2D, EngineGpu2D, EngineInput, EngineRender2D, EngineSchedule, ExperiencePreviewCycleControllerService, ParticleCommandQueue2D, type ExperienceLaunchOptions, type ExperiencePreviewCycleRequest, type ExperienceRuntimeController, type ExperienceSettingValue, type GpuParticleSystem2D, type GpuUniformEncoder2D, type GpuUniformLookup2D } from '@hooksjam/gl-game-lab-engine';
 import { registerSimulationRuntime } from '../SimulationPluginLifecycle.js';
 import { createSparksConfig, SPARKS_DEFAULTS, sparksNumber, sparksString, type SparksConfig } from './config.js';
 import { SPARKS_POINT_FRAGMENT_SHADER, SPARKS_POINT_VERTEX_SHADER, SPARKS_RAIL_SHADER, SPARKS_STEP_SHADER, SPARKS_TRAIL_FRAGMENT_SHADER, SPARKS_TRAIL_VERTEX_SHADER } from './shaders.js';
@@ -129,7 +129,7 @@ export function createSparksPlugin(initial: SparksConfig = SPARKS_DEFAULTS, laun
           applyStyle();
         },
         setSetting: (key, value) => {
-          const oldSize = sparksString(config, 'rawParticleTextureSize');
+          const oldSize = sparksNumber(config, 'rawParticleTextureSize');
           const nextConfig = createSparksConfig({
             ...configRecord(),
             [key]: value
@@ -137,7 +137,7 @@ export function createSparksPlugin(initial: SparksConfig = SPARKS_DEFAULTS, laun
           config = autonomousPreview ? createPreviewSparksConfig(nextConfig) : nextConfig;
           settingRevision += 1;
           lastSetting = `${key}=${String(value)}`;
-          rebuildState ||= oldSize !== sparksString(config, 'rawParticleTextureSize');
+          rebuildState ||= oldSize !== sparksNumber(config, 'rawParticleTextureSize');
         },
         reset: resetSimulation
       };
@@ -260,6 +260,9 @@ export function createSparksPlugin(initial: SparksConfig = SPARKS_DEFAULTS, laun
                 g.uniform1f(u('uCoreAfterglow'), sparksNumber(config, 'coreSparkAfterglow'));
                 g.uniform1f(u('uPrimarySizeScale'), primarySizeScale);
                 g.uniform1f(u('uCoreAlpha'), coreAlpha);
+                g.uniform1f(u('uCoreOpacity'), sparksNumber(config, 'coreSparkOpacity'));
+                g.uniform1f(u('uPrimaryOpacity'), sparksNumber(config, 'primarySparkOpacity'));
+                g.uniform1f(u('uBounceOpacity'), sparksNumber(config, 'bounceSparkOpacity'));
                 g.uniform1f(u('uGlowBias'), glowBias);
                 g.uniform1f(u('uTime'), elapsed);
                 g.uniform3fv(u('uPalette[0]'), palette.data);
@@ -276,11 +279,14 @@ export function createSparksPlugin(initial: SparksConfig = SPARKS_DEFAULTS, laun
                 particles.render(trailDestination, bindSparkRender(0.46, 0.34, 1.05, 0.22));
                 particles.renderPass('streaks', trailDestination, bindSparkRender(0.36, 0.52));
                 particles.render(trailDestination, bindSparkRender(0.2, 0.16, 1.4, 0.12));
-                particles.compositeTrails(destination, sparksColor3(requireStyle().background), sparksNumber(config, 'bloomStrength'));
+                if (particles.compositeTrailsOverlay) particles.compositeTrailsOverlay(destination, sparksNumber(config, 'bloomStrength'));
+                else particles.compositeTrails(destination, sparksColor3(requireStyle().background), sparksNumber(config, 'bloomStrength'));
                 particles.render(destination, bindSparkRender(0.72, 1.08, 1.45));
               }
           });
           const surfaceData = writeRails();
+          const railStyle = requireStyle();
+          const railPalette = railStyle.palette;
           (renderer.submitOverlayEffect ?? renderer.submitFullscreenEffect).call(renderer, {
             id: 'sparks.rails',
             language: 'glsl-es-300',
@@ -305,6 +311,18 @@ export function createSparksPlugin(initial: SparksConfig = SPARKS_DEFAULTS, laun
               uRadius: {
                 type: '1f',
                 value: sparksNumber(config, 'buildRadius')
+              },
+              uBackground: {
+                type: '3f',
+                value: sparksColor3(railStyle.background)
+              },
+              uBodyColor: {
+                type: '3f',
+                value: sparksColor3(railPalette[railPalette.length - 1] ?? railStyle.background)
+              },
+              uEdgeColor: {
+                type: '3f',
+                value: sparksColor3(railPalette[Math.min(2, railPalette.length - 1)] ?? railPalette[0] ?? 0xffffff)
               }
             }
           });
@@ -434,7 +452,7 @@ export function createSparksPlugin(initial: SparksConfig = SPARKS_DEFAULTS, laun
         });
       }
       function createParticles(): GpuParticleSystem2D {
-        const requested = Number(sparksString(config, 'rawParticleTextureSize')), size = launch.profile === 'preview' ? Math.min(256, requested) : requested;
+        const requested = sparksNumber(config, 'rawParticleTextureSize'), size = launch.profile === 'preview' ? Math.min(256, requested) : requested;
         return gpu.createParticleSystem(`${SPARKS_PLUGIN_ID}.particles`, {
           capacity: size * size,
           width: size,
@@ -458,14 +476,8 @@ export function createSparksPlugin(initial: SparksConfig = SPARKS_DEFAULTS, laun
         });
       }
       function applyStyle(): void {
-        const background = sparksColor3(requireStyle().background);
-        renderer.setClearColor([
-          background[0],
-          background[1],
-          background[2],
-          1
-        ]);
-        renderer.setBackdrop(undefined);
+        const style = requireStyle();
+        applyPaletteGradientBackdrop2D(renderer, style);
         renderer.setBloom({
           enabled: false
         });
@@ -718,8 +730,8 @@ function autonomousSparksMode(requested: SparksMode | undefined, seed: number): 
 export function createPreviewSparksConfig(config: SparksConfig): SparksConfig {
   return createSparksConfig({
     ...config,
-    emissionRate: clampPreviewNumber(config, 'emissionRate', 9_000, 32_000),
-    contactHeat: clampPreviewNumber(config, 'contactHeat', 4.2, 10),
+    emissionRate: clampPreviewNumber(config, 'emissionRate', 6_000, 10_000),
+    contactHeat: clampPreviewNumber(config, 'contactHeat', 4.2, 25),
     sparkPower: clampPreviewNumber(config, 'sparkPower', 1_800, 4_200),
     sparkDirectionChaos: clampPreviewNumber(config, 'sparkDirectionChaos', 0.32, 0.9),
     gravity: clampPreviewNumber(config, 'gravity', 720, 1_180),
@@ -736,7 +748,7 @@ export function createPreviewSparksConfig(config: SparksConfig): SparksConfig {
     bounceSparkSpeedScale: clampPreviewNumber(config, 'bounceSparkSpeedScale', 0.35, 1.4),
     bounceBurstChance: clampPreviewNumber(config, 'bounceBurstChance', 0.28, 0.82),
     bounceBurstCount: clampPreviewNumber(config, 'bounceBurstCount', 6, 20),
-    buildRadius: clampPreviewNumber(config, 'buildRadius', 14, 24),
+    buildRadius: sparksNumber(config, 'buildRadius'),
     heatRadius: clampPreviewNumber(config, 'heatRadius', 60, 110),
     bloomStrength: clampPreviewNumber(config, 'bloomStrength', 0, 4.2),
     particleFidelity: clampPreviewNumber(config, 'particleFidelity', 0.25, 0.75),
@@ -747,7 +759,7 @@ export function createPreviewSparksConfig(config: SparksConfig): SparksConfig {
     lightShafts: clampPreviewNumber(config, 'lightShafts', 0, 0.28),
     heatDistortion: clampPreviewNumber(config, 'heatDistortion', 0, 0.12),
     lightingFidelity: clampPreviewNumber(config, 'lightingFidelity', 0.125, 0.5),
-    rawParticleTextureSize: '256',
+    rawParticleTextureSize: 256,
     renderStyle: sparksString(config, 'renderStyle'),
   });
 }

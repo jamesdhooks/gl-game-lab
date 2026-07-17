@@ -47,7 +47,7 @@ export const FIREWORKS_PARTICLE_EFFECT: ParticleEffectDefinition2D = validatePar
     defaultTier: 'ultra',
     recipes: [
       { tier: 'basic', points: true, blend: 'additive' },
-      { tier: 'enhanced', points: true, streaks: true, blend: 'additive' },
+      { tier: 'enhanced', points: true, streaks: true, trails: true, blend: 'additive' },
       { tier: 'ultra', points: true, streaks: true, trails: true, bloom: true, blend: 'additive' },
     ],
   },
@@ -62,7 +62,7 @@ const bindings: readonly ParticleSettingBinding2D[] = [
   { parameter: 'events.sparkle.count', persistedKey: 'terminalSparkleCount', label: 'Sparkle Count', section: 'Terminal Sparkle', archetypeId: 'sparkle' },
   { parameter: 'appearance.size', persistedKey: 'particleSize', label: 'Spark Size', section: 'Rendering', archetypeId: 'primary' },
   { parameter: 'appearance.length', persistedKey: 'particleLength', label: 'Spark Length', section: 'Rendering', archetypeId: 'primary', tiers: ['enhanced', 'ultra'] },
-  { parameter: 'render.trailPersistence', persistedKey: 'trailFade', label: 'Trail Persistence', section: 'Rendering', tiers: ['ultra'] },
+  { parameter: 'render.trailPersistence', persistedKey: 'trailFade', label: 'Trail Persistence', section: 'Rendering', tiers: ['enhanced', 'ultra'] },
 ];
 
 export const FIREWORKS_PARTICLE_SETTING_BINDINGS = validateParticleSettingBindings2D(FIREWORKS_PARTICLE_EFFECT, bindings);

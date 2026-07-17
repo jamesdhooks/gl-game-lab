@@ -4,7 +4,8 @@ export type SparksConfig = Readonly<Record<string, ExperienceSettingValue>>;
 const EMITTER_MODES = ['welding', 'pinwheel', 'shower'];
 
 const numeric = [
-  n('emissionRate','Burst Rate','Input Mode',0,500000,25,980,EMITTER_MODES), n('contactHeat','Burst Density','Input Mode',0,100,.05,2.1,EMITTER_MODES),
+  { ...n('rawParticleTextureSize','GPU Particle Capacity','Simulation',128,2048,1,256), numericScale: 'powerOfTwo' as const, advanced: true },
+  n('emissionRate','Burst Rate','Input Mode',0,10000,25,980,EMITTER_MODES), n('contactHeat','Burst Density','Input Mode',0,25,.05,2.1,EMITTER_MODES),
   n('sparkPower','Spark Power','Input Mode',90,6000,25,480,EMITTER_MODES), n('sparkDirectionChaos','Direction Chaos','Input Mode',0,1,.01,.42,EMITTER_MODES),
   n('torchRadius','Torch Radius','Input Mode',4,56,1,24,EMITTER_MODES), n('coreSparkTorchPositionVariability','Torch Position Variability','Input Mode',0,50,1,0,['welding']),
   n('buildRadius','Build Radius','Input Mode',10,44,1,18,['build']), n('bounceRestitution','Bounce','Physics',0,1.35,.01,.58),
@@ -15,17 +16,17 @@ const numeric = [
   n('gravity','Gravity','Physics',80,1300,10,640), n('airDrag','Air Drag','Physics',0,4,.05,.86), n('surfaceFriction','Surface Friction','Physics',0,.85,.01,.18),
   n('coreSparkRate','Rate','Spark Profile: Core',0,18,.05,3.2), n('coreSparkSize','Size','Spark Profile: Core',.02,10,.01,1),
   n('coreSparkSizeVariability','Size Variability','Spark Profile: Core',0,2,.01,.56), n('coreSparkLifespan','Lifespan','Spark Profile: Core',0,4,.01,1),
-  n('coreSparkLifespanVariability','Lifespan Variability','Spark Profile: Core',0,1,.01,.28), n('coreSparkIntensity','Intensity','Spark Profile: Core',0,8,.05,3.65),
+  n('coreSparkLifespanVariability','Lifespan Variability','Spark Profile: Core',0,1,.01,.28), n('coreSparkIntensity','Intensity','Spark Profile: Core',0,8,.05,3.65), n('coreSparkOpacity','Opacity','Spark Profile: Core',0,1,.01,1),
   n('coreSparkAfterglow','Afterglow','Spark Profile: Core',0,1,.01,.38), n('primarySparkSize','Size','Spark Profile: Primary',.02,3,.01,3),
   n('primarySparkSizeVariability','Size Variability','Spark Profile: Primary',0,2,.01,.56), n('primarySparkLength','Length','Spark Profile: Primary',0,4,.01,1),
   n('primarySparkLengthVariability','Length Variability','Spark Profile: Primary',0,2,.01,.38), n('primarySparkLifespan','Lifespan','Spark Profile: Primary',0,4,.01,1),
-  n('primarySparkLifespanVariability','Lifespan Variability','Spark Profile: Primary',0,1,.01,.34), n('primarySparkSpeedScale','Speed Scale','Spark Profile: Primary',0,3,.01,1),
+  n('primarySparkLifespanVariability','Lifespan Variability','Spark Profile: Primary',0,1,.01,.34), n('primarySparkSpeedScale','Speed Scale','Spark Profile: Primary',0,3,.01,1), n('primarySparkOpacity','Opacity','Spark Profile: Primary',0,1,.01,1),
   n('bounceSparkSize','Size','Spark Profile: Bounce',.02,3,.01,.42), n('bounceSparkSizeVariability','Size Variability','Spark Profile: Bounce',0,2,.01,.72),
   n('bounceSparkLength','Length','Spark Profile: Bounce',0,4,.01,.72), n('bounceSparkLengthVariability','Length Variability','Spark Profile: Bounce',0,2,.01,.52),
   n('bounceSparkLifespan','Lifespan','Spark Profile: Bounce',0,4,.01,.58), n('bounceSparkLifespanVariability','Lifespan Variability','Spark Profile: Bounce',0,1,.01,.44),
-  n('bounceSparkSpeedScale','Speed Scale','Spark Profile: Bounce',0,3,.01,.72), n('bounceSparkSpeedVariability','Speed Variability','Spark Profile: Bounce',0,2,.01,0),
-  render(n('trailFade','Trail Persistence','Rendering',.72,.992,.004,.952), ['ultra']),
-  render(n('trailContinuity','Trail Continuity','Rendering',0,2,.01,.86), ['enhanced','ultra']),
+  n('bounceSparkSpeedScale','Speed Scale','Spark Profile: Bounce',0,3,.01,.72), n('bounceSparkSpeedVariability','Speed Variability','Spark Profile: Bounce',0,2,.01,0), n('bounceSparkOpacity','Opacity','Spark Profile: Bounce',0,1,.01,1),
+  render(n('trailFade','Trail Persistence','Rendering',.72,.992,.004,.952), ['enhanced','ultra']),
+  render(n('trailContinuity','Trail Continuity','Rendering',0,4,.01,.86), ['enhanced','ultra']),
   render(n('particleFidelity','Particle Fidelity','Rendering',.25,1,.05,1), ['ultra']),
   render(n('trailFidelity','Trail Fidelity','Rendering',.25,1,.05,1), ['ultra']),
   render(n('bloomStrength','Bloom Strength','Rendering',0,7.2,.05,3.85), ['ultra']),
@@ -45,7 +46,6 @@ export const SPARKS_SETTINGS: readonly ExperienceSetting[] = Object.freeze([
   ...numeric,
   select('simDepth','Simulation Depth','Physics','layered',[['Flat','flat'],['Layered','layered'],['Deep','deep']]),
   select('renderStyle','Render Style','Rendering','enhanced',[['Basic','basic'],['Enhanced','enhanced'],['Ultra','ultra']]),
-  { ...select('rawParticleTextureSize','GPU Particle Capacity','Rendering','256',[['128² = 16k preview','128'],['256² = 65k standard','256'],['384² = 147k dense','384'],['512² = 262k heavy','512'],['768² = 590k ultra','768']]), advanced: true },
 ]);
 
 const modernDefaults = Object.fromEntries(SPARKS_SETTINGS.map((setting) => [setting.key, setting.default]));
@@ -58,7 +58,12 @@ export const SPARKS_DEFAULTS: SparksConfig = Object.freeze({
 export function createSparksConfig(values: Readonly<Record<string, ExperienceSettingValue>> = {}): SparksConfig {
   const result: Record<string, ExperienceSettingValue> = { ...SPARKS_DEFAULTS };
   for (const setting of SPARKS_SETTINGS) {
-    const value = values[setting.key] ?? setting.default;
+    const candidate = values[setting.key] ?? setting.default;
+    const value = setting.type === 'number' && setting.key === 'rawParticleTextureSize'
+      ? snapParticleTextureSize(typeof candidate === 'string' ? Number(candidate) : candidate, setting.min, setting.max)
+      : setting.type === 'number' && (setting.key === 'emissionRate' || setting.key === 'contactHeat') && typeof candidate === 'number'
+        ? Math.min(candidate, setting.max)
+        : candidate;
     if (setting.type === 'number') {
       if (typeof value !== 'number' || !Number.isFinite(value) || value < setting.min || value > setting.max) throw new Error(`Sparks setting ${setting.key} is outside its supported range`);
     } else if (setting.type === 'select' && !setting.options.some((option) => option.value === value)) throw new Error(`Unknown Sparks ${setting.label}: ${String(value)}`);
@@ -70,6 +75,13 @@ export function createSparksConfig(values: Readonly<Record<string, ExperienceSet
 export function sparksNumber(config: SparksConfig, key: string): number { const value = config[key]; if (typeof value !== 'number') throw new Error(`Sparks numeric setting is unavailable: ${key}`); return value; }
 export function sparksString(config: SparksConfig, key: string): string { const value = config[key]; if (typeof value !== 'string') throw new Error(`Sparks string setting is unavailable: ${key}`); return value; }
 export function sparksBloomIntensity(config: SparksConfig): number { return sparksNumber(config, 'bloomStrength'); }
+
+function snapParticleTextureSize(value: ExperienceSettingValue, min: number, max: number): number {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < min || value > max) {
+    throw new Error('Sparks setting rawParticleTextureSize is outside its supported range');
+  }
+  return Math.max(min, Math.min(max, 2 ** Math.round(Math.log2(value))));
+}
 
 /** Maps every authored bounce-burst control to the shared GPU event contract. */
 export function resolveSparksBounceEventParameters(config: SparksConfig): ParticleEventParameters2D {

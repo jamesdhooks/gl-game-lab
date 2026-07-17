@@ -1,5 +1,6 @@
 import { createExtensionToken, type EnginePlugin, type PointerInputEvent } from '@hooksjam/gl-game-lab-core';
 import {
+  applyPaletteGradientBackdrop2D,
   EngineGpu2D,
   EngineInput,
   EngineParticleEffects,
@@ -11,6 +12,7 @@ import {
   type ExperiencePreviewCycleRequest,
   type ExperienceRuntimeController,
   type ExperienceSettingValue,
+  type EmissiveLightOccluder2D,
   type ParticleEffectInstance2D,
 } from '@hooksjam/gl-game-lab-engine';
 import { registerSimulationRuntime } from '../SimulationPluginLifecycle.js';
@@ -55,6 +57,7 @@ export const COMPILED_SPARKS_PLUGIN_ID = 'gl-game-lab.simulations.sparks.compile
 /** Compiled particle-graph implementation. The legacy plugin remains available as a parity rollback path. */
 export function createCompiledSparksPlugin(initial: SparksConfig = SPARKS_DEFAULTS, launch: ExperienceLaunchOptions = {}): EnginePlugin {
   const autonomous = launch.profile === 'preview' || launch.profile === 'demo';
+  const previewProfile = launch.profile === 'preview';
   let config = autonomous ? createPreviewSparksConfig(initial) : initial;
   let mode = autonomous ? autonomousMode(validMode(launch.modeId), normalizeSeed(launch.seed)) : validMode(launch.modeId) ?? 'welding';
   let styleId = validStyle(launch.styleId) ?? SPARKS_STYLE_MANIFEST.defaultStyleId;
@@ -76,6 +79,7 @@ export function createCompiledSparksPlugin(initial: SparksConfig = SPARKS_DEFAUL
   const rails = new Float32Array(MAX_RAILS * RAIL_FLOATS);
   const previewRail = new Float32Array(RAIL_FLOATS);
   const renderRails = new Float32Array(MAX_RAILS * RAIL_FLOATS);
+  const lightOccluders: EmissiveLightOccluder2D[] = [];
   const contacts = new Map<number, Contact>();
 
   return {
@@ -200,14 +204,19 @@ export function createCompiledSparksPlugin(initial: SparksConfig = SPARKS_DEFAUL
         effect.setParameter('core-size', sparksNumber(config, 'coreSparkSize'));
         effect.setParameter('core-size-variability', sparksNumber(config, 'coreSparkSizeVariability') * mix(0.38, 1, depth));
         effect.setParameter('core-intensity', sparksNumber(config, 'coreSparkIntensity'));
+        effect.setParameter('core-opacity', sparksNumber(config, 'coreSparkOpacity'));
         effect.setParameter('primary-size', sparksNumber(config, 'primarySparkSize'));
         effect.setParameter('primary-size-variability', sparksNumber(config, 'primarySparkSizeVariability') * depth);
         effect.setParameter('primary-length', sparksNumber(config, 'primarySparkLength'));
+        effect.setParameter('primary-length-end', sparksNumber(config, 'primarySparkLength') * 0.18);
         effect.setParameter('primary-length-variability', sparksNumber(config, 'primarySparkLengthVariability') * depth);
+        effect.setParameter('primary-opacity', sparksNumber(config, 'primarySparkOpacity'));
         effect.setParameter('bounce-size', sparksNumber(config, 'bounceSparkSize'));
         effect.setParameter('bounce-size-variability', sparksNumber(config, 'bounceSparkSizeVariability') * depth);
         effect.setParameter('bounce-length', sparksNumber(config, 'bounceSparkLength'));
+        effect.setParameter('bounce-length-end', sparksNumber(config, 'bounceSparkLength') * 0.1);
         effect.setParameter('bounce-length-variability', sparksNumber(config, 'bounceSparkLengthVariability') * depth);
+        effect.setParameter('bounce-opacity', sparksNumber(config, 'bounceSparkOpacity'));
         effect.setEmitterSource('core-contact', { radius: sparksNumber(config, 'torchRadius') });
         effect.setEmitterSource('shower', { radius: sparksNumber(config, 'torchRadius') });
         effect.setEventParameters('primary', 0, resolveSparksBounceEventParameters(config));
@@ -223,7 +232,9 @@ export function createCompiledSparksPlugin(initial: SparksConfig = SPARKS_DEFAUL
           trailBackground: background,
           directComposite: true,
           paletteTransition: 0.18,
-          streakScale: renderTier(config) === 'basic' ? 0.45 : sparksNumber(config, 'trailContinuity'),
+          // Basic honors authored particle length but does not bridge temporal
+          // samples. Enhanced and Ultra add continuity and trail history.
+          streakScale: renderTier(config) === 'basic' ? 0 : sparksNumber(config, 'trailContinuity'),
           colorMode: 'seeded',
         });
         configurePostProcessing();
@@ -233,8 +244,7 @@ export function createCompiledSparksPlugin(initial: SparksConfig = SPARKS_DEFAUL
       function applyStyle(effect: ParticleEffectInstance2D): void {
         const style = requireStyle();
         const background = sparksColor3(style.background);
-        renderer.setClearColor([background[0], background[1], background[2], 1]);
-        renderer.setBackdrop(undefined);
+        applyPaletteGradientBackdrop2D(renderer, style);
         effect.setPalette({ revision: nextSeed(), colors: style.palette.slice(0, 8).map(sparksColor3) });
         effect.setRenderParameters({ trailBackground: background });
         configurePostProcessing();
@@ -275,6 +285,7 @@ export function createCompiledSparksPlugin(initial: SparksConfig = SPARKS_DEFAUL
           heatDistortion: sparksNumber(config, 'heatDistortion'),
           timeSeconds: elapsed,
           resolutionScale: sparksNumber(config, 'lightingFidelity'),
+          occluders: lightOccluders,
         });
       }
 
@@ -301,10 +312,12 @@ export function createCompiledSparksPlugin(initial: SparksConfig = SPARKS_DEFAUL
       function publishColliders(effect: ParticleEffectInstance2D): void {
         const circles: { x: number; y: number; radius: number }[] = [];
         const capsules: { ax: number; ay: number; bx: number; by: number; radius: number }[] = [];
-        const radius = collisionRadius(config);
+        const radius = effectiveBuildRadius();
+        lightOccluders.length = 0;
         for (let index = 0; index < railCount; index += 1) {
           const offset = index * RAIL_FLOATS;
           const x1 = rails[offset]!, y1 = rails[offset + 1]!, x2 = rails[offset + 2]!, y2 = rails[offset + 3]!;
+          lightOccluders.push({ ax: x1, ay: y1, bx: x2, by: y2, radius });
           if (Math.hypot(x2 - x1, y2 - y1) < 0.5) circles.push({ x: x1, y: y1, radius });
           else capsules.push({ ax: x1, ay: y1, bx: x2, by: y2, radius });
         }
@@ -459,15 +472,32 @@ export function createCompiledSparksPlugin(initial: SparksConfig = SPARKS_DEFAUL
           renderRails.set(previewRail, count * RAIL_FLOATS);
           count += 1;
         }
+        const style = requireStyle();
+        const palette = style.palette;
+        const background = sparksColor3(style.background);
+        const body = sparksColor3(palette[palette.length - 1] ?? style.background);
+        const edge = sparksColor3(palette[Math.min(2, palette.length - 1)] ?? palette[0] ?? 0xffffff);
         (renderer.submitOverlayEffect ?? renderer.submitFullscreenEffect).call(renderer, {
           id: 'sparks.compiled.rails', language: 'glsl-es-300', fragmentSource: SPARKS_RAIL_SHADER, blend: 'alpha',
           uniforms: {
             uResolution: { type: '2f', value: [renderer.viewport.width, renderer.viewport.height] },
             uSurfaceCount: { type: '1i', value: count },
             uSurfaces: { type: '4fv', value: renderRails },
-            uRadius: { type: '1f', value: collisionRadius(config) },
+            uRadius: { type: '1f', value: effectiveBuildRadius() },
+            uBackground: { type: '3f', value: background },
+            uBodyColor: { type: '3f', value: body },
+            uEdgeColor: { type: '3f', value: edge },
           },
         });
+      }
+
+      function effectiveBuildRadius(): number {
+        return resolveSparksBuildRadius(
+          sparksNumber(config, 'buildRadius'),
+          previewProfile,
+          Math.max(1, renderer.viewport.width),
+          Math.max(1, renderer.viewport.height),
+        );
       }
 
       function reset(effect: ParticleEffectInstance2D): void {
@@ -503,7 +533,7 @@ function renderTier(config: SparksConfig): 'basic' | 'enhanced' | 'ultra' {
   return style === 'basic' || style === 'ultra' ? style : 'enhanced';
 }
 function capacityFor(config: SparksConfig, autonomous: boolean): number {
-  const requested = Number(sparksString(config, 'rawParticleTextureSize'));
+  const requested = sparksNumber(config, 'rawParticleTextureSize');
   const size = autonomous ? Math.min(256, requested) : requested;
   return size * size;
 }
@@ -530,4 +560,10 @@ function simulationDepth(config: SparksConfig): number {
   const value = sparksString(config, 'simDepth');
   return value === 'flat' ? 0 : value === 'deep' ? 1 : 0.55;
 }
-function collisionRadius(config: SparksConfig): number { return sparksNumber(config, 'buildRadius') + mix(2, 7, simulationDepth(config)); }
+export function resolveSparksBuildRadius(authoredRadius: number, preview: boolean, width: number, height: number): number {
+  if (![authoredRadius, width, height].every(Number.isFinite) || authoredRadius < 0 || width <= 0 || height <= 0) {
+    throw new Error('Sparks build radius requires finite positive viewport dimensions and a non-negative radius');
+  }
+  if (!preview) return authoredRadius;
+  return authoredRadius * clamp(Math.min(width, height) / 1024, 0.35, 1);
+}

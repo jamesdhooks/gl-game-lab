@@ -79,6 +79,7 @@ export {
   type Backdrop2DOptions,
   type BitmapFont2DHandle,
   type Bloom2DOptions,
+  type EmissiveLightOccluder2D,
   type EmissiveLightSource2D,
   type EmissiveLighting2DOptions,
   type Camera2D,

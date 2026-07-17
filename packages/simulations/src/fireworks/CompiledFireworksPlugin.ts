@@ -1,5 +1,6 @@
 import { createExtensionToken, type EnginePlugin, type PointerInputEvent } from '@hooksjam/gl-game-lab-core';
 import {
+  applyPaletteGradientBackdrop2D,
   EngineGpu2D,
   EngineInput,
   EngineParticleEffects,
@@ -49,6 +50,11 @@ export function createCompiledFireworksPlugin(initial: FireworksConfig = FIREWOR
   let height = 720;
   let launchAccumulator = 0;
   let shellCount = 0;
+  let elapsed = 0;
+  let lightX = 0;
+  let lightY = 0;
+  let lightEnergy = 0;
+  let lightColorIndex = 0;
   const shellX = new Float32Array(MAX_SHELLS);
   const shellY = new Float32Array(MAX_SHELLS);
   const shellVx = new Float32Array(MAX_SHELLS);
@@ -122,6 +128,8 @@ export function createCompiledFireworksPlugin(initial: FireworksConfig = FIREWOR
         stage: 'update',
         run: ({ time }) => {
           const dt = Math.min(0.05, time.deltaSeconds);
+          elapsed += dt;
+          lightEnergy *= Math.exp(-dt * 2.6);
           if (renderer.viewport.width !== width || renderer.viewport.height !== height) configure(instance, renderer);
           updateShells(instance, dt);
           for (const event of input.snapshot.events) if (event.kind === 'pointer') routePointer(instance, event);
@@ -145,7 +153,10 @@ export function createCompiledFireworksPlugin(initial: FireworksConfig = FIREWOR
       context.get(EngineSchedule).addSystem({
         id: 'gl-game-lab.simulations.fireworks.compiled.render',
         stage: 'renderExtract',
-        run: () => gpu.submit('fireworks.compiled-particles', (target) => effects.render(target)),
+        run: () => {
+          submitEmissiveLighting();
+          gpu.submit('fireworks.compiled-particles', (target) => effects.render(target));
+        },
       });
 
       function configure(effect: ParticleEffectInstance2D, render: typeof renderer): void {
@@ -160,16 +171,20 @@ export function createCompiledFireworksPlugin(initial: FireworksConfig = FIREWOR
         effect.setParameter('secondary-size', config.particleSize * config.secondaryScale);
         effect.setParameter('sparkle-size', config.terminalSparkleSize);
         effect.setQualityTier(config.renderStyle);
+        effect.setRenderScale(config.renderStyle === 'ultra' ? config.particleFidelity : 1);
         effect.setRenderParameters({
           pointScale: 1,
-          intensity: config.renderStyle === 'ultra' ? 0.62 : 0.9,
+          intensity: config.renderStyle === 'ultra' ? 0.88 : 0.9,
           trailFade: config.trailFade,
-          trailBloom: config.bloomStrength * 0.42,
+          trailBloom: 0.42,
+          trailResolutionScale: config.renderStyle === 'ultra' ? config.trailFidelity : 0.75,
           trailBackground: color3(requireStyle().background),
-          directComposite: config.renderStyle !== 'ultra',
+          directComposite: true,
           paletteTransition: config.paletteTransition,
+          streakScale: config.renderStyle === 'basic' ? 0 : config.trailContinuity,
           colorMode: renderColorMode(config.colorMode),
         });
+        configurePostProcessing();
         const secondary = {
           probability: config.secondaryChance,
           count: config.secondaryCount,
@@ -196,15 +211,56 @@ export function createCompiledFireworksPlugin(initial: FireworksConfig = FIREWOR
       function applyStyle(effect: ParticleEffectInstance2D, render: typeof renderer): void {
         const style = requireStyle();
         const background = color3(style.background);
-        render.setClearColor([background[0], background[1], background[2], 1]);
-        render.setBackdrop(undefined);
-        render.setBloom({ enabled: false });
+        applyPaletteGradientBackdrop2D(render, style);
         effect.setPalette({ revision: nextSeed(), colors: style.palette.slice(0, 8).map(color3) });
+        effect.setRenderParameters({ trailBackground: background });
+        configurePostProcessing();
+      }
+
+      function configurePostProcessing(): void {
+        const ultra = config.renderStyle === 'ultra';
+        renderer.setBloom({
+          enabled: ultra && config.bloomStrength > 0,
+          threshold: config.bloomThreshold,
+          intensity: config.bloomStrength,
+          radius: config.bloomRadius,
+          iterations: Math.round(config.bloomSamples),
+          resolutionScale: config.bloomFidelity,
+          isolateClearColor: true,
+        });
+        if (!ultra) renderer.setEmissiveLighting?.({ enabled: false });
+      }
+
+      function submitEmissiveLighting(): void {
+        if (config.renderStyle !== 'ultra' || lightEnergy < 0.002) {
+          renderer.setEmissiveLighting?.({ enabled: false });
+          return;
+        }
+        const style = requireStyle();
+        renderer.setEmissiveLighting?.({
+          enabled: true,
+          source: {
+            x: lightX,
+            y: lightY,
+            radius: config.lightRadius,
+            color: color3(style.palette[lightColorIndex % Math.max(1, style.palette.length)] ?? 0xffffff),
+            intensity: lightEnergy,
+          },
+          environmentStrength: config.environmentLight,
+          shaftStrength: config.lightShafts,
+          shaftLength: config.shaftLength,
+          heatDistortion: config.heatDistortion,
+          timeSeconds: elapsed,
+          resolutionScale: config.lightingFidelity,
+        });
       }
 
       function reset(effect: ParticleEffectInstance2D): void {
         shellCount = 0;
         launchAccumulator = 0;
+        elapsed = 0;
+        lightEnergy = 0;
+        renderer.setEmissiveLighting?.({ enabled: false });
         randomState = normalizeSeed(launch.seed);
         effect.restart(randomState);
       }
@@ -243,6 +299,10 @@ export function createCompiledFireworksPlugin(initial: FireworksConfig = FIREWOR
           shellAge[index] = shellAge[index]! + dt;
           if (shellAge[index]! < shellFuse[index]!) continue;
           const pattern = PATTERNS[shellPattern[index]!] ?? 'peony';
+          lightX = shellX[index]!;
+          lightY = shellY[index]!;
+          lightColorIndex = Math.floor(nextRandom() * Math.max(1, requireStyle().palette.length));
+          lightEnergy = Math.min(4, Math.max(lightEnergy, 0.7 + Math.sqrt(config.burstParticles / 512) * config.explosionPower / 360));
           effect
             .emitter(`primary-${pattern}`)
             .writer()

@@ -79,7 +79,7 @@ export { ORBITAL_SHRAPNEL_STYLE_MANIFEST } from './orbital-shrapnel/styles.js';
 export { ORBITAL_SHRAPNEL_PARTICLE_EFFECT, ORBITAL_SHRAPNEL_PARTICLE_GRAPH } from './orbital-shrapnel/effect.js';
 export { SPARKS_DEFAULTS, SPARKS_SETTINGS, createSparksConfig, resolveSparksBounceEventParameters, sparksNumber, sparksString, type SparksConfig } from './sparks/config.js';
 export { SPARKS_PLUGIN_ID, SparksControllerService, createSparksDefaultRails, createSparksPreviewRails, createSparksPlugin, type Rail, type SparksController, type SparksMode } from './sparks/SparksPlugin.js';
-export { COMPILED_SPARKS_PLUGIN_ID, CompiledSparksControllerService, createCompiledSparksPlugin, type CompiledSparksController } from './sparks/CompiledSparksPlugin.js';
+export { COMPILED_SPARKS_PLUGIN_ID, CompiledSparksControllerService, createCompiledSparksPlugin, resolveSparksBuildRadius, type CompiledSparksController } from './sparks/CompiledSparksPlugin.js';
 export { resolveSparksEmissionCone, type SparksEmissionCone, type SparksEmissionMode } from './sparks/emission.js';
 export { SPARKS_STYLE_MANIFEST } from './sparks/styles.js';
 export { SPARKS_PARTICLE_EFFECT, SPARKS_PARTICLE_GRAPH, SPARKS_PARTICLE_SETTING_BINDINGS } from './sparks/effect.js';

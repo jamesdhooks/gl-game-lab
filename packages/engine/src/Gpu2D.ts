@@ -160,6 +160,8 @@ export interface GpuParticleSystem2D {
   renderPass(id: string, target: GpuRenderTarget2D, uniforms?: GpuUniforms2D | GpuUniformBinder2D, particleCount?: number): void;
   beginTrails(width: number, height: number, fade: number): GpuRenderTarget2D;
   compositeTrails(target: GpuRenderTarget2D, background: readonly [number, number, number], bloom: number): void;
+  /** Adds trail history over the existing scene target without replacing its backdrop. */
+  compositeTrailsOverlay?(target: GpuRenderTarget2D, bloom: number): void;
   clearTrails(): void;
   /** Enables compact asynchronous event counters. Disabled by default to avoid diagnostic GPU work. */
   setEventDiagnosticsEnabled?(enabled: boolean): void;

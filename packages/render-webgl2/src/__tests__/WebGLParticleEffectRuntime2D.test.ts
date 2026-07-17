@@ -66,8 +66,12 @@ describe('WebGLParticleEffectRuntimeBackend2D extension bindings', () => {
     const trailTarget = { width: 32, height: 32 };
     const screenTarget = { width: 64, height: 64 };
     const passes: string[] = [];
+    const renderPhases: number[] = [];
+    const frameDeltas: number[] = [];
     const encoder: GpuUniformEncoder2D = {
-      uniform1f: vi.fn(), uniform1i: vi.fn(), uniform1ui: vi.fn(), uniform2f: vi.fn(), uniform3fv: vi.fn(), uniform4fv: vi.fn(), uniformMatrix4fv: vi.fn(), uniformTexture: vi.fn(),
+      uniform1f: (location, value) => { if (location.name === 'uFrameDelta') frameDeltas.push(value); },
+      uniform1i: (location, value) => { if (location.name === 'uRenderPhase') renderPhases.push(value); },
+      uniform1ui: vi.fn(), uniform2f: vi.fn(), uniform3fv: vi.fn(), uniform4fv: vi.fn(), uniformMatrix4fv: vi.fn(), uniformTexture: vi.fn(),
     };
     const particles: GpuParticleSystem2D = {
       capacity: 16, width: 4, height: 4, generation: 1,
@@ -76,7 +80,7 @@ describe('WebGLParticleEffectRuntimeBackend2D extension bindings', () => {
         passes.push(`${id}:${target === trailTarget ? 'trail' : 'screen'}`);
         if (typeof bindings === 'function') bindings(encoder, (name) => ({ name }));
       },
-      beginTrails: () => trailTarget, compositeTrails: vi.fn(), clearTrails: vi.fn(),
+      beginTrails: () => trailTarget, compositeTrails: vi.fn(), compositeTrailsOverlay: vi.fn(), clearTrails: vi.fn(),
       debugReadback: () => ({ positions: new Float32Array(), velocities: new Float32Array(), metadata: new Float32Array() }),
       diagnostics: () => ({ commandCapacity: 64, queuedCommands: 0, droppedCommands: 0, spawnedParticles: 0, simulationPasses: 0, eventPasses: 0, renderPasses: 0, uploadBytes: 0, contextGeneration: 1, rebuildCount: 0 }),
       dispose: vi.fn(),
@@ -84,12 +88,22 @@ describe('WebGLParticleEffectRuntimeBackend2D extension bindings', () => {
     const gpu = { createParticleSystem: () => particles } as unknown as Gpu2DService;
     const graph = adaptParticleEffectDefinition2D({
       ...definition,
-      renderRecipes: { defaultTier: 'ultra', recipes: [{ tier: 'ultra', points: true, streaks: true, trails: true, bloom: true, blend: 'additive' }] },
+      renderRecipes: { defaultTier: 'enhanced', recipes: [{ tier: 'enhanced', points: true, streaks: true, trails: true, blend: 'additive' }] },
     });
     const resource = new WebGLParticleEffectRuntimeBackend2D(gpu).create(compileParticleProgram2D(compileParticleEffect2D(graph)), 16);
 
-    resource.render(screenTarget, 'ultra');
+    resource.setRenderScale?.(0.25);
+    resource.update(1 / 60, 1);
+    resource.render(screenTarget, 'enhanced');
+    resource.render(screenTarget, 'enhanced');
 
-    expect(passes).toEqual(['ultra.streaks:trail', 'ultra.points:screen', 'ultra.streaks:screen']);
+    expect(passes).toEqual([
+      'enhanced.streaks:trail', 'enhanced.points:screen', 'enhanced.streaks:screen',
+      'enhanced.streaks:trail', 'enhanced.points:screen', 'enhanced.streaks:screen',
+    ]);
+    expect(renderPhases).toEqual([0, 0, 0, 1, 1, 1]);
+    expect(frameDeltas.every((value) => Math.abs(value - 1 / 15) < 1e-6)).toBe(true);
+    expect(particles.compositeTrailsOverlay).toHaveBeenCalledTimes(2);
+    expect(particles.compositeTrails).not.toHaveBeenCalled();
   });
 });

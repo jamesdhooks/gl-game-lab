@@ -42,6 +42,18 @@ describe('Fireworks', () => {
       'terminalSparklePower', 'terminalSparkleLifetime', 'terminalSparkleSize', 'particleLength',
       'paletteTransition', 'colorMode', 'renderStyle',
     ]) expect(settingKeys.has(key)).toBe(true);
+    for (const key of [
+      'trailContinuity', 'particleFidelity', 'trailFidelity', 'bloomThreshold', 'bloomRadius',
+      'bloomFidelity', 'bloomSamples', 'environmentLight', 'lightShafts', 'shaftLength',
+      'heatDistortion', 'lightingFidelity', 'lightRadius',
+    ]) expect(settingKeys.has(key)).toBe(true);
+    const byKey = new Map((fireworksDefinition.settings ?? []).map((setting) => [setting.key, setting]));
+    expect(byKey.get('trailFade')?.visibleRenderStyles).toEqual(['enhanced', 'ultra']);
+    expect(byKey.get('trailContinuity')?.visibleRenderStyles).toEqual(['enhanced', 'ultra']);
+    for (const key of ['particleFidelity', 'trailFidelity', 'bloomStrength', 'bloomThreshold', 'bloomRadius', 'bloomFidelity', 'bloomSamples', 'environmentLight', 'lightShafts', 'shaftLength', 'heatDistortion', 'lightingFidelity', 'lightRadius']) {
+      expect(byKey.get(key)?.visibleRenderStyles).toEqual(['ultra']);
+      expect(byKey.get(key)?.description).toBeTruthy();
+    }
     expect(FIREWORKS_POINT_FRAGMENT_SHADER).toContain('uniform float uCrackle');
   });
 
@@ -49,6 +61,7 @@ describe('Fireworks', () => {
     expect(FIREWORKS_PARTICLE_EFFECT.archetypes.map((archetype) => archetype.id)).toEqual(['shell', 'primary', 'secondary', 'sparkle']);
     expect(FIREWORKS_PARTICLE_EFFECT.modules.events).toBe(true);
     expect(FIREWORKS_PARTICLE_EFFECT.renderRecipes.recipes.map((recipe) => recipe.tier)).toEqual(['basic', 'enhanced', 'ultra']);
+    expect(FIREWORKS_PARTICLE_EFFECT.renderRecipes.recipes.find((recipe) => recipe.tier === 'enhanced')?.trails).toBe(true);
     expect(FIREWORKS_PARTICLE_SETTING_BINDINGS.map((binding) => binding.persistedKey)).toContain('launchPower');
     expect(['peony', 'ring', 'chrysanthemum', 'willow', 'palm', 'spiral', 'crossette', 'comet'].map(fireworksPatternCode)).toEqual([0, 1, 2, 3, 4, 5, 6, 7]);
   });

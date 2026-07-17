@@ -155,7 +155,7 @@ class WebGLParticleEffectResource2D implements ParticleEffectBackendResource2D {
       particleFragmentSource: program.webgl2.fragment.source,
       renderPasses,
       blend: "additive",
-      trails: program.renderPasses.ultra.some((pass) => pass.kind === "trails"),
+      trails: (["basic", "enhanced", "ultra"] as const).some((tier) => program.renderPasses[tier].some((pass) => pass.kind === "trails")),
       commandCapacity: COMMAND_CAPACITY,
       metadata: program.reflection.stateTargets === 3,
     });
@@ -471,19 +471,22 @@ class WebGLParticleEffectResource2D implements ParticleEffectBackendResource2D {
       this.viewportHeight = target.height;
       this.viewportDpr = 1;
     }
-    if (tier === "ultra" && this.program.renderPasses.ultra.some((pass) => pass.kind === "trails")) {
+    if (this.program.renderPasses[tier].some((pass) => pass.kind === "trails")) {
       const trailTarget = this.particles.beginTrails(
         Math.max(1, Math.round(target.width * this.trailResolutionScale)),
         Math.max(1, Math.round(target.height * this.trailResolutionScale)),
         this.trailFade,
       );
       this.renderTier(trailTarget, tier, true);
-      this.particles.compositeTrails(target, this.trailBackground, this.trailBloom);
+      if (this.particles.compositeTrailsOverlay) this.particles.compositeTrailsOverlay(target, this.trailBloom);
+      else this.particles.compositeTrails(target, this.trailBackground, this.trailBloom);
       if (this.directComposite) this.renderTier(target, tier);
+      this.advanceRenderPhase();
       this.cpuRenderMs = particleCpuNow() - cpuStarted;
       return;
     }
     this.renderTier(target, tier);
+    this.advanceRenderPhase();
     this.cpuRenderMs = particleCpuNow() - cpuStarted;
   }
 
@@ -539,7 +542,7 @@ class WebGLParticleEffectResource2D implements ParticleEffectBackendResource2D {
       ...(hasDelayedCounters ? { eventWinners: eventCounters.winners, eventAdmissions: eventCounters.admissions } : {}),
       eventGenerationDrops: hasDelayedCounters ? eventCounters.generationLosses : 0,
       eventCapacityDrops: eventBudgetDrops,
-      trailPasses: this.program.renderPasses.ultra.filter((pass) => pass.kind === "trails").length > 0 ? diagnostics.renderPasses : 0,
+      trailPasses: (["basic", "enhanced", "ultra"] as const).some((tier) => this.program.renderPasses[tier].some((pass) => pass.kind === "trails")) ? diagnostics.renderPasses : 0,
       bloomPasses: this.program.renderPasses.ultra.filter((pass) => pass.kind === "bloom").length > 0 ? diagnostics.renderPasses : 0,
       commandUploadBytes: diagnostics.uploadBytes,
       parameterUploadBytes: this.parameterUploadBytes,
@@ -575,7 +578,9 @@ class WebGLParticleEffectResource2D implements ParticleEffectBackendResource2D {
     gl.uniform1i(uniform("uRenderPhase"), this.renderPhase);
     gl.uniform1f(uniform("uPointScale"), this.pointScale * this.viewportDpr);
     gl.uniform1f(uniform("uStreakScale"), this.streakScale);
-    gl.uniform1f(uniform("uFrameDelta"), this.frameDelta);
+    // A rotating render phase revisits each particle once per stride. Bridge
+    // that complete interval instead of only the latest engine frame.
+    gl.uniform1f(uniform("uFrameDelta"), Math.min(0.1, this.frameDelta * this.renderStride));
     gl.uniform1f(uniform("uLayerSizeScale"), this.layerSizeScale);
     gl.uniform1f(uniform("uLayerLengthScale"), this.layerLengthScale);
     gl.uniform1f(uniform("uLayerIntensityScale"), this.layerIntensityScale);
@@ -652,6 +657,9 @@ class WebGLParticleEffectResource2D implements ParticleEffectBackendResource2D {
       this.applyRenderLayer(pass);
       this.particles.renderPass(pass.id, target, this.bindRender, renderCount);
     }
+  }
+
+  private advanceRenderPhase(): void {
     this.renderPhase = (this.renderPhase + 1) % this.renderStride;
   }
 

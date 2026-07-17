@@ -104,6 +104,7 @@ export {
   type BloomOptions,
   type BloomPostProcessStats,
   type BloomBlurPassDirections,
+  type EmissiveLightingOccluder,
   type EmissiveLightingOptions,
   type NormalizedBloomOptions,
 } from './BloomPostProcess.js';

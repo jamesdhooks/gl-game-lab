@@ -293,7 +293,7 @@ export class WebGL2Renderer implements RenderBackend, Render2DService {
       enabled: options.enabled && source !== undefined,
       ...(source ? {
         source: [source.x / Math.max(1, this.logicalWidth), 1 - source.y / Math.max(1, this.logicalHeight)] as const,
-        radius: source.radius / Math.max(1, Math.min(this.logicalWidth, this.logicalHeight)),
+        radius: source.radius / Math.max(1, this.logicalHeight),
         color: source.color,
         sourceIntensity: source.intensity ?? 1,
       } : {}),
@@ -303,6 +303,13 @@ export class WebGL2Renderer implements RenderBackend, Render2DService {
       ...(options.heatDistortion === undefined ? {} : { heatDistortion: options.heatDistortion }),
       ...(options.timeSeconds === undefined ? {} : { timeSeconds: options.timeSeconds }),
       ...(options.resolutionScale === undefined ? {} : { resolutionScale: options.resolutionScale }),
+      ...(options.occluders === undefined ? {} : {
+        occluders: options.occluders.map((occluder) => ({
+          a: [occluder.ax / Math.max(1, this.logicalWidth), 1 - occluder.ay / Math.max(1, this.logicalHeight)] as const,
+          b: [occluder.bx / Math.max(1, this.logicalWidth), 1 - occluder.by / Math.max(1, this.logicalHeight)] as const,
+          radius: occluder.radius / Math.max(1, this.logicalHeight),
+        })),
+      }),
     });
     this.renderInvalidated = true;
   }

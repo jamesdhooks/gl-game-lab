@@ -257,6 +257,11 @@ class WebGLGpuParticleSystem implements GpuParticleSystem2D {
     this.countDraw();
     this.renderPasses += 1;
   }
+  compositeTrailsOverlay(target: GpuRenderTarget2D, bloom: number): void {
+    requireTrails(this.owner.value).compositeOverlay(requireTarget(target), bloom);
+    this.countDraw();
+    this.renderPasses += 1;
+  }
   clearTrails(): void { this.owner.value.trails?.clear(); }
   setEventDiagnosticsEnabled(enabled: boolean): void {
     this.owner.value.eventAllocator?.setDiagnosticsEnabled(enabled);

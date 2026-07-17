@@ -15,7 +15,10 @@ export interface FireworksConfig {
   readonly terminalSparklePower: number; readonly terminalSparkleLifetime: number; readonly terminalSparkleSize: number;
   readonly particleSize: number; readonly particleLength: number; readonly sparkSizeVariability: number;
   readonly paletteTransition: number; readonly colorMode: FireworksColorMode; readonly renderStyle: FireworksRenderStyle;
-  readonly trailFade: number; readonly bloomStrength: number; readonly autoFinaleRate: number; readonly rawParticleTextureSize: string;
+  readonly trailFade: number; readonly trailContinuity: number; readonly particleFidelity: number; readonly trailFidelity: number;
+  readonly bloomStrength: number; readonly bloomThreshold: number; readonly bloomRadius: number; readonly bloomFidelity: number; readonly bloomSamples: number;
+  readonly environmentLight: number; readonly lightShafts: number; readonly shaftLength: number; readonly heatDistortion: number;
+  readonly lightingFidelity: number; readonly lightRadius: number; readonly autoFinaleRate: number; readonly rawParticleTextureSize: string;
 }
 
 export const FIREWORKS_DEFAULTS: FireworksConfig = Object.freeze({
@@ -27,7 +30,10 @@ export const FIREWORKS_DEFAULTS: FireworksConfig = Object.freeze({
   terminalSparklePower: 92, terminalSparkleLifetime: 0.58, terminalSparkleSize: 0.82,
   particleSize: 1.45, particleLength: 1.2, sparkSizeVariability: 0.38,
   paletteTransition: 0.72, colorMode: 'over-life', renderStyle: 'ultra',
-  trailFade: 0.932, bloomStrength: 1.82, autoFinaleRate: 2.6, rawParticleTextureSize: '384',
+  trailFade: 0.932, trailContinuity: 0.9, particleFidelity: 1, trailFidelity: 0.75,
+  bloomStrength: 2.2, bloomThreshold: 0.72, bloomRadius: 1.2, bloomFidelity: 0.5, bloomSamples: 4,
+  environmentLight: 0.58, lightShafts: 0.18, shaftLength: 0.72, heatDistortion: 0.05,
+  lightingFidelity: 0.5, lightRadius: 240, autoFinaleRate: 2.6, rawParticleTextureSize: '384',
 });
 
 const enhancedUltra = ['enhanced', 'ultra'] as const;
@@ -68,8 +74,21 @@ export const FIREWORKS_SETTINGS: readonly ExperienceSetting[] = Object.freeze([
   ]),
   number('paletteTransition', 'Palette Transition', 'Rendering', 0, 1, 0.01, 0.72),
   select('renderStyle', 'Render Style', 'Rendering', 'ultra', [['Basic', 'basic'], ['Enhanced', 'enhanced'], ['Ultra', 'ultra']]),
-  { ...number('trailFade', 'Trail Persistence', 'Rendering', 0.78, 0.995, 0.005, 0.932), visibleRenderStyles: ['ultra'] },
-  { ...number('bloomStrength', 'Glow Strength', 'Rendering', 0.4, 3.8, 0.05, 1.82), visibleRenderStyles: ['ultra'] },
+  { ...number('trailFade', 'Trail Persistence', 'Rendering', 0.72, 0.995, 0.005, 0.932), visibleRenderStyles: enhancedUltra },
+  { ...number('trailContinuity', 'Trail Continuity', 'Rendering', 0, 4, 0.01, 0.9), visibleRenderStyles: enhancedUltra },
+  { ...number('particleFidelity', 'Particle Fidelity', 'Rendering', 0.25, 1, 0.05, 1), visibleRenderStyles: ['ultra'] },
+  { ...number('trailFidelity', 'Trail Fidelity', 'Rendering', 0.25, 1, 0.05, 0.75), visibleRenderStyles: ['ultra'] },
+  { ...number('bloomStrength', 'Bloom Strength', 'Rendering', 0, 7.2, 0.05, 2.2), visibleRenderStyles: ['ultra'] },
+  { ...number('bloomThreshold', 'Bloom Threshold', 'Rendering', 0, 1, 0.01, 0.72), visibleRenderStyles: ['ultra'] },
+  { ...number('bloomRadius', 'Bloom Radius', 'Rendering', 0.25, 8, 0.05, 1.2), visibleRenderStyles: ['ultra'] },
+  { ...number('bloomFidelity', 'Bloom Fidelity', 'Rendering', 0.125, 1, 0.025, 0.5), visibleRenderStyles: ['ultra'] },
+  { ...number('bloomSamples', 'Bloom Samples', 'Rendering', 1, 8, 1, 4), visibleRenderStyles: ['ultra'] },
+  { ...number('environmentLight', 'Environmental Light', 'Rendering', 0, 3, 0.01, 0.58), visibleRenderStyles: ['ultra'] },
+  { ...number('lightShafts', 'Light Shafts', 'Rendering', 0, 2, 0.01, 0.18), visibleRenderStyles: ['ultra'] },
+  { ...number('shaftLength', 'Shaft Length', 'Rendering', 0.05, 2, 0.01, 0.72), visibleRenderStyles: ['ultra'] },
+  { ...number('heatDistortion', 'Heat Distortion', 'Rendering', 0, 1, 0.01, 0.05), visibleRenderStyles: ['ultra'] },
+  { ...number('lightingFidelity', 'Lighting Fidelity', 'Rendering', 0.125, 1, 0.025, 0.5), visibleRenderStyles: ['ultra'] },
+  { ...number('lightRadius', 'Light Radius', 'Rendering', 32, 640, 4, 240), visibleRenderStyles: ['ultra'] },
   { ...number('autoFinaleRate', 'Stream Rate', 'Input Mode', 0.2, 6, 0.1, 2.6), visibleModes: ['stream'] },
   { key: 'rawParticleTextureSize', label: 'GPU Particle Capacity', section: 'Rendering', type: 'select', default: '384', advanced: true, options: [
     { label: '128² = 16k preview', value: '128' }, { label: '256² = 65k light', value: '256' },

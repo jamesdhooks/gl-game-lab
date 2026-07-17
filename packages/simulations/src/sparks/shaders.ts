@@ -178,6 +178,9 @@ uniform float uCoreIntensity;
 uniform float uCoreSize;
 uniform float uGlowBias;
 uniform float uCoreAlpha;
+uniform float uCoreOpacity;
+uniform float uPrimaryOpacity;
+uniform float uBounceOpacity;
 uniform float uTime;
 in float vAlpha;
 in float vKind;
@@ -238,6 +241,8 @@ void main() {
   float sparkle = step(0.82, hash(particleSeed(vSeed) + floor(uTime * (24.0 + vKind * 5.0))));
   color += vec3(sparkle) * (1.0 - vLifeT) * (vKind < 0.5 ? 0.45 : 0.16);
   float alpha = vAlpha * (core + halo) * uGlowBias;
+  float profileOpacity=vKind<0.5?uCoreOpacity:(vKind<1.5?uPrimaryOpacity:uBounceOpacity);
+  alpha*=profileOpacity;
   if (vKind < 0.5) {
     float coreSizeT = clamp(uCoreSize / 2.4, 0.0, 1.0);
     float coreIntensityT = clamp(uCoreIntensity / 8.0, 0.0, 1.0);
@@ -345,6 +350,9 @@ uniform vec3 uPalette[8];
 uniform int uPaletteCount;
 uniform float uGlowBias;
 uniform float uCoreIntensity;
+uniform float uCoreOpacity;
+uniform float uPrimaryOpacity;
+uniform float uBounceOpacity;
 uniform float uTime;
 float hash(float value) { return fract(sin(value) * 43758.5453123); }
 float particleSeed(float packed) { return mod(packed, 100000.0); }
@@ -362,6 +370,8 @@ void main() {
   float tail = smoothstep(0.0, 0.1, vLocal.x);
   float hotHead = smoothstep(0.28, 1.0, vLocal.x);
   float alpha = vAlpha * widthMask * tail * mix(0.42, 1.0, hotHead) * uGlowBias;
+  float profileOpacity=vKind<0.5?uCoreOpacity:(vKind<1.5?uPrimaryOpacity:uBounceOpacity);
+  alpha*=profileOpacity;
   if (alpha <= 0.001) discard;
   vec3 palette = paletteSparkColor(vSeed, vKind * 23.0 + floor(uTime * 0.45));
   vec3 hot = vec3(1.0, 0.9, 0.55) * min(uCoreIntensity, 2.6);
@@ -371,4 +381,33 @@ void main() {
   outColor = vec4(color, alpha);
 }`;
 export const SPARKS_RAIL_SHADER = `#version 300 es
-precision highp float;in vec2 vUv;out vec4 outColor;uniform vec2 uResolution;uniform int uSurfaceCount;uniform vec4 uSurfaces[13];uniform float uRadius;float segmentDistance(vec2 p,vec2 a,vec2 b){vec2 ab=b-a;return length(p-(a+ab*clamp(dot(p-a,ab)/max(.001,dot(ab,ab)),0.0,1.0)));}void main(){vec2 p=vec2(vUv.x*uResolution.x,(1.0-vUv.y)*uResolution.y);float glow=0.0;for(int i=0;i<13;i++){if(i>=uSurfaceCount)break;vec4 rail=uSurfaces[i];glow=max(glow,smoothstep(uRadius+2.0,uRadius-2.0,segmentDistance(p,rail.xy,rail.zw)));}outColor=vec4(mix(vec3(.12,.18,.24),vec3(.58,.72,.84),glow),glow*.92);}`;
+precision highp float;
+in vec2 vUv;
+out vec4 outColor;
+uniform vec2 uResolution;
+uniform int uSurfaceCount;
+uniform vec4 uSurfaces[13];
+uniform float uRadius;
+uniform vec3 uBackground;
+uniform vec3 uBodyColor;
+uniform vec3 uEdgeColor;
+float segmentDistance(vec2 p,vec2 a,vec2 b){
+  vec2 ab=b-a;
+  return length(p-(a+ab*clamp(dot(p-a,ab)/max(.001,dot(ab,ab)),0.0,1.0)));
+}
+void main(){
+  vec2 p=vec2(vUv.x*uResolution.x,(1.0-vUv.y)*uResolution.y);
+  float distanceToSurface=100000.0;
+  for(int i=0;i<13;i++){
+    if(i>=uSurfaceCount)break;
+    vec4 rail=uSurfaces[i];
+    distanceToSurface=min(distanceToSurface,segmentDistance(p,rail.xy,rail.zw));
+  }
+  float coverage=smoothstep(uRadius+1.25,uRadius-1.25,distanceToSurface);
+  float normalizedDepth=clamp(1.0-distanceToSurface/max(1.0,uRadius),0.0,1.0);
+  float rim=smoothstep(uRadius,uRadius-1.8,distanceToSurface)*(1.0-smoothstep(uRadius-1.8,uRadius-4.5,distanceToSurface));
+  vec3 base=mix(uBackground,uBodyColor,0.34);
+  vec3 color=mix(base,uBodyColor,0.22+normalizedDepth*0.18);
+  color=mix(color,uEdgeColor,rim*0.32);
+  outColor=vec4(color,coverage);
+}`;

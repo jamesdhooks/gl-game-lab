@@ -62,11 +62,11 @@ const cases: readonly [string, readonly ExperienceSetting[], StyleExpectation][]
     ],
   }],
   ['Sparks', SPARKS_SETTINGS, {
-    basic: ['rawParticleTextureSize'],
-    enhanced: ['trailContinuity', 'heatRadius', 'rawParticleTextureSize'],
+    basic: [],
+    enhanced: ['trailFade', 'trailContinuity', 'heatRadius'],
     ultra: [
       'trailFade', 'trailContinuity', 'particleFidelity', 'trailFidelity', 'bloomStrength', 'bloomThreshold', 'bloomRadius',
-      'bloomFidelity', 'bloomSamples', 'environmentLight', 'lightShafts', 'shaftLength', 'heatDistortion', 'lightingFidelity', 'heatRadius', 'rawParticleTextureSize',
+      'bloomFidelity', 'bloomSamples', 'environmentLight', 'lightShafts', 'shaftLength', 'heatDistortion', 'lightingFidelity', 'heatRadius',
     ],
   }],
   ['Splash PIC/FLIP', SPLASH_MPM_SETTINGS, {

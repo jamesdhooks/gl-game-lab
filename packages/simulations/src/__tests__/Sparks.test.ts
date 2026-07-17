@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { ExperienceRegistry } from '@hooksjam/gl-game-lab-engine';
-import { COMPILED_SPARKS_PLUGIN_ID, createSparksConfig, createSparksDefaultRails, createSparksPreviewRails, resolveSparksBounceEventParameters, resolveSparksEmissionCone, SPARKS_DEFAULTS, SPARKS_PARTICLE_EFFECT, SPARKS_PARTICLE_GRAPH, SPARKS_PARTICLE_PROGRAM, SPARKS_PARTICLE_SETTING_BINDINGS, SPARKS_SETTINGS, SPARKS_STYLE_MANIFEST, sparksDefinition } from '../index.js';
-import { SPARKS_POINT_FRAGMENT_SHADER, SPARKS_POINT_VERTEX_SHADER, SPARKS_STEP_SHADER, SPARKS_TRAIL_VERTEX_SHADER } from '../sparks/shaders.js';
+import { COMPILED_SPARKS_PLUGIN_ID, createSparksConfig, createSparksDefaultRails, createSparksPreviewRails, resolveSparksBounceEventParameters, resolveSparksBuildRadius, resolveSparksEmissionCone, SPARKS_DEFAULTS, SPARKS_PARTICLE_EFFECT, SPARKS_PARTICLE_GRAPH, SPARKS_PARTICLE_PROGRAM, SPARKS_PARTICLE_SETTING_BINDINGS, SPARKS_SETTINGS, SPARKS_STYLE_MANIFEST, sparksDefinition } from '../index.js';
+import { SPARKS_POINT_FRAGMENT_SHADER, SPARKS_POINT_VERTEX_SHADER, SPARKS_RAIL_SHADER, SPARKS_STEP_SHADER, SPARKS_TRAIL_VERTEX_SHADER } from '../sparks/shaders.js';
 import { sparksBloomIntensity } from '../sparks/config.js';
 describe('Sparks', () => {
   it('registers four interaction modes and six styles', () => {
@@ -28,7 +28,7 @@ describe('Sparks', () => {
       lightingFidelity: 0.7,
     })).toMatchObject({
       renderStyle: 'ultra',
-      rawParticleTextureSize: '512',
+      rawParticleTextureSize: 512,
       particleFidelity: 0.75,
       trailFidelity: 0.8,
       bloomFidelity: 0.625,
@@ -38,6 +38,15 @@ describe('Sparks', () => {
     expect(() => createSparksConfig({
       gravity: 20
     })).toThrow('outside its supported range');
+    expect(createSparksConfig({ rawParticleTextureSize: '768' })).toMatchObject({ rawParticleTextureSize: 1024 });
+    expect(SPARKS_SETTINGS.find((setting) => setting.key === 'rawParticleTextureSize')).toMatchObject({
+      type: 'number', section: 'Simulation', min: 128, max: 2048, numericScale: 'powerOfTwo', advanced: true,
+    });
+    expect(createSparksConfig({ rawParticleTextureSize: 2048 })).toMatchObject({ rawParticleTextureSize: 2048 });
+    expect(SPARKS_PARTICLE_EFFECT.capacity.max).toBe(2048 * 2048);
+    expect(SPARKS_SETTINGS.find((setting) => setting.key === 'emissionRate')).toMatchObject({ min: 0, max: 10_000 });
+    expect(SPARKS_SETTINGS.find((setting) => setting.key === 'contactHeat')).toMatchObject({ min: 0, max: 25 });
+    expect(createSparksConfig({ emissionRate: 24_975, contactHeat: 100 })).toMatchObject({ emissionRate: 10_000, contactHeat: 25 });
   });
   it('keeps the legacy profile controls in the GPU render equations', () => {
     expect(SPARKS_POINT_VERTEX_SHADER).toContain('uPrimarySize * uPrimarySizeScale');
@@ -65,6 +74,15 @@ describe('Sparks', () => {
     expect(first.some(rail => Math.abs(rail.y2 - rail.y1) > 8 && Math.hypot(rail.x2 - rail.x1, rail.y2 - rail.y1) > 80)).toBe(true);
   });
 
+  it('keeps authored build thickness in play while scaling it for a preview tile', () => {
+    expect(resolveSparksBuildRadius(18, false, 384, 384)).toBe(18);
+    expect(resolveSparksBuildRadius(18, true, 384, 384)).toBeCloseTo(6.75);
+    expect(resolveSparksBuildRadius(18, true, 1600, 900)).toBeCloseTo(15.8203125);
+    expect(SPARKS_RAIL_SHADER).toContain('uniform vec3 uBodyColor');
+    expect(SPARKS_RAIL_SHADER).toContain('uniform vec3 uEdgeColor');
+    expect(SPARKS_RAIL_SHADER).not.toContain('vec3(.12,.18,.24)');
+  });
+
   it('varies welding burst headings and widths without changing zero-chaos output', () => {
     const stableA = resolveSparksEmissionCone('welding', 0, 0, 0.1, 0.2);
     const stableB = resolveSparksEmissionCone('welding', 0, 0, 0.9, 0.8);
@@ -80,11 +98,15 @@ describe('Sparks', () => {
     const byKey = new Map(SPARKS_SETTINGS.map((setting) => [setting.key, setting]));
     expect(byKey.get('buildRadius')?.visibleModes).toEqual(['build']);
     expect(byKey.get('coreSparkTorchPositionVariability')?.visibleModes).toEqual(['welding']);
-    expect(byKey.get('trailFade')?.visibleRenderStyles).toEqual(['ultra']);
+    expect(byKey.get('trailFade')?.visibleRenderStyles).toEqual(['enhanced', 'ultra']);
     expect(byKey.get('trailContinuity')?.visibleRenderStyles).toEqual(['enhanced', 'ultra']);
     expect(byKey.get('heatRadius')?.visibleRenderStyles).toEqual(['enhanced', 'ultra']);
     expect(byKey.get('primarySparkLength')).toMatchObject({ min: 0, max: 4 });
     expect(byKey.get('bounceSparkLength')).toMatchObject({ min: 0, max: 4 });
+    expect(byKey.get('trailContinuity')).toMatchObject({ min: 0, max: 4 });
+    for (const key of ['coreSparkOpacity', 'primarySparkOpacity', 'bounceSparkOpacity']) {
+      expect(byKey.get(key)).toMatchObject({ label: 'Opacity', min: 0, max: 1 });
+    }
     for (const key of ['particleFidelity', 'trailFidelity', 'bloomThreshold', 'bloomRadius', 'bloomFidelity', 'bloomSamples', 'environmentLight', 'lightShafts', 'shaftLength', 'heatDistortion', 'lightingFidelity']) {
       expect(byKey.get(key)?.visibleRenderStyles).toEqual(['ultra']);
     }
@@ -103,9 +125,26 @@ describe('Sparks', () => {
     expect(SPARKS_PARTICLE_EFFECT.archetypes.map((archetype) => archetype.id)).toEqual(['core', 'primary', 'bounce']);
     expect(SPARKS_PARTICLE_EFFECT.capacity.commandCapacity).toBe(64);
     expect(SPARKS_PARTICLE_EFFECT.renderRecipes.recipes.map((recipe) => recipe.tier)).toEqual(['basic', 'enhanced', 'ultra']);
-    expect(SPARKS_PARTICLE_PROGRAM.renderPasses.basic.map((pass) => pass.layerKind)).toEqual(['point']);
+    for (const [parameterId, key, archetype] of [
+      ['core-opacity', 'coreSparkOpacity', 'core'],
+      ['primary-opacity', 'primarySparkOpacity', 'primary'],
+      ['bounce-opacity', 'bounceSparkOpacity', 'bounce'],
+    ] as const) {
+      expect(SPARKS_PARTICLE_GRAPH.parameters.some((parameter) => parameter.id === parameterId)).toBe(true);
+      expect(SPARKS_PARTICLE_GRAPH.persistedBindings.some((binding) => binding.parameterId === parameterId && binding.key === key)).toBe(true);
+      expect(SPARKS_PARTICLE_GRAPH.moduleBindings.some((binding) => binding.parameterId === parameterId && binding.target === `archetype.${archetype}.appearance.alpha.start`)).toBe(true);
+    }
+    expect(SPARKS_PARTICLE_PROGRAM.renderPasses.basic.filter((pass) => pass.layerKind).map((pass) => pass.layerKind)).toEqual(['streak', 'point']);
     expect(SPARKS_PARTICLE_PROGRAM.renderPasses.enhanced.filter((pass) => pass.layerKind).map((pass) => pass.layerKind)).toEqual(['halo', 'streak', 'core']);
+    expect(SPARKS_PARTICLE_PROGRAM.renderPasses.enhanced.some((pass) => pass.kind === 'trails')).toBe(true);
     expect(SPARKS_PARTICLE_PROGRAM.renderPasses.ultra.filter((pass) => pass.layerKind).map((pass) => pass.layerKind)).toEqual(['halo', 'streak', 'core']);
+    expect(SPARKS_PARTICLE_PROGRAM.webgl2.streakVertex.source).toContain('continuityWeight=smoothstep(0.0,0.18,continuity)');
+    expect(SPARKS_PARTICLE_PROGRAM.webgl2.fragment.source).toContain('streakJoin=0.18*smoothstep(0.0,0.3,uStreakScale)');
+    expect(SPARKS_PARTICLE_PROGRAM.webgl2.fragment.source).toContain('streakTail=mix(streakJoin,1.0,pow(max(0.0,1.0-vStreakUv.x),1.35))');
+    expect(SPARKS_PARTICLE_GRAPH.moduleBindings).toEqual(expect.arrayContaining([
+      expect.objectContaining({ target: 'archetype.primary.appearance.length.end', parameterId: 'primary-length-end' }),
+      expect.objectContaining({ target: 'archetype.bounce.appearance.length.end', parameterId: 'bounce-length-end' }),
+    ]));
     expect(SPARKS_PARTICLE_SETTING_BINDINGS.map((binding) => binding.persistedKey)).toContain('primarySparkLength');
     expect(SPARKS_STEP_SHADER).toContain('uParticleCommandData');
     expect(SPARKS_STEP_SHADER).toContain('layout(location=2) out vec4 outMetadata');

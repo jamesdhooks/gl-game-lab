@@ -1,6 +1,6 @@
 import { createExtensionToken, type EnginePlugin, type PointerInputEvent } from '@hooksjam/gl-game-lab-core';
 import {
-  EngineGpu2D, EngineInput, EngineRender2D, EngineSchedule, ExperiencePreviewCycleControllerService,
+  applyPaletteGradientBackdrop2D, EngineGpu2D, EngineInput, EngineRender2D, EngineSchedule, ExperiencePreviewCycleControllerService,
   ParticleCommandQueue2D, type ExperienceLaunchOptions, type ExperiencePreviewCycleRequest,
   type ExperienceRuntimeController, type ExperienceSettingValue, type GpuParticleSystem2D,
   type GpuUniformEncoder2D, type GpuUniformLookup2D,
@@ -155,7 +155,8 @@ export function createFireworksPlugin(initial: FireworksConfig = FIREWORKS_DEFAU
         }
         const trailDestination = particles.beginTrails(destination.width, destination.height, config.trailFade);
         particles.renderPass('streaks', trailDestination, bindRender(1)); particles.render(trailDestination, bindRender(0.72));
-        particles.compositeTrails(destination, color3(requireStyle().background), config.bloomStrength);
+        if (particles.compositeTrailsOverlay) particles.compositeTrailsOverlay(destination, config.bloomStrength);
+        else particles.compositeTrails(destination, color3(requireStyle().background), config.bloomStrength);
         particles.render(destination, bindRender(0.82, 1.18));
       }
       function enqueueCommand(command: SpawnCommand): void {
@@ -186,8 +187,9 @@ export function createFireworksPlugin(initial: FireworksConfig = FIREWORKS_DEFAU
         });
       }
       function applyStyle(): void {
-        const style = requireStyle(), background = color3(style.background);
-        renderer.setClearColor([background[0], background[1], background[2], 1]); renderer.setBackdrop(undefined); renderer.setBloom({ enabled: false });
+        const style = requireStyle();
+        applyPaletteGradientBackdrop2D(renderer, style);
+        renderer.setBloom({ enabled: false });
         paletteBuffer.fill(0); paletteCount = Math.min(8, style.palette.length);
         style.palette.slice(0, 8).forEach((color, index) => paletteBuffer.set(color3(color), index * 3));
         particles.clearTrails();

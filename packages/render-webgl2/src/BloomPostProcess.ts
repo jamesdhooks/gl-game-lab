@@ -43,6 +43,13 @@ export interface EmissiveLightingOptions {
   readonly heatDistortion?: number;
   readonly timeSeconds?: number;
   readonly resolutionScale?: number;
+  readonly occluders?: readonly EmissiveLightingOccluder[];
+}
+
+export interface EmissiveLightingOccluder {
+  readonly a: readonly [number, number];
+  readonly b: readonly [number, number];
+  readonly radius: number;
 }
 
 interface NormalizedEmissiveLightingOptions {
@@ -57,7 +64,10 @@ interface NormalizedEmissiveLightingOptions {
   readonly heatDistortion: number;
   readonly timeSeconds: number;
   readonly resolutionScale: number;
+  readonly occluders: readonly EmissiveLightingOccluder[];
 }
+
+const MAX_LIGHT_OCCLUDERS = 16;
 
 const DEFAULT_BLOOM: NormalizedBloomOptions = Object.freeze({
   enabled: false,
@@ -72,6 +82,7 @@ const DEFAULT_BLOOM: NormalizedBloomOptions = Object.freeze({
 const DEFAULT_LIGHTING: NormalizedEmissiveLightingOptions = Object.freeze({
   enabled: false, source: [0.5, 0.5] as const, radius: 0.2, color: [1, 0.72, 0.28] as const, sourceIntensity: 1,
   environmentStrength: 0, shaftStrength: 0, shaftLength: 0.55, heatDistortion: 0, timeSeconds: 0, resolutionScale: 0.25,
+  occluders: Object.freeze([]),
 });
 
 export function normalizeBloomOptions(options: BloomOptions = {}): NormalizedBloomOptions {
@@ -99,6 +110,11 @@ export function normalizeEmissiveLightingOptions(options: EmissiveLightingOption
   const color = options.color ?? DEFAULT_LIGHTING.color;
   if (source.length !== 2 || !source.every((value) => Number.isFinite(value) && value >= 0 && value <= 1)) throw new Error('Emissive light source must be normalized');
   if (color.length !== 3 || !color.every((value) => Number.isFinite(value) && value >= 0 && value <= 1)) throw new Error('Emissive light color components must be between zero and one');
+  const occluders = options.occluders ?? [];
+  if (occluders.length > MAX_LIGHT_OCCLUDERS) throw new Error(`Emissive lighting supports at most ${MAX_LIGHT_OCCLUDERS} occluders`);
+  for (const occluder of occluders) {
+    if (![...occluder.a, ...occluder.b, occluder.radius].every(Number.isFinite) || occluder.radius < 0) throw new Error('Emissive light occluders must be finite with a non-negative radius');
+  }
   return Object.freeze({
     enabled: options.enabled ?? false,
     source: [source[0], source[1]] as const, color: [color[0], color[1], color[2]] as const,
@@ -110,6 +126,7 @@ export function normalizeEmissiveLightingOptions(options: EmissiveLightingOption
     heatDistortion: finiteRange(options.heatDistortion ?? 0, 0, 2, 'Heat distortion'),
     timeSeconds: Number.isFinite(options.timeSeconds) ? options.timeSeconds! : 0,
     resolutionScale: finiteRange(options.resolutionScale ?? DEFAULT_LIGHTING.resolutionScale, 0.125, 1, 'Emissive lighting resolution scale'),
+    occluders: Object.freeze(occluders.map((occluder) => Object.freeze({ a: [occluder.a[0], occluder.a[1]] as const, b: [occluder.b[0], occluder.b[1]] as const, radius: occluder.radius }))),
   });
 }
 
@@ -135,6 +152,9 @@ export class BloomPostProcess {
   private readonly compositeRadiusLocation: WebGLUniformLocation;
   private readonly compositeHeatLocation: WebGLUniformLocation;
   private readonly compositeTimeLocation: WebGLUniformLocation;
+  private readonly lightingEmissiveLocation: WebGLUniformLocation;
+  private readonly lightingEmissiveTexelLocation: WebGLUniformLocation;
+  private readonly lightingBaselineLocation: WebGLUniformLocation;
   private readonly lightingSourceLocation: WebGLUniformLocation;
   private readonly lightingColorLocation: WebGLUniformLocation;
   private readonly lightingRadiusLocation: WebGLUniformLocation;
@@ -142,6 +162,12 @@ export class BloomPostProcess {
   private readonly lightingShaftLocation: WebGLUniformLocation;
   private readonly lightingShaftLengthLocation: WebGLUniformLocation;
   private readonly lightingTimeLocation: WebGLUniformLocation;
+  private readonly lightingAspectLocation: WebGLUniformLocation;
+  private readonly lightingOccluderCountLocation: WebGLUniformLocation;
+  private readonly lightingOccludersLocation: WebGLUniformLocation;
+  private readonly lightingOccluderRadiiLocation: WebGLUniformLocation;
+  private readonly lightingOccluderData = new Float32Array(MAX_LIGHT_OCCLUDERS * 4);
+  private readonly lightingOccluderRadii = new Float32Array(MAX_LIGHT_OCCLUDERS);
   private options: NormalizedBloomOptions;
   private lightingOptions: NormalizedEmissiveLightingOptions = DEFAULT_LIGHTING;
   private scene: WebGLTextureResource | undefined;
@@ -173,6 +199,9 @@ export class BloomPostProcess {
     this.compositeRadiusLocation = requireShaderUniform(this.gl, this.compositeProgram, 'u_radius', 'bloom composite');
     this.compositeHeatLocation = requireShaderUniform(this.gl, this.compositeProgram, 'u_heatDistortion', 'bloom composite');
     this.compositeTimeLocation = requireShaderUniform(this.gl, this.compositeProgram, 'u_time', 'bloom composite');
+    this.lightingEmissiveLocation = requireShaderUniform(this.gl, this.lightingProgram, 'u_emissive', 'emissive lighting');
+    this.lightingEmissiveTexelLocation = requireShaderUniform(this.gl, this.lightingProgram, 'u_emissiveTexel', 'emissive lighting');
+    this.lightingBaselineLocation = requireShaderUniform(this.gl, this.lightingProgram, 'u_baseline', 'emissive lighting');
     this.lightingSourceLocation = requireShaderUniform(this.gl, this.lightingProgram, 'u_source', 'emissive lighting');
     this.lightingColorLocation = requireShaderUniform(this.gl, this.lightingProgram, 'u_color', 'emissive lighting');
     this.lightingRadiusLocation = requireShaderUniform(this.gl, this.lightingProgram, 'u_radius', 'emissive lighting');
@@ -180,6 +209,10 @@ export class BloomPostProcess {
     this.lightingShaftLocation = requireShaderUniform(this.gl, this.lightingProgram, 'u_shafts', 'emissive lighting');
     this.lightingShaftLengthLocation = requireShaderUniform(this.gl, this.lightingProgram, 'u_shaftLength', 'emissive lighting');
     this.lightingTimeLocation = requireShaderUniform(this.gl, this.lightingProgram, 'u_time', 'emissive lighting');
+    this.lightingAspectLocation = requireShaderUniform(this.gl, this.lightingProgram, 'u_aspect', 'emissive lighting');
+    this.lightingOccluderCountLocation = requireShaderUniform(this.gl, this.lightingProgram, 'u_occluderCount', 'emissive lighting');
+    this.lightingOccludersLocation = requireShaderUniform(this.gl, this.lightingProgram, 'u_occluders[0]', 'emissive lighting');
+    this.lightingOccluderRadiiLocation = requireShaderUniform(this.gl, this.lightingProgram, 'u_occluderRadii[0]', 'emissive lighting');
   }
 
   configure(options: BloomOptions): void {
@@ -315,9 +348,15 @@ export class BloomPostProcess {
 
   private drawLighting(destination: WebGLTextureResource): void {
     const gl = this.gl, options = this.lightingOptions;
+    const scene = requireResource(this.scene);
     gl.bindFramebuffer(gl.FRAMEBUFFER, destination.framebuffer ?? null);
     gl.viewport(0, 0, destination.descriptor.width, destination.descriptor.height);
     gl.useProgram(this.lightingProgram);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, scene.texture);
+    gl.uniform1i(this.lightingEmissiveLocation, 0);
+    gl.uniform2f(this.lightingEmissiveTexelLocation, 1 / scene.descriptor.width, 1 / scene.descriptor.height);
+    gl.uniform3f(this.lightingBaselineLocation, this.clearColor[0], this.clearColor[1], this.clearColor[2]);
     gl.uniform2f(this.lightingSourceLocation, options.source[0], options.source[1]);
     gl.uniform3f(this.lightingColorLocation, options.color[0], options.color[1], options.color[2]);
     gl.uniform1f(this.lightingRadiusLocation, options.radius);
@@ -325,6 +364,21 @@ export class BloomPostProcess {
     gl.uniform1f(this.lightingShaftLocation, options.shaftStrength);
     gl.uniform1f(this.lightingShaftLengthLocation, options.shaftLength);
     gl.uniform1f(this.lightingTimeLocation, options.timeSeconds);
+    gl.uniform1f(this.lightingAspectLocation, this.device.canvas.width / Math.max(1, this.device.canvas.height));
+    this.lightingOccluderData.fill(0);
+    this.lightingOccluderRadii.fill(0);
+    for (let index = 0; index < options.occluders.length; index += 1) {
+      const occluder = options.occluders[index]!;
+      const offset = index * 4;
+      this.lightingOccluderData[offset] = occluder.a[0];
+      this.lightingOccluderData[offset + 1] = occluder.a[1];
+      this.lightingOccluderData[offset + 2] = occluder.b[0];
+      this.lightingOccluderData[offset + 3] = occluder.b[1];
+      this.lightingOccluderRadii[index] = occluder.radius;
+    }
+    gl.uniform1i(this.lightingOccluderCountLocation, options.occluders.length);
+    gl.uniform4fv(this.lightingOccludersLocation, this.lightingOccluderData);
+    gl.uniform1fv(this.lightingOccluderRadiiLocation, this.lightingOccluderRadii);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
   }
 
@@ -466,8 +520,11 @@ void main() {
   outColor = vec4(scene.rgb + glow + lighting, scene.a);
 }`;
 
-const LIGHTING_FRAGMENT_SHADER = `#version 300 es
+export const LIGHTING_FRAGMENT_SHADER = `#version 300 es
 precision highp float;
+uniform sampler2D u_emissive;
+uniform vec2 u_emissiveTexel;
+uniform vec3 u_baseline;
 uniform vec2 u_source;
 uniform vec3 u_color;
 uniform float u_radius;
@@ -475,17 +532,82 @@ uniform float u_environment;
 uniform float u_shafts;
 uniform float u_shaftLength;
 uniform float u_time;
+uniform float u_aspect;
+uniform int u_occluderCount;
+uniform vec4 u_occluders[16];
+uniform float u_occluderRadii[16];
 in vec2 v_uv;
 out vec4 outColor;
-float hash12(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453123);}
+vec2 aspectPoint(vec2 point){return vec2(point.x*u_aspect,point.y);}
+float pointSegmentDistance(vec2 point,vec2 a,vec2 b){
+  vec2 ab=b-a;
+  return length(point-(a+ab*clamp(dot(point-a,ab)/max(0.000001,dot(ab,ab)),0.0,1.0)));
+}
+float cross2(vec2 a,vec2 b){return a.x*b.y-a.y*b.x;}
+bool segmentsIntersect(vec2 a,vec2 b,vec2 c,vec2 d){
+  vec2 ab=b-a;
+  vec2 cd=d-c;
+  float denominator=cross2(ab,cd);
+  if(abs(denominator)<0.000001)return false;
+  float t=cross2(c-a,cd)/denominator;
+  float u=cross2(c-a,ab)/denominator;
+  return t>=0.0&&t<=1.0&&u>=0.0&&u<=1.0;
+}
+float segmentDistance(vec2 a,vec2 b,vec2 c,vec2 d){
+  if(segmentsIntersect(a,b,c,d))return 0.0;
+  return min(min(pointSegmentDistance(a,c,d),pointSegmentDistance(b,c,d)),min(pointSegmentDistance(c,a,b),pointSegmentDistance(d,a,b)));
+}
+float shaftVisibility(vec2 pixel,vec2 emitter){
+  vec2 target=aspectPoint(pixel);
+  vec2 source=aspectPoint(emitter);
+  float rayLength=length(source-target);
+  if(rayLength<0.0001)return 1.0;
+  for(int index=0;index<16;index++){
+    if(index>=u_occluderCount)break;
+    vec4 raw=u_occluders[index];
+    vec2 a=aspectPoint(raw.xy);
+    vec2 b=aspectPoint(raw.zw);
+    float radius=u_occluderRadii[index];
+    if(segmentDistance(target,source,a,b)<radius)return 0.0;
+  }
+  return 1.0;
+}
+vec3 emissiveAt(vec2 uv){
+  vec2 safeUv=clamp(uv,vec2(0.001),vec2(0.999));
+  vec3 energy=texture(u_emissive,safeUv).rgb*0.42;
+  energy+=texture(u_emissive,safeUv+vec2(u_emissiveTexel.x,0.0)).rgb*0.145;
+  energy+=texture(u_emissive,safeUv-vec2(u_emissiveTexel.x,0.0)).rgb*0.145;
+  energy+=texture(u_emissive,safeUv+vec2(0.0,u_emissiveTexel.y)).rgb*0.145;
+  energy+=texture(u_emissive,safeUv-vec2(0.0,u_emissiveTexel.y)).rgb*0.145;
+  energy=max(energy-u_baseline,vec3(0.0));
+  float peak=max(energy.r,max(energy.g,energy.b));
+  return energy*smoothstep(0.06,0.32,peak);
+}
+float hash12(vec2 point){return fract(sin(dot(point,vec2(127.1,311.7)))*43758.5453123);}
 void main(){
-  vec2 delta=v_uv-u_source;
+  vec2 delta=aspectPoint(v_uv)-aspectPoint(u_source);
   float distanceToSource=length(delta);
   float radial=pow(max(0.0,1.0-distanceToSource/max(0.001,u_radius)),2.2)*u_environment;
-  float angle=atan(delta.y,delta.x);
-  float angularNoise=0.56+0.44*sin(angle*17.0+sin(angle*7.0)*2.4+u_time*0.11);
-  angularNoise*=0.72+0.28*hash12(vec2(floor((angle+3.14159)*21.0),17.0));
-  float shaftEnvelope=exp(-distanceToSource/max(0.001,u_shaftLength))*smoothstep(0.012,0.075,distanceToSource);
-  float shafts=pow(max(0.0,angularNoise),5.0)*shaftEnvelope*u_shafts;
-  outColor=vec4(u_color*(radial+shafts),1.0);
+  radial*=shaftVisibility(v_uv,u_source);
+  vec2 towardSource=u_source-v_uv;
+  vec2 stepUv=towardSource/24.0;
+  float jitter=hash12(floor(v_uv/u_emissiveTexel)+floor(u_time*18.0))*0.8;
+  vec2 sampleUv=v_uv+stepUv*jitter;
+  vec3 scattered=vec3(0.0);
+  float decay=1.0;
+  for(int sampleIndex=0;sampleIndex<24;sampleIndex++){
+    sampleUv+=stepUv;
+    vec3 emission=emissiveAt(sampleUv);
+    float emissionPeak=max(emission.r,max(emission.g,emission.b));
+    if(emissionPeak>0.002){
+      emission*=shaftVisibility(v_uv,sampleUv);
+      emission*=mix(0.62,1.38,hash12(floor(sampleUv/u_emissiveTexel)+float(sampleIndex)*17.0));
+      scattered+=emission*decay;
+    }
+    decay*=mix(0.9,0.975,clamp(u_shaftLength*0.5,0.0,1.0));
+  }
+  scattered/=2.8;
+  float shaftEnvelope=exp(-distanceToSource/max(0.001,u_shaftLength))*smoothstep(0.006,0.04,distanceToSource);
+  vec3 shafts=scattered*u_color*(shaftEnvelope*u_shafts);
+  outColor=vec4(u_color*radial+shafts,1.0);
 }`;

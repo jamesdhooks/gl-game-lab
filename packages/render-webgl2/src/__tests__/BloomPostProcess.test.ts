@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { bloomBlurPassDirections, normalizeBloomOptions, normalizeEmissiveLightingOptions } from '../index.js';
-import { BLOOM_FILTER_FRAGMENT_SHADER } from '../BloomPostProcess.js';
+import { BLOOM_FILTER_FRAGMENT_SHADER, LIGHTING_FRAGMENT_SHADER } from '../BloomPostProcess.js';
 
 describe('normalizeBloomOptions', () => {
   it('retains saturated highlights at the maximum threshold through a soft extraction knee', () => {
@@ -86,6 +86,26 @@ describe('normalizeEmissiveLightingOptions', () => {
       enabled: true, source: [0.25, 0.75], radius: 0.3, color: [1, 0.5, 0.1], sourceIntensity: 1.2,
       environmentStrength: 0.6, shaftStrength: 0.2, shaftLength: 0.7, heatDistortion: 0.15,
     });
+  });
+
+  it('normalizes capsule occluders used by emissive light shafts', () => {
+    expect(normalizeEmissiveLightingOptions({
+      enabled: true,
+      occluders: [{ a: [0.1, 0.2], b: [0.8, 0.7], radius: 0.04 }],
+    }).occluders).toEqual([{ a: [0.1, 0.2], b: [0.8, 0.7], radius: 0.04 }]);
+    expect(() => normalizeEmissiveLightingOptions({
+      occluders: [{ a: [0, 0], b: [1, 1], radius: -0.1 }],
+    })).toThrow('occluders');
+  });
+
+  it('derives shafts from scene emissive energy and shadows them with capsules', () => {
+    expect(LIGHTING_FRAGMENT_SHADER).toContain('uniform sampler2D u_emissive');
+    expect(LIGHTING_FRAGMENT_SHADER).toContain('for(int sampleIndex=0;sampleIndex<24;sampleIndex++)');
+    expect(LIGHTING_FRAGMENT_SHADER).toContain('emission*=shaftVisibility(v_uv,sampleUv)');
+    expect(LIGHTING_FRAGMENT_SHADER).toContain('radial*=shaftVisibility(v_uv,u_source)');
+    expect(LIGHTING_FRAGMENT_SHADER).toContain('uniform vec4 u_occluders[16]');
+    expect(LIGHTING_FRAGMENT_SHADER).toContain('segmentDistance(target,source,a,b)<radius');
+    expect(LIGHTING_FRAGMENT_SHADER).not.toContain('angularNoise');
   });
 
   it('rejects invalid normalized sources and effect ranges', () => {

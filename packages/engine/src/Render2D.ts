@@ -91,6 +91,14 @@ export interface EmissiveLightSource2D {
   readonly intensity?: number;
 }
 
+export interface EmissiveLightOccluder2D {
+  readonly ax: number;
+  readonly ay: number;
+  readonly bx: number;
+  readonly by: number;
+  readonly radius: number;
+}
+
 /** Shared scene-space emissive lighting driven by an explicit dominant source. */
 export interface EmissiveLighting2DOptions {
   readonly enabled: boolean;
@@ -101,6 +109,8 @@ export interface EmissiveLighting2DOptions {
   readonly heatDistortion?: number;
   readonly timeSeconds?: number;
   readonly resolutionScale?: number;
+  /** Opaque scene-space capsules that block light shafts behind them. */
+  readonly occluders?: readonly EmissiveLightOccluder2D[];
 }
 
 export interface Backdrop2DOptions {
