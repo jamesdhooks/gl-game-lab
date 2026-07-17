@@ -263,6 +263,7 @@ export function createCompiledSparksPlugin(initial: SparksConfig = SPARKS_DEFAUL
           radius: sparksNumber(config, 'bloomRadius'),
           iterations: Math.round(sparksNumber(config, 'bloomSamples')),
           resolutionScale: sparksNumber(config, 'bloomFidelity'),
+          isolateClearColor: true,
         });
         if (!ultra) renderer.setEmissiveLighting?.({ enabled: false });
       }

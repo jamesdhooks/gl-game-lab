@@ -79,6 +79,8 @@ export interface Bloom2DOptions {
   readonly radius?: number;
   readonly iterations?: number;
   readonly resolutionScale?: number;
+  /** Extract bloom from energy above the scene clear color, excluding a flat background. */
+  readonly isolateClearColor?: boolean;
 }
 
 export interface EmissiveLightSource2D {

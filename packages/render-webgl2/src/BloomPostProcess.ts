@@ -8,6 +8,8 @@ export interface BloomOptions {
   readonly radius?: number;
   readonly iterations?: number;
   readonly resolutionScale?: number;
+  /** Extract bloom from energy above the renderer clear color instead of the complete scene. */
+  readonly isolateClearColor?: boolean;
 }
 
 export interface NormalizedBloomOptions {
@@ -17,6 +19,7 @@ export interface NormalizedBloomOptions {
   readonly radius: number;
   readonly iterations: number;
   readonly resolutionScale: number;
+  readonly isolateClearColor: boolean;
 }
 
 export interface BloomPostProcessStats {
@@ -63,6 +66,7 @@ const DEFAULT_BLOOM: NormalizedBloomOptions = Object.freeze({
   radius: 1,
   iterations: 4,
   resolutionScale: 0.5,
+  isolateClearColor: false,
 });
 
 const DEFAULT_LIGHTING: NormalizedEmissiveLightingOptions = Object.freeze({
@@ -86,6 +90,7 @@ export function normalizeBloomOptions(options: BloomOptions = {}): NormalizedBlo
     radius,
     iterations,
     resolutionScale,
+    isolateClearColor: options.isolateClearColor ?? DEFAULT_BLOOM.isolateClearColor,
   });
 }
 
@@ -119,6 +124,8 @@ export class BloomPostProcess {
   private readonly filterTexelLocation: WebGLUniformLocation;
   private readonly filterDirectionLocation: WebGLUniformLocation;
   private readonly filterThresholdLocation: WebGLUniformLocation;
+  private readonly filterBaselineLocation: WebGLUniformLocation;
+  private readonly filterIsolateBaselineLocation: WebGLUniformLocation;
   private readonly compositeSceneLocation: WebGLUniformLocation;
   private readonly compositeBloomLocation: WebGLUniformLocation;
   private readonly compositeIntensityLocation: WebGLUniformLocation;
@@ -141,6 +148,7 @@ export class BloomPostProcess {
   private ping: WebGLTextureResource | undefined;
   private pong: WebGLTextureResource | undefined;
   private lighting: WebGLTextureResource | undefined;
+  private clearColor: readonly [number, number, number] = [0, 0, 0];
   private disposed = false;
 
   constructor(private readonly device: WebGL2Device, options: BloomOptions = {}) {
@@ -154,6 +162,8 @@ export class BloomPostProcess {
     this.filterTexelLocation = requireShaderUniform(this.gl, this.filterProgram, 'u_texel', 'bloom filter');
     this.filterDirectionLocation = requireShaderUniform(this.gl, this.filterProgram, 'u_direction', 'bloom filter');
     this.filterThresholdLocation = requireShaderUniform(this.gl, this.filterProgram, 'u_threshold', 'bloom filter');
+    this.filterBaselineLocation = requireShaderUniform(this.gl, this.filterProgram, 'u_baseline', 'bloom filter');
+    this.filterIsolateBaselineLocation = requireShaderUniform(this.gl, this.filterProgram, 'u_isolateBaseline', 'bloom filter');
     this.compositeSceneLocation = requireShaderUniform(this.gl, this.compositeProgram, 'u_scene', 'bloom composite');
     this.compositeBloomLocation = requireShaderUniform(this.gl, this.compositeProgram, 'u_bloom', 'bloom composite');
     this.compositeIntensityLocation = requireShaderUniform(this.gl, this.compositeProgram, 'u_intensity', 'bloom composite');
@@ -205,6 +215,7 @@ export class BloomPostProcess {
     const scene = this.sceneTarget;
     if (!scene?.framebuffer) return;
     const gl = this.gl;
+    this.clearColor = [color[0], color[1], color[2]];
     gl.bindFramebuffer(gl.FRAMEBUFFER, scene.framebuffer);
     gl.viewport(0, 0, scene.descriptor.width, scene.descriptor.height);
     gl.clearColor(color[0], color[1], color[2], color[3]);
@@ -226,7 +237,10 @@ export class BloomPostProcess {
       gl.useProgram(this.filterProgram);
       gl.uniform1i(this.filterTextureLocation, 0);
       gl.uniform1f(this.filterThresholdLocation, this.options.threshold);
+      gl.uniform3f(this.filterBaselineLocation, this.clearColor[0], this.clearColor[1], this.clearColor[2]);
+      gl.uniform1f(this.filterIsolateBaselineLocation, this.options.isolateClearColor ? 1 : 0);
       this.drawFilter(scene, ping, 0, 0);
+      gl.uniform1f(this.filterIsolateBaselineLocation, 0);
       for (let index = 0; index < this.options.iterations; index += 1) {
         const directions = bloomBlurPassDirections(this.options.radius, this.options.iterations, index);
         this.drawFilter(ping, pong, directions.horizontal[0], directions.horizontal[1]);
@@ -402,11 +416,14 @@ uniform sampler2D u_texture;
 uniform vec2 u_texel;
 uniform vec2 u_direction;
 uniform float u_threshold;
+uniform vec3 u_baseline;
+uniform float u_isolateBaseline;
 in vec2 v_uv;
 out vec4 outColor;
 void main() {
   vec3 center = texture(u_texture, v_uv).rgb;
   if (dot(u_direction, u_direction) < 0.000001) {
+    center = max(vec3(0.0), center - u_baseline * u_isolateBaseline);
     float brightness = max(center.r, max(center.g, center.b));
     float kneeStart = max(0.0, u_threshold - 0.18);
     float kneeEnd = max(kneeStart + 0.0001, u_threshold);

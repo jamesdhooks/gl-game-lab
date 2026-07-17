@@ -16,6 +16,7 @@ describe('normalizeBloomOptions', () => {
       radius: 1,
       iterations: 4,
       resolutionScale: 0.5,
+      isolateClearColor: false,
     });
   });
 
@@ -27,6 +28,7 @@ describe('normalizeBloomOptions', () => {
       radius: 2,
       iterations: 6,
       resolutionScale: 0.25,
+      isolateClearColor: false,
     })).toEqual({
       enabled: true,
       threshold: 0.4,
@@ -34,7 +36,13 @@ describe('normalizeBloomOptions', () => {
       radius: 2,
       iterations: 6,
       resolutionScale: 0.25,
+      isolateClearColor: false,
     });
+  });
+
+  it('can isolate emissive energy above the renderer clear color', () => {
+    expect(normalizeBloomOptions({ isolateClearColor: true }).isolateClearColor).toBe(true);
+    expect(BLOOM_FILTER_FRAGMENT_SHADER).toContain('center - u_baseline * u_isolateBaseline');
   });
 
   it('supports wide-kernel bloom used by liquid surfaces', () => {
