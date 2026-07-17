@@ -119,4 +119,26 @@ describe('ParticleEffectCompiler2D', () => {
     const extension = { id: 'same', supports: ['webgl2'] as const, cpuReference: () => undefined, glslSimulation: 'stateA.x += 0.0;' };
     expect(() => compileParticleProgram2D(effect, [extension, extension])).toThrow('duplicate');
   });
+
+  it('compiles only graph-selected extensions and enforces their declared order on both backends', () => {
+    const base = adaptParticleEffectDefinition2D(definition);
+    const alpha = {
+      id: 'alpha-module', supports: ['webgl2', 'webgpu'] as const, cpuReference: () => undefined,
+      glslSimulation: 'stateA.x += 1.0;', wgslSimulation: 'stateA[i].position.x += 1.0;',
+    };
+    const beta = {
+      id: 'beta-module', supports: ['webgl2', 'webgpu'] as const, runsAfter: ['alpha-module'], cpuReference: () => undefined,
+      glslSimulation: 'stateA.y += 2.0;', wgslSimulation: 'stateA[i].position.y += 2.0;', wgslRender: 'out.color.rgb *= 0.5;',
+    };
+    const unused = {
+      id: 'unused-module', supports: ['webgl2', 'webgpu'] as const, cpuReference: () => undefined,
+      glslSimulation: 'stateA.x += 99.0;', wgslSimulation: 'stateA[i].position.x += 99.0;',
+    };
+    expect(() => compileParticleProgram2D(compileParticleEffect2D({ ...base, customModules: ['beta-module', 'alpha-module'] }), [alpha, beta])).toThrow('must run after');
+    const program = compileParticleProgram2D(compileParticleEffect2D({ ...base, customModules: ['alpha-module', 'beta-module'] }), [unused, beta, alpha]);
+    expect(program.webgl2.simulation.source.indexOf('stateA.x += 1.0;')).toBeLessThan(program.webgl2.simulation.source.indexOf('stateA.y += 2.0;'));
+    expect(program.webgl2.simulation.source).not.toContain('99.0');
+    expect(program.webgpu.simulation.source).not.toContain('99.0');
+    expect(program.webgpu.render.source).toContain('out.color.rgb *= 0.5;');
+  });
 });

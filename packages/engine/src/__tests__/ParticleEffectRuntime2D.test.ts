@@ -286,6 +286,73 @@ describe("EngineParticleEffects2D", () => {
     runtime.dispose();
   });
 
+  it("executes burst cycles, distance emission, per-frame limits, and conservative max-alive limits", () => {
+    const backend = new TestBackend();
+    const runtime = new EngineParticleEffects2D(backend);
+    const base = adaptParticleEffectDefinition2D(definition);
+    const emitter = {
+      ...base.emitters[0]!,
+      timeline: {
+        duration: 2,
+        distanceRate: { kind: "constant" as const, value: 1 },
+        bursts: [{ time: 0, count: 4, cycles: 3, interval: 0.1 }],
+      },
+      limits: { ...base.emitters[0]!.limits, maxPerFrame: 5, maxAlive: 6 },
+    };
+    runtime.register(compileParticleProgram2D(compileParticleEffect2D({ ...base, emitters: [emitter] })));
+    const instance = runtime.createInstance(definition.id, { seed: 3 });
+    instance.start();
+    instance.setTransform({ position: [3, 4], rotation: 0, scale: [1, 1] });
+    runtime.update(0.05);
+    expect(backend.resources[0]!.emissions.map((entry) => entry.count)).toEqual([4, 1]);
+    runtime.update(0.06);
+    expect(backend.resources[0]!.emissions.map((entry) => entry.count)).toEqual([4, 1, 1]);
+    runtime.update(1.1);
+    expect(backend.resources[0]!.emissions.map((entry) => entry.count)).toEqual([4, 1, 1, 4]);
+    runtime.dispose();
+  });
+
+  it("instantiates referenced effects with mapped parameters and explicit inheritance, then reclaims them", () => {
+    const backend = new TestBackend();
+    const runtime = new EngineParticleEffects2D(backend);
+    const childBase = adaptParticleEffectDefinition2D({ ...definition, id: "runtime-child" });
+    const child = {
+      ...childBase,
+      parameters: [{ id: "power", kind: "number" as const, defaultValue: 1, min: 0, max: 20 }],
+      emitters: childBase.emitters.map((emitter) => ({
+        ...emitter,
+        initialization: { power: { kind: "parameter" as const, parameterId: "power" } },
+      })),
+    };
+    const parentBase = adaptParticleEffectDefinition2D({ ...definition, id: "runtime-parent" });
+    const parent = {
+      ...parentBase,
+      parameters: [{ id: "parent-power", kind: "number" as const, defaultValue: 7, min: 0, max: 20 }],
+      graph: {
+        root: {
+          kind: "effect-reference" as const,
+          effectId: child.id,
+          parameterMap: { power: "parent-power" },
+          inherit: { palette: true, seed: true, timescale: true, qualityTier: true, velocity: 0.5 },
+        },
+      },
+    };
+    runtime.register(compileParticleProgram2D(compileParticleEffect2D(child)));
+    runtime.register(compileParticleProgram2D(compileParticleEffect2D(parent)));
+    const instance = runtime.createInstance(parent.id, {
+      palette: { revision: 9, colors: [[1, 0, 0]] }, timescale: 2, qualityTier: "enhanced", inheritedVelocity: [10, 4],
+    });
+    instance.start();
+    expect(runtime.inspect().instances).toHaveLength(2);
+    const childState = runtime.inspect().instances.find((entry) => entry.effectId === child.id);
+    expect(childState).toMatchObject({ timescale: 2, qualityTier: "enhanced", parameters: { power: 7 } });
+    expect(backend.resources[1]!.paletteRevision).toBe(9);
+    expect(backend.resources[1]!.emissions[0]).toMatchObject({ power: 7, inheritedVelocityX: 5, inheritedVelocityY: 2 });
+    runtime.update(1.1);
+    expect(runtime.inspect().instances.map((entry) => entry.effectId)).toEqual([parent.id]);
+    runtime.dispose();
+  });
+
   it("hot replaces compatible programs and rejects use after disposal", () => {
     const backend = new TestBackend();
     const runtime = new EngineParticleEffects2D(backend);

@@ -47,6 +47,26 @@ describe('ParticleEffectAuthoring2D', () => {
     expect(() => seeded.replace(second)).toThrow('Recursive particle effect');
   });
 
+  it('validates referenced-effect parameter maps at the library boundary', () => {
+    const child = {
+      ...adaptParticleEffectDefinition2D(legacy),
+      parameters: [{ id: 'child-power', kind: 'number' as const, defaultValue: 1 }],
+    };
+    const parentBase = adaptParticleEffectDefinition2D({ ...legacy, id: 'parent' });
+    const library = new ParticleEffectLibrary2D();
+    library.register(child);
+    expect(() => library.register({
+      ...parentBase,
+      parameters: [{ id: 'parent-power', kind: 'number' as const, defaultValue: 2 }],
+      graph: { root: { kind: 'effect-reference', effectId: child.id, parameterMap: { missing: 'parent-power' } } },
+    })).toThrow('unknown child parameter missing');
+    expect(() => library.register({
+      ...parentBase,
+      parameters: [{ id: 'parent-power', kind: 'number' as const, defaultValue: 2 }],
+      graph: { root: { kind: 'effect-reference', effectId: child.id, parameterMap: { 'child-power': 'missing' } } },
+    })).toThrow('unknown parent parameter missing');
+  });
+
   it('resolves, clamps, and validates parameter overrides', () => {
     const graph = { ...adaptParticleEffectDefinition2D(legacy), parameters: [{ id: 'power', kind: 'number' as const, defaultValue: 2, min: 0, max: 4 }] };
     expect(resolveParticleParameters2D(graph, { power: 20 })).toEqual({ power: 4 });

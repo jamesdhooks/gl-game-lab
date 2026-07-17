@@ -1,20 +1,37 @@
 import type {
   ParticleCondition2D,
+  ParticleCoordinateSpace2D,
   ParticleEffectGraph2D,
   ParticleEmitterGraphNode2D,
   ParticleGraphEvent2D,
+  ParticleInheritancePolicy2D,
   ParticleParameterValue2D,
 } from './ParticleEffectGraph2D.js';
 
+const EMPTY_CONTEXT: ParticleGraphExecutionContext2D = Object.freeze({});
+
+export interface ParticleGraphExecutionContext2D {
+  readonly parameterMap?: Readonly<Record<string, string>>;
+  readonly space?: ParticleCoordinateSpace2D;
+}
+
+export interface ParticleGraphEffectReference2D {
+  readonly effectId: string;
+  readonly inherit?: ParticleInheritancePolicy2D;
+  readonly parameterMap?: Readonly<Record<string, string>>;
+}
+
 export interface ParticleGraphSchedulerCallbacks2D {
-  emit(emitterId: string): void;
+  emit(emitterId: string, context: ParticleGraphExecutionContext2D): void;
   stop(emitterId: string | undefined, mode: 'drain' | 'kill'): void;
   signal(signal: string): void;
-  reference(effectId: string): void;
+  reference(reference: ParticleGraphEffectReference2D, context: ParticleGraphExecutionContext2D): void;
 }
 
 interface ScheduledNode {
   node: ParticleEmitterGraphNode2D | undefined;
+  event: ParticleGraphEvent2D | undefined;
+  context: ParticleGraphExecutionContext2D;
   due: number;
   active: boolean;
 }
@@ -24,6 +41,7 @@ export class ParticleGraphScheduler2D {
   private elapsed = 0;
   private randomState: number;
   private dropped = 0;
+  private flushing = false;
 
   constructor(
     private readonly graph: ParticleEffectGraph2D,
@@ -33,14 +51,14 @@ export class ParticleGraphScheduler2D {
     capacity = 256,
   ) {
     if (!Number.isSafeInteger(capacity) || capacity < 1) throw new Error('Particle graph scheduler capacity must be positive');
-    this.scheduled = Array.from({ length: capacity }, (): ScheduledNode => ({ node: undefined, due: 0, active: false }));
+    this.scheduled = Array.from({ length: capacity }, (): ScheduledNode => ({ node: undefined, event: undefined, context: EMPTY_CONTEXT, due: 0, active: false }));
     this.randomState = seed >>> 0;
   }
 
   get droppedActions(): number { return this.dropped; }
   get pendingActions(): number { return this.scheduled.reduce((count, action) => count + Number(action.active), 0); }
 
-  start(): void { this.reset(this.randomState); this.scheduleStart(this.graph.graph.root, 0); this.flush(); }
+  start(): void { this.reset(this.randomState); this.scheduleStart(this.graph.graph.root, 0, EMPTY_CONTEXT); this.flush(); }
 
   update(deltaSeconds: number): void {
     if (!Number.isFinite(deltaSeconds) || deltaSeconds < 0) throw new Error('Particle graph scheduler delta must be finite and non-negative');
@@ -50,61 +68,84 @@ export class ParticleGraphScheduler2D {
 
   trigger(event: ParticleGraphEvent2D): void {
     this.visitGates(this.graph.graph.root, event);
-    this.flush();
+    if (!this.flushing) this.flush();
   }
 
   reset(seed: number): void {
     this.elapsed = 0; this.randomState = seed >>> 0; this.dropped = 0;
-    for (const action of this.scheduled) { action.node = undefined; action.due = 0; action.active = false; }
+    for (const action of this.scheduled) { action.node = undefined; action.event = undefined; action.context = EMPTY_CONTEXT; action.due = 0; action.active = false; }
   }
 
   private flush(): void {
+    if (this.flushing) return;
+    this.flushing = true;
     let progressed = true;
-    while (progressed) {
-      progressed = false;
-      for (const action of this.scheduled) {
-        if (!action.active || action.due > this.elapsed || !action.node) continue;
-        const node = action.node; action.active = false; action.node = undefined;
-        this.execute(node, action.due); progressed = true;
+    try {
+      while (progressed) {
+        progressed = false;
+        for (const action of this.scheduled) {
+          if (!action.active || action.due > this.elapsed) continue;
+          const node = action.node, event = action.event, context = action.context;
+          action.active = false; action.node = undefined; action.event = undefined; action.context = EMPTY_CONTEXT;
+          if (event) this.visitGates(this.graph.graph.root, event);
+          else if (node) this.execute(node, action.due, context);
+          progressed = true;
+        }
       }
+    } finally {
+      this.flushing = false;
     }
   }
 
-  private execute(node: ParticleEmitterGraphNode2D, due: number): void {
-    if (node.kind === 'emit') { this.callbacks.emit(node.emitterId); return; }
-    if (node.kind === 'effect-reference') { this.callbacks.reference(node.effectId); return; }
+  private execute(node: ParticleEmitterGraphNode2D, due: number, context: ParticleGraphExecutionContext2D): void {
+    if (node.kind === 'emit') { this.callbacks.emit(node.emitterId, context); return; }
+    if (node.kind === 'effect-reference') {
+      const parameterMap = node.parameterMap ? composeParameterMaps(context.parameterMap, node.parameterMap) : context.parameterMap;
+      this.callbacks.reference({ effectId: node.effectId, ...(node.inherit ? { inherit: node.inherit } : {}), ...(parameterMap ? { parameterMap } : {}) }, context);
+      return;
+    }
     if (node.kind === 'trigger') { this.callbacks.signal(node.signal); return; }
     if (node.kind === 'stop') { this.callbacks.stop(node.emitterId, node.mode ?? 'drain'); return; }
     if (node.kind === 'wait-for-completion' || node.kind === 'gate') return;
-    if (node.kind === 'delay') { this.enqueue(node.child, due + node.duration); return; }
+    if (node.kind === 'delay') { this.enqueue(node.child, due + node.duration, context); return; }
     if (node.kind === 'sequence') {
       let cursor = due;
-      for (const child of node.children) { this.enqueue(child, cursor); cursor += nodeDuration(child, this.graph); }
+      for (const child of node.children) { this.enqueue(child, cursor, context); cursor += nodeDuration(child, this.graph); }
       return;
     }
-    if (node.kind === 'parallel') { node.children.forEach((child) => { this.enqueue(child, due); }); return; }
+    if (node.kind === 'parallel') { node.children.forEach((child) => { this.enqueue(child, due, context); }); return; }
     if (node.kind === 'repeat') {
       const duration = nodeDuration(node.child, this.graph) + (node.interval ?? 0);
-      for (let index = 0; index < node.count; index += 1) this.enqueue(node.child, due + duration * index);
+      for (let index = 0; index < node.count; index += 1) this.enqueue(node.child, due + duration * index, context);
       return;
     }
-    if (node.kind === 'random-choice') { this.enqueue(node.children[Math.floor(this.random() * node.children.length)]!, due); return; }
-    if (node.kind === 'weighted-choice') { this.enqueue(weightedChoice(node.choices, this.random()), due); return; }
-    if (node.kind === 'condition') { this.enqueue(evaluateCondition(node.condition, this.parameters(), this.random()) ? node.then : node.otherwise, due); return; }
-    if (node.kind === 'timeline' || node.kind === 'parameter-remap' || node.kind === 'transform') this.enqueue(node.child, due);
+    if (node.kind === 'random-choice') { this.enqueue(node.children[Math.floor(this.random() * node.children.length)]!, due, context); return; }
+    if (node.kind === 'weighted-choice') { this.enqueue(weightedChoice(node.choices, this.random()), due, context); return; }
+    if (node.kind === 'condition') { this.enqueue(evaluateCondition(node.condition, this.parameters(), this.random(), context.parameterMap) ? node.then : node.otherwise, due, context); return; }
+    if (node.kind === 'timeline') {
+      for (const marker of node.markers) this.enqueueEvent({ kind: 'marker', marker: marker.marker }, due + marker.time);
+      this.enqueue(node.child, due, context);
+    } else if (node.kind === 'parameter-remap') this.enqueue(node.child, due, { ...context, parameterMap: composeParameterMaps(context.parameterMap, node.map) });
+    else if (node.kind === 'transform') this.enqueue(node.child, due, { ...context, space: node.space });
   }
 
-  private scheduleStart(node: ParticleEmitterGraphNode2D, due: number): void {
-    if (node.kind === 'gate') { if (node.event.kind === 'effect-start') this.scheduleStart(node.child, due); return; }
-    if (node.kind === 'delay') { this.scheduleStart(node.child, due + node.duration); return; }
-    if (node.kind === 'sequence') { let cursor = due; for (const child of node.children) { this.scheduleStart(child, cursor); cursor += nodeDuration(child, this.graph); } return; }
-    if (node.kind === 'parallel') { node.children.forEach((child) => { this.scheduleStart(child, due); }); return; }
-    if (node.kind === 'repeat') { const duration = nodeDuration(node.child, this.graph) + (node.interval ?? 0); for (let index = 0; index < node.count; index += 1) this.scheduleStart(node.child, due + duration * index); return; }
-    if (node.kind === 'random-choice') { this.scheduleStart(node.children[Math.floor(this.random() * node.children.length)]!, due); return; }
-    if (node.kind === 'weighted-choice') { this.scheduleStart(weightedChoice(node.choices, this.random()), due); return; }
-    if (node.kind === 'condition') { const child = evaluateCondition(node.condition, this.parameters(), this.random()) ? node.then : node.otherwise; if (child) this.scheduleStart(child, due); return; }
-    if (node.kind === 'timeline' || node.kind === 'parameter-remap' || node.kind === 'transform') { this.scheduleStart(node.child, due); return; }
-    this.enqueue(node, due);
+  private scheduleStart(node: ParticleEmitterGraphNode2D, due: number, context: ParticleGraphExecutionContext2D): void {
+    if (node.kind === 'gate') { if (node.event.kind === 'effect-start') this.scheduleStart(node.child, due, context); return; }
+    if (node.kind === 'delay') { this.scheduleStart(node.child, due + node.duration, context); return; }
+    if (node.kind === 'sequence') { let cursor = due; for (const child of node.children) { this.scheduleStart(child, cursor, context); cursor += nodeDuration(child, this.graph); } return; }
+    if (node.kind === 'parallel') { node.children.forEach((child) => { this.scheduleStart(child, due, context); }); return; }
+    if (node.kind === 'repeat') { const duration = nodeDuration(node.child, this.graph) + (node.interval ?? 0); for (let index = 0; index < node.count; index += 1) this.scheduleStart(node.child, due + duration * index, context); return; }
+    if (node.kind === 'random-choice') { this.scheduleStart(node.children[Math.floor(this.random() * node.children.length)]!, due, context); return; }
+    if (node.kind === 'weighted-choice') { this.scheduleStart(weightedChoice(node.choices, this.random()), due, context); return; }
+    if (node.kind === 'condition') { const child = evaluateCondition(node.condition, this.parameters(), this.random(), context.parameterMap) ? node.then : node.otherwise; if (child) this.scheduleStart(child, due, context); return; }
+    if (node.kind === 'timeline') {
+      for (const marker of node.markers) this.enqueueEvent({ kind: 'marker', marker: marker.marker }, due + marker.time);
+      this.scheduleStart(node.child, due, context);
+      return;
+    }
+    if (node.kind === 'parameter-remap') { this.scheduleStart(node.child, due, { ...context, parameterMap: composeParameterMaps(context.parameterMap, node.map) }); return; }
+    if (node.kind === 'transform') { this.scheduleStart(node.child, due, { ...context, space: node.space }); return; }
+    this.enqueue(node, due, context);
   }
 
   private visitGates(node: ParticleEmitterGraphNode2D, event: ParticleGraphEvent2D): void {
@@ -115,11 +156,17 @@ export class ParticleGraphScheduler2D {
     else if (node.kind === 'delay' || node.kind === 'repeat' || node.kind === 'timeline' || node.kind === 'parameter-remap' || node.kind === 'transform') this.visitGates(node.child, event);
   }
 
-  private enqueue(node: ParticleEmitterGraphNode2D | undefined, due: number): void {
+  private enqueue(node: ParticleEmitterGraphNode2D | undefined, due: number, context: ParticleGraphExecutionContext2D = EMPTY_CONTEXT): void {
     if (!node) return;
     const slot = this.scheduled.find((action) => !action.active);
     if (!slot) { this.dropped += 1; return; }
-    slot.node = node; slot.due = due; slot.active = true;
+    slot.node = node; slot.event = undefined; slot.context = context; slot.due = due; slot.active = true;
+  }
+
+  private enqueueEvent(event: ParticleGraphEvent2D, due: number): void {
+    const slot = this.scheduled.find((action) => !action.active);
+    if (!slot) { this.dropped += 1; return; }
+    slot.node = undefined; slot.event = event; slot.context = EMPTY_CONTEXT; slot.due = due; slot.active = true;
   }
 
   private random(): number {
@@ -141,9 +188,9 @@ function nodeDuration(node: ParticleEmitterGraphNode2D, graph: ParticleEffectGra
   return 0;
 }
 
-function evaluateCondition(condition: ParticleCondition2D, parameters: Readonly<Record<string, ParticleParameterValue2D>>, random: number): boolean {
+function evaluateCondition(condition: ParticleCondition2D, parameters: Readonly<Record<string, ParticleParameterValue2D>>, random: number, parameterMap?: Readonly<Record<string, string>>): boolean {
   if (condition.kind === 'chance') return random < condition.probability;
-  const left = parameters[condition.parameterId], right = condition.value;
+  const left = parameters[parameterMap?.[condition.parameterId] ?? condition.parameterId], right = condition.value;
   if (condition.operator === 'eq') return left === right;
   if (condition.operator === 'neq') return left !== right;
   if (typeof left !== 'number' || typeof right !== 'number') return false;
@@ -151,6 +198,13 @@ function evaluateCondition(condition: ParticleCondition2D, parameters: Readonly<
   if (condition.operator === 'lte') return left <= right;
   if (condition.operator === 'gt') return left > right;
   return left >= right;
+}
+
+function composeParameterMaps(parent: Readonly<Record<string, string>> | undefined, child: Readonly<Record<string, string>>): Readonly<Record<string, string>> {
+  if (!parent) return child;
+  const result: Record<string, string> = { ...parent };
+  for (const [target, source] of Object.entries(child)) result[target] = parent[source] ?? source;
+  return Object.freeze(result);
 }
 
 function weightedChoice(choices: readonly { readonly weight: number; readonly child: ParticleEmitterGraphNode2D }[], random: number): ParticleEmitterGraphNode2D {

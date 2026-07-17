@@ -29,7 +29,8 @@ export class ParticleEffectLibrary2D {
     validateParticleEffectGraph2D(graph);
     if (this.graphs.has(graph.id)) throw new Error(`Particle effect is already registered: ${graph.id}`);
     this.graphs.set(graph.id, graph);
-    this.validateReferences();
+    try { this.validateReferences(); }
+    catch (error) { this.graphs.delete(graph.id); throw error; }
     this.revisionValue += 1;
   }
 
@@ -78,7 +79,22 @@ export class ParticleEffectLibrary2D {
     });
   }
 
-  private validateReferences(): void { this.compilationOrder(); }
+  private validateReferences(): void {
+    this.compilationOrder();
+    for (const graph of this.graphs.values()) {
+      const parentParameters = new Set(graph.parameters.map((entry) => entry.id));
+      visitNodes(graph.graph.root, (node) => {
+        if (node.kind !== 'effect-reference' || !node.parameterMap) return;
+        const child = this.graphs.get(node.effectId);
+        if (!child) return;
+        const childParameters = new Set(child.parameters.map((entry) => entry.id));
+        for (const [childParameter, parentParameter] of Object.entries(node.parameterMap)) {
+          if (!childParameters.has(childParameter)) throw new Error(`Particle effect reference ${graph.id} -> ${child.id} maps unknown child parameter ${childParameter}`);
+          if (!parentParameters.has(parentParameter)) throw new Error(`Particle effect reference ${graph.id} -> ${child.id} maps unknown parent parameter ${parentParameter}`);
+        }
+      });
+    }
+  }
 
   private compilationOrder(): string[] {
     const result: string[] = [];

@@ -5,7 +5,7 @@ import type { CompiledParticleProgram2D } from "./ParticleEffectCompiler2D.js";
 import type { ParticleEmitterDefinition2D, ParticleEmitterStopMode2D, ParticleParameterValue2D } from "./ParticleEffectGraph2D.js";
 import type { ParticleEffectDiagnostics2D, ParticlePalette2D, ParticleRenderTier2D } from "./ParticleEffects2D.js";
 import type { GpuParticleStateSnapshot2D, GpuRenderTarget2D } from "./Gpu2D.js";
-import { ParticleGraphScheduler2D } from "./ParticleGraphScheduler2D.js";
+import { ParticleGraphScheduler2D, type ParticleGraphEffectReference2D, type ParticleGraphExecutionContext2D } from "./ParticleGraphScheduler2D.js";
 
 export type ParticleEffectInstanceStatus2D = "idle" | "running" | "paused" | "draining" | "complete" | "disposed";
 
@@ -25,6 +25,8 @@ export interface ParticleEffectInstanceOptions2D {
   readonly preview?: boolean;
   readonly adaptiveLod?: boolean;
   readonly adaptiveTargetFps?: 30 | 45 | 60;
+  /** Default velocity inherited by graph-referenced child effects. */
+  readonly inheritedVelocity?: readonly [number, number];
 }
 
 export interface ParticleEmissionOverride2D {
@@ -564,6 +566,7 @@ const DEFAULT_TRANSFORM: ParticleTransform2D = Object.freeze({
   rotation: 0,
   scale: [1, 1] as const,
 });
+const EMPTY_GRAPH_CONTEXT: ParticleGraphExecutionContext2D = Object.freeze({});
 const EMPTY_PALETTE: ParticlePalette2D = Object.freeze({
   colors: [[1, 1, 1] as const],
   revision: 0,
@@ -576,6 +579,7 @@ export class EngineParticleEffects2D implements ParticleEffects2D {
   private disposed = false;
   private detailedDiagnostics = false;
   private readonly hotReloadHistory: ParticleEffectHotReloadResult2D[] = [];
+  private readonly transientInstances = new Set<number>();
 
   constructor(private readonly backend: ParticleEffectRuntimeBackend2D) {}
 
@@ -671,7 +675,8 @@ export class EngineParticleEffects2D implements ParticleEffects2D {
     this.assertUsable();
     const record = this.programs.get(effectId);
     if (!record) throw new Error(`Unknown compiled particle effect: ${effectId}`);
-    const instance = new RuntimeParticleEffectInstance2D(
+    let instance!: RuntimeParticleEffectInstance2D;
+    instance = new RuntimeParticleEffectInstance2D(
       this.nextInstanceId++,
       record.program,
       record.pooled.pop() ?? this.backend.create(record.program, record.capacity),
@@ -679,8 +684,9 @@ export class EngineParticleEffects2D implements ParticleEffects2D {
       (id, resource) => {
         this.removeInstance(effectId, id, resource);
       },
-      (referenceId) => {
-        const child = this.createInstance(referenceId);
+      (reference, graphContext) => {
+        const child = this.createInstance(reference.effectId, instance.referenceOptions(reference, graphContext));
+        this.transientInstances.add(child.id);
         child.start();
       },
     );
@@ -697,6 +703,8 @@ export class EngineParticleEffects2D implements ParticleEffects2D {
       const wasAdvancing = instance.isAdvancing;
       instance.update(deltaSeconds);
       if (wasAdvancing || instance.isAdvancing) instance.updateBackend(deltaSeconds);
+      instance.finishFrame();
+      if (this.transientInstances.has(instance.id) && instance.state().status === "complete") instance.dispose();
     }
   }
 
@@ -810,6 +818,7 @@ export class EngineParticleEffects2D implements ParticleEffects2D {
     for (const instance of [...this.instances.values()]) instance.dispose();
     for (const record of this.programs.values()) for (const resource of record.pooled.splice(0)) resource.dispose();
     this.instances.clear();
+    this.transientInstances.clear();
     this.programs.clear();
     this.disposed = true;
   }
@@ -821,6 +830,7 @@ export class EngineParticleEffects2D implements ParticleEffects2D {
       return;
     }
     this.instances.delete(id);
+    this.transientInstances.delete(id);
     const record = this.programs.get(effectId);
     record?.instances.delete(instance);
     resource.clear();
@@ -851,14 +861,23 @@ class MutableEmission implements ParticleRuntimeEmission2D {
 }
 
 class EmitterRuntime {
+  private static readonly EXPIRY_CAPACITY = 256;
   readonly emission = new MutableEmission();
+  readonly expiryTimes = new Float64Array(EmitterRuntime.EXPIRY_CAPACITY);
+  readonly expiryCounts = new Uint32Array(EmitterRuntime.EXPIRY_CAPACITY);
   active = false;
   elapsed = 0;
   rateAccumulator = 0;
-  burstIndex = 0;
+  distanceAccumulator = 0;
   loops = 0;
   lastX = 0;
   lastY = 0;
+  emittedThisFrame = 0;
+  aliveEstimate = 0;
+  expiryHead = 0;
+  expirySize = 0;
+  includeBurstAtStart = true;
+  graphContext: ParticleGraphExecutionContext2D = EMPTY_GRAPH_CONTEXT;
 
   constructor(
     readonly definition: ParticleEmitterDefinition2D,
@@ -868,10 +887,52 @@ class EmitterRuntime {
     this.active = false;
     this.elapsed = 0;
     this.rateAccumulator = 0;
-    this.burstIndex = 0;
+    this.distanceAccumulator = 0;
     this.loops = 0;
     this.lastX = 0;
     this.lastY = 0;
+    this.emittedThisFrame = 0;
+    this.aliveEstimate = 0;
+    this.expiryHead = 0;
+    this.expirySize = 0;
+    this.includeBurstAtStart = true;
+    this.graphContext = EMPTY_GRAPH_CONTEXT;
+    this.expiryCounts.fill(0);
+  }
+
+  prepareFrame(now: number): void {
+    while (this.expirySize > 0 && this.expiryTimes[this.expiryHead]! <= now) {
+      this.aliveEstimate = Math.max(0, this.aliveEstimate - this.expiryCounts[this.expiryHead]!);
+      this.expiryCounts[this.expiryHead] = 0;
+      this.expiryHead = (this.expiryHead + 1) % EmitterRuntime.EXPIRY_CAPACITY;
+      this.expirySize -= 1;
+    }
+  }
+
+  finishFrame(): void {
+    this.emittedThisFrame = 0;
+  }
+
+  admit(requested: number, maxPerFrame: number, maxAlive: number): number {
+    const frameAvailable = Math.max(0, maxPerFrame - this.emittedThisFrame);
+    const aliveAvailable = Math.max(0, maxAlive - this.aliveEstimate);
+    return Math.max(0, Math.min(requested, frameAvailable, aliveAvailable));
+  }
+
+  recordAlive(count: number, expiresAt: number): void {
+    if (count <= 0) return;
+    this.emittedThisFrame += count;
+    this.aliveEstimate += count;
+    if (this.expirySize === EmitterRuntime.EXPIRY_CAPACITY) {
+      const tail = (this.expiryHead + this.expirySize - 1) % EmitterRuntime.EXPIRY_CAPACITY;
+      this.expiryTimes[tail] = Math.max(this.expiryTimes[tail]!, expiresAt);
+      this.expiryCounts[tail] = Math.min(0xffff_ffff, this.expiryCounts[tail]! + count);
+      return;
+    }
+    const slot = (this.expiryHead + this.expirySize) % EmitterRuntime.EXPIRY_CAPACITY;
+    this.expiryTimes[slot] = expiresAt;
+    this.expiryCounts[slot] = count;
+    this.expirySize += 1;
   }
 }
 
@@ -979,6 +1040,7 @@ class RuntimeParticleEffectInstance2D implements ParticleEffectInstance2D {
   private elapsed = 0;
   private seed: number;
   private transform: ParticleTransform2D;
+  private inheritedVelocity: readonly [number, number];
   private parameters: Record<string, ParticleParameterValue2D>;
   private palette: ParticlePalette2D;
   private timescale: number;
@@ -1023,12 +1085,13 @@ class RuntimeParticleEffectInstance2D implements ParticleEffectInstance2D {
     backend: ParticleEffectBackendResource2D,
     options: ParticleEffectInstanceOptions2D,
     private readonly onDispose: (id: number, resource: ParticleEffectBackendResource2D) => void,
-    onReference: (effectId: string) => void,
+    onReference: (reference: ParticleGraphEffectReference2D, context: ParticleGraphExecutionContext2D) => void,
   ) {
     this.program = program;
     this.backend = backend;
     this.seed = options.seed ?? mixSeed(id, 0x9e3779b9);
     this.transform = options.transform ?? DEFAULT_TRANSFORM;
+    this.inheritedVelocity = options.inheritedVelocity ?? [0, 0];
     this.parameters = {
       ...resolveParticleParameters2D(program.effect.source, options.parameters),
     };
@@ -1045,8 +1108,8 @@ class RuntimeParticleEffectInstance2D implements ParticleEffectInstance2D {
       program.effect.source,
       () => this.parameters,
       {
-        emit: (emitterId) => {
-          this.activateGraphEmitter(emitterId);
+        emit: (emitterId, graphContext) => {
+          this.activateGraphEmitter(emitterId, graphContext);
         },
         stop: (emitterId, mode) => {
           if (emitterId) {
@@ -1094,9 +1157,16 @@ class RuntimeParticleEffectInstance2D implements ParticleEffectInstance2D {
 
   stop(mode: ParticleEmitterStopMode2D = "drain"): void {
     this.assertUsable();
-    for (const emitter of this.emitters) emitter.active = false;
+    for (const emitter of this.emitters) {
+      if (emitter.active) this.scheduler.trigger({ kind: "emitter-stop", emitterId: emitter.definition.id });
+      emitter.active = false;
+    }
+    this.scheduler.trigger({ kind: "effect-stop" });
     this.statusValue = mode === "kill" ? "complete" : "draining";
-    if (mode === "kill") this.backend.clear();
+    if (mode === "kill") {
+      this.backend.clear();
+      this.scheduler.trigger({ kind: "effect-complete" });
+    }
   }
 
   pause(): void {
@@ -1125,6 +1195,7 @@ class RuntimeParticleEffectInstance2D implements ParticleEffectInstance2D {
     this.assertUsable();
     if (signal.trim().length === 0) throw new Error("Particle effect signal cannot be empty");
     if (payload.position) this.transform = { ...this.transform, position: payload.position };
+    if (payload.velocity) this.inheritedVelocity = payload.velocity;
     this.scheduler.trigger({ kind: "signal", signal });
   }
 
@@ -1257,6 +1328,27 @@ class RuntimeParticleEffectInstance2D implements ParticleEffectInstance2D {
     this.backend.setDetailedDiagnostics?.(enabled);
   }
 
+  referenceOptions(reference: ParticleGraphEffectReference2D, _context: ParticleGraphExecutionContext2D): ParticleEffectInstanceOptions2D {
+    const inherit = reference.inherit;
+    const mapped: Record<string, ParticleParameterValue2D> = {};
+    for (const [childParameter, parentParameter] of Object.entries(reference.parameterMap ?? {})) {
+      const value = this.parameters[parentParameter];
+      if (value !== undefined) mapped[childParameter] = value;
+    }
+    const velocityScale = inherit?.velocity ?? 0;
+    return {
+      transform: this.transform,
+      ...(Object.keys(mapped).length > 0 ? { parameters: mapped } : {}),
+      ...(inherit?.palette ? { palette: this.palette } : {}),
+      ...(inherit?.seed ? { seed: mixSeed(this.seed, this.id) } : {}),
+      ...(inherit?.timescale ? { timescale: this.timescale } : {}),
+      ...(inherit?.qualityTier ? { qualityTier: this.tier } : {}),
+      ...(velocityScale !== 0 ? { inheritedVelocity: [this.inheritedVelocity[0] * velocityScale, this.inheritedVelocity[1] * velocityScale] as const } : {}),
+      adaptiveLod: this.adaptiveLod,
+      adaptiveTargetFps: Math.round(1 / this.adaptiveTargetFrameSeconds) as 30 | 45 | 60,
+    };
+  }
+
   state(): ParticleEffectInstanceState2D {
     return Object.freeze({
       id: this.id,
@@ -1281,6 +1373,7 @@ class RuntimeParticleEffectInstance2D implements ParticleEffectInstance2D {
     else if (this.statusValue === "paused") this.statusValue = "running";
     this.update(deltaSeconds);
     this.updateBackend(deltaSeconds);
+    this.finishFrame();
     this.statusValue = "paused";
   }
   diagnostics(): ParticleEffectBackendDiagnostics2D {
@@ -1312,6 +1405,7 @@ class RuntimeParticleEffectInstance2D implements ParticleEffectInstance2D {
     this.scheduler.update(delta);
     let active = false;
     for (const emitter of this.emitters) {
+      emitter.prepareFrame(this.elapsed);
       if (emitter.active) {
         active = true;
         this.advanceEmitter(emitter, delta);
@@ -1320,8 +1414,15 @@ class RuntimeParticleEffectInstance2D implements ParticleEffectInstance2D {
     if (!active && this.statusValue === "running") this.statusValue = "draining";
     if (!active && this.statusValue === "draining") {
       this.drainRemaining = Math.max(0, this.drainRemaining - delta);
-      if (this.drainRemaining === 0) this.statusValue = "complete";
+      if (this.drainRemaining === 0) {
+        this.statusValue = "complete";
+        this.scheduler.trigger({ kind: "effect-complete" });
+      }
     }
+  }
+
+  finishFrame(): void {
+    for (const emitter of this.emitters) emitter.finishFrame();
   }
 
   replaceProgram(program: CompiledParticleProgram2D, backend: ParticleEffectBackendResource2D): boolean {
@@ -1365,28 +1466,58 @@ class RuntimeParticleEffectInstance2D implements ParticleEffectInstance2D {
     const before = emitter.elapsed;
     emitter.elapsed += delta;
     if (emitter.elapsed < 0) return;
-    for (let index = emitter.burstIndex; index < (timeline.bursts?.length ?? 0); index += 1) {
-      const burst = timeline.bursts![index]!;
-      if (burst.time > emitter.elapsed) break;
-      if (burst.time >= Math.max(0, before)) this.submit(emitter, burst.count);
-      emitter.burstIndex = index + 1;
-    }
-    const rate = evaluateRate(timeline.rate, this.parameters, this.seed, emitter.index);
+    this.emitTimelineBursts(emitter, Math.max(0, before), emitter.elapsed, emitter.includeBurstAtStart);
+    emitter.includeBurstAtStart = false;
+    const rate = evaluateRate(timeline.rate, this.parameters, this.seed, emitter.index, emitter.graphContext.parameterMap);
     if (rate > 0) {
       emitter.rateAccumulator += rate * delta;
-      const count = Math.min(Math.floor(emitter.rateAccumulator), emitter.definition.limits.maxPerFrame ?? Number.MAX_SAFE_INTEGER);
+      const count = Math.floor(emitter.rateAccumulator);
       if (count > 0) {
         emitter.rateAccumulator -= count;
+        this.submit(emitter, count);
+      }
+    }
+    const distanceRate = evaluateRate(timeline.distanceRate, this.parameters, this.seed, emitter.index + 0x4000, emitter.graphContext.parameterMap);
+    if (distanceRate > 0) {
+      const x = this.transform.position[0], y = this.transform.position[1];
+      const distance = Math.hypot(x - emitter.lastX, y - emitter.lastY);
+      emitter.lastX = x; emitter.lastY = y;
+      emitter.distanceAccumulator += distanceRate * distance;
+      const count = Math.floor(emitter.distanceAccumulator);
+      if (count > 0) {
+        emitter.distanceAccumulator -= count;
         this.submit(emitter, count);
       }
     }
     const duration = timeline.duration;
     if (duration !== undefined && emitter.elapsed >= duration) {
       if (timeline.loop && (timeline.maxLoops === undefined || emitter.loops + 1 < timeline.maxLoops)) {
-        emitter.elapsed %= Math.max(duration, Number.EPSILON);
-        emitter.burstIndex = 0;
-        emitter.loops += 1;
-      } else emitter.active = false;
+        const safeDuration = Math.max(duration, Number.EPSILON);
+        let remaining = emitter.elapsed;
+        while (remaining >= safeDuration && (timeline.maxLoops === undefined || emitter.loops + 1 < timeline.maxLoops)) {
+          remaining -= safeDuration;
+          emitter.loops += 1;
+          this.scheduler.trigger({ kind: "emitter-loop", emitterId: emitter.definition.id });
+          this.emitTimelineBursts(emitter, 0, Math.min(remaining, safeDuration), true);
+        }
+        emitter.elapsed = remaining;
+      } else {
+        emitter.active = false;
+        this.scheduler.trigger({ kind: "emitter-complete", emitterId: emitter.definition.id });
+        for (const output of emitter.definition.outputs ?? []) this.scheduler.trigger({ kind: "signal", signal: output });
+      }
+    }
+  }
+
+  private emitTimelineBursts(emitter: EmitterRuntime, from: number, to: number, includeFrom = false): void {
+    for (const burst of emitter.definition.timeline.bursts ?? []) {
+      const cycles = burst.cycles ?? 1, interval = burst.interval ?? 0;
+      for (let cycle = 0; cycle < cycles; cycle += 1) {
+        const time = burst.time + interval * cycle;
+        if (time > to || time < from || (time === from && !includeFrom)) continue;
+        this.submit(emitter, burst.count);
+        this.scheduler.trigger({ kind: "emitter-burst", emitterId: emitter.definition.id });
+      }
     }
   }
 
@@ -1394,7 +1525,12 @@ class RuntimeParticleEffectInstance2D implements ParticleEffectInstance2D {
     if (override.lifetime !== undefined && (!Number.isFinite(override.lifetime) || override.lifetime <= 0)) throw new Error("Particle emission lifetime must be positive and finite");
     if (override.lifetimeVariability !== undefined && (!Number.isFinite(override.lifetimeVariability) || override.lifetimeVariability < 0 || override.lifetimeVariability > 1)) throw new Error("Particle emission lifetime variability must be between zero and one");
     const qualityScale = emitter.definition.limits.qualityScale?.[this.tier] ?? 1;
-    const count = Math.max(0, Math.min(Math.round(requestedCount * qualityScale), emitter.definition.limits.maxPerFrame ?? Number.MAX_SAFE_INTEGER));
+    const requested = Math.max(0, Math.round(requestedCount * qualityScale));
+    const count = emitter.admit(
+      requested,
+      emitter.definition.limits.maxPerFrame ?? Number.MAX_SAFE_INTEGER,
+      emitter.definition.limits.maxAlive ?? Number.MAX_SAFE_INTEGER,
+    );
     if (count === 0) return;
     const emission = emitter.emission;
     emission.instanceId = this.id;
@@ -1403,20 +1539,25 @@ class RuntimeParticleEffectInstance2D implements ParticleEffectInstance2D {
     emission.positionX = override.position?.[0] ?? this.transform.position[0];
     emission.positionY = override.position?.[1] ?? this.transform.position[1];
     emission.direction = override.direction ?? this.transform.rotation;
-    emission.spread = override.spread ?? sourceNumber(emitter.definition.initialization?.spread, this.parameters, this.seed, emitter.index, 0);
-    emission.power = override.power ?? sourceNumber(emitter.definition.initialization?.power, this.parameters, this.seed, emitter.index, 1);
+    emission.spread = override.spread ?? sourceNumber(emitter.definition.initialization?.spread, this.parameters, this.seed, emitter.index, 0, emitter.graphContext.parameterMap);
+    emission.power = override.power ?? sourceNumber(emitter.definition.initialization?.power, this.parameters, this.seed, emitter.index, 1, emitter.graphContext.parameterMap);
     emission.seed = override.seed ?? mixSeed(this.seed, emitter.index + Math.round(this.elapsed * 1000));
     emission.importance = importanceCode(emitter.definition.limits.importance);
-    emission.inheritedVelocityX = override.inheritedVelocity?.[0] ?? 0;
-    emission.inheritedVelocityY = override.inheritedVelocity?.[1] ?? 0;
+    emission.inheritedVelocityX = override.inheritedVelocity?.[0] ?? this.inheritedVelocity[0];
+    emission.inheritedVelocityY = override.inheritedVelocity?.[1] ?? this.inheritedVelocity[1];
     emission.lifetime = override.lifetime;
     emission.lifetimeVariability = override.lifetimeVariability;
     this.backend.emit(emission);
     const archetype = this.program.effect.source.archetypes[this.program.effect.archetypeIds[emitter.definition.archetypeId] ?? -1];
-    if (archetype) this.drainRemaining = Math.max(this.drainRemaining, particleDrainDuration(this.program, emitter.definition.archetypeId, override.lifetime));
+    if (archetype) {
+      const lifetime = (override.lifetime ?? archetype.lifecycle.lifetime)
+        * (1 + (override.lifetimeVariability ?? archetype.lifecycle.lifetimeVariability ?? 0));
+      emitter.recordAlive(count, this.elapsed + lifetime);
+      this.drainRemaining = Math.max(this.drainRemaining, particleDrainDuration(this.program, emitter.definition.archetypeId, override.lifetime));
+    }
   }
 
-  private activateGraphEmitter(emitterId: string): void {
+  private activateGraphEmitter(emitterId: string, graphContext: ParticleGraphExecutionContext2D = EMPTY_GRAPH_CONTEXT): void {
     const emitter = this.emitters.find((entry) => entry.definition.id === emitterId);
     if (!emitter) throw new Error(`Unknown particle emitter: ${emitterId}`);
     const timeline = emitter.definition.timeline;
@@ -1425,8 +1566,12 @@ class RuntimeParticleEffectInstance2D implements ParticleEffectInstance2D {
       return;
     }
     emitter.reset();
+    emitter.graphContext = graphContext;
     emitter.active = true;
     emitter.elapsed = -(timeline.startDelay ?? 0);
+    emitter.lastX = this.transform.position[0];
+    emitter.lastY = this.transform.position[1];
+    this.scheduler.trigger({ kind: "emitter-start", emitterId });
     if (timeline.prewarm && (timeline.duration ?? 0) > 0) this.advanceEmitter(emitter, timeline.duration ?? 0);
   }
 
@@ -1543,14 +1688,14 @@ function mixSeed(a: number, b: number): number {
 function random01(seed: number): number {
   return mixSeed(seed, 0x27d4eb2d) / 0x1_0000_0000;
 }
-function evaluateRate(source: import("./ParticleEffectGraph2D.js").ParticleValueSource2D | undefined, parameters: Readonly<Record<string, ParticleParameterValue2D>>, seed: number, salt: number): number {
-  return sourceNumber(source, parameters, seed, salt, 0);
+function evaluateRate(source: import("./ParticleEffectGraph2D.js").ParticleValueSource2D | undefined, parameters: Readonly<Record<string, ParticleParameterValue2D>>, seed: number, salt: number, parameterMap?: Readonly<Record<string, string>>): number {
+  return sourceNumber(source, parameters, seed, salt, 0, parameterMap);
 }
-function sourceNumber(source: import("./ParticleEffectGraph2D.js").ParticleValueSource2D | undefined, parameters: Readonly<Record<string, ParticleParameterValue2D>>, seed: number, salt: number, fallback: number): number {
+function sourceNumber(source: import("./ParticleEffectGraph2D.js").ParticleValueSource2D | undefined, parameters: Readonly<Record<string, ParticleParameterValue2D>>, seed: number, salt: number, fallback: number, parameterMap?: Readonly<Record<string, string>>): number {
   if (!source) return fallback;
   if (source.kind === "constant") return source.value;
   if (source.kind === "parameter") {
-    const value = parameters[source.parameterId];
+    const value = parameters[parameterMap?.[source.parameterId] ?? source.parameterId];
     return typeof value === "number" ? value * (source.scale ?? 1) + (source.offset ?? 0) : fallback;
   }
   if (source.kind === "random") return source.min + (source.max - source.min) * random01(mixSeed(seed, salt));

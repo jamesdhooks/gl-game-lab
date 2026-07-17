@@ -48,7 +48,12 @@ export interface ParticleModuleCompilerExtension2D {
   readonly glslSimulation?: string;
   readonly glslRender?: string;
   readonly wgslSimulation?: string;
+  readonly wgslRender?: string;
   readonly bindings?: readonly ParticleShaderBinding2D[];
+  /** Required extension ids that must appear earlier in the graph's customModules list. */
+  readonly runsAfter?: readonly string[];
+  /** Required extension ids that must appear later in the graph's customModules list. */
+  readonly runsBefore?: readonly string[];
 }
 
 export interface CompiledParticleProgram2D {
@@ -128,12 +133,12 @@ export function hydrateCompiledParticleProgram2D(value: unknown): CompiledPartic
 
 export function compileParticleProgram2D(effect: CompiledParticleEffect2D, extensions: readonly ParticleModuleCompilerExtension2D[] = []): CompiledParticleProgram2D {
   validateExtensions(extensions);
-  validateRequiredExtensions(effect, extensions);
+  const activeExtensions = resolveRequiredExtensions(effect, extensions);
   if (effect.source.archetypes.length > 32) throw new Error("Particle compiler supports at most 32 archetypes per effect");
   const usesCollisions = effect.source.archetypes.some((entry) => entry.collision !== undefined);
   const usesEvents = effect.source.archetypes.some((entry) => (entry.events?.length ?? 0) > 0);
   const usesTurbulence = effect.source.archetypes.some((entry) => (entry.motion.turbulence ?? 0) !== 0);
-  const bindings = baseBindings(effect.report.requiredStateTargets, usesCollisions, usesEvents, extensions);
+  const bindings = baseBindings(effect.report.requiredStateTargets, usesCollisions, usesEvents, activeExtensions);
   const reflection: ParticleShaderReflection2D = Object.freeze({
     bindings: Object.freeze(bindings),
     stateTargets: effect.report.requiredStateTargets,
@@ -142,17 +147,17 @@ export function compileParticleProgram2D(effect: CompiledParticleEffect2D, exten
     usesEvents,
     usesTurbulence,
   });
-  const glslSimulation = buildGlslSimulation(effect, extensions, usesCollisions, usesTurbulence);
+  const glslSimulation = buildGlslSimulation(effect, activeExtensions, usesCollisions, usesTurbulence);
   const glslEvent = usesEvents ? buildGlslEvent(effect) : undefined;
   const glslEventClaimVertex = usesEvents ? buildGlslEventClaimVertex(effect) : undefined;
   const glslEventClaimFragment = usesEvents ? buildGlslEventClaimFragment() : undefined;
-  const glslVertex = buildGlslVertex(effect, extensions, false);
-  const glslStreakVertex = buildGlslVertex(effect, extensions, true);
-  const glslFragment = buildGlslFragment(extensions);
-  const wgslSimulation = buildWgslSimulation(effect, extensions, usesCollisions, usesTurbulence);
+  const glslVertex = buildGlslVertex(effect, activeExtensions, false);
+  const glslStreakVertex = buildGlslVertex(effect, activeExtensions, true);
+  const glslFragment = buildGlslFragment(activeExtensions);
+  const wgslSimulation = buildWgslSimulation(effect, activeExtensions, usesCollisions, usesTurbulence);
   const wgslEvent = usesEvents ? buildWgslEventAppend(effect) : undefined;
   const wgslEventResolve = usesEvents ? buildWgslEventResolve(effect) : undefined;
-  const wgslRender = buildWgslRender(effect);
+  const wgslRender = buildWgslRender(effect, activeExtensions);
   return Object.freeze({
     effect,
     webgl2: Object.freeze({
@@ -889,7 +894,7 @@ function wgslEventTrigger(entry: CompiledEventEntry, delay: string): string {
   return `position.age >= ${delay} && position.age - frame.delta < ${delay}`;
 }
 
-function buildWgslRender(effect: CompiledParticleEffect2D): string {
+function buildWgslRender(effect: CompiledParticleEffect2D, extensions: readonly ParticleModuleCompilerExtension2D[]): string {
   return `struct ParticleA { position: vec2<f32>, age: f32, lifetime: f32 }
 struct ParticleB { velocity: vec2<f32>, rotation: f32, angularVelocity: f32 }
 struct ParticleC { archetype: f32, generation: f32, colorSeed: f32, flags: f32 }
@@ -922,7 +927,9 @@ fn buildParticleVertex(vertex: u32, instance: u32, streak: bool) -> VertexOut {
   let colorMode=u32(configB.z+0.5); if(colorMode==1u){coordinate=fract(coordinate+normalizedAge*configB.w);}else if(colorMode==2u){coordinate=fract(coordinate+metadata.generation*.1618034*configB.w);}else if(colorMode==3u){coordinate=fract(coordinate+clamp(speed*.0025,0.0,1.0)*configB.w);}
   let color=palette[min(u32(floor(fract(coordinate)*f32(paletteCount))),paletteCount-1u)].xyz;
   let alpha=curve(archetypeAlpha[archetype],normalizedAge); let intensity=curve(archetypeIntensity[archetype],normalizedAge)*configB.x;
-  let alive=select(0.0,1.0,particle.age<particle.lifetime&&radius>0.0); out.local=corner; out.color=vec4<f32>(color*intensity,alpha*alive); out.shape=select(0.0,1.0,streak); return out;
+  let alive=select(0.0,1.0,particle.age<particle.lifetime&&radius>0.0); out.local=corner; out.color=vec4<f32>(color*intensity,alpha*alive); out.shape=select(0.0,1.0,streak);
+  ${extensions.map((entry) => entry.wgslRender ?? "").filter(Boolean).join("\n  ")}
+  return out;
 }
 @vertex fn particleVertex(@builtin(vertex_index) vertex: u32, @builtin(instance_index) instance: u32) -> VertexOut { return buildParticleVertex(vertex,instance,false); }
 @vertex fn particleStreakVertex(@builtin(vertex_index) vertex: u32, @builtin(instance_index) instance: u32) -> VertexOut { return buildParticleVertex(vertex,instance,true); }
@@ -1121,6 +1128,11 @@ function baseBindings(targets: 2 | 3, collisions: boolean, events: boolean, exte
   extensions.forEach((extension) => {
     bindings.push(...(extension.bindings ?? []));
   });
+  const names = new Set<string>();
+  for (const binding of bindings) {
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(binding.name) || names.has(binding.name)) throw new Error(`Invalid or duplicate particle shader binding: ${binding.name}`);
+    names.add(binding.name);
+  }
   return bindings;
 }
 
@@ -1204,18 +1216,37 @@ function validateExtensions(extensions: readonly ParticleModuleCompilerExtension
     if (!/^[a-z][a-z0-9-]*$/.test(extension.id) || ids.has(extension.id)) throw new Error(`Invalid or duplicate particle compiler extension: ${extension.id}`);
     if (extension.supports.length === 0) throw new Error(`Particle compiler extension ${extension.id} declares no compatible backend`);
     if (extension.supports.includes("webgl2") && !extension.glslSimulation && !extension.glslRender) throw new Error(`Particle compiler extension ${extension.id} is missing its GLSL implementation`);
-    if (extension.supports.includes("webgpu") && !extension.wgslSimulation) throw new Error(`Particle compiler extension ${extension.id} is missing its WGSL implementation`);
+    if (extension.supports.includes("webgpu") && !extension.wgslSimulation && !extension.wgslRender) throw new Error(`Particle compiler extension ${extension.id} is missing its WGSL implementation`);
+    for (const dependency of [...(extension.runsAfter ?? []), ...(extension.runsBefore ?? [])]) if (!/^[a-z][a-z0-9-]*$/.test(dependency) || dependency === extension.id) throw new Error(`Particle compiler extension ${extension.id} has an invalid ordering dependency`);
     ids.add(extension.id);
   }
 }
 
-function validateRequiredExtensions(effect: CompiledParticleEffect2D, extensions: readonly ParticleModuleCompilerExtension2D[]): void {
+function resolveRequiredExtensions(effect: CompiledParticleEffect2D, extensions: readonly ParticleModuleCompilerExtension2D[]): readonly ParticleModuleCompilerExtension2D[] {
   const available = new Map(extensions.map((extension) => [extension.id, extension]));
-  for (const id of effect.source.customModules ?? []) {
+  const required = effect.source.customModules ?? [];
+  const selected: ParticleModuleCompilerExtension2D[] = [];
+  for (const id of required) {
     const extension = available.get(id);
     if (!extension) throw new Error(`Particle effect ${effect.source.id} requires unregistered compiler extension ${id}`);
     if (!extension.supports.includes("webgl2") && effect.fallbackPolicy === "webgl2") throw new Error(`Particle extension ${id} cannot satisfy the WebGL2 fallback policy`);
+    selected.push(extension);
   }
+  const indices = new Map(required.map((id, index) => [id, index]));
+  for (const extension of selected) {
+    const index = indices.get(extension.id)!;
+    for (const dependency of extension.runsAfter ?? []) {
+      const dependencyIndex = indices.get(dependency);
+      if (dependencyIndex === undefined) throw new Error(`Particle compiler extension ${extension.id} requires missing predecessor ${dependency}`);
+      if (dependencyIndex >= index) throw new Error(`Particle compiler extension ${extension.id} must run after ${dependency}`);
+    }
+    for (const dependency of extension.runsBefore ?? []) {
+      const dependencyIndex = indices.get(dependency);
+      if (dependencyIndex === undefined) throw new Error(`Particle compiler extension ${extension.id} requires missing successor ${dependency}`);
+      if (dependencyIndex <= index) throw new Error(`Particle compiler extension ${extension.id} must run before ${dependency}`);
+    }
+  }
+  return Object.freeze(selected);
 }
 
 function wgslFloat(value: number): string {

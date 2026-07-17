@@ -608,9 +608,14 @@ function validateParameter(parameter: ParticleParameterDefinition2D): void {
 function validateEmitter(emitter: ParticleEmitterDefinition2D, parameters: ReadonlySet<string>, archetypes: ReadonlySet<string>): void {
   if (emitter.timeline.duration !== undefined && (!Number.isFinite(emitter.timeline.duration) || emitter.timeline.duration < 0)) throw new Error(`Particle emitter ${emitter.id} has an invalid duration`);
   if (emitter.timeline.loop && emitter.timeline.maxLoops === undefined && emitter.timeline.duration === undefined) throw new Error(`Particle emitter ${emitter.id} has an unbounded loop without a duration`);
+  if (emitter.timeline.maxLoops !== undefined && (!Number.isSafeInteger(emitter.timeline.maxLoops) || emitter.timeline.maxLoops < 1)) throw new Error(`Particle emitter ${emitter.id} has an invalid loop count`);
+  for (const source of [emitter.timeline.rate, emitter.timeline.distanceRate]) if (source) validateValueSource(source, parameters, emitter.id);
   for (const burst of emitter.timeline.bursts ?? []) {
     if (!Number.isFinite(burst.time) || burst.time < 0 || !Number.isSafeInteger(burst.count) || burst.count < 0) throw new Error(`Particle emitter ${emitter.id} has an invalid burst`);
+    if (burst.cycles !== undefined && (!Number.isSafeInteger(burst.cycles) || burst.cycles < 1 || burst.cycles > 10_000)) throw new Error(`Particle emitter ${emitter.id} has an invalid burst cycle count`);
+    if (burst.interval !== undefined && (!Number.isFinite(burst.interval) || burst.interval < 0)) throw new Error(`Particle emitter ${emitter.id} has an invalid burst interval`);
   }
+  for (const limit of [emitter.limits.maxAlive, emitter.limits.maxPerFrame]) if (limit !== undefined && (!Number.isSafeInteger(limit) || limit < 0)) throw new Error(`Particle emitter ${emitter.id} has an invalid particle limit`);
   if (emitter.limits.maxGeneration !== undefined && (!Number.isSafeInteger(emitter.limits.maxGeneration) || emitter.limits.maxGeneration < 0)) throw new Error(`Particle emitter ${emitter.id} has an invalid generation limit`);
   validateSource(emitter.source, archetypes, emitter.id);
   const initialization = emitter.initialization;
@@ -650,7 +655,9 @@ function validateGraphNode(node: ParticleEmitterGraphNode2D, emitters: ReadonlyS
   if (node.kind === "repeat" && (!Number.isSafeInteger(node.count) || node.count < 1 || node.count > 10_000)) throw new Error(`Particle graph ${path} repeat must be bounded`);
   if (node.kind === "delay" && (!Number.isFinite(node.duration) || node.duration < 0)) throw new Error(`Particle graph ${path} delay must be non-negative`);
   if (node.kind === "weighted-choice" && (node.choices.length === 0 || node.choices.some((entry) => !Number.isFinite(entry.weight) || entry.weight <= 0))) throw new Error(`Particle graph ${path} has invalid weighted choices`);
+  if (node.kind === "timeline" && node.markers.some((entry, index) => !Number.isFinite(entry.time) || entry.time < 0 || entry.marker.trim().length === 0 || (index > 0 && entry.time < node.markers[index - 1]!.time))) throw new Error(`Particle graph ${path} has invalid or unordered timeline markers`);
   if (node.kind === "condition" && node.condition.kind === "parameter" && !parameters.has(node.condition.parameterId)) throw new Error(`Particle graph ${path} references unknown parameter ${node.condition.parameterId}`);
+  if (node.kind === "parameter-remap") for (const [target, source] of Object.entries(node.map)) if (!parameters.has(target) || !parameters.has(source)) throw new Error(`Particle graph ${path} remaps unknown parameter ${target} -> ${source}`);
   if (node.kind === "gate" && "archetypeId" in node.event && !archetypes.has(node.event.archetypeId)) throw new Error(`Particle graph ${path} references unknown archetype ${node.event.archetypeId}`);
   if (node.kind === "gate" && "emitterId" in node.event && !emitters.has(node.event.emitterId)) throw new Error(`Particle graph ${path} references unknown emitter ${node.event.emitterId}`);
   for (const [index, child] of nodeChildren(node).entries()) validateGraphNode(child, emitters, archetypes, parameters, `${path}.${node.kind}[${index}]`, depth + 1);
