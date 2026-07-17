@@ -130,6 +130,7 @@ function buildGlslSimulation(effect: CompiledParticleEffect2D, extensions: reado
   const targets = effect.report.requiredStateTargets;
   return `#version 300 es
 precision highp float;
+precision highp int;
 precision highp sampler2D;
 in vec2 vUv;
 uniform sampler2D uPositionState;
@@ -242,6 +243,7 @@ function buildGlslEvent(effect: CompiledParticleEffect2D): string {
   }).join('\n  ');
   return `#version 300 es
 precision highp float;
+precision highp int;
 uniform sampler2D uPositionState;
 uniform sampler2D uVelocityState;
 uniform sampler2D uMetadataState;
@@ -289,7 +291,7 @@ function buildGlslEventClaimVertex(effect: CompiledParticleEffect2D): string {
     }
   }
   return `#version 300 es
-precision highp float;precision highp sampler2D;
+precision highp float;precision highp int;precision highp sampler2D;
 uniform sampler2D uPositionState;uniform sampler2D uMetadataState;uniform ivec2 uStateSize;uniform int uCapacity;uniform float uDt;uniform vec4 uArchetypePools[${Math.max(1, effect.source.archetypes.length)}];
 flat out float vClaim;flat out float vChildCount;flat out float vPoolStart;flat out float vPoolEnd;flat out float vFallback;
 float hash11(float value){return fract(sin(value*91.3458+17.123)*47453.5453);}
@@ -300,7 +302,7 @@ void main(){int parent=gl_VertexID/${candidateLanes},lane=gl_VertexID-parent*${c
 }
 
 function buildGlslEventClaimFragment(): string { return `#version 300 es
-precision highp float;uniform ivec2 uStateSize;flat in float vClaim;flat in float vChildCount;flat in float vPoolStart;flat in float vPoolEnd;flat in float vFallback;out vec4 outClaim;void main(){float id=floor(gl_FragCoord.y)*float(uStateSize.x)+floor(gl_FragCoord.x);if(id<vPoolStart||id>=vPoolEnd)discard;if(vFallback<.5){float width=ceil(sqrt(vChildCount));vec2 cell=floor(gl_PointCoord*width);float ordinal=cell.y*width+cell.x;if(ordinal>=vChildCount)discard;}outClaim=vec4(vClaim);}`; }
+precision highp float;precision highp int;uniform ivec2 uStateSize;flat in float vClaim;flat in float vChildCount;flat in float vPoolStart;flat in float vPoolEnd;flat in float vFallback;out vec4 outClaim;void main(){float id=floor(gl_FragCoord.y)*float(uStateSize.x)+floor(gl_FragCoord.x);if(id<vPoolStart||id>=vPoolEnd)discard;if(vFallback<.5){float width=ceil(sqrt(vChildCount));vec2 cell=floor(gl_PointCoord*width);float ordinal=cell.y*width+cell.x;if(ordinal>=vChildCount)discard;}outClaim=vec4(vClaim);}`; }
 
 interface CompiledEventEntry { parent:number; parentSlot:number; child:number; global:number; priority:number; prioritySlot:number; count:number; trigger:string; probability:number; maxGeneration:number; delay:number; inheritance:number; powerScale:number; spread:number; lifetime:number }
 function compiledEvents(effect: CompiledParticleEffect2D): CompiledEventEntry[] {
@@ -324,6 +326,7 @@ function buildGlslVertex(effect: CompiledParticleEffect2D, extensions: readonly 
   const targets = effect.report.requiredStateTargets;
   return `#version 300 es
 precision highp float;
+precision highp int;
 uniform sampler2D uPositionState;
 uniform sampler2D uVelocityState;
 ${targets === 3 ? 'uniform sampler2D uMetadataState;' : ''}
@@ -376,6 +379,7 @@ void main() {
 function buildGlslFragment(extensions: readonly ParticleModuleCompilerExtension2D[]): string {
   return `#version 300 es
 precision highp float;
+precision highp int;
 uniform vec3 uPalette[8];
 uniform int uPaletteCount;
 uniform float uIntensity;

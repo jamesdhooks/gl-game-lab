@@ -39,6 +39,11 @@ describe('ParticleEffectCompiler2D', () => {
     expect(program.webgl2.eventClaimVertex?.source).toContain('gl_VertexID');
     expect(program.webgl2.eventClaimVertex?.source).toContain('priority*4194304');
     expect(program.webgl2.eventClaimVertex?.source).toContain('uArchetypePools');
+    expect(program.webgl2.eventClaimVertex?.source).toContain('precision highp int');
+    expect(program.webgl2.eventClaimFragment?.source).toContain('precision highp int');
+    for (const shader of [program.webgl2.simulation, program.webgl2.event, program.webgl2.vertex, program.webgl2.streakVertex, program.webgl2.fragment]) {
+      expect(shader?.source).toContain('precision highp int');
+    }
     expect(program.webgl2.eventClaimVertex?.source).toContain('(int(c.w+.5)&2)==0');
     expect(program.webgl2.eventClaimFragment?.source).toContain('outClaim');
     expect(program.webgl2.event?.source).toContain('int(c.w+.5)|2');
