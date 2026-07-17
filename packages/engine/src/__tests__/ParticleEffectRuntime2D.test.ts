@@ -350,7 +350,20 @@ describe("EngineParticleEffects2D", () => {
     instance.start();
     runtime.update(0.15);
     expect(instance.state().activeEmitters).toBe(2);
+    expect(instance.state().droppedEmitterActivations).toBe(0);
     expect(backend.resources[0]!.emissions.reduce((sum, emission) => sum + emission.count, 0)).toBe(2);
+    runtime.dispose();
+  });
+
+  it("reports emitter activation-pool exhaustion", () => {
+    const backend = new TestBackend(), runtime = new EngineParticleEffects2D(backend);
+    const base = adaptParticleEffectDefinition2D(definition), emitter = {
+      ...base.emitters[0]!, timeline: { duration: 1, rate: { kind: "constant" as const, value: 1 } },
+      limits: { ...base.emitters[0]!.limits, maxConcurrent: 1 },
+    };
+    runtime.register(compileParticleProgram2D(compileParticleEffect2D({ ...base, emitters: [emitter], graph: { root: { kind: "parallel" as const, children: [{ kind: "emit" as const, emitterId: emitter.id }, { kind: "emit" as const, emitterId: emitter.id }] } } })));
+    const instance = runtime.createInstance(definition.id); instance.start();
+    expect(instance.state()).toMatchObject({ activeEmitters: 1, droppedEmitterActivations: 1 });
     runtime.dispose();
   });
 

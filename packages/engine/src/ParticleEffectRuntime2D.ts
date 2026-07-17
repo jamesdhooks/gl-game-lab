@@ -441,6 +441,7 @@ export interface ParticleEffectInstanceState2D {
   readonly renderScale: number;
   readonly adaptiveLodLevel: 0 | 1 | 2;
   readonly activeEmitters: number;
+  readonly droppedEmitterActivations: number;
   readonly parameters: Readonly<Record<string, ParticleParameterValue2D>>;
   readonly diagnostics: ParticleEffectBackendDiagnostics2D;
 }
@@ -1093,6 +1094,7 @@ class RuntimeParticleEffectInstance2D implements ParticleEffectInstance2D {
   private readonly emitterSources = new Map<number, ParticleEmitterSourceOverride2D>();
   private readonly eventParameters = new Map<string, ParticleEventParameters2D>();
   private drainRemaining = 0;
+  private droppedEmitterActivations = 0;
   private emitters: EmitterRuntime[];
   private emitterRuns: EmitterRuntime[];
   private emitterPools: Map<string, EmitterRuntime[]>;
@@ -1218,6 +1220,7 @@ class RuntimeParticleEffectInstance2D implements ParticleEffectInstance2D {
       emitter.reset();
     });
     this.scheduler.reset(this.seed);
+    this.droppedEmitterActivations = 0;
     this.statusValue = "idle";
     this.start();
   }
@@ -1401,6 +1404,7 @@ class RuntimeParticleEffectInstance2D implements ParticleEffectInstance2D {
       renderScale: this.appliedRenderScale,
       adaptiveLodLevel: this.adaptiveLodLevel,
       activeEmitters: this.emitterRuns.reduce((count, emitter) => count + Number(emitter.active), 0),
+      droppedEmitterActivations: this.droppedEmitterActivations,
       parameters: Object.freeze({ ...this.parameters }),
       diagnostics: this.backend.diagnostics(),
     });
@@ -1646,7 +1650,10 @@ class RuntimeParticleEffectInstance2D implements ParticleEffectInstance2D {
       return;
     }
     const emitter = pool.find((entry) => !entry.active && entry.aliveEstimate === 0);
-    if (!emitter) return;
+    if (!emitter) {
+      this.droppedEmitterActivations += 1;
+      return;
+    }
     emitter.reset();
     emitter.graphContext = graphContext;
     this.applyEmitterSource(emitter);
