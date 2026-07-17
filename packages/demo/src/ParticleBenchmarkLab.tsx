@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import type { EnginePlugin } from '@hooksjam/gl-game-lab-core';
-import { EngineGpu2D, EngineParticleEffects, EngineSchedule, type CompiledParticleProgram2D, type ParticleEffectsDiagnostics2D, type ParticleRenderTier2D } from '@hooksjam/gl-game-lab-engine';
+import { EngineGpu2D, EngineParticleEffects, EngineSchedule, type CompiledParticleProgram2D, type GameEngine, type ParticleEffectsDiagnostics2D, type ParticleRenderTier2D } from '@hooksjam/gl-game-lab-engine';
 import { GameCanvas } from '@hooksjam/gl-game-lab-react';
 import { FIREWORKS_PARTICLE_PROGRAM, ORBITAL_SHRAPNEL_PARTICLE_PROGRAM, SPARKS_PARTICLE_PROGRAM } from '@hooksjam/gl-game-lab-simulations';
 
@@ -11,6 +11,7 @@ export function ParticleBenchmarkLab(): JSX.Element {
   const [effectId,setEffectId]=useState<keyof typeof EFFECTS>('sparks'),[capacity,setCapacity]=useState<number>(65_536),[tier,setTier]=useState<ParticleRenderTier2D>('ultra'),[renderScale,setRenderScale]=useState(1);
   const [particleDiagnostics,setParticleDiagnostics]=useState<ParticleEffectsDiagnostics2D>();
   const [debugArchetypes,setDebugArchetypes]=useState<Readonly<Record<string,number>>>();
+  const [engine,setEngine]=useState<GameEngine>(),[benchmarkRunning,setBenchmarkRunning]=useState(false),[report,setReport]=useState<ParticleBenchmarkReport2D>();
   const program=EFFECTS[effectId], boundedCapacity=Math.max(program.effect.source.capacity.min,Math.min(program.effect.source.capacity.max,capacity));
   const plugin=useMemo(()=>createParticleBenchmarkPlugin(program,boundedCapacity,tier,renderScale,setParticleDiagnostics,setDebugArchetypes),[program,boundedCapacity,tier,renderScale]);
   const plugins=useMemo(()=>[plugin] as const,[plugin]);
@@ -21,13 +22,36 @@ export function ParticleBenchmarkLab(): JSX.Element {
       <select aria-label="Benchmark capacity" value={capacity} onChange={(event)=>{setCapacity(Number(event.target.value));}} className="rounded-lg bg-slate-800 px-3 py-2 text-sm">{CAPACITIES.map((value)=><option key={value} value={value}>{value.toLocaleString()}</option>)}</select>
       <select aria-label="Benchmark tier" value={tier} onChange={(event)=>{setTier(event.target.value as ParticleRenderTier2D);}} className="rounded-lg bg-slate-800 px-3 py-2 text-sm">{(['basic','enhanced','ultra'] as const).map((value)=><option key={value}>{value}</option>)}</select>
       <select aria-label="Benchmark render scale" value={renderScale} onChange={(event)=>{setRenderScale(Number(event.target.value));}} className="rounded-lg bg-slate-800 px-3 py-2 text-sm"><option value={1}>100% render</option><option value={0.5}>50% render</option><option value={0.25}>25% render</option></select>
+      <button type="button" disabled={!engine||benchmarkRunning} onClick={()=>{if(!engine)return;setBenchmarkRunning(true);void measureBenchmark(engine,{effectId,capacity:boundedCapacity,tier,renderScale}).then(setReport).finally(()=>{setBenchmarkRunning(false);});}} className="rounded-lg bg-amber-400 px-3 py-2 text-sm font-semibold text-slate-950 disabled:opacity-40">{benchmarkRunning?'Measuring…':'Run 5s benchmark'}</button>
     </div>
-    <div className="mx-auto aspect-video max-w-5xl overflow-hidden rounded-2xl ring-1 ring-white/10"><GameCanvas key={`${effectId}:${boundedCapacity}:${tier}:${renderScale}`} plugins={plugins} showDiagnostics className="h-full w-full" /></div>
+    <div className="mx-auto aspect-video max-w-5xl overflow-hidden rounded-2xl ring-1 ring-white/10"><GameCanvas key={`${effectId}:${boundedCapacity}:${tier}:${renderScale}`} plugins={plugins} onReady={setEngine} showDiagnostics className="h-full w-full" /></div>
     <p className="mx-auto mt-3 max-w-5xl text-xs text-white/45">Fixed command workload, deterministic seed, live engine diagnostics. URL: ?particleBenchmark=1</p>
     <pre data-testid="particle-effect-diagnostics" className="mx-auto mt-3 max-w-5xl overflow-auto rounded-xl bg-black/30 p-3 text-xs text-white/60">{particleDiagnostics?JSON.stringify(particleDiagnostics,null,2):'Warming particle diagnostics…'}</pre>
     <pre data-testid="particle-debug-archetypes" className="mx-auto mt-3 max-w-5xl overflow-auto rounded-xl bg-black/30 p-3 text-xs text-white/60">{debugArchetypes?JSON.stringify(debugArchetypes,null,2):'Waiting for one development-only GPU state sample…'}</pre>
+    <pre data-testid="particle-benchmark-report" className="mx-auto mt-3 max-w-5xl overflow-auto rounded-xl bg-black/30 p-3 text-xs text-white/60">{report?JSON.stringify(report,null,2):'Run the fixed benchmark to produce a portable JSON report.'}</pre>
   </main>;
 }
+
+interface ParticleBenchmarkReport2D {
+  readonly schemaVersion: 1;
+  readonly configuration: { readonly effectId: string; readonly capacity: number; readonly tier: ParticleRenderTier2D; readonly renderScale: number; readonly warmupMs: number; readonly sampleMs: number };
+  readonly samples: number;
+  readonly fps: { readonly average: number; readonly p05: number };
+  readonly frameCpuMs: { readonly average: number; readonly p95: number };
+  readonly gpuMs: { readonly available: boolean; readonly average?: number; readonly p95?: number };
+  readonly particle: ParticleEffectsDiagnostics2D;
+}
+
+async function measureBenchmark(engine:GameEngine,configuration:Omit<ParticleBenchmarkReport2D['configuration'],'warmupMs'|'sampleMs'>):Promise<ParticleBenchmarkReport2D>{
+  const warmupMs=1_000,sampleMs=4_000;await delay(warmupMs);const fps:number[]=[],cpu:number[]=[],gpu:number[]=[];const started=performance.now();
+  while(performance.now()-started<sampleMs){const snapshot=engine.diagnostics.snapshot();if(snapshot){fps.push(snapshot.fps);cpu.push(snapshot.frameCpuMs);if(snapshot.renderer?.gpuMs!==undefined)gpu.push(snapshot.renderer.gpuMs);}await delay(100);}
+  const particles=engine.kernel.get(EngineParticleEffects).diagnostics();
+  return Object.freeze({schemaVersion:1,configuration:Object.freeze({...configuration,warmupMs,sampleMs}),samples:fps.length,fps:Object.freeze({average:mean(fps),p05:percentile(fps,.05)}),frameCpuMs:Object.freeze({average:mean(cpu),p95:percentile(cpu,.95)}),gpuMs:Object.freeze(gpu.length>0?{available:true,average:mean(gpu),p95:percentile(gpu,.95)}:{available:false}),particle:particles});
+}
+function delay(ms:number):Promise<void>{return new Promise((resolve)=>{window.setTimeout(resolve,ms);});}
+function mean(values:readonly number[]):number{return round(values.reduce((sum,value)=>sum+value,0)/Math.max(1,values.length));}
+function percentile(values:readonly number[],fraction:number):number{if(values.length===0)return 0;const sorted=[...values].sort((a,b)=>a-b);return round(sorted[Math.min(sorted.length-1,Math.max(0,Math.floor((sorted.length-1)*fraction)))]??0);}
+function round(value:number):number{return Math.round(value*1000)/1000;}
 
 function createParticleBenchmarkPlugin(program:CompiledParticleProgram2D,capacity:number,tier:ParticleRenderTier2D,renderScale:number,onDiagnostics:(value:ParticleEffectsDiagnostics2D)=>void,onSnapshot:(value:Readonly<Record<string,number>>)=>void):EnginePlugin{
   return {id:'gl-game-lab.demo.particle-benchmark',version:'1.0.0',dependencies:[{id:'gl-game-lab.render-webgl2'}],install:(context)=>{
