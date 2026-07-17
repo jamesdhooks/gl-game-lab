@@ -137,6 +137,9 @@ export function DebugPanel({ engine }: DebugPanelProps): JSX.Element {
                       <StatRow label={`#${instance.id} ${instance.effectId}`} value={`${instance.status} · ${instance.qualityTier}`} />
                       <StatRow label="active / capacity" value={`${formatInteger(instance.diagnostics.activeEstimate)} / ${formatInteger(instance.diagnostics.capacity)}`} />
                       <StatRow label="seed / elapsed" value={`${instance.seed} / ${instance.elapsed.toFixed(2)}s`} />
+                      {instance.diagnostics.archetypes && Object.entries(instance.diagnostics.archetypes).map(([id, values]) => <StatRow key={id} label={id} value={`${formatInteger(values.activeEstimate)} / ${formatInteger(values.capacity)}`} />)}
+                      {instance.diagnostics.eventAttemptsByTrigger && <StatRow label="events by trigger" value={formatDiagnosticRecord(instance.diagnostics.eventAttemptsByTrigger)} />}
+                      {instance.diagnostics.eventAttemptsByPriority && <StatRow label="events by priority" value={formatDiagnosticRecord(instance.diagnostics.eventAttemptsByPriority)} />}
                       <div className="mt-2 grid grid-cols-4 gap-1">
                         <InspectorButton label={instance.status === 'paused' ? 'Resume' : 'Pause'} onClick={() => { particleEffects?.controlInstance(instance.id, { action: instance.status === 'paused' ? 'resume' : 'pause' }); }}>
                           {instance.status === 'paused' ? <Play size={11} /> : <Pause size={11} />}
@@ -213,4 +216,8 @@ function formatInteger(value: number): string {
 function shortSystemName(id: string): string {
   const segments = id.split('.');
   return segments.at(-1) ?? id;
+}
+
+function formatDiagnosticRecord(values: Readonly<Partial<Record<string, number>>>): string {
+  return Object.entries(values).filter(([, value]) => value !== undefined && value > 0).map(([key, value]) => `${key}:${formatInteger(value ?? 0)}`).join(' · ') || '0';
 }

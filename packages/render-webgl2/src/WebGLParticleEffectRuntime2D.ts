@@ -35,6 +35,9 @@ class WebGLParticleEffectResource2D implements ParticleEffectBackendResource2D {
   private readonly poolData: Float32Array;
   private readonly poolCursor: Int32Array;
   private readonly poolQueued: Int32Array;
+  private readonly archetypeActiveEstimate: Float64Array;
+  private readonly eventAttemptsByTrigger: Record<import("@hooksjam/gl-game-lab-engine").ParticleEventTrigger2D, number> = { birth: 0, age: 0, death: 0, collision: 0 };
+  private readonly eventAttemptsByPriority: Record<"primary" | "secondary" | "cosmetic", number> = { primary: 0, secondary: 0, cosmetic: 0 };
   private readonly archetypeMotion: Float32Array;
   private readonly archetypeForce: Float32Array;
   private readonly archetypeCollision: Float32Array;
@@ -145,6 +148,7 @@ class WebGLParticleEffectResource2D implements ParticleEffectBackendResource2D {
     this.poolData = new Float32Array(Math.max(1, partitions.length) * 4);
     this.poolCursor = new Int32Array(Math.max(1, partitions.length));
     this.poolQueued = new Int32Array(Math.max(1, partitions.length));
+    this.archetypeActiveEstimate = new Float64Array(Math.max(1, partitions.length));
     for (const partition of partitions) {
       const offset = partition.archetypeIndex * 4;
       this.poolData[offset] = partition.start;
@@ -276,6 +280,12 @@ class WebGLParticleEffectResource2D implements ParticleEffectBackendResource2D {
     this.commands[offset + 15] = emission.emitterIndex;
     this.particleCount += count - replacedCount;
     this.poolQueued[archetypeId] = this.poolQueued[archetypeId]! + count;
+    this.archetypeActiveEstimate[archetypeId] = Math.min(poolCapacity, this.archetypeActiveEstimate[archetypeId]! + count);
+    for (const event of archetype.events ?? []) {
+      this.eventAttempts += count;
+      this.eventAttemptsByTrigger[event.trigger] += count;
+      this.eventAttemptsByPriority[event.priority ?? "cosmetic"] += count;
+    }
     this.droppedParticles += emission.count - count;
     if (count < emission.count) this.truncatedCommands += 1;
     if ((archetype.events?.length ?? 0) > 0) {
@@ -451,6 +461,10 @@ class WebGLParticleEffectResource2D implements ParticleEffectBackendResource2D {
       this.poolCursor[index] = Math.round(this.poolData[index * 4] ?? 0);
     }
     this.poolQueued.fill(0);
+    this.archetypeActiveEstimate.fill(0);
+    this.eventAttempts = 0;
+    for (const trigger of ["birth", "age", "death", "collision"] as const) this.eventAttemptsByTrigger[trigger] = 0;
+    for (const priority of ["primary", "secondary", "cosmetic"] as const) this.eventAttemptsByPriority[priority] = 0;
     this.eventWindows.clear();
     this.simulationTime = 0;
   }
@@ -491,6 +505,9 @@ class WebGLParticleEffectResource2D implements ParticleEffectBackendResource2D {
       eventAttempts: this.eventAttempts,
       eventOccupiedDrops: this.eventOccupiedDrops,
       eventBudgetDrops: this.eventBudgetDrops,
+      archetypes: Object.freeze(Object.fromEntries(this.program.effect.source.archetypes.map((archetype, index) => [archetype.id, Object.freeze({ capacity: Math.round(this.poolData[index * 4 + 1] ?? 0), activeEstimate: Math.round(this.archetypeActiveEstimate[index] ?? 0) })]))),
+      eventAttemptsByTrigger: Object.freeze({ ...this.eventAttemptsByTrigger }),
+      eventAttemptsByPriority: Object.freeze({ ...this.eventAttemptsByPriority }),
     });
   }
 

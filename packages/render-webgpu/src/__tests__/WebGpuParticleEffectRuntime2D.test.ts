@@ -69,7 +69,7 @@ describe('WebGpuParticleEffectRuntimeBackend2D', () => {
     resource.update(1, 1);
     expect(fixture.dispatchWorkgroups.mock.calls).toEqual([[2], [2], [6]]);
     expect(fixture.submit).toHaveBeenCalledTimes(1);
-    expect(resource.diagnostics()).toMatchObject({ eventCount: 1, simulationPasses: 1 });
+    expect(resource.diagnostics()).toMatchObject({ eventCount: 1, eventAttempts: 1, simulationPasses: 1, archetypes: { spark: { activeEstimate: 1 } }, eventAttemptsByTrigger: { death: 1 }, eventAttemptsByPriority: { primary: 1 } });
     resource.dispose();
   });
 

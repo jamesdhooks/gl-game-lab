@@ -125,6 +125,9 @@ class WebGpuParticleEffectResource2D implements ParticleEffectBackendResource2D 
   private readonly poolData: Float32Array;
   private readonly poolCursor: Int32Array;
   private readonly poolQueued: Int32Array;
+  private readonly archetypeActiveEstimate: Float64Array;
+  private readonly eventAttemptsByTrigger: Record<import("@hooksjam/gl-game-lab-engine").ParticleEventTrigger2D, number> = { birth: 0, age: 0, death: 0, collision: 0 };
+  private readonly eventAttemptsByPriority: Record<"primary" | "secondary" | "cosmetic", number> = { primary: 0, secondary: 0, cosmetic: 0 };
   private readonly frameData = new ArrayBuffer(32);
   private readonly frameFloats = new Float32Array(this.frameData);
   private readonly frameUints = new Uint32Array(this.frameData);
@@ -150,6 +153,7 @@ class WebGpuParticleEffectResource2D implements ParticleEffectBackendResource2D 
   private simulationPasses = 0;
   private renderPasses = 0;
   private eventPasses = 0;
+  private eventAttempts = 0;
   private uploadBytes = 0;
   private viewportWidth = 1;
   private viewportHeight = 1;
@@ -282,6 +286,7 @@ class WebGpuParticleEffectResource2D implements ParticleEffectBackendResource2D 
     this.poolData = poolData;
     this.poolCursor = new Int32Array(Math.max(1, partitions.length));
     this.poolQueued = new Int32Array(Math.max(1, partitions.length));
+    this.archetypeActiveEstimate = new Float64Array(Math.max(1, partitions.length));
     for (const partition of partitions) {
       const offset = partition.archetypeIndex * 4;
       poolData[offset] = partition.start;
@@ -421,6 +426,12 @@ class WebGpuParticleEffectResource2D implements ParticleEffectBackendResource2D 
     this.particleCount += count;
     this.droppedParticles += emission.count - count;
     this.poolQueued[archetypeId] = this.poolQueued[archetypeId]! + count;
+    this.archetypeActiveEstimate[archetypeId] = Math.min(poolCapacity, this.archetypeActiveEstimate[archetypeId]! + count);
+    for (const event of archetype.events ?? []) {
+      this.eventAttempts += count;
+      this.eventAttemptsByTrigger[event.trigger] += count;
+      this.eventAttemptsByPriority[event.priority ?? "cosmetic"] += count;
+    }
     this.admittedCommands += 1;
     if (count < emission.count) this.truncatedCommands += 1;
     if ((archetype.events?.length ?? 0) > 0) this.eventWindows.schedule(archetypeId, this.simulationTime);
@@ -637,6 +648,10 @@ class WebGpuParticleEffectResource2D implements ParticleEffectBackendResource2D 
     this.simulationTime = 0;
     this.eventWindows.clear();
     this.poolQueued.fill(0);
+    this.archetypeActiveEstimate.fill(0);
+    this.eventAttempts = 0;
+    for (const trigger of ["birth", "age", "death", "collision"] as const) this.eventAttemptsByTrigger[trigger] = 0;
+    for (const priority of ["primary", "secondary", "cosmetic"] as const) this.eventAttemptsByPriority[priority] = 0;
     for (let index = 0; index < this.poolCursor.length; index += 1) this.poolCursor[index] = Math.round(this.poolData[index * 4] ?? 0);
   }
   diagnostics(): ParticleEffectBackendDiagnostics2D {
@@ -654,7 +669,7 @@ class WebGpuParticleEffectResource2D implements ParticleEffectBackendResource2D 
       contextGeneration: 0,
       rebuildCount: 0,
       allocatedBytes: this.capacity * 4 * 4 * 3 + this.commandData.byteLength + this.frameData.byteLength + this.attractorData.byteLength + this.domainData.byteLength + this.sizeData.byteLength + this.lengthData.byteLength + this.alphaData.byteLength + this.intensityData.byteLength + this.paletteData.byteLength + this.renderConfigData.byteLength + (this.eventQueue ? this.capacity * 3 * 16 + this.zeroEventCounters.byteLength + this.eventParameterData.byteLength : 0),
-      eventAttempts: 0,
+      eventAttempts: this.eventAttempts,
       eventOccupiedDrops: 0,
       eventBudgetDrops: 0,
       diagnosticAccuracy: "estimated",
@@ -662,6 +677,9 @@ class WebGpuParticleEffectResource2D implements ParticleEffectBackendResource2D 
       directCommandsTruncated: this.truncatedCommands,
       commandUploadBytes: this.uploadBytes,
       allocationsAfterWarmup: 0,
+      archetypes: Object.freeze(Object.fromEntries(this.program.effect.source.archetypes.map((archetype, index) => [archetype.id, Object.freeze({ capacity: Math.round(this.poolData[index * 4 + 1] ?? 0), activeEstimate: Math.round(this.archetypeActiveEstimate[index] ?? 0) })]))),
+      eventAttemptsByTrigger: Object.freeze({ ...this.eventAttemptsByTrigger }),
+      eventAttemptsByPriority: Object.freeze({ ...this.eventAttemptsByPriority }),
     });
   }
   dispose(): void {

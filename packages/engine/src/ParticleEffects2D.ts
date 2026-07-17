@@ -184,6 +184,9 @@ export interface ParticleEffectDiagnostics2D {
   readonly gpuTimeMs?: number;
   readonly allocationsAfterWarmup?: number;
   readonly pipelineCacheHits?: number;
+  readonly archetypes?: Readonly<Record<string, Readonly<{ capacity: number; activeEstimate: number }>>>;
+  readonly eventAttemptsByTrigger?: Readonly<Partial<Record<ParticleEventTrigger2D, number>>>;
+  readonly eventAttemptsByPriority?: Readonly<Partial<Record<"primary" | "secondary" | "cosmetic", number>>>;
 }
 
 export interface ParticleEffectController2D {
