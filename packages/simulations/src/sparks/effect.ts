@@ -43,7 +43,7 @@ export const SPARKS_PARTICLE_EFFECT: ParticleEffectDefinition2D = validatePartic
         paletteMode: 'seeded',
       },
       collision: { bounds: true, capsules: true, restitution: 0.58, friction: 0.18, lifetimeLoss: 0.12 },
-      events: [{ trigger: 'collision', childArchetypeId: 'bounce', probability: 0.24, count: 4, maxGeneration: 1, priority: 'secondary' }],
+      events: [{ trigger: 'collision', retrigger: false, childArchetypeId: 'bounce', probability: 0.24, count: 4, maxGeneration: 1, priority: 'secondary' }],
     },
     {
       id: 'bounce',

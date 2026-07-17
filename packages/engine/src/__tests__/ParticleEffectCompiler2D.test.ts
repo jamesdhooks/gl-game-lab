@@ -96,6 +96,28 @@ describe('ParticleEffectCompiler2D', () => {
     expect(compileParticleProgram2D(effect).webgl2.simulation.hash).toBe(compileParticleProgram2D(effect).webgl2.simulation.hash);
   });
 
+  it('fires collision events once unless the effect explicitly enables retriggering', () => {
+    const base = adaptParticleEffectDefinition2D(definition);
+    const collisionEvent = { trigger: 'collision' as const, childArchetypeId: 'spark', probability: 1, count: 1, maxGeneration: 1 };
+    const once = compileParticleProgram2D(compileParticleEffect2D({
+      ...base,
+      archetypes: [{ ...base.archetypes[0]!, events: [collisionEvent] }],
+    }));
+    expect(once.webgl2.eventClaimVertex?.source).toContain('(int(c.w+.5)&2)==0');
+    expect(once.webgl2.event?.source).toContain('(int(c.w+.5)&1)!=0))c.w=float(int(c.w+.5)|2)');
+    expect(once.webgpu.event?.source).toContain('(flags & 2u) == 0u');
+    expect(once.webgpu.event?.source).toContain('flags = flags | 2u;');
+
+    const repeating = compileParticleProgram2D(compileParticleEffect2D({
+      ...base,
+      archetypes: [{ ...base.archetypes[0]!, events: [{ ...collisionEvent, retrigger: true }] }],
+    }));
+    expect(repeating.webgl2.eventClaimVertex?.source).toContain('if(speed>=eventC.x && (true)');
+    expect(repeating.webgl2.event?.source).not.toContain('(int(c.w+.5)&1)!=0))c.w=float(int(c.w+.5)|2)');
+    expect(repeating.webgpu.event?.source).not.toContain('(flags & 2u) == 0u');
+    expect(repeating.webgpu.event?.source).not.toContain('flags = flags | 2u;');
+  });
+
   it('matches the reviewed backend shader golden', () => {
     const program = compileParticleProgram2D(compileParticleEffect2D(adaptParticleEffectDefinition2D(definition)));
     expect({

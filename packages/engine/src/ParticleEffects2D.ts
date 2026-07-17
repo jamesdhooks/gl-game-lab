@@ -80,6 +80,8 @@ export interface ParticleCollisionProfile2D {
 
 export interface ParticleEventEmitter2D {
   readonly trigger: ParticleEventTrigger2D;
+  /** Allows a collision event to fire again on later contacts. Defaults to one emission per parent particle. */
+  readonly retrigger?: boolean;
   readonly childArchetypeId: string;
   readonly probability: number;
   readonly count: number;

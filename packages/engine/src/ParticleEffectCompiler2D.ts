@@ -420,7 +420,7 @@ function buildGlslEvent(effect: CompiledParticleEffect2D): string {
     )
     .join("\n  else ");
   const markBranches = events
-    .filter((entry) => entry.trigger !== "collision")
+    .filter((entry) => !entry.retrigger)
     .map((entry) => {
       const trigger = eventTriggerGlsl(entry, "a", "c", `uParticleEventA[${entry.global}].w`);
       return `if(int(c.x+.5)==${entry.parent} && c.y<=uParticleEventA[${entry.global}].z && (${trigger}))c.w=float(int(c.w+.5)|${eventFlag(entry.parentSlot)});`;
@@ -476,7 +476,7 @@ function buildGlslEventClaimVertex(effect: CompiledParticleEffect2D): string {
   for (let archetypeIndex = 0; archetypeIndex < effect.source.archetypes.length; archetypeIndex += 1) {
     for (const entry of events.filter((event) => event.parent === archetypeIndex)) {
       const trigger = eventTriggerGlsl(entry, "a", "c", `eventA.w`);
-      const notFired = entry.trigger === "collision" ? "true" : `(int(c.w+.5)&${eventFlag(entry.parentSlot)})==0`;
+      const notFired = entry.retrigger ? "true" : `(int(c.w+.5)&${eventFlag(entry.parentSlot)})==0`;
       branches.push(`if(archetype==${archetypeIndex} && lane==${entry.parentSlot}) {
   vec4 eventA=uParticleEventA[${entry.global}],eventC=uParticleEventC[${entry.global}];
   float speed=length(b.xy),impact=smoothstep(eventC.x,max(eventC.x+1.0,eventC.z),speed);
@@ -538,6 +538,7 @@ interface CompiledEventEntry {
   prioritySlot: number;
   count: number;
   trigger: string;
+  retrigger: boolean;
   probability: number;
   maxGeneration: number;
   delay: number;
@@ -568,6 +569,7 @@ function compiledEvents(effect: CompiledParticleEffect2D): CompiledEventEntry[] 
         prioritySlot,
         count: event.count,
         trigger: event.trigger,
+        retrigger: event.trigger === "collision" && event.retrigger === true,
         probability: event.probability,
         maxGeneration: event.maxGeneration,
         delay: event.delay ?? 0,
@@ -852,8 +854,8 @@ function buildWgslEventAppend(effect: CompiledParticleEffect2D): string {
     .map((entry) => {
       const trigger = wgslEventTrigger(entry, `eventA${entry.global}.w`);
       const flag = eventFlag(entry.parentSlot);
-      const notFired = entry.trigger === "collision" ? "true" : `(flags & ${flag}u) == 0u`;
-      const mark = entry.trigger === "collision" ? "" : `flags = flags | ${flag}u;`;
+      const notFired = entry.retrigger ? "true" : `(flags & ${flag}u) == 0u`;
+      const mark = entry.retrigger ? "" : `flags = flags | ${flag}u;`;
       return `let eventA${entry.global}=eventParameters[${entry.global * 4}u];let eventC${entry.global}=eventParameters[${entry.global * 4 + 2}u];
     if (archetype == ${entry.parent}u && metadata.generation <= eventA${entry.global}.z && ${notFired} && (${trigger}) && length(stateB[i].velocity)>=eventC${entry.global}.x) {
       ${mark}
