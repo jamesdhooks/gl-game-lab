@@ -7,6 +7,7 @@ import type {
   GpuParticleGridTransfer2D, GpuParticleGridTransferOptions2D, GpuParticleGridUpdate2D,
   GpuParticleGridUpdateOptions2D, GpuParticleSystem2D, GpuParticleSystem2DOptions,
   GpuRenderTarget2D,
+  GpuExternalParticleRenderOptions2D,
 } from '@hooksjam/gl-game-lab-engine';
 import { computeSplashPicFlipGridUpdate, computeSplashPicFlipParticleToGrid, computeSplashPicFlipParticleUpdate, createSplashMpmConfig, SPLASH_MPM_DEFAULTS, SPLASH_MPM_SETTINGS, splashMpmDefinition, SPLASH_MPM_STYLE_MANIFEST, SplashMpmModel, validateSplashPicFlipGpuParity } from '../index.js';
 import { createSplashGpuImpulse, createSplashGpuObstacles, createSplashGpuPourBatch, resolveSplashPicFlipBackend, SplashPicFlipGpuRuntime, splashObstaclesToGpuArrays, splashSnapshotToGpuParticleGridSeed, splashSnapshotToGpuParticleGridStep } from '../splash-mpm/SplashPicFlipBackend.js';
@@ -62,6 +63,22 @@ class FakeParticleGridSystem implements GpuParticleGridSystem2D {
   readonly steps: GpuParticleGridParticleUpdateOptions2D[] = [];
   readonly metaballRenders: { readonly target: GpuRenderTarget2D; readonly options: GpuParticleGridMetaballOptions2D }[] = [];
   readonly particleRenders: { readonly target: GpuRenderTarget2D; readonly options: GpuParticleGridPointOptions2D }[] = [];
+  readonly appearanceRenders: { readonly target: GpuRenderTarget2D; readonly options: GpuExternalParticleRenderOptions2D }[] = [];
+  readonly appearance = {
+    render: (target: GpuRenderTarget2D, options: GpuExternalParticleRenderOptions2D): void => { this.appearanceRenders.push({ target, options }); },
+    clearHistory: (): void => undefined,
+    diagnostics: () => Object.freeze({
+      activeParticles: this.count,
+      renderedParticles: this.count,
+      pointPasses: this.appearanceRenders.length,
+      streakPasses: 0,
+      trailPasses: 0,
+      compositePasses: 0,
+      paletteUploadBytes: 0,
+      contextGeneration: this.generation,
+      accuracy: 'exact' as const,
+    }),
+  };
   disposed = false;
   private currentSnapshot: GpuParticleGridSnapshot2D = Object.freeze({
     count: 0,
@@ -430,6 +447,20 @@ describe('Splash MPM', () => {
     };
     runtime.renderParticles(target, particles);
     expect(grid.particleRenders).toEqual([{ target, options: particles }]);
+    const appearance: GpuExternalParticleRenderOptions2D = {
+      tier: 'ultra',
+      worldWidth: 192,
+      worldHeight: 128,
+      radiusScale: 1.2,
+      palette: [[1, 0, 0, 1], [0, 1, 0, 0.7]],
+      appearanceSource: 'foam',
+      appearanceRange: [0, 1],
+      streakLength: 0.02,
+      trailPersistence: 0.93,
+    };
+    runtime.renderAppearance(target, appearance);
+    expect(grid.appearanceRenders).toEqual([{ target, options: appearance }]);
+    expect(runtime.appearanceDiagnostics()).toMatchObject({ activeParticles: grid.count, accuracy: 'exact' });
     runtime.dispose();
     expect(grid.disposed).toBe(true);
     expect(runtime.available).toBe(false);

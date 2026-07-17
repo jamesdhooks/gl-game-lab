@@ -15,7 +15,11 @@ const captures = [
   ...['basic', 'enhanced', 'ultra'].map((renderStyle) => ({ id: `sparks-${renderStyle}`, experience: 'sparks', profile: 'play', frame: 180, scenario: 'weld', settings: { renderStyle } })),
   ...patterns.map((burstPattern) => ({ id: `fireworks-${burstPattern}`, experience: 'fireworks', profile: 'play', frame: 300, scenario: 'launch', settings: { renderStyle: 'ultra', burstPattern, shellFuse: 1.35 } })),
   { id: 'orbital-shrapnel-ultra', experience: 'orbital-shrapnel', profile: 'demo', frame: 240, settings: { renderStyle: 'ultra' } },
+  { id: 'splash-mpm-basic-external', experience: 'splash-mpm', profile: 'demo', frame: 180, settings: { renderStyle: 'basic' } },
 ];
+const requestedFilter = process.argv.find((argument) => argument.startsWith('--filter='))?.slice('--filter='.length);
+const selectedCaptures = requestedFilter ? captures.filter((capture) => capture.id.includes(requestedFilter)) : captures;
+if (selectedCaptures.length === 0) throw new Error(`No particle captures matched filter: ${requestedFilter}`);
 
 await mkdir(output, { recursive: true });
 const server = startDemoServer({ demo, port });
@@ -24,7 +28,7 @@ try {
   await waitForServer(`http://127.0.0.1:${port}/`);
   browser = await chromium.launch({ executablePath, headless: true, args: ['--disable-background-timer-throttling', '--disable-renderer-backgrounding'] });
   const context = await browser.newContext({ viewport: { width: 1280, height: 720 }, deviceScaleFactor: 1 });
-  for (const capture of captures) {
+  for (const capture of selectedCaptures) {
     process.stderr.write(`Capturing ${capture.id}\n`);
     const page = await context.newPage(), errors = [];
     page.on('pageerror', (error) => { errors.push(error.message); });

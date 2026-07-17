@@ -11,6 +11,9 @@ import type {
   GpuParticleGridMetaballOptions2D,
   GpuParticleGridObstacles2D,
   GpuParticleGridPointOptions2D,
+  GpuExternalParticleRenderAdapter2D,
+  GpuExternalParticleRenderOptions2D,
+  GpuExternalParticleRenderDiagnostics2D,
   GpuParticleGridSystem2D,
   GpuParticleGridSystem2DOptions,
   GpuParticleGridTransfer2D,
@@ -37,6 +40,7 @@ import { GpuParticleRenderer } from './GpuParticleRenderer.js';
 import { GpuParticleGridState, gpuParticleGridBytes } from './GpuParticleGridState.js';
 import { DensityMetaballRenderer } from './DensityMetaballRenderer.js';
 import { GpuParticleGridPointRenderer } from './GpuParticleGridPointRenderer.js';
+import { GpuParticleGridAppearanceRenderer } from './GpuParticleGridAppearanceRenderer.js';
 import { GpuParticleState } from './GpuParticleState.js';
 import type { GpuParticleRenderDestination } from './GpuParticleRenderer.js';
 import { GpuSimulationPass } from './GpuSimulationPass.js';
@@ -68,6 +72,7 @@ interface ParticleGridBundle {
   readonly state: GpuParticleGridState;
   readonly metaballs: DensityMetaballRenderer;
   readonly points: GpuParticleGridPointRenderer;
+  readonly appearance: GpuParticleGridAppearanceRenderer;
 }
 
 class WebGLGpuRenderTarget implements GpuRenderTarget2D {
@@ -286,6 +291,7 @@ class WebGLGpuParticleSystem implements GpuParticleSystem2D {
 
 class WebGLGpuParticleGridSystem implements GpuParticleGridSystem2D {
   private readonly owner: RestorableResourceOwner<ParticleGridBundle>;
+  readonly appearance: GpuExternalParticleRenderAdapter2D;
   private retainedSeed: GpuParticleGridSeed2D | undefined;
   private retainedObstacles: GpuParticleGridObstacles2D | undefined;
   private disposed = false;
@@ -310,6 +316,21 @@ class WebGLGpuParticleGridSystem implements GpuParticleGridSystem2D {
         this.currentGeneration += 1;
       },
     });
+    this.appearance = Object.freeze({
+      render: (target: GpuRenderTarget2D, options: GpuExternalParticleRenderOptions2D): void => {
+        const bundle = this.owner.value;
+        bundle.appearance.setContextGeneration(this.currentGeneration);
+        bundle.appearance.render(bundle.state, requireTarget(target), options);
+        this.countDraw(1 + (options.tier === 'basic' || (options.streakLength ?? 0) <= 0 ? 0 : 1)
+          + (options.tier === 'ultra' && (options.trailPersistence ?? 0) > 0 ? 2 : 0));
+      },
+      clearHistory: (): void => { this.owner.value.appearance.clearHistory(); },
+      diagnostics: (): GpuExternalParticleRenderDiagnostics2D => {
+        const appearance = this.owner.value.appearance;
+        appearance.setContextGeneration(this.currentGeneration);
+        return appearance.diagnostics();
+      },
+    });
   }
 
   get capacity(): number { return this.owner.value.state.capacity; }
@@ -324,6 +345,7 @@ class WebGLGpuParticleGridSystem implements GpuParticleGridSystem2D {
     this.retainedSeed = undefined;
     this.retainedObstacles = undefined;
     this.owner.value.state.clear();
+    this.owner.value.appearance.clearHistory();
   }
 
   uploadSeed(seed: GpuParticleGridSeed2D): void {
@@ -507,14 +529,21 @@ export class WebGLGpu2DService implements Gpu2DService {
 }
 
 function createParticleGridBundle(gl: WebGL2RenderingContext, options: GpuParticleGridSystem2DOptions): ParticleGridBundle {
-  return {
-    state: new GpuParticleGridState(gl, options),
-    metaballs: new DensityMetaballRenderer(gl),
-    points: new GpuParticleGridPointRenderer(gl),
-  };
+  const state = new GpuParticleGridState(gl, options);
+  const metaballs = new DensityMetaballRenderer(gl);
+  const points = new GpuParticleGridPointRenderer(gl);
+  try {
+    return { state, metaballs, points, appearance: new GpuParticleGridAppearanceRenderer(gl, points) };
+  } catch (error) {
+    points.dispose();
+    metaballs.dispose();
+    state.dispose();
+    throw error;
+  }
 }
 
 function disposeParticleGridBundle(bundle: ParticleGridBundle): void {
+  bundle.appearance.dispose();
   bundle.points.dispose();
   bundle.metaballs.dispose();
   bundle.state.dispose();

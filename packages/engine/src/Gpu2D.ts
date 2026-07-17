@@ -271,9 +271,73 @@ export interface GpuParticleGridPointOptions2D {
   readonly radiusMode?: 'raw' | 'splash-ultra';
   readonly splashUltraPointScale?: number;
   readonly palette: readonly (readonly [number, number, number, number])[];
-  readonly paletteMode?: 'hashed' | 'indexed';
+  readonly paletteMode?: 'hashed' | 'indexed' | 'continuous';
+  /** Selects the GPU-resident particle channel used to evaluate appearance curves. */
+  readonly appearanceSource?: 'color-seed' | 'speed' | 'foam';
+  /** Source value range mapped to 0..1 before evaluating curves and continuous palettes. */
+  readonly appearanceRange?: readonly [number, number];
+  readonly sizeCurve?: GpuParticleScalarCurve2D;
+  readonly alphaCurve?: GpuParticleScalarCurve2D;
+  /** Draw every Nth particle without altering simulation state. */
+  readonly renderStride?: number;
+  readonly maxParticles?: number;
   readonly opacity: number;
   readonly blend?: 'alpha' | 'additive';
+}
+
+export interface GpuParticleScalarCurveKey2D {
+  readonly at: number;
+  readonly value: number;
+}
+
+/** Piecewise-linear scalar curve evaluated directly by particle render shaders. */
+export interface GpuParticleScalarCurve2D {
+  readonly keys: readonly GpuParticleScalarCurveKey2D[];
+}
+
+export interface GpuExternalParticleRenderOptions2D {
+  readonly tier: 'basic' | 'enhanced' | 'ultra';
+  readonly worldWidth: number;
+  readonly worldHeight: number;
+  readonly radiusScale: number;
+  readonly palette: readonly (readonly [number, number, number, number])[];
+  readonly paletteMode?: 'hashed' | 'indexed' | 'continuous';
+  readonly appearanceSource?: 'color-seed' | 'speed' | 'foam';
+  readonly appearanceRange?: readonly [number, number];
+  readonly sizeCurve?: GpuParticleScalarCurve2D;
+  readonly alphaCurve?: GpuParticleScalarCurve2D;
+  readonly opacity?: number;
+  readonly blend?: 'alpha' | 'additive';
+  readonly streakLength?: number;
+  readonly streakWidth?: number;
+  readonly trailPersistence?: number;
+  readonly trailResolutionScale?: number;
+  readonly bloom?: number;
+  readonly background?: readonly [number, number, number];
+  readonly renderStride?: number;
+  readonly maxParticles?: number;
+}
+
+export interface GpuExternalParticleRenderDiagnostics2D {
+  readonly activeParticles: number;
+  readonly renderedParticles: number;
+  readonly pointPasses: number;
+  readonly streakPasses: number;
+  readonly trailPasses: number;
+  readonly compositePasses: number;
+  readonly paletteUploadBytes: number;
+  readonly contextGeneration: number;
+  readonly accuracy: 'exact' | 'delayed' | 'estimated';
+}
+
+/**
+ * Renders state owned by a specialized GPU solver through the shared particle
+ * appearance vocabulary. The adapter never reads particle state back to the CPU.
+ */
+export interface GpuExternalParticleRenderAdapter2D {
+  render(target: GpuRenderTarget2D, options: GpuExternalParticleRenderOptions2D): void;
+  clearHistory(): void;
+  diagnostics(): GpuExternalParticleRenderDiagnostics2D;
 }
 
 export interface GpuParticleGridSystem2D {
@@ -284,6 +348,7 @@ export interface GpuParticleGridSystem2D {
   readonly gridHeight: number;
   readonly count: number;
   readonly generation: number;
+  readonly appearance: GpuExternalParticleRenderAdapter2D;
   clear(): void;
   uploadSeed(seed: GpuParticleGridSeed2D): void;
   emit(batch: GpuParticleGridEmit2D): number;

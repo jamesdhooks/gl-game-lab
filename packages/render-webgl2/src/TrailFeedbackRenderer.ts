@@ -71,13 +71,25 @@ export class TrailFeedbackRenderer {
   }
 
   composite(destination: GpuParticleRenderDestination, background: readonly [number, number, number], bloom: number): void {
+    this.compositeInternal(destination, background, bloom, false);
+  }
+
+  /** Composites trail history over an existing scene without replacing its color. */
+  compositeOverlay(destination: GpuParticleRenderDestination, bloom: number): void {
+    this.compositeInternal(destination, [0, 0, 0], bloom, true);
+  }
+
+  private compositeInternal(destination: GpuParticleRenderDestination, background: readonly [number, number, number], bloom: number, overlay: boolean): void {
     this.assertUsable();
     const targets = requireValue(this.targets, 'Trail feedback beginFrame must run before composite');
     targets.swap();
     const gl = this.gl;
     gl.bindFramebuffer(gl.FRAMEBUFFER, destination.framebuffer ?? null);
     gl.viewport(0, 0, destination.width, destination.height);
-    gl.disable(gl.BLEND);
+    if (overlay) {
+      gl.enable(gl.BLEND);
+      gl.blendFunc(gl.ONE, gl.ONE);
+    } else gl.disable(gl.BLEND);
     gl.useProgram(this.compositeProgram);
     gl.bindVertexArray(this.vao);
     targets.read.attach(0);
@@ -85,6 +97,7 @@ export class TrailFeedbackRenderer {
     gl.uniform3f(this.compositeBackgroundLocation, ...background);
     gl.uniform1f(this.compositeBloomLocation, range(bloom, 0, 16, 'Trail bloom'));
     gl.drawArrays(gl.TRIANGLES, 0, 3);
+    if (overlay) gl.disable(gl.BLEND);
     gl.bindVertexArray(null);
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
   }

@@ -27,6 +27,12 @@ export { StableFluidField2D, type FluidSplat2D, type StableFluidDisplayOptions, 
 export { DensityMetaballRenderer, validateDensityMetaballBatch, type DensityMetaballBatch, type DensityMetaballOptions } from './DensityMetaballRenderer.js';
 export { GpuParticleGridPointRenderer } from './GpuParticleGridPointRenderer.js';
 export {
+  GpuParticleGridAppearanceRenderer,
+  resolveGpuExternalParticleRenderWork2D,
+  validateGpuExternalParticleRenderOptions2D,
+  type GpuExternalParticleRenderWork2D,
+} from './GpuParticleGridAppearanceRenderer.js';
+export {
   GpuFieldState,
   type GpuFieldStateOptions,
 } from './GpuFieldState.js';

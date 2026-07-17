@@ -458,12 +458,15 @@ export function createSplashMpmPlugin(initial: SplashMpmConfig = SPLASH_MPM_DEFA
           });
         }
         if (renderStyle === 'basic') {
-          gpuRuntime.renderParticles(target, {
+          gpuRuntime.renderAppearance(target, {
+            tier: 'basic',
             worldWidth: width,
             worldHeight: height,
             radiusScale: 1,
             palette: style.palette.slice(0, 4).map(splashRgba),
-            paletteMode: 'hashed',
+            paletteMode: 'continuous',
+            appearanceSource: 'color-seed',
+            appearanceRange: [0, 1],
             blend: 'alpha',
             opacity: splashNumber(config, 'opacity'),
           });
