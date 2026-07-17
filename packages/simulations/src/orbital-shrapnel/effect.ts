@@ -13,7 +13,7 @@ export const ORBITAL_SHRAPNEL_PARTICLE_EFFECT: ParticleEffectDefinition2D = vali
   archetypes: [
     {
       id: 'debris', spawn: { shape: 'disc', spread: Math.PI * 2, radius: 32 },
-      motion: { gravity: 0, drag: 0.0016, inheritedVelocity: 0.35, radialAcceleration: 1850, radialFalloff: 'inverse-square' }, lifecycle: { lifetime: 120, lifetimeVariability: 0.3, killMargin: 256 },
+      motion: { gravity: 0, drag: 0.0016, inheritedVelocity: 0.35, radialAcceleration: 1850, radialFalloff: 'inverse-square', maxSpeed: 540 }, lifecycle: { lifetime: 120, lifetimeVariability: 0.3, killMargin: 256 },
       appearance: { size: { start: 1, end: 0.7 }, alpha: { start: 1, end: 0 }, intensity: { start: 1, end: 0.5 }, length: { start: 1, end: 0.5 }, paletteMode: 'seeded' },
       collision: { circles: true, restitution: 0, friction: 0 },
     },
@@ -44,7 +44,7 @@ export const ORBITAL_SHRAPNEL_PARTICLE_GRAPH = defineParticleEffect2D({
   ],
   archetypes: ORBITAL_SHRAPNEL_PARTICLE_EFFECT.archetypes,
   emitters: [
-    { id: 'debris-field', archetypeId: 'debris', timeline: { manual: true }, source: { kind: 'disc', radius: 32 }, transform: { space: 'scene' }, limits: { importance: 'primary', maxPerFrame: 262_144 } },
+    { id: 'debris-field', archetypeId: 'debris', timeline: { manual: true }, source: { kind: 'annulus', innerRadius: 82, radius: 300 }, initialization: { directionMode: 'tangent-ccw', radialPowerExponent: -0.5 }, transform: { space: 'scene' }, limits: { importance: 'primary', maxPerFrame: 262_144 } },
     { id: 'asteroid-stream', archetypeId: 'asteroid', timeline: { manual: true }, source: { kind: 'cone', spread: 0.12 }, transform: { space: 'scene' }, inheritance: { velocity: 1, palette: true, seed: true }, limits: { importance: 'critical', maxPerFrame: 65_536 } },
   ],
   graph: {
