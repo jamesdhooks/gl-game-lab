@@ -42,6 +42,7 @@ class WebGLParticleEffectResource2D implements ParticleEffectBackendResource2D {
   private readonly emitterInitialization: Float32Array;
   private readonly eventDataA: Float32Array;
   private readonly eventDataB: Float32Array;
+  private readonly eventDataC: Float32Array;
   private readonly eventLookup = new Map<string, number>();
   private readonly archetypeSize: Float32Array;
   private readonly archetypeLength: Float32Array;
@@ -157,6 +158,7 @@ class WebGLParticleEffectResource2D implements ParticleEffectBackendResource2D {
     const eventCount = program.effect.source.archetypes.reduce((count, archetype) => count + (archetype.events?.length ?? 0), 0);
     this.eventDataA = new Float32Array(Math.max(1, eventCount) * 4);
     this.eventDataB = new Float32Array(Math.max(1, eventCount) * 4);
+    this.eventDataC = new Float32Array(Math.max(1, eventCount) * 4);
     this.archetypeSize = new Float32Array(Math.max(1, program.effect.source.archetypes.length) * 4);
     this.archetypeLength = new Float32Array(Math.max(1, program.effect.source.archetypes.length) * 4);
     this.archetypeAlpha = new Float32Array(Math.max(1, program.effect.source.archetypes.length) * 4);
@@ -197,6 +199,7 @@ class WebGLParticleEffectResource2D implements ParticleEffectBackendResource2D {
         this.eventLookup.set(`${archetypeIndex}:${eventIndex}`, globalEventIndex);
         this.eventDataA.set([event.probability, event.count, event.maxGeneration, event.delay ?? 0], globalEventIndex * 4);
         this.eventDataB.set([child.lifecycle.lifetime, event.velocityInheritance ?? 0, event.powerScale ?? 0.35, event.spread ?? Math.PI * 2], globalEventIndex * 4);
+        this.eventDataC.set([0, 0, 1, 24], globalEventIndex * 4);
         globalEventIndex += 1;
       });
     });
@@ -367,6 +370,10 @@ class WebGLParticleEffectResource2D implements ParticleEffectBackendResource2D {
     if (value.velocityInheritance !== undefined) this.eventDataB[offset + 1] = value.velocityInheritance;
     if (value.powerScale !== undefined) this.eventDataB[offset + 2] = value.powerScale;
     if (value.spread !== undefined) this.eventDataB[offset + 3] = value.spread;
+    if (value.minimumSpeed !== undefined) this.eventDataC[offset] = value.minimumSpeed;
+    if (value.countSpeedScale !== undefined) this.eventDataC[offset + 1] = value.countSpeedScale;
+    if (value.speedReference !== undefined) this.eventDataC[offset + 2] = value.speedReference;
+    if (value.basePower !== undefined) this.eventDataC[offset + 3] = value.basePower;
   }
   setViewport(value: ParticleViewport2D): void {
     this.assertUsable();
@@ -519,6 +526,7 @@ class WebGLParticleEffectResource2D implements ParticleEffectBackendResource2D {
     gl.uniform4fv(uniform("uArchetypePools[0]"), this.poolData);
     gl.uniform4fv(uniform("uParticleEventA[0]"), this.eventDataA);
     gl.uniform4fv(uniform("uParticleEventB[0]"), this.eventDataB);
+    gl.uniform4fv(uniform("uParticleEventC[0]"), this.eventDataC);
     gl.uniform4fv(uniform("uEmitterSource[0]"), this.emitterSource);
     gl.uniform4fv(uniform("uEmitterInitialization[0]"), this.emitterInitialization);
     gl.uniform1i(uniform("uCircleColliderCount"), this.circleCount);

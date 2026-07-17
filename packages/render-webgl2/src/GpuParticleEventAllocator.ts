@@ -45,6 +45,7 @@ export class GpuParticleEventAllocator {
     gl.useProgram(this.claimProgram); gl.bindVertexArray(this.claimVao);
     gl.enable(gl.BLEND); gl.blendEquation(gl.MIN); gl.blendFunc(gl.ONE, gl.ONE);
     gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, state.positions.read.texture); gl.uniform1i(this.uniform('uPositionState'), 0);
+    gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, state.velocities.read.texture); gl.uniform1i(this.uniform('uVelocityState'), 1);
     if (!state.metadata) throw new Error('GPU particle event allocation requires metadata state');
     gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, state.metadata.read.texture); gl.uniform1i(this.uniform('uMetadataState'), 2);
     gl.uniform2i(this.uniform('uStateSize'), state.width, state.height); gl.uniform1i(this.uniform('uCapacity'), state.capacity);

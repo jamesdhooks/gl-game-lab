@@ -157,6 +157,10 @@ export interface ParticleEventParameters2D {
   readonly velocityInheritance?: number;
   readonly powerScale?: number;
   readonly spread?: number;
+  readonly minimumSpeed?: number;
+  readonly countSpeedScale?: number;
+  readonly speedReference?: number;
+  readonly basePower?: number;
 }
 
 export interface ParticleRuntimeEmission2D {
@@ -1017,7 +1021,7 @@ class RuntimeParticleEffectInstance2D implements ParticleEffectInstance2D {
     const archetypeIndex = this.program.effect.archetypeIds[archetypeId];
     const event = archetypeIndex === undefined ? undefined : this.program.effect.source.archetypes[archetypeIndex]?.events?.[eventIndex];
     if (!event || archetypeIndex === undefined) throw new Error(`Unknown particle event: ${archetypeId}[${eventIndex}]`);
-    const values = [parameters.probability, parameters.count, parameters.maxGeneration, parameters.delay, parameters.lifetime, parameters.velocityInheritance, parameters.powerScale, parameters.spread].filter(
+    const values = [parameters.probability, parameters.count, parameters.maxGeneration, parameters.delay, parameters.lifetime, parameters.velocityInheritance, parameters.powerScale, parameters.spread, parameters.minimumSpeed, parameters.countSpeedScale, parameters.speedReference, parameters.basePower].filter(
       (value): value is number => value !== undefined,
     );
     if (values.some((value) => !Number.isFinite(value) || value < 0)) throw new Error("Particle event parameters must be finite and non-negative");
