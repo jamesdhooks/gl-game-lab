@@ -148,6 +148,7 @@ export interface ParticleRenderParameters2D {
   readonly trailBackground?: readonly [number, number, number];
   readonly directComposite?: boolean;
   readonly paletteTransition?: number;
+  readonly streakScale?: number;
   readonly colorMode?: "seeded" | "over-life" | "generation" | "velocity";
 }
 export interface ParticleEventParameters2D {
@@ -163,6 +164,8 @@ export interface ParticleEventParameters2D {
   readonly countSpeedScale?: number;
   readonly speedReference?: number;
   readonly basePower?: number;
+  readonly lifetimeVariability?: number;
+  readonly powerVariability?: number;
 }
 
 export interface ParticleRuntimeEmission2D {
@@ -1031,13 +1034,14 @@ class RuntimeParticleEffectInstance2D implements ParticleEffectInstance2D {
     const archetypeIndex = this.program.effect.archetypeIds[archetypeId];
     const event = archetypeIndex === undefined ? undefined : this.program.effect.source.archetypes[archetypeIndex]?.events?.[eventIndex];
     if (!event || archetypeIndex === undefined) throw new Error(`Unknown particle event: ${archetypeId}[${eventIndex}]`);
-    const values = [parameters.probability, parameters.count, parameters.maxGeneration, parameters.delay, parameters.lifetime, parameters.velocityInheritance, parameters.powerScale, parameters.spread, parameters.minimumSpeed, parameters.countSpeedScale, parameters.speedReference, parameters.basePower].filter(
+    const values = [parameters.probability, parameters.count, parameters.maxGeneration, parameters.delay, parameters.lifetime, parameters.velocityInheritance, parameters.powerScale, parameters.spread, parameters.minimumSpeed, parameters.countSpeedScale, parameters.speedReference, parameters.basePower, parameters.lifetimeVariability, parameters.powerVariability].filter(
       (value): value is number => value !== undefined,
     );
     if (values.some((value) => !Number.isFinite(value) || value < 0)) throw new Error("Particle event parameters must be finite and non-negative");
     if (parameters.probability !== undefined && parameters.probability > 1) throw new Error("Particle event probability must be between zero and one");
     if (parameters.count !== undefined && !Number.isSafeInteger(parameters.count)) throw new Error("Particle event count must be an integer");
     if (parameters.maxGeneration !== undefined && !Number.isSafeInteger(parameters.maxGeneration)) throw new Error("Particle event generation depth must be an integer");
+    if (parameters.lifetimeVariability !== undefined && parameters.lifetimeVariability > 1) throw new Error("Particle event lifetime variability must be between zero and one");
     const key = `${archetypeIndex}:${eventIndex}`;
     const merged = { ...this.eventParameters.get(key), ...parameters };
     this.eventParameters.set(key, merged);
@@ -1051,7 +1055,7 @@ class RuntimeParticleEffectInstance2D implements ParticleEffectInstance2D {
   }
   setRenderParameters(parameters: ParticleRenderParameters2D): void {
     this.assertUsable();
-    const numeric = [parameters.pointScale, parameters.intensity, parameters.trailFade, parameters.trailBloom, parameters.paletteTransition, ...(parameters.trailBackground ?? [])].filter((value): value is number => value !== undefined);
+    const numeric = [parameters.pointScale, parameters.intensity, parameters.trailFade, parameters.trailBloom, parameters.paletteTransition, parameters.streakScale, ...(parameters.trailBackground ?? [])].filter((value): value is number => value !== undefined);
     if (numeric.some((value) => !Number.isFinite(value) || value < 0)) throw new Error("Particle render parameters must be finite and non-negative");
     if (parameters.trailFade !== undefined && parameters.trailFade > 1) throw new Error("Particle trail fade must be between zero and one");
     this.renderParameters = { ...this.renderParameters, ...parameters };

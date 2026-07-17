@@ -266,7 +266,7 @@ function buildGlslEvent(effect: CompiledParticleEffect2D): string {
   const eventBranches = events
     .map(
       (entry) =>
-        `if (priority == ${entry.priority} && slot == ${entry.prioritySlot}) { child=${entry.child}; vec4 eventB=uParticleEventB[${entry.global}]; vec4 eventC=uParticleEventC[${entry.global}]; lifetime=eventB.x; inheritance=eventB.y; powerScale=eventB.z; spread=eventB.w; basePower=eventC.w; }`,
+        `if (priority == ${entry.priority} && slot == ${entry.prioritySlot}) { child=${entry.child}; vec4 eventB=uParticleEventB[${entry.global}]; vec4 eventC=uParticleEventC[${entry.global}]; vec4 eventD=uParticleEventD[${entry.global}]; lifetime=eventB.x; inheritance=eventB.y; powerScale=eventB.z; spread=eventB.w; basePower=eventC.w; lifetimeVariability=eventD.x; powerVariability=eventD.y; }`,
     )
     .join("\n  else ");
   const markBranches = events
@@ -290,6 +290,7 @@ uniform vec4 uArchetypePools[${Math.max(1, effect.source.archetypes.length)}];
 uniform vec4 uParticleEventA[${Math.max(1, events.length)}];
 uniform vec4 uParticleEventB[${Math.max(1, events.length)}];
 uniform vec4 uParticleEventC[${Math.max(1, events.length)}];
+uniform vec4 uParticleEventD[${Math.max(1, events.length)}];
 layout(location=0) out vec4 outPosition;
 layout(location=1) out vec4 outVelocity;
 layout(location=2) out vec4 outMetadata;
@@ -307,11 +308,12 @@ void main() {
     int parent=packed/4, slot=packed-parent*4;
     ivec2 parentUv=ivec2(parent%uStateSize.x,parent/uStateSize.x);
     vec4 pa=texelFetch(uPositionState,parentUv,0),pb=texelFetch(uVelocityState,parentUv,0),pc=texelFetch(uMetadataState,parentUv,0);
-    int child=-1;float lifetime=0.0,inheritance=0.0,powerScale=0.0,spread=6.2831853,basePower=24.0;
+    int child=-1;float lifetime=0.0,inheritance=0.0,powerScale=0.0,spread=6.2831853,basePower=24.0,lifetimeVariability=0.0,powerVariability=0.0;
     ${eventBranches}
     if(child>=0){vec4 pool=uArchetypePools[child];bool inPool=id>=int(pool.x+.5)&&id<int(pool.x+pool.y+.5);bool writable=a.z>=a.w||int(pool.z+.5)!=1;
-      if(inPool&&writable){float random=hash21(vec2(float(id),claim));float angle=random*spread;float power=max(basePower,length(pb.xy))*powerScale;
-        a=vec4(pa.xy,0.0,lifetime);b=vec4(pb.xy*inheritance+vec2(cos(angle),sin(angle))*power,0.0,0.0);c=vec4(float(child),pc.y+1.0,pc.z+random,0.0);}}
+      if(inPool&&writable){float random=hash21(vec2(float(id),claim));float angle=random*spread;float power=max(basePower,length(pb.xy))*powerScale*mix(max(0.0,1.0-powerVariability),1.0+powerVariability,hash21(vec2(random,31.7)));
+        float variedLifetime=lifetime*mix(max(.05,1.0-lifetimeVariability),1.0+lifetimeVariability,hash21(vec2(random,73.1)));
+        a=vec4(pa.xy,0.0,variedLifetime);b=vec4(pb.xy*inheritance+vec2(cos(angle),sin(angle))*power,0.0,0.0);c=vec4(float(child),pc.y+1.0,pc.z+random,0.0);}}
   }
   outPosition = a; outVelocity = b; outMetadata = c;
 }`;
@@ -426,6 +428,7 @@ uniform int uRenderStride;
 uniform int uRenderPhase;
 uniform vec2 uCanvasSize;
 uniform float uPointScale;
+uniform float uStreakScale;
 uniform vec4 uArchetypeSize[${Math.max(1, effect.source.archetypes.length)}];
 uniform vec4 uArchetypeLength[${Math.max(1, effect.source.archetypes.length)}];
 uniform vec4 uArchetypeAlpha[${Math.max(1, effect.source.archetypes.length)}];
@@ -467,7 +470,7 @@ void main() {
   vec2 corners[6]=vec2[6](vec2(0,-1),vec2(1,-1),vec2(0,1),vec2(0,1),vec2(1,-1),vec2(1,1));
   vec2 axis=length(b.xy)>0.001?normalize(b.xy):vec2(1,0), normal=vec2(-axis.y,axis.x);
   float lengthVariation=mix(max(0.0,1.0-lengthCurve.w),1.0+lengthCurve.w,hashSeed(fract(vSeed+.71)));
-  float streakLength=max(size,mix(lengthCurve.x,lengthCurve.y,pow(vAge,max(.01,lengthCurve.z)))*lengthVariation*length(b.xy)*.016);
+  float streakLength=max(size,mix(lengthCurve.x,lengthCurve.y,pow(vAge,max(.01,lengthCurve.z)))*lengthVariation*length(b.xy)*.016*uStreakScale);
   vec2 local=-axis*corners[corner].x*streakLength+normal*corners[corner].y*size*.5;
   clip+=vec2(local.x/uCanvasSize.x*2.0,-local.y/uCanvasSize.y*2.0);`
       : ""

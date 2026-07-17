@@ -44,6 +44,8 @@ describe('ParticleEffectCompiler2D', () => {
     expect(program.webgl2.event?.source).toContain('uParticleEventA[1]');
     expect(program.webgl2.event?.source).toContain('uParticleEventB[1]');
     expect(program.webgl2.event?.source).toContain('uParticleEventC[1]');
+    expect(program.webgl2.event?.source).toContain('uParticleEventD[1]');
+    expect(program.webgl2.streakVertex.source).toContain('uStreakScale');
     expect(program.webgl2.eventClaimVertex?.source).toContain('gl_VertexID');
     expect(program.webgl2.eventClaimVertex?.source).toContain('priority*4194304');
     expect(program.webgl2.eventClaimVertex?.source).toContain('uArchetypePools');
