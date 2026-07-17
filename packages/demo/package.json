@@ -5,6 +5,7 @@
   "description": "Browser demo and parity host for GLGameLab",
   "type": "module",
   "scripts": {
+    "predev": "pnpm --filter @hooksjam/gl-game-lab-engine build && pnpm --filter @hooksjam/gl-game-lab-simulations particle:compile",
     "dev": "vite",
     "build": "vite build",
     "typecheck": "tsc --noEmit --project tsconfig.json",
