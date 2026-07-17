@@ -404,14 +404,17 @@ export function validateParticleEffectGraph2D(graph: ParticleEffectGraph2D): Par
 
 function validateArchetypeCapacity(graph: ParticleEffectGraph2D, archetypes: ReadonlySet<string>): void {
   if (!graph.archetypeCapacity) return;
-  const seen = new Set<string>(); let share = 0;
+  const seen = new Set<string>(); let share = 0; let reserved = 0;
   for (const policy of graph.archetypeCapacity) {
     if (!archetypes.has(policy.archetypeId) || seen.has(policy.archetypeId)) throw new Error(`Invalid particle archetype capacity policy: ${policy.archetypeId}`);
     if (!Number.isFinite(policy.share) || policy.share <= 0 || policy.share > 1) throw new Error(`Particle archetype ${policy.archetypeId} has an invalid capacity share`);
     if (policy.reserved !== undefined && (!Number.isSafeInteger(policy.reserved) || policy.reserved < 0)) throw new Error(`Particle archetype ${policy.archetypeId} has an invalid reservation`);
+    reserved += policy.reserved ?? 0;
     seen.add(policy.archetypeId); share += policy.share;
   }
+  if (seen.size !== archetypes.size) throw new Error('Particle archetype capacity policy must include every archetype');
   if (share > 1.000001) throw new Error('Particle archetype capacity shares exceed one');
+  if (reserved > graph.capacity.min) throw new Error(`Particle archetype reservations require ${reserved} slots but minimum capacity is ${graph.capacity.min}`);
 }
 
 function validatePersistedBindings(graph: ParticleEffectGraph2D, parameters: ReadonlySet<string>): void {

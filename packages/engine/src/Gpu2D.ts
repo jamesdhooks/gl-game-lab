@@ -73,6 +73,7 @@ export interface GpuParticleStateSnapshot2D {
   readonly positions: Float32Array;
   readonly velocities: Float32Array;
   readonly metadata?: Float32Array;
+  readonly eventClaims?: Float32Array;
 }
 
 export interface GpuParticleSystem2DOptions {

@@ -56,6 +56,16 @@ export class GpuParticleEventAllocator {
     });
   }
 
+  /** Synchronous full claim snapshot for development diagnostics only. */
+  debugReadback(): Float32Array {
+    this.assertUsable();
+    const output = new Float32Array(this.claims.width * this.claims.height * 4);
+    this.gl.bindFramebuffer(this.gl.FRAMEBUFFER, this.claims.framebuffer);
+    this.gl.readPixels(0, 0, this.claims.width, this.claims.height, this.gl.RGBA, this.gl.FLOAT, output);
+    this.gl.bindFramebuffer(this.gl.FRAMEBUFFER, null);
+    return output;
+  }
+
   dispose(): void {
     if (this.disposed) return; this.disposed = true;
     this.claims.dispose(); this.resolve.dispose(); this.gl.deleteVertexArray(this.claimVao); this.gl.deleteProgram(this.claimProgram); this.uniforms.clear();

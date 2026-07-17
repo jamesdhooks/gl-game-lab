@@ -11,10 +11,12 @@ import type {
   ParticleEffectRuntimeBackend2D,
   ParticleColliderSet2D,
   ParticlePalette2D,
+  ParticleOverflowPolicy2D,
   ParticleRenderTier2D,
   ParticleRuntimeEmission2D,
   ParticleParameterValue2D,
 } from '@hooksjam/gl-game-lab-engine';
+import { resolveParticleArchetypePartitions2D } from '@hooksjam/gl-game-lab-engine';
 import { ParticleEventWindowScheduler } from './ParticleEventWindowScheduler.js';
 
 const COMMAND_CAPACITY = 64;
@@ -45,7 +47,11 @@ export class WebGLParticleEffectRuntimeBackend2D implements ParticleEffectRuntim
 class WebGLParticleEffectResource2D implements ParticleEffectBackendResource2D {
   private readonly particles: GpuParticleSystem2D;
   private readonly commands = new Float32Array(COMMAND_CAPACITY * COMMAND_FLOATS);
+  private readonly preparedCommands = new Float32Array(COMMAND_CAPACITY * COMMAND_FLOATS);
   private readonly commandImportance = new Int8Array(COMMAND_CAPACITY);
+  private readonly poolData: Float32Array;
+  private readonly poolCursor: Int32Array;
+  private readonly poolQueued: Int32Array;
   private readonly archetypeMotion: Float32Array;
   private readonly archetypeForce: Float32Array;
   private readonly archetypeCollision: Float32Array;
@@ -62,9 +68,8 @@ class WebGLParticleEffectResource2D implements ParticleEffectBackendResource2D {
   private capsuleCount = 0;
   private readonly batch: GpuParticleCommandBatch2D;
   private commandCount = 0;
+  private preparedCommandCount = 0;
   private particleCount = 0;
-  private cursor = 0;
-  private frameStart = 0;
   private paletteCount = 1;
   private viewportWidth = 1;
   private viewportHeight = 1;
@@ -110,6 +115,17 @@ class WebGLParticleEffectResource2D implements ParticleEffectBackendResource2D {
       metadata: program.reflection.stateTargets === 3,
     });
     this.eventWindows = new ParticleEventWindowScheduler(program);
+    const partitions = resolveParticleArchetypePartitions2D(program.effect, capacity);
+    this.poolData = new Float32Array(Math.max(1, partitions.length) * 4);
+    this.poolCursor = new Int32Array(Math.max(1, partitions.length));
+    this.poolQueued = new Int32Array(Math.max(1, partitions.length));
+    for (const partition of partitions) {
+      const offset = partition.archetypeIndex * 4;
+      this.poolData[offset] = partition.start;
+      this.poolData[offset + 1] = partition.count;
+      this.poolData[offset + 2] = overflowPolicyCode(partition.overflow);
+      this.poolCursor[partition.archetypeIndex] = partition.start;
+    }
     this.archetypeMotion = new Float32Array(Math.max(1, program.effect.source.archetypes.length) * 4);
     this.archetypeForce = new Float32Array(Math.max(1, program.effect.source.archetypes.length) * 4);
     this.archetypeCollision = new Float32Array(Math.max(1, program.effect.source.archetypes.length) * 4);
@@ -146,8 +162,8 @@ class WebGLParticleEffectResource2D implements ParticleEffectBackendResource2D {
     this.palette.set([1, 1, 1]);
     const owner = this;
     this.batch = Object.freeze({
-      get data() { return owner.commands; },
-      get count() { return owner.commandCount; },
+      get data() { return owner.preparedCommands; },
+      get count() { return owner.preparedCommandCount; },
       get particleCount() { return owner.particleCount; },
     });
   }
@@ -170,9 +186,13 @@ class WebGLParticleEffectResource2D implements ParticleEffectBackendResource2D {
     const archetype = this.program.effect.source.archetypes[archetypeId ?? -1];
     if (archetypeId === undefined || !archetype) throw new Error(`Particle emitter references invalid archetype ${emitter.archetypeId}`);
     const replacedCount = replacing ? Math.max(0, Math.round(this.commands[index * COMMAND_FLOATS + 2] ?? 0)) : 0;
-    const remainingBudget = Math.max(0, this.particles.capacity - (this.particleCount - replacedCount));
+    const replacedArchetype = replacing ? Math.max(0, Math.round(this.commands[index * COMMAND_FLOATS] ?? 0)) : archetypeId;
+    if (replacing) this.poolQueued[replacedArchetype] = Math.max(0, this.poolQueued[replacedArchetype]! - replacedCount);
+    const poolCapacity = Math.max(0, Math.round(this.poolData[archetypeId * 4 + 1] ?? 0));
+    const remainingBudget = Math.max(0, poolCapacity - this.poolQueued[archetypeId]!);
     const count = Math.min(emission.count, remainingBudget);
     if (count <= 0) {
+      if (replacing) this.poolQueued[replacedArchetype] = this.poolQueued[replacedArchetype]! + replacedCount;
       this.droppedCommands += 1;
       this.droppedParticles += emission.count;
       return;
@@ -183,7 +203,7 @@ class WebGLParticleEffectResource2D implements ParticleEffectBackendResource2D {
     // replacement has settled. This field is deliberately temporary here.
     this.commands[offset + 1] = 0;
     this.commands[offset + 2] = count;
-    this.commands[offset + 3] = spawnShapeCode(emitter.source.kind);
+    this.commands[offset + 3] = spawnShapeCode(emitter.source.kind) + 32 * Math.round(this.poolData[archetypeId * 4 + 2] ?? 0);
     this.commands[offset + 4] = emission.positionX;
     this.commands[offset + 5] = emission.positionY;
     this.commands[offset + 6] = emission.inheritedVelocityX ?? 0;
@@ -193,10 +213,11 @@ class WebGLParticleEffectResource2D implements ParticleEffectBackendResource2D {
     this.commands[offset + 10] = emission.power;
     this.commands[offset + 11] = archetype.lifecycle.lifetime;
     this.commands[offset + 12] = emission.seed;
-    this.commands[offset + 13] = emission.seed / 0x1_0000_0000;
+    this.commands[offset + 13] = 0;
     this.commands[offset + 14] = archetype.lifecycle.lifetimeVariability ?? 0;
     this.commands[offset + 15] = emission.emitterIndex;
     this.particleCount += count - replacedCount;
+    this.poolQueued[archetypeId] = this.poolQueued[archetypeId]! + count;
     this.droppedParticles += emission.count - count;
     if (count < emission.count) this.truncatedCommands += 1;
     if ((archetype.events?.length ?? 0) > 0) {
@@ -249,10 +270,11 @@ class WebGLParticleEffectResource2D implements ParticleEffectBackendResource2D {
       this.particles.stepEvents((gl, uniform) => this.bindSimulation(gl, uniform, deltaSeconds * timescale));
     }
     this.eventWindows.compact(this.simulationTime);
-    this.cursor = (this.frameStart + this.particleCount) % this.particles.capacity;
     this.commandCount = 0;
+    this.preparedCommandCount = 0;
     this.particleCount = 0;
     this.commandImportance.fill(0);
+    this.poolQueued.fill(0);
   }
 
   render(target: GpuRenderTarget2D, tier: ParticleRenderTier2D): void {
@@ -274,8 +296,12 @@ class WebGLParticleEffectResource2D implements ParticleEffectBackendResource2D {
     this.particles.clear();
     this.particles.clearTrails();
     this.commandCount = 0;
+    this.preparedCommandCount = 0;
     this.particleCount = 0;
-    this.cursor = 0;
+    for (let index = 0; index < this.poolCursor.length; index += 1) {
+      this.poolCursor[index] = Math.round(this.poolData[index * 4] ?? 0);
+    }
+    this.poolQueued.fill(0);
     this.eventWindows.clear();
     this.simulationTime = 0;
   }
@@ -341,23 +367,46 @@ class WebGLParticleEffectResource2D implements ParticleEffectBackendResource2D {
     gl.uniform4fv(uniform('uArchetypeMotion[0]'), this.archetypeMotion);
     gl.uniform4fv(uniform('uArchetypeForce[0]'), this.archetypeForce);
     gl.uniform4fv(uniform('uArchetypeCollision[0]'), this.archetypeCollision);
+    gl.uniform4fv(uniform('uArchetypePools[0]'), this.poolData);
     gl.uniform4fv(uniform('uEmitterSource[0]'), this.emitterSource);
     gl.uniform1i(uniform('uCircleColliderCount'), this.circleCount);
     gl.uniform1i(uniform('uCapsuleColliderCount'), this.capsuleCount);
     gl.uniform4fv(uniform('uCircleColliders[0]'), this.circles);
     gl.uniform4fv(uniform('uCapsuleA[0]'), this.capsuleA);
     gl.uniform4fv(uniform('uCapsuleB[0]'), this.capsuleB);
-    gl.uniform1i(uniform('uParticleCommandFrameStart'), this.frameStart);
   }
 
   private prepareCommands(): void {
-    this.frameStart = this.cursor;
-    let prefix = 0;
+    this.preparedCommandCount = 0;
     for (let index = 0; index < this.commandCount; index += 1) {
-      const offset = index * COMMAND_FLOATS;
-      this.commands[offset + 1] = prefix;
-      prefix += Math.max(0, Math.round(this.commands[offset + 2] ?? 0));
+      const sourceOffset = index * COMMAND_FLOATS;
+      const archetype = Math.max(0, Math.round(this.commands[sourceOffset] ?? 0));
+      const poolOffset = archetype * 4;
+      const poolStart = Math.round(this.poolData[poolOffset] ?? 0);
+      const poolCount = Math.max(1, Math.round(this.poolData[poolOffset + 1] ?? 1));
+      const poolEnd = poolStart + poolCount;
+      let target = this.poolCursor[archetype] ?? poolStart;
+      let remaining = Math.max(0, Math.round(this.commands[sourceOffset + 2] ?? 0));
+      let relativeBase = 0;
+      while (remaining > 0 && this.preparedCommandCount < COMMAND_CAPACITY) {
+        const segmentCount = Math.min(remaining, poolEnd - target);
+        const destinationOffset = this.preparedCommandCount * COMMAND_FLOATS;
+        copyCommand(this.commands, sourceOffset, this.preparedCommands, destinationOffset);
+        this.preparedCommands[destinationOffset + 1] = target;
+        this.preparedCommands[destinationOffset + 2] = segmentCount;
+        this.preparedCommands[destinationOffset + 13] = relativeBase;
+        this.preparedCommandCount += 1;
+        remaining -= segmentCount;
+        relativeBase += segmentCount;
+        target = remaining > 0 ? poolStart : target + segmentCount;
+      }
+      if (remaining > 0) {
+        this.droppedParticles += remaining;
+        this.truncatedCommands += 1;
+      }
+      this.poolCursor[archetype] = target >= poolEnd ? poolStart : target;
     }
+    sortCommandsByTarget(this.preparedCommands, this.preparedCommandCount);
   }
 
   private renderTier(target: GpuRenderTarget2D, tier: ParticleRenderTier2D): void {
@@ -380,6 +429,33 @@ function lowestPriorityIndex(priorities: Int8Array): number {
 function spawnShapeCode(shape: string): number {
   const index = ['point', 'disc', 'line', 'cone', 'arc', 'ring', 'radial', 'spiral', 'pinwheel', 'shower', 'rectangle', 'path', 'texture-mask', 'mesh', 'particles', 'collision-contacts', 'external-points', 'custom'].indexOf(shape);
   return Math.max(0, index);
+}
+
+function overflowPolicyCode(policy: ParticleOverflowPolicy2D): number {
+  return policy === 'drop-new' ? 1 : policy === 'reserve-priority' ? 2 : 0;
+}
+
+function copyCommand(source: Float32Array, sourceOffset: number, target: Float32Array, targetOffset: number): void {
+  for (let index = 0; index < COMMAND_FLOATS; index += 1) {
+    target[targetOffset + index] = source[sourceOffset + index]!;
+  }
+}
+
+function sortCommandsByTarget(commands: Float32Array, count: number): void {
+  for (let index = 1; index < count; index += 1) {
+    let current = index;
+    while (current > 0) {
+      const leftOffset = (current - 1) * COMMAND_FLOATS;
+      const rightOffset = current * COMMAND_FLOATS;
+      if (commands[leftOffset + 1]! <= commands[rightOffset + 1]!) break;
+      for (let component = 0; component < COMMAND_FLOATS; component += 1) {
+        const temporary = commands[leftOffset + component]!;
+        commands[leftOffset + component] = commands[rightOffset + component]!;
+        commands[rightOffset + component] = temporary;
+      }
+      current -= 1;
+    }
+  }
 }
 
 function maximumEventCandidateLanes(program: CompiledParticleProgram2D): number { return Math.max(1, ...program.effect.source.archetypes.map((archetype) => archetype.events?.length ?? 0)); }

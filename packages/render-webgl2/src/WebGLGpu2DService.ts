@@ -255,7 +255,12 @@ class WebGLGpuParticleSystem implements GpuParticleSystem2D {
   copyStateTo(target: GpuParticleSystem2D): boolean {
     return target instanceof WebGLGpuParticleSystem && this.owner.value.state.copyTo(target.owner.value.state);
   }
-  debugReadback(): import('@hooksjam/gl-game-lab-engine').GpuParticleStateSnapshot2D { return this.owner.value.state.debugReadback(); }
+  debugReadback(): import('@hooksjam/gl-game-lab-engine').GpuParticleStateSnapshot2D {
+    const bundle = this.owner.value;
+    const state = bundle.state.debugReadback();
+    const eventClaims = bundle.eventAllocator?.debugReadback();
+    return Object.freeze({ ...state, ...(eventClaims ? { eventClaims } : {}) });
+  }
   diagnostics(): GpuParticleSystemDiagnostics2D {
     return Object.freeze({
       commandCapacity: this.owner.value.commands.capacity,

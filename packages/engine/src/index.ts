@@ -41,6 +41,10 @@ export {
   type WorkerTaskOptions,
 } from './Services.js';
 export {
+  resolveParticleArchetypePartitions2D,
+  type ParticleArchetypePartition2D,
+} from './ParticleCapacityPartitions2D.js';
+export {
   DEFAULT_PERFORMANCE_BUDGETS,
   EngineDiagnostics,
   type EngineDiagnosticsSnapshot,
