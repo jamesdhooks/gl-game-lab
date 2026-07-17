@@ -12,6 +12,7 @@ import type {
   ParticleColliderSet2D,
   ParticleForceFieldSet2D,
   ParticleDomain2D,
+  ParticleEmitterSourceOverride2D,
   ParticlePalette2D,
   ParticleOverflowPolicy2D,
   ParticleRenderTier2D,
@@ -287,6 +288,8 @@ class WebGLParticleEffectResource2D implements ParticleEffectBackendResource2D {
     this.domainData.set([value.center[0],value.center[1],value.shape==='circle'?(value.radius??0):extents[0],value.shape==='circle'?0:extents[1]]);
     this.domainOptions.set([value.shape==='circle'?1:0,domainBehaviorCode(value.behavior),value.damping??1,value.margin??0]);
   }
+
+  setEmitterSource(emitterIndex:number,value:ParticleEmitterSourceOverride2D):void{this.assertUsable();const offset=emitterIndex*4;if(offset<0||offset+3>=this.emitterSource.length)throw new Error(`Invalid particle emitter source index: ${emitterIndex}`);if(value.radius!==undefined)this.emitterSource[offset]=value.radius;if(value.innerRadius!==undefined)this.emitterSource[offset+1]=value.innerRadius;else if(value.length!==undefined)this.emitterSource[offset+1]=value.length;if(value.arc!==undefined)this.emitterSource[offset+2]=value.arc;if(value.spread!==undefined)this.emitterSource[offset+3]=value.spread;}
 
   setRenderScale(scale: number): void {
     this.assertUsable();

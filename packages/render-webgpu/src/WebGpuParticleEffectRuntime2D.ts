@@ -2,6 +2,7 @@ import type {
   CompiledParticleProgram2D,
   GpuRenderTarget2D,
   ParticleDomain2D,
+  ParticleEmitterSourceOverride2D,
   ParticleEffectBackendDiagnostics2D,
   ParticleEffectBackendResource2D,
   ParticleEffectRuntimeBackend2D,
@@ -82,6 +83,7 @@ class WebGpuParticleEffectResource2D implements ParticleEffectBackendResource2D 
   private readonly frameBytes = new Uint8Array(this.frameData);
   private readonly zeroEventCounters: Uint32Array;
   private readonly attractorData = new Float32Array(16 * 12);
+  private readonly sourceData: Float32Array;
   private readonly domainData = new Float32Array([0, 0, 1, 1, 0, 0, 1, 0]);
   private attractorCount = 0;
   private forceFieldRevision = -1;
@@ -139,7 +141,7 @@ class WebGpuParticleEffectResource2D implements ParticleEffectBackendResource2D 
     device.queue.writeBuffer(this.attractors, 0, this.attractorData);
     this.domain = device.createBuffer({ label: `${id}.domain`, size: this.domainData.byteLength, usage: STORAGE_COPY_USAGE });
     device.queue.writeBuffer(this.domain, 0, this.domainData);
-    const sourceData = new Float32Array(Math.max(1, program.effect.source.emitters.length) * 4);
+    const sourceData = new Float32Array(Math.max(1, program.effect.source.emitters.length) * 4);this.sourceData=sourceData;
     const emitterInitializationData=new Float32Array(Math.max(1,program.effect.source.emitters.length)*4);
     program.effect.source.emitters.forEach((emitter, index) => {
       const source = emitter.source,initialization=emitter.initialization,mode=initialization?.directionMode;
@@ -234,6 +236,8 @@ class WebGpuParticleEffectResource2D implements ParticleEffectBackendResource2D 
     this.domainData.set([value.center[0],value.center[1],value.shape==='circle'?(value.radius??0):extents[0],value.shape==='circle'?0:extents[1],value.shape==='circle'?1:0,domainBehaviorCode(value.behavior),value.damping??1,value.margin??0]);
     this.device.queue.writeBuffer(this.domain,0,this.domainData);this.uploadBytes+=this.domainData.byteLength;
   }
+
+  setEmitterSource(emitterIndex:number,value:ParticleEmitterSourceOverride2D):void{this.assertUsable();const offset=emitterIndex*4;if(offset<0||offset+3>=this.sourceData.length)throw new Error(`Invalid particle emitter source index: ${emitterIndex}`);if(value.radius!==undefined)this.sourceData[offset]=value.radius;if(value.innerRadius!==undefined)this.sourceData[offset+1]=value.innerRadius;else if(value.length!==undefined)this.sourceData[offset+1]=value.length;if(value.arc!==undefined)this.sourceData[offset+2]=value.arc;if(value.spread!==undefined)this.sourceData[offset+3]=value.spread;this.device.queue.writeBuffer(this.sources,offset*Float32Array.BYTES_PER_ELEMENT,this.sourceData,offset,4);this.uploadBytes+=16;}
 
   update(deltaSeconds: number, timescale: number): void {
     this.assertUsable();

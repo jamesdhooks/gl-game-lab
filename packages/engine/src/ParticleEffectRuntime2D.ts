@@ -37,6 +37,14 @@ export interface ParticleEmissionOverride2D {
   readonly inheritedVelocity?: readonly [number, number];
 }
 
+export interface ParticleEmitterSourceOverride2D {
+  readonly radius?: number;
+  readonly innerRadius?: number;
+  readonly length?: number;
+  readonly arc?: number;
+  readonly spread?: number;
+}
+
 /** Reusable command writer for allocation-free emission in frame loops. */
 export interface ParticleEmissionWriter2D {
   count(value: number): ParticleEmissionWriter2D;
@@ -145,6 +153,7 @@ export interface ParticleEffectBackendResource2D {
   setColliders?(colliders: ParticleColliderSet2D): void;
   setForceFields?(fields: ParticleForceFieldSet2D): void;
   setDomain?(domain: ParticleDomain2D): void;
+  setEmitterSource?(emitterIndex: number, source: ParticleEmitterSourceOverride2D): void;
   setRenderScale?(scale: number): void;
   update(deltaSeconds: number, timescale: number): void;
   render(target: GpuRenderTarget2D, tier: ParticleRenderTier2D): void;
@@ -193,6 +202,7 @@ class RecoveringParticleEffectBackendResource2D implements ParticleEffectBackend
   setColliders(value: ParticleColliderSet2D): void { this.invoke((resource) => { resource.setColliders?.(value); }); }
   setForceFields(value: ParticleForceFieldSet2D): void { this.invoke((resource) => { resource.setForceFields?.(value); }); }
   setDomain(value: ParticleDomain2D): void { this.invoke((resource) => { resource.setDomain?.(value); }); }
+  setEmitterSource(emitterIndex: number, value: ParticleEmitterSourceOverride2D): void { this.invoke((resource) => { resource.setEmitterSource?.(emitterIndex, value); }); }
   setRenderScale(value: number): void { this.invoke((resource) => { resource.setRenderScale?.(value); }); }
   update(deltaSeconds: number, timescale: number): void { this.invoke((resource) => { resource.update(deltaSeconds, timescale); }); }
   render(target: GpuRenderTarget2D, tier: ParticleRenderTier2D): void { this.invoke((resource) => { resource.render(target, tier); }); }
@@ -241,6 +251,7 @@ export interface ParticleEffectInstance2D {
   setColliders(colliders: ParticleColliderSet2D): void;
   setForceFields(fields: ParticleForceFieldSet2D): void;
   setDomain(domain: ParticleDomain2D): void;
+  setEmitterSource(emitterId: string, source: ParticleEmitterSourceOverride2D): void;
   setTimescale(value: number): void;
   setQualityTier(tier: ParticleRenderTier2D): void;
   setRenderScale(scale: number): void;
@@ -600,6 +611,14 @@ class RuntimeParticleEffectInstance2D implements ParticleEffectInstance2D {
     if ((domain.margin ?? 0) < 0) throw new Error('Particle domain margin must be non-negative');
     if ((domain.damping ?? 1) < 0 || (domain.damping ?? 1) > 1) throw new Error('Particle domain damping must be between zero and one');
     this.backend.setDomain?.(domain);
+  }
+  setEmitterSource(emitterId: string, source: ParticleEmitterSourceOverride2D): void {
+    this.assertUsable(); const index=this.emitters.findIndex((entry)=>entry.definition.id===emitterId);
+    if(index<0)throw new Error(`Unknown particle emitter: ${emitterId}`);
+    const values=[source.radius,source.innerRadius,source.length,source.arc,source.spread].filter((value):value is number=>value!==undefined);
+    if(values.some((value)=>!Number.isFinite(value)||value<0))throw new Error('Particle emitter source overrides must be finite and non-negative');
+    if(source.innerRadius!==undefined&&source.radius!==undefined&&source.innerRadius>source.radius)throw new Error('Particle emitter inner radius cannot exceed its radius');
+    this.backend.setEmitterSource?.(index,source);
   }
   setTimescale(value: number): void { this.assertUsable(); this.timescale = validateTimescale(value); }
   setQualityTier(tier: ParticleRenderTier2D): void { this.assertUsable(); if (!this.program.effect.source.renderRecipes.recipes.some((entry) => entry.tier === tier)) throw new Error(`Particle effect does not render tier: ${tier}`); this.tier = tier; }

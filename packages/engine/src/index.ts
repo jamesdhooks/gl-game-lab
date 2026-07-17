@@ -274,6 +274,7 @@ export {
   type ParticleEffectsDiagnostics2D,
   type ParticleEmissionOverride2D,
   type ParticleEmissionWriter2D,
+  type ParticleEmitterSourceOverride2D,
   type ParticleEmitterHandle2D,
   type ParticleRuntimeEmission2D,
   type ParticleCircleCollider2D,
