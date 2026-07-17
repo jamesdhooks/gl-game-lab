@@ -124,7 +124,7 @@ export const SPARKS_PARTICLE_GRAPH = defineParticleEffect2D({
     { id: 'gravity', kind: 'number', defaultValue: 760, min: 0, max: 4000 },
     { id: 'air-drag', kind: 'number', defaultValue: 0.08, min: 0, max: 4 },
     { id: 'turbulence', kind: 'number', defaultValue: 0.22, min: 0, max: 4 },
-    { id: 'restitution', kind: 'number', defaultValue: 0.58, min: 0, max: 1 },
+    { id: 'restitution', kind: 'number', defaultValue: 0.58, min: 0, max: 1.35 },
     { id: 'friction', kind: 'number', defaultValue: 0.18, min: 0, max: 1 },
     { id: 'collision-life-loss', kind: 'number', defaultValue: 0.12, min: 0, max: 1 },
     { id: 'core-size', kind: 'number', defaultValue: 1, min: 0.02, max: 10 },

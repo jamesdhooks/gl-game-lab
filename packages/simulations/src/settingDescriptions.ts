@@ -252,7 +252,7 @@ const EXPERIENCE_DESCRIPTIONS: Readonly<Record<string, DescriptionCatalog>> = Ob
     sparkDirectionChaos: 'Controls per-particle scatter plus burst-to-burst changes in welding direction and cone width.',
     torchRadius: 'Sets the radius of the bright source around the pointer.',
     coreSparkTorchPositionVariability: 'Controls how far core sparks vary from the exact torch position.',
-    bounceRestitution: 'Controls how much normal speed sparks retain after hitting a wall or rail.',
+    bounceRestitution: 'Controls how much normal speed sparks retain after impact; values above one create a super-elastic rebound.',
     bounceLifeDecay: 'Controls how much remaining spark lifetime is lost on each collision.',
     bounceBurstChance: 'Controls the probability that a collision emits an additional burst.',
     bounceBurstMinSpeed: 'Sets the minimum impact speed required to create a bounce burst.',

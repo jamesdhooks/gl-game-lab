@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { ExperienceRegistry } from '@hooksjam/gl-game-lab-engine';
-import { COMPILED_SPARKS_PLUGIN_ID, createSparksConfig, createSparksDefaultRails, createSparksPreviewRails, resolveSparksEmissionCone, SPARKS_DEFAULTS, SPARKS_PARTICLE_EFFECT, SPARKS_PARTICLE_PROGRAM, SPARKS_PARTICLE_SETTING_BINDINGS, SPARKS_SETTINGS, SPARKS_STYLE_MANIFEST, sparksDefinition } from '../index.js';
+import { COMPILED_SPARKS_PLUGIN_ID, createSparksConfig, createSparksDefaultRails, createSparksPreviewRails, resolveSparksBounceEventParameters, resolveSparksEmissionCone, SPARKS_DEFAULTS, SPARKS_PARTICLE_EFFECT, SPARKS_PARTICLE_GRAPH, SPARKS_PARTICLE_PROGRAM, SPARKS_PARTICLE_SETTING_BINDINGS, SPARKS_SETTINGS, SPARKS_STYLE_MANIFEST, sparksDefinition } from '../index.js';
 import { SPARKS_POINT_FRAGMENT_SHADER, SPARKS_POINT_VERTEX_SHADER, SPARKS_STEP_SHADER, SPARKS_TRAIL_VERTEX_SHADER } from '../sparks/shaders.js';
 import { sparksBloomIntensity } from '../sparks/config.js';
 describe('Sparks', () => {
@@ -125,5 +125,40 @@ describe('Sparks', () => {
   it('maps Ultra bloom strength directly to additive post-process exposure', () => {
     expect(sparksBloomIntensity(createSparksConfig({ bloomStrength: 0 }))).toBe(0);
     expect(sparksBloomIntensity(createSparksConfig({ bloomStrength: 7.2 }))).toBe(7.2);
+  });
+
+  it('routes every visible Bounce physics setting to a live compiled parameter', () => {
+    const config = createSparksConfig({
+      bounceRestitution: 1.35,
+      bounceLifeDecay: 0.61,
+      bounceBurstChance: 0.73,
+      bounceBurstMinSpeed: 420,
+      bounceBurstCount: 31,
+      bounceBurstCountSpeedScale: 1.6,
+      bounceBurstImpactSpeedScale: 2.4,
+      bounceBurstSpread: 2.25,
+    });
+    expect(resolveSparksBounceEventParameters(config)).toMatchObject({
+      probability: 0.73,
+      count: 31,
+      minimumSpeed: 420,
+      countSpeedScale: 1.6,
+      impactPowerScale: 2.4,
+      spread: 2.25 * Math.PI / 3,
+    });
+    expect(SPARKS_PARTICLE_GRAPH.parameters.find(({ id }) => id === 'restitution')?.max).toBe(1.35);
+    expect(SPARKS_PARTICLE_GRAPH.persistedBindings).toEqual(expect.arrayContaining([
+      expect.objectContaining({ parameterId: 'restitution', key: 'bounceRestitution' }),
+      expect.objectContaining({ parameterId: 'collision-life-loss', key: 'bounceLifeDecay' }),
+    ]));
+    expect(SPARKS_PARTICLE_GRAPH.moduleBindings).toEqual(expect.arrayContaining([
+      expect.objectContaining({ target: 'archetype.primary.collision.restitution', parameterId: 'restitution' }),
+      expect.objectContaining({ target: 'archetype.primary.collision.lifetimeLoss', parameterId: 'collision-life-loss' }),
+    ]));
+  });
+
+  it('does not inject removed bounce aliases into modern configs', () => {
+    expect(SPARKS_DEFAULTS).not.toHaveProperty('bounceBurstSpeedScale');
+    expect(SPARKS_DEFAULTS).not.toHaveProperty('bounceBurstLifeScale');
   });
 });

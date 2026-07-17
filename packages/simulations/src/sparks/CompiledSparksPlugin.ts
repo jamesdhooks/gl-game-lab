@@ -14,7 +14,7 @@ import {
   type ParticleEffectInstance2D,
 } from '@hooksjam/gl-game-lab-engine';
 import { registerSimulationRuntime } from '../SimulationPluginLifecycle.js';
-import { createSparksConfig, SPARKS_DEFAULTS, sparksBloomIntensity, sparksNumber, sparksString, type SparksConfig } from './config.js';
+import { createSparksConfig, resolveSparksBounceEventParameters, SPARKS_DEFAULTS, sparksBloomIntensity, sparksNumber, sparksString, type SparksConfig } from './config.js';
 import { SPARKS_PARTICLE_PROGRAM } from '../particlePrograms.js';
 import { SPARKS_RAIL_SHADER } from './shaders.js';
 import { resolveSparksEmissionCone } from './emission.js';
@@ -210,22 +210,7 @@ export function createCompiledSparksPlugin(initial: SparksConfig = SPARKS_DEFAUL
         effect.setParameter('bounce-length-variability', sparksNumber(config, 'bounceSparkLengthVariability') * depth);
         effect.setEmitterSource('core-contact', { radius: sparksNumber(config, 'torchRadius') });
         effect.setEmitterSource('shower', { radius: sparksNumber(config, 'torchRadius') });
-        effect.setEventParameters('primary', 0, {
-          probability: sparksNumber(config, 'bounceBurstChance'),
-          count: Math.round(sparksNumber(config, 'bounceBurstCount')),
-          maxGeneration: 1,
-          lifetime: Math.max(0.001, sparksNumber(config, 'bounceSparkLifespan')),
-          velocityInheritance: 0.08,
-          powerScale: sparksNumber(config, 'bounceSparkSpeedScale'),
-          impactPowerScale: sparksNumber(config, 'bounceBurstImpactSpeedScale'),
-          spread: sparksNumber(config, 'bounceBurstSpread') * Math.PI / 3,
-          minimumSpeed: sparksNumber(config, 'bounceBurstMinSpeed'),
-          countSpeedScale: sparksNumber(config, 'bounceBurstCountSpeedScale'),
-          speedReference: Math.max(1, sparksNumber(config, 'sparkPower') * 1.35),
-          basePower: sparksNumber(config, 'sparkPower'),
-          lifetimeVariability: clamp(sparksNumber(config, 'bounceSparkLifespanVariability'), 0, 1),
-          powerVariability: sparksNumber(config, 'bounceSparkSpeedVariability'),
-        });
+        effect.setEventParameters('primary', 0, resolveSparksBounceEventParameters(config));
         effect.setQualityTier(renderTier(config));
         effect.setRenderScale(renderScale(config, capacity));
         const background = sparksColor3(requireStyle().background);

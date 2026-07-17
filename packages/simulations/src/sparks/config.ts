@@ -1,4 +1,4 @@
-import type { ExperienceSetting, ExperienceSettingValue } from '@hooksjam/gl-game-lab-engine';
+import type { ExperienceSetting, ExperienceSettingValue, ParticleEventParameters2D } from '@hooksjam/gl-game-lab-engine';
 
 export type SparksConfig = Readonly<Record<string, ExperienceSettingValue>>;
 const EMITTER_MODES = ['welding', 'pinwheel', 'shower'];
@@ -53,7 +53,6 @@ export const SPARKS_DEFAULTS: SparksConfig = Object.freeze({
   ...modernDefaults,
   coreFlashRate: 3.2, coreFlashSize: 1, coreFlashVariability: .56, coreIntensity: 3.65, coreAfterglow: .38,
   particleSize: 3.6, sparkLength: 1, sparkSizeVariability: .56, sparkLifespan: 1, sparkLifespanVariability: .34,
-  bounceBurstSpeedScale: .72, bounceBurstLifeScale: .58,
 });
 
 export function createSparksConfig(values: Readonly<Record<string, ExperienceSettingValue>> = {}): SparksConfig {
@@ -71,6 +70,26 @@ export function createSparksConfig(values: Readonly<Record<string, ExperienceSet
 export function sparksNumber(config: SparksConfig, key: string): number { const value = config[key]; if (typeof value !== 'number') throw new Error(`Sparks numeric setting is unavailable: ${key}`); return value; }
 export function sparksString(config: SparksConfig, key: string): string { const value = config[key]; if (typeof value !== 'string') throw new Error(`Sparks string setting is unavailable: ${key}`); return value; }
 export function sparksBloomIntensity(config: SparksConfig): number { return sparksNumber(config, 'bloomStrength'); }
+
+/** Maps every authored bounce-burst control to the shared GPU event contract. */
+export function resolveSparksBounceEventParameters(config: SparksConfig): ParticleEventParameters2D {
+  return Object.freeze({
+    probability: sparksNumber(config, 'bounceBurstChance'),
+    count: Math.round(sparksNumber(config, 'bounceBurstCount')),
+    maxGeneration: 1,
+    lifetime: Math.max(0.001, sparksNumber(config, 'bounceSparkLifespan')),
+    velocityInheritance: 0.08,
+    powerScale: sparksNumber(config, 'bounceSparkSpeedScale'),
+    impactPowerScale: sparksNumber(config, 'bounceBurstImpactSpeedScale'),
+    spread: sparksNumber(config, 'bounceBurstSpread') * Math.PI / 3,
+    minimumSpeed: sparksNumber(config, 'bounceBurstMinSpeed'),
+    countSpeedScale: sparksNumber(config, 'bounceBurstCountSpeedScale'),
+    speedReference: Math.max(1, sparksNumber(config, 'sparkPower') * 1.35),
+    basePower: sparksNumber(config, 'sparkPower'),
+    lifetimeVariability: Math.max(0, Math.min(1, sparksNumber(config, 'bounceSparkLifespanVariability'))),
+    powerVariability: sparksNumber(config, 'bounceSparkSpeedVariability'),
+  });
+}
 
 function n(key:string,label:string,section:string,min:number,max:number,step:number,defaultValue:number,visibleModes?:readonly string[]) { return Object.freeze({key,label,section,type:'number' as const,min,max,step,default:defaultValue,...(visibleModes?{visibleModes}: {})}); }
 function select(key:string,label:string,section:string,defaultValue:string,options:readonly (readonly [string,string])[]) { return Object.freeze({key,label,section,type:'select' as const,default:defaultValue,options:Object.freeze(options.map(([optionLabel,value])=>Object.freeze({label:optionLabel,value})))}); }
