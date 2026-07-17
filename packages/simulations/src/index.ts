@@ -67,6 +67,7 @@ export { TURING_SKIN_PLUGIN_ID, TuringSkinControllerService, createTuringSkinPlu
 export { TURING_SKIN_STYLE_MANIFEST } from './turing-skin/styles.js';
 export { ORBITAL_SHRAPNEL_DEFAULTS, ORBITAL_SHRAPNEL_SETTINGS, createOrbitalShrapnelConfig, orbitalBoolean, orbitalNumber, orbitalString, type OrbitalShrapnelConfig } from './orbital-shrapnel/config.js';
 export { ORBITAL_SHRAPNEL_PLUGIN_ID, OrbitalShrapnelControllerService, createOrbitalShrapnelPlugin, type OrbitalShrapnelController, type OrbitalShrapnelMode } from './orbital-shrapnel/OrbitalShrapnelPlugin.js';
+export { COMPILED_ORBITAL_SHRAPNEL_PLUGIN_ID, CompiledOrbitalShrapnelControllerService, createCompiledOrbitalShrapnelPlugin, type CompiledOrbitalShrapnelController, type CompiledOrbitalShrapnelMode } from './orbital-shrapnel/CompiledOrbitalShrapnelPlugin.js';
 export { ORBITAL_SHRAPNEL_STYLE_MANIFEST } from './orbital-shrapnel/styles.js';
 export { ORBITAL_SHRAPNEL_PARTICLE_EFFECT, ORBITAL_SHRAPNEL_PARTICLE_GRAPH, ORBITAL_SHRAPNEL_PARTICLE_PROGRAM } from './orbital-shrapnel/effect.js';
 export { SPARKS_DEFAULTS, SPARKS_SETTINGS, createSparksConfig, sparksNumber, sparksString, type SparksConfig } from './sparks/config.js';
