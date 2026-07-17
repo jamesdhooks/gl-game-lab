@@ -451,6 +451,8 @@ layout(location=0) out vec4 outPosition;
 layout(location=1) out vec4 outVelocity;
 layout(location=2) out vec4 outMetadata;
 float hash21(vec2 p) { return fract(sin(dot(p, vec2(127.1,311.7))) * 43758.5453); }
+uint eventHash(uint value){value^=value>>16;value*=2246822519u;value^=value>>13;value*=3266489917u;value^=value>>16;return value;}
+float eventRandom(uint value){return float(eventHash(value)>>8u)*(1.0/16777216.0);}
 void main() {
   ivec2 uv = ivec2(gl_FragCoord.xy);
   vec4 a = texelFetch(uPositionState, uv, 0);
@@ -467,9 +469,9 @@ void main() {
     int child=-1;float lifetime=0.0,inheritance=0.0,powerScale=0.0,spread=6.2831853,basePower=24.0,speedReference=1.0,lifetimeVariability=0.0,powerVariability=0.0,impactPowerScale=0.0;
     ${eventBranches}
     if(child>=0){vec4 pool=uArchetypePools[child];bool inPool=id>=int(pool.x+.5)&&id<int(pool.x+pool.y+.5);bool writable=a.z>=a.w||int(pool.z+.5)!=1;
-      if(inPool&&writable){float random=hash21(vec2(float(id),claim));float parentSpeed=length(pb.xy);float parentAngle=parentSpeed>.0001?atan(pb.y,pb.x):0.0;float angle=parentAngle+(random-.5)*spread;float impact=smoothstep(0.0,max(1.0,speedReference),parentSpeed);float power=max(basePower,parentSpeed)*powerScale*(1.0+impact*impactPowerScale)*mix(max(0.0,1.0-powerVariability),1.0+powerVariability,hash21(vec2(random,31.7)));
-        float variedLifetime=lifetime*mix(max(.05,1.0-lifetimeVariability),1.0+lifetimeVariability,hash21(vec2(random,73.1)));
-        a=vec4(pa.xy,0.0,variedLifetime);b=vec4(pb.xy*inheritance+vec2(cos(angle),sin(angle))*power,0.0,0.0);c=vec4(float(child),pc.y+1.0,pc.z+random,0.0);}}
+      if(inPool&&writable){uint eventSeed=uint(id)*747796405u^uint(code)*2891336453u^floatBitsToUint(pc.z);float angleRandom=eventRandom(eventSeed),powerRandom=eventRandom(eventSeed+277803737u),lifeRandom=eventRandom(eventSeed+1367130551u),colorRandom=eventRandom(eventSeed+3421235923u);float parentSpeed=length(pb.xy);float parentAngle=parentSpeed>.0001?atan(pb.y,pb.x):0.0;float angle=parentAngle+(angleRandom-.5)*spread;float impact=smoothstep(0.0,max(1.0,speedReference),parentSpeed);float power=max(basePower,parentSpeed)*powerScale*(1.0+impact*impactPowerScale)*mix(max(0.0,1.0-powerVariability),1.0+powerVariability,powerRandom);
+        float variedLifetime=lifetime*mix(max(.05,1.0-lifetimeVariability),1.0+lifetimeVariability,lifeRandom);
+        vec2 childDirection=vec2(cos(angle),sin(angle));a=vec4(pa.xy+childDirection*eventRandom(eventSeed+1030549473u)*2.0,0.0,variedLifetime);b=vec4(pb.xy*inheritance+childDirection*power,0.0,0.0);c=vec4(float(child),pc.y+1.0,pc.z+colorRandom,0.0);}}
   }
   outPosition = a; outVelocity = b; outMetadata = c;
 }`;
@@ -748,6 +750,8 @@ struct ParticleDomain { data: vec4<f32>, options: vec4<f32> }
 @group(0) @binding(14) var<storage, read> capsuleColliderA: array<vec4<f32>>;
 @group(0) @binding(15) var<storage, read> capsuleColliderB: array<vec4<f32>>;
 fn hash11(value: f32) -> f32 { return fract(sin(value * 91.3458 + 17.123) * 47453.5453); }
+fn eventHash(source: u32) -> u32 { var value=source;value=value^(value>>16u);value=value*2246822519u;value=value^(value>>13u);value=value*3266489917u;value=value^(value>>16u);return value; }
+fn eventRandom(value: u32) -> f32 { return f32(eventHash(value)>>8u)*(1.0/16777216.0); }
 @compute @workgroup_size(256)
 fn simulate(@builtin(global_invocation_id) gid: vec3<u32>) {
   let i = gid.x;
@@ -942,8 +946,8 @@ fn resolveEvents(@builtin(global_invocation_id) gid: vec3<u32>) {
   ${branches}
   if(child==0xffffffffu){return;}let parametersB=eventParameters[parameterIndex+1u];let parametersC=eventParameters[parameterIndex+2u];let parametersD=eventParameters[parameterIndex+3u];let pool=archetypePools[child];let poolCount=max(1u,u32(pool.y+.5));let target=u32(pool.x+.5)+(record.targetSlot%poolCount);
   let overflow=u32(pool.z+.5);if(overflow==1u&&stateA[target].age<stateA[target].lifetime){return;}let parentA=stateA[record.parent];let parentB=stateB[record.parent];let parentC=stateC[record.parent];
-  let random=hash11(f32(record.parent*31u+record.childOrdinal*17u+record.eventIndex));let randomB=hash11(f32(record.parent*47u+record.childOrdinal*23u+record.eventIndex));let parentSpeed=length(parentB.velocity);let parentAngle=select(0.0,atan2(parentB.velocity.y,parentB.velocity.x),parentSpeed>0.0001);let angle=parentAngle+(random-0.5)*parametersB.w;let lifetime=parametersB.x*mix(max(0.05,1.0-parametersD.x),1.0+parametersD.x,randomB);let basePower=select(max(24.0,parentSpeed),parametersC.w,parametersC.w>0.0);let impact=smoothstep(0.0,max(1.0,parametersC.z),parentSpeed);let power=basePower*parametersB.z*(1.0+impact*parametersD.z)*mix(max(0.0,1.0-parametersD.y),1.0+parametersD.y,random);
-  stateA[target]=ParticleA(parentA.position,0.0,lifetime);stateB[target]=ParticleB(parentB.velocity*parametersB.y+vec2<f32>(cos(angle),sin(angle))*power,0.0,0.0);stateC[target]=ParticleC(f32(child),parentC.generation+1.0,parentC.colorSeed+random,0.0);
+  let eventSeed=target*747796405u^(record.parent*4u+record.eventIndex)*2891336453u^bitcast<u32>(parentC.colorSeed);let angleRandom=eventRandom(eventSeed);let powerRandom=eventRandom(eventSeed+277803737u);let lifeRandom=eventRandom(eventSeed+1367130551u);let colorRandom=eventRandom(eventSeed+3421235923u);let parentSpeed=length(parentB.velocity);let parentAngle=select(0.0,atan2(parentB.velocity.y,parentB.velocity.x),parentSpeed>0.0001);let angle=parentAngle+(angleRandom-0.5)*parametersB.w;let lifetime=parametersB.x*mix(max(0.05,1.0-parametersD.x),1.0+parametersD.x,lifeRandom);let basePower=select(max(24.0,parentSpeed),parametersC.w,parametersC.w>0.0);let impact=smoothstep(0.0,max(1.0,parametersC.z),parentSpeed);let power=basePower*parametersB.z*(1.0+impact*parametersD.z)*mix(max(0.0,1.0-parametersD.y),1.0+parametersD.y,powerRandom);let childDirection=vec2<f32>(cos(angle),sin(angle));
+  stateA[target]=ParticleA(parentA.position+childDirection*eventRandom(eventSeed+1030549473u)*2.0,0.0,lifetime);stateB[target]=ParticleB(parentB.velocity*parametersB.y+childDirection*power,0.0,0.0);stateC[target]=ParticleC(f32(child),parentC.generation+1.0,parentC.colorSeed+colorRandom,0.0);
 }`;
 }
 
