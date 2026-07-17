@@ -185,6 +185,8 @@ export {
   type ParticleMotionProfile2D,
   type ParticlePalette2D,
   type ParticleRenderRecipe2D,
+  type ParticleRenderLayer2D,
+  type ParticleRenderLayerKind2D,
   type ParticleRenderRecipeSet2D,
   type ParticleRenderTier2D,
   type ParticleScalarCurve2D,

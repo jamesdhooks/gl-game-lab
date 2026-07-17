@@ -14,6 +14,7 @@ export type ParticleSpawnShape2D = 'point' | 'disc' | 'line' | 'cone' | 'arc' | 
 export type ParticleEventTrigger2D = 'birth' | 'age' | 'death' | 'collision';
 export type ParticleBlendMode2D = 'opaque' | 'alpha' | 'additive' | 'multiply';
 export type ParticleRenderTier2D = 'basic' | 'enhanced' | 'ultra';
+export type ParticleRenderLayerKind2D = 'point' | 'core' | 'halo' | 'streak';
 export type ParticleSettingValue2D = number | string | boolean;
 
 export interface ParticleCapacityPolicy2D {
@@ -114,11 +115,28 @@ export interface ParticleModuleSet2D {
 
 export interface ParticleRenderRecipe2D {
   readonly tier: ParticleRenderTier2D;
+  /**
+   * Ordered executable layers. Legacy point/streak flags are normalized into
+   * equivalent layers by the compiler when this collection is omitted.
+   */
+  readonly layers?: readonly ParticleRenderLayer2D[];
   readonly points: boolean;
   readonly streaks?: boolean;
   readonly trails?: boolean;
   readonly bloom?: boolean;
   readonly blend: ParticleBlendMode2D;
+}
+
+export interface ParticleRenderLayer2D {
+  readonly id: string;
+  readonly kind: ParticleRenderLayerKind2D;
+  readonly blend?: ParticleBlendMode2D;
+  readonly sizeScale?: number;
+  readonly lengthScale?: number;
+  readonly intensityScale?: number;
+  readonly alphaScale?: number;
+  /** Optional archetype allow-list. Empty or omitted renders every archetype. */
+  readonly archetypes?: readonly string[];
 }
 
 export interface ParticleRenderRecipeSet2D {
@@ -362,7 +380,21 @@ export function validateParticleEffectDefinition2D(definition: ParticleEffectDef
   const tiers = new Set(definition.renderRecipes.recipes.map((recipe) => recipe.tier));
   if (!tiers.has(definition.renderRecipes.defaultTier)) throw new Error(`Particle effect ${definition.id} does not define its default render tier`);
   if (tiers.size !== definition.renderRecipes.recipes.length) throw new Error(`Particle effect ${definition.id} has duplicate render tiers`);
+  for (const recipe of definition.renderRecipes.recipes) validateRenderRecipe(definition, recipe);
   return Object.freeze(definition);
+}
+
+function validateRenderRecipe(definition: ParticleEffectDefinition2D, recipe: ParticleRenderRecipe2D): void {
+  const layerIds = new Set<string>();
+  const archetypes = new Set(definition.archetypes.map((entry) => entry.id));
+  for (const layer of recipe.layers ?? []) {
+    if (!/^[a-z][a-z0-9-]*$/.test(layer.id) || layerIds.has(layer.id)) throw new Error(`Particle effect ${definition.id} has an invalid or duplicate ${recipe.tier} render layer: ${layer.id}`);
+    for (const value of [layer.sizeScale ?? 1, layer.lengthScale ?? 1, layer.intensityScale ?? 1, layer.alphaScale ?? 1]) {
+      if (!Number.isFinite(value) || value < 0) throw new Error(`Particle render layer ${layer.id} scales must be finite and non-negative`);
+    }
+    for (const archetype of layer.archetypes ?? []) if (!archetypes.has(archetype)) throw new Error(`Particle render layer ${layer.id} references unknown archetype ${archetype}`);
+    layerIds.add(layer.id);
+  }
 }
 
 function validateCapacity(capacity: ParticleCapacityPolicy2D): void {

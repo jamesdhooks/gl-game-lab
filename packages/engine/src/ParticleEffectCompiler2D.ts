@@ -4,7 +4,7 @@ import {
   validateParticleEffectGraph2D,
   type CompiledParticleEffect2D,
 } from "./ParticleEffectGraph2D.js";
-import type { ParticleRenderTier2D } from "./ParticleEffects2D.js";
+import type { ParticleRenderLayer2D, ParticleRenderLayerKind2D, ParticleRenderTier2D } from "./ParticleEffects2D.js";
 
 export type ParticleShaderBackend2D = "webgl2" | "webgpu";
 export type ParticleShaderStage2D = "simulation" | "event" | "vertex" | "fragment";
@@ -41,6 +41,12 @@ export interface CompiledParticleRenderPass2D {
   readonly tier: ParticleRenderTier2D;
   readonly kind: "points" | "streaks" | "trails" | "bloom";
   readonly blend: "opaque" | "alpha" | "additive" | "multiply";
+  readonly layerKind?: ParticleRenderLayerKind2D;
+  readonly sizeScale?: number;
+  readonly lengthScale?: number;
+  readonly intensityScale?: number;
+  readonly alphaScale?: number;
+  readonly archetypeMask?: number;
 }
 
 export interface ParticleModuleCompilerExtension2D {
@@ -614,6 +620,9 @@ uniform int uRenderPhase;
 uniform vec2 uCanvasSize;
 uniform float uPointScale;
 uniform float uStreakScale;
+uniform float uLayerSizeScale;
+uniform float uLayerLengthScale;
+uniform int uArchetypeMask;
 uniform vec4 uArchetypeSize[${Math.max(1, effect.source.archetypes.length)}];
 uniform vec4 uArchetypeLength[${Math.max(1, effect.source.archetypes.length)}];
 uniform vec4 uArchetypeAlpha[${Math.max(1, effect.source.archetypes.length)}];
@@ -640,11 +649,12 @@ void main() {
   vGeneration = c.y;
   vSpeed = length(b.xy);
   int archetype=clamp(int(c.x+.5),0,${Math.max(0, effect.source.archetypes.length - 1)});
+  if ((uArchetypeMask & (1 << archetype)) == 0) { gl_Position=vec4(2.0); gl_PointSize=0.0; vAlpha=0.0; return; }
   vec4 sizeCurve=uArchetypeSize[archetype], lengthCurve=uArchetypeLength[archetype];
   float curveAge=pow(vAge,max(.01,sizeCurve.z));
   float seedVariation=hashSeed(vSeed);
   float sizeVariation=mix(max(0.0,1.0-sizeCurve.w),1.0+sizeCurve.w,seedVariation);
-  float size=max(0.0,mix(sizeCurve.x,sizeCurve.y,curveAge))*sizeVariation*uPointScale;
+  float size=max(0.0,mix(sizeCurve.x,sizeCurve.y,curveAge))*sizeVariation*uPointScale*uLayerSizeScale;
   vec4 alphaCurve=uArchetypeAlpha[archetype], intensityCurve=uArchetypeIntensity[archetype];
   vAlpha=mix(alphaCurve.x,alphaCurve.y,pow(vAge,max(.01,alphaCurve.z)));
   vIntensity=mix(intensityCurve.x,intensityCurve.y,pow(vAge,max(.01,intensityCurve.z)))*mix(max(0.0,1.0-intensityCurve.w),1.0+intensityCurve.w,hashSeed(fract(vSeed+.37)));
@@ -655,7 +665,7 @@ void main() {
   vec2 corners[6]=vec2[6](vec2(0,-1),vec2(1,-1),vec2(0,1),vec2(0,1),vec2(1,-1),vec2(1,1));
   vec2 axis=length(b.xy)>0.001?normalize(b.xy):vec2(1,0), normal=vec2(-axis.y,axis.x);
   float lengthVariation=mix(max(0.0,1.0-lengthCurve.w),1.0+lengthCurve.w,hashSeed(fract(vSeed+.71)));
-  float streakLength=max(size,mix(lengthCurve.x,lengthCurve.y,pow(vAge,max(.01,lengthCurve.z)))*lengthVariation*length(b.xy)*.016*uStreakScale);
+  float streakLength=max(size,mix(lengthCurve.x,lengthCurve.y,pow(vAge,max(.01,lengthCurve.z)))*lengthVariation*length(b.xy)*.016*uStreakScale*uLayerLengthScale);
   vec2 local=-axis*corners[corner].x*streakLength+normal*corners[corner].y*size*.5;
   clip+=vec2(local.x/uCanvasSize.x*2.0,-local.y/uCanvasSize.y*2.0);`
       : ""
@@ -677,6 +687,9 @@ precision highp int;
 ${customGlslBindingDeclarations(extensions, "render")}uniform vec3 uPalette[8];
 uniform int uPaletteCount;
 uniform float uIntensity;
+uniform float uLayerIntensityScale;
+uniform float uLayerAlphaScale;
+uniform int uLayerKind;
 uniform float uPaletteTransition;
 uniform int uColorMode;
 in float vAge;
@@ -689,14 +702,16 @@ flat in int vStreak;
 out vec4 outColor;
 void main() {
   vec2 p = gl_PointCoord * 2.0 - 1.0;
-  float coverage = vStreak == 1 ? 1.0 : 1.0 - smoothstep(0.72, 1.0, length(p));
+  float radialDistance=length(p);
+  float coverage = vStreak == 1 ? 1.0 : 1.0 - smoothstep(uLayerKind==2?0.0:0.72, 1.0, radialDistance);
   float paletteCoordinate=vSeed;
   if(uColorMode==1)paletteCoordinate=fract(vSeed+vAge*uPaletteTransition);
   else if(uColorMode==2)paletteCoordinate=fract(vSeed+vGeneration*.1618034*uPaletteTransition);
   else if(uColorMode==3)paletteCoordinate=fract(vSeed+clamp(vSpeed*.0025,0.0,1.0)*uPaletteTransition);
   int paletteIndex = int(floor(paletteCoordinate * float(max(1, uPaletteCount)))) % max(1, uPaletteCount);
   vec3 color = uPalette[paletteIndex];
-  outColor = vec4(color * uIntensity * vIntensity, coverage * vAlpha);
+  if(uLayerKind==1) color=mix(color,vec3(1.0),0.74*(1.0-clamp(radialDistance,0.0,1.0)));
+  outColor = vec4(color * uIntensity * vIntensity * uLayerIntensityScale, coverage * vAlpha * uLayerAlphaScale);
   ${extensions
     .map((entry) => entry.glslFragment ?? "")
     .filter(Boolean)
@@ -993,20 +1008,21 @@ function compileRenderPasses(effect: CompiledParticleEffect2D): Readonly<Record<
   };
   for (const recipe of effect.source.renderRecipes.recipes) {
     const passes = output[recipe.tier];
-    if (recipe.points)
+    const layers = recipe.layers?.length ? recipe.layers : legacyRenderLayers(recipe);
+    for (const layer of layers) {
       passes.push({
-        id: `${recipe.tier}.points`,
+        id: `${recipe.tier}.${layer.id}`,
         tier: recipe.tier,
-        kind: "points",
-        blend: recipe.blend,
+        kind: layer.kind === "streak" ? "streaks" : "points",
+        blend: layer.blend ?? recipe.blend,
+        layerKind: layer.kind,
+        sizeScale: layer.sizeScale ?? 1,
+        lengthScale: layer.lengthScale ?? 1,
+        intensityScale: layer.intensityScale ?? 1,
+        alphaScale: layer.alphaScale ?? 1,
+        archetypeMask: renderLayerArchetypeMask(effect, layer),
       });
-    if (recipe.streaks)
-      passes.push({
-        id: `${recipe.tier}.streaks`,
-        tier: recipe.tier,
-        kind: "streaks",
-        blend: recipe.blend,
-      });
+    }
     if (recipe.trails)
       passes.push({
         id: `${recipe.tier}.trails`,
@@ -1027,6 +1043,24 @@ function compileRenderPasses(effect: CompiledParticleEffect2D): Readonly<Record<
     enhanced: Object.freeze(output.enhanced),
     ultra: Object.freeze(output.ultra),
   });
+}
+
+function legacyRenderLayers(recipe: CompiledParticleEffect2D["source"]["renderRecipes"]["recipes"][number]): readonly ParticleRenderLayer2D[] {
+  const layers: ParticleRenderLayer2D[] = [];
+  if (recipe.points) layers.push({ id: "points", kind: "point" });
+  if (recipe.streaks) layers.push({ id: "streaks", kind: "streak" });
+  return layers;
+}
+
+function renderLayerArchetypeMask(effect: CompiledParticleEffect2D, layer: ParticleRenderLayer2D): number {
+  if (!layer.archetypes?.length) return effect.source.archetypes.length >= 31 ? 0x7fffffff : (1 << effect.source.archetypes.length) - 1;
+  let mask = 0;
+  for (const id of layer.archetypes) {
+    const index = effect.archetypeIds[id];
+    if (index === undefined) throw new Error(`Particle render layer ${layer.id} references unknown archetype ${id}`);
+    mask |= 1 << index;
+  }
+  return mask;
 }
 
 function baseBindings(targets: 2 | 3, collisions: boolean, events: boolean, extensions: readonly ParticleModuleCompilerExtension2D[]): ParticleShaderBinding2D[] {
@@ -1246,7 +1280,17 @@ function validateArtifactRenderPasses(value: unknown, tier: ParticleRenderTier2D
       || !["opaque", "alpha", "additive", "multiply"].includes(String(pass.blend))) {
       throw new Error(`Invalid compiled particle ${tier} render pass`);
     }
+    if ((pass.kind === "points" || pass.kind === "streaks") && (
+      !["point", "core", "halo", "streak"].includes(String(pass.layerKind))
+      || !isFiniteNonNegative(pass.sizeScale) || !isFiniteNonNegative(pass.lengthScale)
+      || !isFiniteNonNegative(pass.intensityScale) || !isFiniteNonNegative(pass.alphaScale)
+      || !Number.isSafeInteger(pass.archetypeMask) || Number(pass.archetypeMask) < 0
+    )) throw new Error(`Invalid compiled particle ${tier} render layer`);
   }
+}
+
+function isFiniteNonNegative(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

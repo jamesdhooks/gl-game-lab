@@ -6,6 +6,7 @@ import type {
   ParticleEventParameters2D, ParticleViewport2D, ParticleRenderParameters2D, ParticlePalette2D,
   ParticleOverflowPolicy2D, ParticleRenderTier2D, ParticleRuntimeEmission2D, ParticleParameterValue2D,
   ParticleExtensionBindingSet2D, ParticleExtensionBindingValue2D, ParticleShaderBinding2D, GpuTexture2D,
+  CompiledParticleRenderPass2D,
 } from "@hooksjam/gl-game-lab-engine";
 import { ParticleEventWindowScheduler2D, planParticleSpawnCommands2D, resolveParticleArchetypePartitions2D } from "@hooksjam/gl-game-lab-engine";
 
@@ -93,6 +94,12 @@ class WebGLParticleEffectResource2D implements ParticleEffectBackendResource2D {
   private colorMode = 0;
   private renderStride = 1;
   private renderPhase = 0;
+  private layerKind = 0;
+  private layerSizeScale = 1;
+  private layerLengthScale = 1;
+  private layerIntensityScale = 1;
+  private layerAlphaScale = 1;
+  private layerArchetypeMask = 0x7fffffff;
   private droppedCommands = 0;
   private droppedParticles = 0;
   private truncatedCommands = 0;
@@ -120,23 +127,15 @@ class WebGLParticleEffectResource2D implements ParticleEffectBackendResource2D {
     this.trailBloom = options.trailBloom ?? 0.65;
     this.trailBackground = options.trailBackground ?? [0, 0, 0];
     const renderPasses = Object.fromEntries(
-      [
-        ...new Set(
-          program.renderPasses.basic
-            .concat(program.renderPasses.enhanced)
-            .concat(program.renderPasses.ultra)
-            .filter((pass) => pass.kind === "streaks")
-            .map((pass) => pass.id),
-        ),
-      ].map((passId) => [
-        passId,
-        {
-          vertexSource: program.webgl2.streakVertex.source,
+      program.renderPasses.basic
+        .concat(program.renderPasses.enhanced, program.renderPasses.ultra)
+        .filter((pass) => pass.kind === "points" || pass.kind === "streaks")
+        .map((pass) => [pass.id, {
+          vertexSource: pass.kind === "streaks" ? program.webgl2.streakVertex.source : program.webgl2.vertex.source,
           fragmentSource: program.webgl2.fragment.source,
-          blend: "additive" as const,
-          verticesPerParticle: 6,
-        },
-      ]),
+          blend: pass.blend,
+          verticesPerParticle: pass.kind === "streaks" ? 6 : 1,
+        }]),
     );
     this.particles = gpu.createParticleSystem(id, {
       capacity,
@@ -566,6 +565,12 @@ class WebGLParticleEffectResource2D implements ParticleEffectBackendResource2D {
     gl.uniform1i(uniform("uRenderPhase"), this.renderPhase);
     gl.uniform1f(uniform("uPointScale"), this.pointScale * this.viewportDpr);
     gl.uniform1f(uniform("uStreakScale"), this.streakScale);
+    gl.uniform1f(uniform("uLayerSizeScale"), this.layerSizeScale);
+    gl.uniform1f(uniform("uLayerLengthScale"), this.layerLengthScale);
+    gl.uniform1f(uniform("uLayerIntensityScale"), this.layerIntensityScale);
+    gl.uniform1f(uniform("uLayerAlphaScale"), this.layerAlphaScale);
+    gl.uniform1i(uniform("uLayerKind"), this.layerKind);
+    gl.uniform1i(uniform("uArchetypeMask"), this.layerArchetypeMask);
     gl.uniform3fv(uniform("uPalette[0]"), this.palette);
     gl.uniform1i(uniform("uPaletteCount"), this.paletteCount);
     gl.uniform1f(uniform("uIntensity"), this.intensity);
@@ -630,9 +635,21 @@ class WebGLParticleEffectResource2D implements ParticleEffectBackendResource2D {
   private renderTier(target: GpuRenderTarget2D, tier: ParticleRenderTier2D): void {
     const passes = this.program.renderPasses[tier];
     const renderCount = Math.ceil(this.particles.capacity / this.renderStride);
-    if (passes.some((pass) => pass.kind === "points")) this.particles.render(target, this.bindRender, renderCount);
-    for (const pass of passes) if (pass.kind === "streaks") this.particles.renderPass(pass.id, target, this.bindRender, renderCount);
+    for (const pass of passes) {
+      if (pass.kind !== "points" && pass.kind !== "streaks") continue;
+      this.applyRenderLayer(pass);
+      this.particles.renderPass(pass.id, target, this.bindRender, renderCount);
+    }
     this.renderPhase = (this.renderPhase + 1) % this.renderStride;
+  }
+
+  private applyRenderLayer(pass: CompiledParticleRenderPass2D): void {
+    this.layerKind = pass.layerKind === "core" ? 1 : pass.layerKind === "halo" ? 2 : pass.layerKind === "streak" ? 3 : 0;
+    this.layerSizeScale = pass.sizeScale ?? 1;
+    this.layerLengthScale = pass.lengthScale ?? 1;
+    this.layerIntensityScale = pass.intensityScale ?? 1;
+    this.layerAlphaScale = pass.alphaScale ?? 1;
+    this.layerArchetypeMask = pass.archetypeMask ?? 0x7fffffff;
   }
 
   private assertUsable(): void {
