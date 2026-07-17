@@ -12,7 +12,16 @@ export interface ParticleWebGpuBuffer2D {
 }
 export interface ParticleWebGpuShaderModule2D {}
 export interface ParticleWebGpuBindGroup2D {}
+export interface ParticleWebGpuTextureView2D {}
+export interface ParticleWebGpuTexture2D {
+  createView(): ParticleWebGpuTextureView2D;
+  destroy(): void;
+}
+export interface ParticleWebGpuSampler2D {}
 export interface ParticleWebGpuComputePipeline2D {
+  getBindGroupLayout(index: number): unknown;
+}
+export interface ParticleWebGpuRenderPipeline2D {
   getBindGroupLayout(index: number): unknown;
 }
 export interface ParticleWebGpuComputePass2D {
@@ -23,7 +32,22 @@ export interface ParticleWebGpuComputePass2D {
 }
 export interface ParticleWebGpuCommandEncoder2D {
   beginComputePass(options?: Readonly<Record<string, unknown>>): ParticleWebGpuComputePass2D;
+  beginRenderPass(options: ParticleWebGpuRenderPassDescriptor2D): ParticleWebGpuRenderPass2D;
   finish(): unknown;
+}
+export interface ParticleWebGpuRenderPass2D {
+  setPipeline(pipeline: ParticleWebGpuRenderPipeline2D): void;
+  setBindGroup(index: number, bindGroup: ParticleWebGpuBindGroup2D): void;
+  draw(vertexCount: number, instanceCount?: number): void;
+  end(): void;
+}
+export interface ParticleWebGpuRenderPassDescriptor2D {
+  readonly colorAttachments: readonly [{
+    readonly view: ParticleWebGpuTextureView2D;
+    readonly clearValue?: Readonly<{ r: number; g: number; b: number; a: number }>;
+    readonly loadOp: 'clear' | 'load';
+    readonly storeOp: 'store';
+  }];
 }
 export interface ParticleWebGpuDevice2D {
   readonly queue: {
@@ -40,12 +64,20 @@ export interface ParticleWebGpuDevice2D {
       readonly entryPoint: string;
     };
   }): ParticleWebGpuComputePipeline2D;
+  createRenderPipeline(options: Readonly<Record<string, unknown>>): ParticleWebGpuRenderPipeline2D;
+  createTexture(options: {
+    readonly label?: string;
+    readonly size: readonly [number, number, number];
+    readonly format: string;
+    readonly usage: number;
+  }): ParticleWebGpuTexture2D;
+  createSampler(options?: Readonly<Record<string, unknown>>): ParticleWebGpuSampler2D;
   createBindGroup(options: {
     readonly label?: string;
     readonly layout: unknown;
     readonly entries: readonly {
       readonly binding: number;
-      readonly resource: { readonly buffer: ParticleWebGpuBuffer2D };
+      readonly resource: { readonly buffer: ParticleWebGpuBuffer2D } | ParticleWebGpuSampler2D | ParticleWebGpuTextureView2D;
     }[];
   }): ParticleWebGpuBindGroup2D;
   createCommandEncoder(options?: { readonly label?: string }): ParticleWebGpuCommandEncoder2D;
@@ -60,6 +92,7 @@ export interface WebGpuParticleEffectRenderBindings2D {
   readonly palette: ParticleWebGpuBuffer2D;
   readonly renderConfig: ParticleWebGpuBuffer2D;
   readonly paletteCount: number;
+  readonly capacity: number;
 }
 
 export type WebGpuParticleEffectRender2D = (program: CompiledParticleProgram2D, state: readonly [ParticleWebGpuBuffer2D, ParticleWebGpuBuffer2D, ParticleWebGpuBuffer2D], target: GpuRenderTarget2D, tier: ParticleRenderTier2D, bindings: WebGpuParticleEffectRenderBindings2D) => void;
@@ -544,6 +577,8 @@ class WebGpuParticleEffectResource2D implements ParticleEffectBackendResource2D 
     if (value.paletteTransition !== undefined) this.renderConfigData[7] = value.paletteTransition;
     if (value.streakScale !== undefined) this.renderConfigData[8] = value.streakScale;
     if (value.colorMode !== undefined) this.renderConfigData[6] = colorModeCode(value.colorMode);
+    if (value.trailFade !== undefined) this.renderConfigData[10] = value.trailFade;
+    if (value.trailBloom !== undefined) this.renderConfigData[11] = value.trailBloom;
     this.renderConfigDirty = true;
   }
 
@@ -629,6 +664,7 @@ class WebGpuParticleEffectResource2D implements ParticleEffectBackendResource2D 
       palette: this.palette,
       renderConfig: this.renderConfig,
       paletteCount: this.paletteCount,
+      capacity: this.capacity,
     });
     this.renderPasses += 1;
   }

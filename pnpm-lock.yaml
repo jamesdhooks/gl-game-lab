@@ -46,6 +46,9 @@ importers:
       '@hooksjam/gl-game-lab-render-webgl2':
         specifier: workspace:*
         version: link:../render-webgl2
+      '@hooksjam/gl-game-lab-render-webgpu':
+        specifier: workspace:*
+        version: link:../render-webgpu
       '@hooksjam/gl-game-lab-simulations':
         specifier: workspace:*
         version: link:../simulations

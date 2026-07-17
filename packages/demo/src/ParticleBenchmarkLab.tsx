@@ -1,16 +1,18 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { EnginePlugin } from '@hooksjam/gl-game-lab-core';
 import { EngineGpu2D, EngineParticleEffects, EngineSchedule, type CompiledParticleProgram2D, type GameEngine, type ParticleEffectsDiagnostics2D, type ParticleRenderTier2D } from '@hooksjam/gl-game-lab-engine';
-import { GameCanvas } from '@hooksjam/gl-game-lab-react';
+import { createBrowserGameEngine, GameCanvas } from '@hooksjam/gl-game-lab-react';
+import { createWebGpuParticleCanvasSession2D, type WebGpuParticleCanvasSession2D } from '@hooksjam/gl-game-lab-render-webgpu';
 import { FIREWORKS_PARTICLE_PROGRAM, ORBITAL_SHRAPNEL_PARTICLE_PROGRAM, SPARKS_PARTICLE_PROGRAM } from '@hooksjam/gl-game-lab-simulations';
 
 const EFFECTS = { sparks: SPARKS_PARTICLE_PROGRAM, fireworks: FIREWORKS_PARTICLE_PROGRAM, orbital: ORBITAL_SHRAPNEL_PARTICLE_PROGRAM } as const;
 const CAPACITIES = [65_536, 147_456, 262_144, 589_824] as const;
 const BENCHMARK_ENDPOINT = '/__gl-game-lab-particle-benchmark';
+type BenchmarkBackend = 'auto' | 'webgl2' | 'webgpu';
 
 export function ParticleBenchmarkLab(): JSX.Element {
   const initial=useMemo(readBenchmarkQuery,[]);
-  const [effectId,setEffectId]=useState<keyof typeof EFFECTS>(initial.effectId),[capacity,setCapacity]=useState<number>(initial.capacity),[tier,setTier]=useState<ParticleRenderTier2D>(initial.tier),[renderScale,setRenderScale]=useState(initial.renderScale);
+  const [effectId,setEffectId]=useState<keyof typeof EFFECTS>(initial.effectId),[capacity,setCapacity]=useState<number>(initial.capacity),[tier,setTier]=useState<ParticleRenderTier2D>(initial.tier),[renderScale,setRenderScale]=useState(initial.renderScale),[backend,setBackend]=useState<BenchmarkBackend>(initial.backend);
   const [particleDiagnostics,setParticleDiagnostics]=useState<ParticleEffectsDiagnostics2D>();
   const [debugArchetypes,setDebugArchetypes]=useState<Readonly<Record<string,number>>>();
   const [engine,setEngine]=useState<GameEngine>(),[benchmarkRunning,setBenchmarkRunning]=useState(false),[report,setReport]=useState<ParticleBenchmarkReport2D>();
@@ -25,10 +27,11 @@ export function ParticleBenchmarkLab(): JSX.Element {
       <select aria-label="Benchmark capacity" value={capacity} onChange={(event)=>{setCapacity(Number(event.target.value));}} className="rounded-lg bg-slate-800 px-3 py-2 text-sm">{CAPACITIES.map((value)=><option key={value} value={value}>{value.toLocaleString()}</option>)}</select>
       <select aria-label="Benchmark tier" value={tier} onChange={(event)=>{setTier(event.target.value as ParticleRenderTier2D);}} className="rounded-lg bg-slate-800 px-3 py-2 text-sm">{(['basic','enhanced','ultra'] as const).map((value)=><option key={value}>{value}</option>)}</select>
       <select aria-label="Benchmark render scale" value={renderScale} onChange={(event)=>{setRenderScale(Number(event.target.value));}} className="rounded-lg bg-slate-800 px-3 py-2 text-sm"><option value={1}>100% render</option><option value={0.5}>50% render</option><option value={0.25}>25% render</option></select>
+      <select aria-label="Particle backend" value={backend} onChange={(event)=>{setBackend(event.target.value as BenchmarkBackend);}} className="rounded-lg bg-slate-800 px-3 py-2 text-sm"><option value="auto">Auto</option><option value="webgl2">WebGL2</option><option value="webgpu">WebGPU prototype</option></select>
       <button type="button" disabled={!engine||benchmarkRunning} onClick={()=>{if(!engine)return;setBenchmarkRunning(true);void measureBenchmark(engine,{effectId,capacity:boundedCapacity,tier,renderScale}).then(setReport).finally(()=>{setBenchmarkRunning(false);});}} className="rounded-lg bg-amber-400 px-3 py-2 text-sm font-semibold text-slate-950 disabled:opacity-40">{benchmarkRunning?'Measuring…':'Run 5s benchmark'}</button>
       <button type="button" disabled={!report} onClick={()=>{if(!report)return;setSaveStatus('Saving…');void saveBenchmarkReport(report).then((path)=>{setSaveStatus(`Saved ${path}`);}).catch((error:unknown)=>{setSaveStatus(error instanceof Error?error.message:'Save failed');});}} className="rounded-lg bg-white/10 px-3 py-2 text-sm font-semibold text-white disabled:opacity-40">Save report</button>
     </div>
-    <div className="mx-auto aspect-video max-w-5xl overflow-hidden rounded-2xl ring-1 ring-white/10"><GameCanvas key={`${effectId}:${boundedCapacity}:${tier}:${renderScale}`} plugins={plugins} onReady={setEngine} showDiagnostics className="h-full w-full" /></div>
+    <div className="mx-auto aspect-video max-w-5xl overflow-hidden rounded-2xl ring-1 ring-white/10"><ParticleBenchmarkCanvas key={`${effectId}:${boundedCapacity}:${tier}:${renderScale}:${backend}`} plugins={plugins} backend={backend} onReady={setEngine} /></div>
     <p className="mx-auto mt-3 max-w-5xl text-xs text-white/45">Fixed command workload, deterministic seed, live engine diagnostics. URL: ?particleBenchmark=1</p>
     {saveStatus && <p className="mx-auto mt-2 max-w-5xl text-xs text-amber-300">{saveStatus}</p>}
     <pre data-testid="particle-effect-diagnostics" className="mx-auto mt-3 max-w-5xl overflow-auto rounded-xl bg-black/30 p-3 text-xs text-white/60">{particleDiagnostics?JSON.stringify(particleDiagnostics,null,2):'Warming particle diagnostics…'}</pre>
@@ -37,14 +40,36 @@ export function ParticleBenchmarkLab(): JSX.Element {
   </main>;
 }
 
-function readBenchmarkQuery(): { readonly effectId: keyof typeof EFFECTS; readonly capacity: number; readonly tier: ParticleRenderTier2D; readonly renderScale: number } {
+function readBenchmarkQuery(): { readonly effectId: keyof typeof EFFECTS; readonly capacity: number; readonly tier: ParticleRenderTier2D; readonly renderScale: number; readonly backend: BenchmarkBackend } {
   const query = new URLSearchParams(window.location.search), effect = query.get('effect'), requestedCapacity = Number(query.get('capacity')), requestedTier = query.get('tier'), requestedScale = Number(query.get('renderScale'));
   return {
     effectId: effect !== null && Object.prototype.hasOwnProperty.call(EFFECTS, effect) ? effect as keyof typeof EFFECTS : 'sparks',
     capacity: CAPACITIES.includes(requestedCapacity as typeof CAPACITIES[number]) ? requestedCapacity : 65_536,
     tier: requestedTier === 'basic' || requestedTier === 'enhanced' || requestedTier === 'ultra' ? requestedTier : 'ultra',
     renderScale: requestedScale === .25 || requestedScale === .5 || requestedScale === 1 ? requestedScale : 1,
+    backend: query.get('backend') === 'webgpu' ? 'webgpu' : query.get('backend') === 'webgl2' ? 'webgl2' : 'auto',
   };
+}
+
+function ParticleBenchmarkCanvas({ plugins, backend, onReady }: { readonly plugins: readonly EnginePlugin[]; readonly backend: BenchmarkBackend; readonly onReady: (engine: GameEngine) => void }): JSX.Element {
+  const overlayRef=useRef<HTMLCanvasElement>(null),[session,setSession]=useState<WebGpuParticleCanvasSession2D>(),[resolved,setResolved]=useState(backend==='webgl2'),[status,setStatus]=useState(backend==='webgl2'?'WebGL2 production backend':backend==='auto'?'Selecting particle backend…':'Requesting WebGPU…');
+  useEffect(()=>{
+    if(backend==='webgl2'){setResolved(true);return undefined;}
+    const canvas=overlayRef.current;if(!canvas)return undefined;let disposed=false;let active:WebGpuParticleCanvasSession2D|undefined;
+    void createWebGpuParticleCanvasSession2D(canvas,{powerPreference:'high-performance'}).then((created)=>{
+      if(disposed){created?.dispose();return;}
+      active=created;setSession(created);setResolved(true);setStatus(created?`WebGPU · ${created.adapterDescription}`:'WebGPU unavailable · WebGL2 fallback');
+      if(created)void created.lost.then((message)=>{if(!disposed)setStatus(`WebGPU lost (${message}) · WebGL2 fallback active`);});
+    }).catch((error:unknown)=>{if(!disposed){setResolved(true);setStatus(`WebGPU initialization failed · WebGL2 fallback (${error instanceof Error?error.message:String(error)})`);}});
+    return()=>{disposed=true;const current=active;queueMicrotask(()=>{current?.dispose();});};
+  },[backend]);
+  const createEngine=useCallback((canvas:HTMLCanvasElement)=>createBrowserGameEngine(canvas,plugins,{},false,session?.backend),[plugins,session]);
+  return <div className="relative h-full w-full bg-slate-950">
+    {resolved?<GameCanvas createEngine={createEngine} onReady={onReady} showDiagnostics className="h-full w-full" />:<div className="absolute inset-0 grid place-items-center text-sm text-white/45">Initializing particle backend…</div>}
+    <canvas ref={overlayRef} aria-hidden="true" className="pointer-events-none absolute inset-0 h-full w-full" />
+    <output className="pointer-events-none absolute left-3 top-3 rounded bg-black/60 px-2 py-1 font-mono text-[10px] text-white/65">{status}</output>
+    {session&&<button type="button" onClick={()=>{session.dispose();setStatus('WebGPU device destroyed · WebGL2 fallback pending');}} className="absolute bottom-3 right-3 rounded bg-black/60 px-2 py-1 font-mono text-[10px] text-white/65 ring-1 ring-white/10">Force WebGPU loss</button>}
+  </div>;
 }
 
 interface ParticleBenchmarkReport2D {
@@ -78,7 +103,7 @@ function createParticleBenchmarkPlugin(program:CompiledParticleProgram2D,capacit
     const selectedEmitter=eventEmitter??program.effect.source.emitters[0]!,emitterId=selectedEmitter.id,emitter=instance.emitter(emitterId),isShell=selectedEmitter.archetypeId==='shell',isOrbital=program.effect.source.id==='orbital-shrapnel',emissionCount=isShell?1:1024,emissionInterval=isShell ? .4 : .05,snapshotAt=isShell?4.5:2.5;let elapsed=0,totalElapsed=0,diagnosticElapsed=0,snapshotDone=false,seed=1;
     instance.setPalette({revision:1,colors:[[1,.35,.08],[1,.85,.2],[.25,.65,1],[.85,.25,1]]});
     if(isOrbital){instance.setColliders({revision:1,circles:[{x:640,y:360,radius:54,mode:'kill'}]});instance.setForceFields({revision:1,attractors:[{x:640,y:360,strength:1000,softening:54,falloff:'inverse-square'}]});instance.setDomain({revision:1,shape:'circle',behavior:'wrap',center:[640,360],radius:520,damping:.98});}
-    schedule.addSystem({id:'gl-game-lab.demo.particle-benchmark.update',stage:'update',run:({time})=>{const dt=Math.min(.05,time.deltaSeconds);elapsed+=dt;totalElapsed+=dt;diagnosticElapsed+=dt;effects.update(dt);if(elapsed>=emissionInterval){elapsed=0;seed=(Math.imul(seed,1664525)+1013904223)>>>0;const angle=(seed/0x1_0000_0000)*Math.PI*2;emitter.writer().position(640,360).direction(angle).spread(isOrbital?0:Math.PI*2).power(isOrbital?155:180).seed(seed).count(emissionCount).submit();}if(diagnosticElapsed>=.5){diagnosticElapsed=0;onDiagnostics(effects.diagnostics());}if(!snapshotDone&&totalElapsed>=snapshotAt){snapshotDone=true;const snapshot=instance.debugSnapshot(),counts:Record<string,number>={};for(const id of program.effect.source.archetypes.map((entry)=>entry.id))counts[id]=0;let alive=0,nonFinite=0;for(let index=0;index<capacity;index+=1){const offset=index*4,x=snapshot.positions[offset]??0,y=snapshot.positions[offset+1]??0,age=snapshot.positions[offset+2]??0,lifetime=snapshot.positions[offset+3]??0;if(!Number.isFinite(x)||!Number.isFinite(y)||!Number.isFinite(age)||!Number.isFinite(lifetime)){nonFinite+=1;continue;}if(age>=lifetime)continue;alive+=1;if(snapshot.metadata){const archetype=Math.round(snapshot.metadata[offset]??-1),id=program.effect.source.archetypes[archetype]?.id;if(id)counts[id]=(counts[id]??0)+1;}}if(!snapshot.metadata)counts[selectedEmitter.archetypeId]=alive;counts.__alive=alive;counts.__nonFinite=nonFinite;if(snapshot.eventClaims){let claims=0;for(let index=0;index<capacity;index+=1)if((snapshot.eventClaims[index*4]??12_582_912)<12_582_912)claims+=1;counts.__eventClaims=claims;}onSnapshot(counts);}}});
+    schedule.addSystem({id:'gl-game-lab.demo.particle-benchmark.update',stage:'update',run:({time})=>{const dt=Math.min(.05,time.deltaSeconds);elapsed+=dt;totalElapsed+=dt;diagnosticElapsed+=dt;effects.update(dt);if(elapsed>=emissionInterval){elapsed=0;seed=(Math.imul(seed,1664525)+1013904223)>>>0;const angle=(seed/0x1_0000_0000)*Math.PI*2;emitter.writer().position(640,360).direction(angle).spread(isOrbital?0:Math.PI*2).power(isOrbital?155:180).seed(seed).count(emissionCount).submit();}if(diagnosticElapsed>=.5){diagnosticElapsed=0;onDiagnostics(effects.diagnostics());}if(!snapshotDone&&totalElapsed>=snapshotAt){snapshotDone=true;if(effects.diagnostics().backend==='webgpu'){onSnapshot({__gpuResident:1});return;}const snapshot=instance.debugSnapshot(),counts:Record<string,number>={};for(const id of program.effect.source.archetypes.map((entry)=>entry.id))counts[id]=0;let alive=0,nonFinite=0;for(let index=0;index<capacity;index+=1){const offset=index*4,x=snapshot.positions[offset]??0,y=snapshot.positions[offset+1]??0,age=snapshot.positions[offset+2]??0,lifetime=snapshot.positions[offset+3]??0;if(!Number.isFinite(x)||!Number.isFinite(y)||!Number.isFinite(age)||!Number.isFinite(lifetime)){nonFinite+=1;continue;}if(age>=lifetime)continue;alive+=1;if(snapshot.metadata){const archetype=Math.round(snapshot.metadata[offset]??-1),id=program.effect.source.archetypes[archetype]?.id;if(id)counts[id]=(counts[id]??0)+1;}}if(!snapshot.metadata)counts[selectedEmitter.archetypeId]=alive;counts.__alive=alive;counts.__nonFinite=nonFinite;if(snapshot.eventClaims){let claims=0;for(let index=0;index<capacity;index+=1)if((snapshot.eventClaims[index*4]??12_582_912)<12_582_912)claims+=1;counts.__eventClaims=claims;}onSnapshot(counts);}}});
     schedule.addSystem({id:'gl-game-lab.demo.particle-benchmark.render',stage:'renderExtract',run:()=>{gpu.submit('particle-benchmark',target=>{effects.render(target);});}});
     context.own('particle benchmark instance',()=>{instance.dispose();});
   }};

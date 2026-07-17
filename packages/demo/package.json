@@ -16,6 +16,7 @@
     "@hooksjam/gl-game-lab-games": "workspace:*",
     "@hooksjam/gl-game-lab-react": "workspace:*",
     "@hooksjam/gl-game-lab-render-webgl2": "workspace:*",
+    "@hooksjam/gl-game-lab-render-webgpu": "workspace:*",
     "@hooksjam/gl-game-lab-simulations": "workspace:*",
     "framer-motion": "^11.18.2",
     "lucide-react": "^0.400.0",

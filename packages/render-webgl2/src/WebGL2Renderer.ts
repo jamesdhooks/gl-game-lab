@@ -4,6 +4,7 @@ import {
   EngineGpu2D,
   EngineParticleEffects,
   EngineParticleEffects2D,
+  FallbackParticleEffectRuntimeBackend2D,
   EngineDiagnosticsService,
   EngineRenderer,
   EngineSchedule,
@@ -28,6 +29,7 @@ import {
   type Text2DDraw,
   type Texture2DHandle,
   type RendererDiagnostics,
+  type ParticleEffectRuntimeBackend2D,
 } from '@hooksjam/gl-game-lab-engine';
 import { WebGLParticleEffectRuntimeBackend2D } from './WebGLParticleEffectRuntime2D.js';
 import {
@@ -67,6 +69,8 @@ export interface WebGL2RendererOptions {
   readonly device?: WebGL2DeviceOptions;
   readonly clearColor?: readonly [number, number, number, number];
   readonly bloom?: BloomOptions;
+  /** Internal particle backend override. Unsupported effects automatically retain WebGL2. */
+  readonly particleEffectsBackend?: ParticleEffectRuntimeBackend2D;
 }
 
 const WEBGL2_CAPABILITIES: RenderBackendCapabilities = Object.freeze({
@@ -627,7 +631,11 @@ export function createWebGL2RendererPlugin(
   options: WebGL2RendererOptions = {},
 ): EnginePlugin {
   const renderer = new WebGL2Renderer(canvas, options);
-  const particleEffects = new EngineParticleEffects2D(new WebGLParticleEffectRuntimeBackend2D(renderer.gpu2D));
+  const webglParticles = new WebGLParticleEffectRuntimeBackend2D(renderer.gpu2D);
+  const particleBackend = options.particleEffectsBackend
+    ? new FallbackParticleEffectRuntimeBackend2D(options.particleEffectsBackend, webglParticles)
+    : webglParticles;
+  const particleEffects = new EngineParticleEffects2D(particleBackend);
   return {
     id: WEBGL2_RENDERER_PLUGIN_ID,
     version: '1.0.0',

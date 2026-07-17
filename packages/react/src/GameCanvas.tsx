@@ -6,6 +6,7 @@ import {
   EngineQuality,
   ExperienceRuntimeControllerService,
   GameEngine,
+  type ParticleEffectRuntimeBackend2D,
   type EngineDiagnosticsSnapshot,
   type PerformanceBudgetResult,
   type RenderBackend,
@@ -156,10 +157,14 @@ export function createBrowserGameEngine(
   plugins: readonly EnginePlugin[] = [],
   platform: WebPlatformPluginOptions = {},
   frameCaptureEnabled = false,
+  particleEffectsBackend?: ParticleEffectRuntimeBackend2D,
 ): GameEngine {
   return new GameEngine({
     plugins: [
-      createWebGL2RendererPlugin(canvas, { device: { preserveDrawingBuffer: frameCaptureEnabled } }),
+      createWebGL2RendererPlugin(canvas, {
+        device: { preserveDrawingBuffer: frameCaptureEnabled },
+        ...(particleEffectsBackend ? { particleEffectsBackend } : {}),
+      }),
       createWebPlatformPlugin(canvas, platform),
       ...plugins,
     ],

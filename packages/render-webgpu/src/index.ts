@@ -5,8 +5,23 @@ export {
   type ParticleWebGpuCommandEncoder2D,
   type ParticleWebGpuComputePass2D,
   type ParticleWebGpuComputePipeline2D,
+  type ParticleWebGpuRenderPass2D,
+  type ParticleWebGpuRenderPassDescriptor2D,
+  type ParticleWebGpuRenderPipeline2D,
+  type ParticleWebGpuSampler2D,
+  type ParticleWebGpuShaderModule2D,
+  type ParticleWebGpuTexture2D,
+  type ParticleWebGpuTextureView2D,
   type ParticleWebGpuDevice2D,
   type WebGpuParticleEffectRender2D,
   type WebGpuParticleEffectRenderBindings2D,
   type WebGpuParticleEffectRuntimeOptions2D,
 } from './WebGpuParticleEffectRuntime2D.js';
+export {
+  WebGpuParticleCanvasRenderer2D,
+  createWebGpuParticleCanvasSession2D,
+  type ParticleWebGpuCanvasContext2D,
+  type WebGpuParticleCanvasDiagnostics2D,
+  type WebGpuParticleCanvasSession2D,
+  type WebGpuParticleCanvasSessionOptions2D,
+} from './WebGpuParticleCanvasRenderer2D.js';

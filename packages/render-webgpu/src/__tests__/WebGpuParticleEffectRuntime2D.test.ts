@@ -11,9 +11,13 @@ function deviceFixture() {
     createBuffer: (options) => { const buffer=new Buffer(options.label);buffers.push(buffer);return buffer; },
     createShaderModule: () => ({}),
     createComputePipeline: () => ({ getBindGroupLayout: () => ({}) }),
+    createRenderPipeline: () => ({ getBindGroupLayout: () => ({}) }),
+    createTexture: () => ({ createView: () => ({}), destroy: vi.fn() }),
+    createSampler: () => ({}),
     createBindGroup: () => ({}),
     createCommandEncoder: () => ({
       beginComputePass: () => ({ setPipeline: vi.fn(), setBindGroup: vi.fn(), dispatchWorkgroups, end: vi.fn() }),
+      beginRenderPass: () => ({ setPipeline: vi.fn(), setBindGroup: vi.fn(), draw: vi.fn(), end: vi.fn() }),
       finish: () => ({}),
     }),
   };
