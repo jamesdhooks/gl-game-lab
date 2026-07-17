@@ -210,12 +210,18 @@ class WebGpuParticleEffectResource2D implements ParticleEffectBackendResource2D 
   private eventPasses = 0;
   private eventAttempts = 0;
   private uploadBytes = 0;
+  private commandUploadBytes = 0;
+  private parameterUploadBytes = 0;
+  private paletteUploadBytes = 0;
+  private cpuUpdateMs = 0;
+  private cpuRenderMs = 0;
   private viewportWidth = 1;
   private viewportHeight = 1;
   private viewportDpr = 1;
   private viewportConfigured = false;
   private paletteCount = 1;
   private renderConfigDirty = true;
+  private paletteRevision = -1;
   private simulationTime = 0;
   private disposed = false;
 
@@ -513,6 +519,8 @@ class WebGpuParticleEffectResource2D implements ParticleEffectBackendResource2D 
 
   setPalette(value: ParticlePalette2D): void {
     this.assertUsable();
+    if (value.revision === this.paletteRevision) return;
+    this.paletteRevision = value.revision;
     this.paletteData.fill(0);
     this.paletteCount = Math.max(1, Math.min(MAX_PALETTE, value.colors.length));
     for (let index = 0; index < this.paletteCount; index += 1) {
@@ -520,7 +528,9 @@ class WebGpuParticleEffectResource2D implements ParticleEffectBackendResource2D 
       this.paletteData.set([color[0], color[1], color[2], 1], index * 4);
     }
     this.device.queue.writeBuffer(this.palette, 0, this.paletteData, 0, this.paletteCount * 4);
-    this.uploadBytes += this.paletteCount * 4 * Float32Array.BYTES_PER_ELEMENT;
+    const bytes = this.paletteCount * 4 * Float32Array.BYTES_PER_ELEMENT;
+    this.uploadBytes += bytes;
+    this.paletteUploadBytes += bytes;
     this.renderConfigDirty = true;
   }
 
@@ -536,13 +546,13 @@ class WebGpuParticleEffectResource2D implements ParticleEffectBackendResource2D 
       const section = parts[2], field = parts.slice(3).join(".");
       if (section === "motion") {
         const target = writeBoundMotion(this.motionData, this.forceData, archetypeIndex, field, value);
-        if (target === "motion") this.uploadArchetypeVector(this.motion, this.motionData, archetypeIndex);
-        else if (target === "force") this.uploadArchetypeVector(this.forces, this.forceData, archetypeIndex);
+        if (target === "motion") { this.uploadArchetypeVector(this.motion, this.motionData, archetypeIndex); this.parameterUploadBytes += 16; }
+        else if (target === "force") { this.uploadArchetypeVector(this.forces, this.forceData, archetypeIndex); this.parameterUploadBytes += 16; }
       } else if (section === "collision") {
-        if (writeBoundCollision(this.collisionProfileData, archetypeIndex, field, value)) this.uploadArchetypeVector(this.collisionProfiles, this.collisionProfileData, archetypeIndex);
+        if (writeBoundCollision(this.collisionProfileData, archetypeIndex, field, value)) { this.uploadArchetypeVector(this.collisionProfiles, this.collisionProfileData, archetypeIndex); this.parameterUploadBytes += 16; }
       } else if (section === "appearance") {
         const target = writeBoundAppearance(this.sizeData, this.lengthData, this.alphaData, this.intensityData, archetypeIndex, field, value);
-        if (target) this.uploadArchetypeVector(target.buffer === "size" ? this.archetypeSize : target.buffer === "length" ? this.archetypeLength : target.buffer === "alpha" ? this.archetypeAlpha : this.archetypeIntensity, target.data, archetypeIndex);
+        if (target) { this.uploadArchetypeVector(target.buffer === "size" ? this.archetypeSize : target.buffer === "length" ? this.archetypeLength : target.buffer === "alpha" ? this.archetypeAlpha : this.archetypeIntensity, target.data, archetypeIndex); this.parameterUploadBytes += 16; }
       }
     }
   }
@@ -653,6 +663,7 @@ class WebGpuParticleEffectResource2D implements ParticleEffectBackendResource2D 
 
   update(deltaSeconds: number, timescale: number): void {
     this.assertUsable();
+    const cpuStarted = particleCpuNow();
     this.simulationTime += deltaSeconds * timescale;
     this.prepareCommands();
     this.frameFloats[0] = deltaSeconds * timescale;
@@ -665,7 +676,9 @@ class WebGpuParticleEffectResource2D implements ParticleEffectBackendResource2D 
     if (this.preparedCommandCount > 0) {
       const uploadFloats = this.preparedCommandCount * COMMAND_FLOATS;
       this.device.queue.writeBuffer(this.commands, 0, this.preparedCommandData, 0, uploadFloats);
-      this.uploadBytes += uploadFloats * Float32Array.BYTES_PER_ELEMENT;
+      const bytes = uploadFloats * Float32Array.BYTES_PER_ELEMENT;
+      this.uploadBytes += bytes;
+      this.commandUploadBytes += bytes;
     }
     this.device.queue.writeBuffer(this.frame, 0, this.frameBytes);
     this.uploadBytes += this.frameData.byteLength;
@@ -704,10 +717,12 @@ class WebGpuParticleEffectResource2D implements ParticleEffectBackendResource2D 
     this.particleCount = 0;
     this.poolQueued.fill(0);
     this.simulationPasses += 1;
+    this.cpuUpdateMs = particleCpuNow() - cpuStarted;
   }
 
   render(target: GpuRenderTarget2D, tier: ParticleRenderTier2D): void {
     this.assertUsable();
+    const cpuStarted = particleCpuNow();
     if (!this.viewportConfigured) {
       this.viewportWidth = target.width;
       this.viewportHeight = target.height;
@@ -737,6 +752,7 @@ class WebGpuParticleEffectResource2D implements ParticleEffectBackendResource2D 
       capacity: this.capacity,
     });
     this.renderPasses += 1;
+    this.cpuRenderMs = particleCpuNow() - cpuStarted;
   }
   clear(): void {
     this.assertUsable();
@@ -801,7 +817,10 @@ class WebGpuParticleEffectResource2D implements ParticleEffectBackendResource2D 
       diagnosticAccuracy: "estimated",
       directCommandsAdmitted: this.admittedCommands,
       directCommandsTruncated: this.truncatedCommands,
-      commandUploadBytes: this.uploadBytes,
+      commandUploadBytes: this.commandUploadBytes,
+      parameterUploadBytes: this.parameterUploadBytes,
+      paletteUploadBytes: this.paletteUploadBytes,
+      cpuTimeMs: this.cpuUpdateMs + this.cpuRenderMs,
       allocationsAfterWarmup: 0,
       archetypes: Object.freeze(Object.fromEntries(this.program.effect.source.archetypes.map((archetype, index) => [archetype.id, Object.freeze({ capacity: Math.round(this.poolData[index * 4 + 1] ?? 0), activeEstimate: Math.round(this.archetypeActiveEstimate[index] ?? 0) })]))),
       eventAttemptsByTrigger: Object.freeze({ ...this.eventAttemptsByTrigger }),
@@ -882,28 +901,33 @@ function writeCurve(target: Float32Array, index: number, curve: Readonly<{ start
 }
 function writeBoundMotion(motion: Float32Array, force: Float32Array, index: number, field: string, value: number): "motion" | "force" | undefined {
   const offset = index * 4;
-  if (field === "gravity") { motion[offset] = value; return "motion"; }
-  if (field === "drag") { motion[offset + 1] = value; return "motion"; }
-  if (field === "turbulence") { motion[offset + 2] = value; return "motion"; }
-  if (field === "angularVelocity") { motion[offset + 3] = value; return "motion"; }
-  if (field === "radialAcceleration") { force[offset] = value; return "force"; }
-  if (field === "tangentialAcceleration") { force[offset + 1] = value; return "force"; }
-  if (field === "maxSpeed") { force[offset + 3] = value; return "force"; }
+  if (field === "gravity") return writeChanged(motion, offset, value) ? "motion" : undefined;
+  if (field === "drag") return writeChanged(motion, offset + 1, value) ? "motion" : undefined;
+  if (field === "turbulence") return writeChanged(motion, offset + 2, value) ? "motion" : undefined;
+  if (field === "angularVelocity") return writeChanged(motion, offset + 3, value) ? "motion" : undefined;
+  if (field === "radialAcceleration") return writeChanged(force, offset, value) ? "force" : undefined;
+  if (field === "tangentialAcceleration") return writeChanged(force, offset + 1, value) ? "force" : undefined;
+  if (field === "maxSpeed") return writeChanged(force, offset + 3, value) ? "force" : undefined;
   return undefined;
 }
 function writeBoundCollision(collision: Float32Array, index: number, field: string, value: number): boolean {
   const offset = index * 4;
-  if (field === "restitution") collision[offset] = value;
-  else if (field === "friction") collision[offset + 1] = value;
-  else if (field === "lifetimeLoss") collision[offset + 2] = value;
-  else return false;
-  return true;
+  if (field === "restitution") return writeChanged(collision, offset, value);
+  if (field === "friction") return writeChanged(collision, offset + 1, value);
+  if (field === "lifetimeLoss") return writeChanged(collision, offset + 2, value);
+  return false;
 }
 function writeBoundAppearance(size: Float32Array, length: Float32Array, alpha: Float32Array, intensity: Float32Array, index: number, field: string, value: number): { readonly buffer: "size" | "length" | "alpha" | "intensity"; readonly data: Float32Array } | undefined {
   const [curve, component] = field.split("."),
     target = curve === "size" ? { buffer: "size" as const, data: size } : curve === "length" ? { buffer: "length" as const, data: length } : curve === "alpha" ? { buffer: "alpha" as const, data: alpha } : curve === "intensity" ? { buffer: "intensity" as const, data: intensity } : undefined,
     slot = component === "start" ? 0 : component === "end" ? 1 : component === "exponent" ? 2 : component === "variability" ? 3 : -1;
   if (!target || slot < 0) return undefined;
-  target.data[index * 4 + slot] = value;
+  if (!writeChanged(target.data, index * 4 + slot, value)) return undefined;
   return target;
 }
+function writeChanged(target: Float32Array, index: number, value: number): boolean {
+  if (target[index] === value) return false;
+  target[index] = value;
+  return true;
+}
+function particleCpuNow(): number { return globalThis.performance?.now() ?? Date.now(); }

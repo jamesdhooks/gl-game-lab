@@ -172,6 +172,17 @@ describe('WebGpuParticleEffectRuntimeBackend2D', () => {
     fixture.writeBuffer.mockClear();
     resource.setPalette({ revision: 2, colors: [[1, 0, 0], [0, 1, 0]] });
     resource.setParameters?.({ gravity: 25, size: 4, restitution: 0.75 });
+    const uploadsAfterChanges = fixture.writeBuffer.mock.calls.length;
+    const diagnosticsAfterChanges = resource.diagnostics();
+    resource.setPalette({ revision: 2, colors: [[0, 0, 1]] });
+    resource.setParameters?.({ gravity: 25, size: 4, restitution: 0.75 });
+    expect(fixture.writeBuffer).toHaveBeenCalledTimes(uploadsAfterChanges);
+    expect(resource.diagnostics()).toMatchObject({
+      parameterUploadBytes: diagnosticsAfterChanges.parameterUploadBytes,
+      paletteUploadBytes: diagnosticsAfterChanges.paletteUploadBytes,
+    });
+    expect(diagnosticsAfterChanges.parameterUploadBytes).toBe(48);
+    expect(diagnosticsAfterChanges.paletteUploadBytes).toBe(32);
     resource.setViewport?.({ width: 320, height: 180, dpr: 2 });
     resource.setRenderParameters?.({ pointScale: 3, intensity: 1.5, streakScale: 0.75, paletteTransition: 0.4, colorMode: 'over-life' });
     resource.render({ width: 320, height: 180 } as GpuRenderTarget2D, 'enhanced');

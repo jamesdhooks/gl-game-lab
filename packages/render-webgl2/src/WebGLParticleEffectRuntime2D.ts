@@ -98,6 +98,11 @@ class WebGLParticleEffectResource2D implements ParticleEffectBackendResource2D {
   private eventAttempts = 0;
   private eventOccupiedDrops = 0;
   private eventBudgetDrops = 0;
+  private parameterUploadBytes = 0;
+  private paletteUploadBytes = 0;
+  private cpuUpdateMs = 0;
+  private cpuRenderMs = 0;
+  private paletteRevision = -1;
   private readonly eventWindows: ParticleEventWindowScheduler2D;
   private simulationTime = 0;
   private disposed = false;
@@ -302,12 +307,15 @@ class WebGLParticleEffectResource2D implements ParticleEffectBackendResource2D {
 
   setPalette(value: ParticlePalette2D): void {
     this.assertUsable();
+    if (value.revision === this.paletteRevision) return;
+    this.paletteRevision = value.revision;
     this.palette.fill(0);
     this.paletteCount = Math.max(1, Math.min(MAX_PALETTE, value.colors.length));
     for (let index = 0; index < this.paletteCount; index += 1) {
       const color = value.colors[index] ?? [1, 1, 1];
       this.palette.set(color, index * 3);
     }
+    this.paletteUploadBytes += this.paletteCount * 3 * Float32Array.BYTES_PER_ELEMENT;
   }
 
   setParameters(parameters: Readonly<Record<string, ParticleParameterValue2D>>): void {
@@ -320,9 +328,9 @@ class WebGLParticleEffectResource2D implements ParticleEffectBackendResource2D {
       if (archetypeIndex === undefined) continue;
       const section = parts[2],
         field = parts.slice(3).join(".");
-      if (section === "motion") writeBoundMotion(this.archetypeMotion, this.archetypeForce, archetypeIndex, field, value);
-      else if (section === "collision") writeBoundCollision(this.archetypeCollision, archetypeIndex, field, value);
-      else if (section === "appearance") writeBoundAppearance(this.archetypeSize, this.archetypeLength, this.archetypeAlpha, this.archetypeIntensity, archetypeIndex, field, value);
+      if (section === "motion" && writeBoundMotion(this.archetypeMotion, this.archetypeForce, archetypeIndex, field, value)) this.parameterUploadBytes += Float32Array.BYTES_PER_ELEMENT;
+      else if (section === "collision" && writeBoundCollision(this.archetypeCollision, archetypeIndex, field, value)) this.parameterUploadBytes += Float32Array.BYTES_PER_ELEMENT;
+      else if (section === "appearance" && writeBoundAppearance(this.archetypeSize, this.archetypeLength, this.archetypeAlpha, this.archetypeIntensity, archetypeIndex, field, value)) this.parameterUploadBytes += Float32Array.BYTES_PER_ELEMENT;
     }
   }
 
@@ -431,6 +439,7 @@ class WebGLParticleEffectResource2D implements ParticleEffectBackendResource2D {
 
   update(deltaSeconds: number, timescale: number): void {
     this.assertUsable();
+    const cpuStarted = particleCpuNow();
     this.simulationTime += deltaSeconds * timescale;
     this.prepareCommands();
     this.particles.stepBatch(this.batch, (gl, uniform) => this.bindSimulation(gl, uniform, deltaSeconds * timescale));
@@ -443,10 +452,12 @@ class WebGLParticleEffectResource2D implements ParticleEffectBackendResource2D {
     this.particleCount = 0;
     this.commandImportance.fill(0);
     this.poolQueued.fill(0);
+    this.cpuUpdateMs = particleCpuNow() - cpuStarted;
   }
 
   render(target: GpuRenderTarget2D, tier: ParticleRenderTier2D): void {
     this.assertUsable();
+    const cpuStarted = particleCpuNow();
     if (!this.viewportConfigured) {
       this.viewportWidth = target.width;
       this.viewportHeight = target.height;
@@ -457,9 +468,11 @@ class WebGLParticleEffectResource2D implements ParticleEffectBackendResource2D {
       this.renderTier(trailTarget, tier);
       this.particles.compositeTrails(target, this.trailBackground, this.trailBloom);
       if (this.directComposite) this.renderTier(target, tier);
+      this.cpuRenderMs = particleCpuNow() - cpuStarted;
       return;
     }
     this.renderTier(target, tier);
+    this.cpuRenderMs = particleCpuNow() - cpuStarted;
   }
 
   clear(): void {
@@ -517,8 +530,9 @@ class WebGLParticleEffectResource2D implements ParticleEffectBackendResource2D {
       trailPasses: this.program.renderPasses.ultra.filter((pass) => pass.kind === "trails").length > 0 ? diagnostics.renderPasses : 0,
       bloomPasses: this.program.renderPasses.ultra.filter((pass) => pass.kind === "bloom").length > 0 ? diagnostics.renderPasses : 0,
       commandUploadBytes: diagnostics.uploadBytes,
-      parameterUploadBytes: 0,
-      paletteUploadBytes: 0,
+      parameterUploadBytes: this.parameterUploadBytes,
+      paletteUploadBytes: this.paletteUploadBytes,
+      cpuTimeMs: this.cpuUpdateMs + this.cpuRenderMs,
       allocationsAfterWarmup: 0,
       allocatedBytes: this.particles.capacity * 4 * Float32Array.BYTES_PER_ELEMENT * this.program.reflection.stateTargets * 2,
       eventAttempts,
@@ -646,26 +660,38 @@ function writeCurve(
   target[offset + 3] = 0;
 }
 
-function writeBoundMotion(motion: Float32Array, force: Float32Array, index: number, field: string, value: number): void {
+function writeBoundMotion(motion: Float32Array, force: Float32Array, index: number, field: string, value: number): boolean {
   const offset = index * 4;
-  if (field === "gravity") motion[offset] = value;
-  else if (field === "drag") motion[offset + 1] = value;
-  else if (field === "turbulence") motion[offset + 2] = value;
-  else if (field === "angularVelocity") motion[offset + 3] = value;
-  else if (field === "radialAcceleration") force[offset] = value;
-  else if (field === "tangentialAcceleration") force[offset + 1] = value;
-  else if (field === "maxSpeed") force[offset + 3] = value;
+  if (field === "gravity") return writeChanged(motion, offset, value);
+  if (field === "drag") return writeChanged(motion, offset + 1, value);
+  if (field === "turbulence") return writeChanged(motion, offset + 2, value);
+  if (field === "angularVelocity") return writeChanged(motion, offset + 3, value);
+  if (field === "radialAcceleration") return writeChanged(force, offset, value);
+  if (field === "tangentialAcceleration") return writeChanged(force, offset + 1, value);
+  if (field === "maxSpeed") return writeChanged(force, offset + 3, value);
+  return false;
 }
-function writeBoundCollision(target: Float32Array, index: number, field: string, value: number): void {
+function writeBoundCollision(target: Float32Array, index: number, field: string, value: number): boolean {
   const offset = index * 4;
-  if (field === "restitution") target[offset] = value;
-  else if (field === "friction") target[offset + 1] = value;
-  else if (field === "lifetimeLoss") target[offset + 2] = value;
+  if (field === "restitution") return writeChanged(target, offset, value);
+  if (field === "friction") return writeChanged(target, offset + 1, value);
+  if (field === "lifetimeLoss") return writeChanged(target, offset + 2, value);
+  return false;
 }
-function writeBoundAppearance(size: Float32Array, length: Float32Array, alpha: Float32Array, intensity: Float32Array, index: number, field: string, value: number): void {
+function writeBoundAppearance(size: Float32Array, length: Float32Array, alpha: Float32Array, intensity: Float32Array, index: number, field: string, value: number): boolean {
   const [curve, component] = field.split(".");
   const target = curve === "size" ? size : curve === "length" ? length : curve === "alpha" ? alpha : curve === "intensity" ? intensity : undefined;
-  if (!target) return;
+  if (!target) return false;
   const slot = component === "start" ? 0 : component === "end" ? 1 : component === "exponent" ? 2 : component === "variability" ? 3 : -1;
-  if (slot >= 0) target[index * 4 + slot] = value;
+  return slot >= 0 && writeChanged(target, index * 4 + slot, value);
+}
+
+function writeChanged(target: Float32Array, index: number, value: number): boolean {
+  if (target[index] === value) return false;
+  target[index] = value;
+  return true;
+}
+
+function particleCpuNow(): number {
+  return globalThis.performance?.now() ?? Date.now();
 }
