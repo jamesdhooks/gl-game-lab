@@ -31,6 +31,8 @@ describe('ParticleEffectCompiler2D', () => {
     const program = compileParticleProgram2D(compileParticleEffect2D(adaptParticleEffectDefinition2D(definition)));
     expect(program.webgl2.simulation.source).toContain('layout(location=2) out vec4 outMetadata');
     expect(program.webgl2.simulation.source).toContain('stateB.xy += vec2');
+    expect(program.webgl2.simulation.source).toContain('uAttractorData[16]');
+    expect(program.webgl2.simulation.source).toContain('fieldIndex>=uAttractorCount');
     expect(program.webgl2.simulation.source).toContain('iteration < 6');
     expect(program.webgl2.simulation.source).not.toContain('commandIndex = 0; commandIndex < 64');
     expect(program.webgl2.simulation.source).toContain('shape == 8');
@@ -50,6 +52,8 @@ describe('ParticleEffectCompiler2D', () => {
     expect(program.webgpu.simulation.source).toContain('@compute @workgroup_size(256)');
     expect(program.webgpu.simulation.source).toContain('iteration < 6u');
     expect(program.webgpu.simulation.source).toContain('archetypeMotion[archetype]');
+    expect(program.webgpu.simulation.source).toContain('archetypeForce[archetype]');
+    expect(program.webgpu.simulation.source).toContain('frame.attractorCount');
     expect(program.webgpu.simulation.source).toContain('shape == 9u');
     expect(program.webgpu.event?.source).toContain('atomicAdd');
     expect(program.webgpu.event?.source).toContain('appendEvents');

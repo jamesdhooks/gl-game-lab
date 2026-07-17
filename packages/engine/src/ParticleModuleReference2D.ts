@@ -1,17 +1,18 @@
 import type { ParticleCollisionProfile2D, ParticleMotionProfile2D, ParticleScalarCurve2D, ParticleSpawnShape2D } from './ParticleEffects2D.js';
-import type { ParticleCapsuleCollider2D, ParticleCircleCollider2D } from './ParticleEffectRuntime2D.js';
+import type { ParticleAttractor2D, ParticleCapsuleCollider2D, ParticleCircleCollider2D } from './ParticleEffectRuntime2D.js';
 
 export interface ParticleReferenceState2D { x: number; y: number; vx: number; vy: number; age: number; lifetime: number; rotation: number; angularVelocity: number }
 export interface ParticleReferenceSpawn2D { readonly x: number; readonly y: number; readonly angle: number }
 
-export function integrateParticleReference2D(state: ParticleReferenceState2D, motion: ParticleMotionProfile2D, delta: number, attractor?: ParticleCircleCollider2D): void {
+export function integrateParticleReference2D(state: ParticleReferenceState2D, motion: ParticleMotionProfile2D, delta: number, attractor?: ParticleAttractor2D): void {
   state.age += delta;
   state.vy += motion.gravity * delta;
   if (attractor && ((motion.radialAcceleration ?? 0) !== 0 || (motion.tangentialAcceleration ?? 0) !== 0)) {
-    const dx=attractor.x-state.x, dy=attractor.y-state.y, length=Math.max(1,Math.hypot(dx,dy)), nx=dx/length, ny=dy/length;
-    const falloff=motion.radialFalloff==='inverse-square'?1/(length*length):motion.radialFalloff==='inverse'?1/length:1;
-    state.vx += (nx*(motion.radialAcceleration ?? 0)-ny*(motion.tangentialAcceleration ?? 0))*falloff*delta;
-    state.vy += (ny*(motion.radialAcceleration ?? 0)+nx*(motion.tangentialAcceleration ?? 0))*falloff*delta;
+    const dx=attractor.x-state.x, dy=attractor.y-state.y, rawLength=Math.hypot(dx,dy), length=Math.max(attractor.softening??1,rawLength,1e-6), nx=rawLength>1e-6?dx/rawLength:0, ny=rawLength>1e-6?dy/rawLength:0;
+    const mode=attractor.falloff??motion.radialFalloff,falloff=mode==='inverse-square'?1/(length*length):mode==='inverse'?1/length:1;
+    const radial=(motion.radialAcceleration??0)*attractor.strength,tangential=(motion.tangentialAcceleration??0)*attractor.strength+(attractor.tangentialStrength??0);
+    state.vx += (nx*radial-ny*tangential)*falloff*delta;
+    state.vy += (ny*radial+nx*tangential)*falloff*delta;
   }
   const damping=Math.exp(-Math.max(0,motion.drag)*delta); state.vx*=damping; state.vy*=damping;
   state.rotation += state.angularVelocity*delta; state.x += state.vx*delta; state.y += state.vy*delta;

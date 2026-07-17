@@ -146,6 +146,9 @@ uniform float uDt;
 uniform vec2 uCanvasSize;
 uniform vec4 uArchetypeMotion[${Math.max(1, effect.source.archetypes.length)}];
 uniform vec4 uArchetypeForce[${Math.max(1, effect.source.archetypes.length)}];
+uniform vec4 uAttractorData[16];
+uniform vec4 uAttractorOptions[16];
+uniform int uAttractorCount;
 uniform vec4 uArchetypeCollision[${Math.max(1, effect.source.archetypes.length)}];
 uniform vec4 uEmitterSource[${Math.max(1, effect.source.emitters.length)}];
 uniform vec4 uCircleColliders[16];
@@ -194,7 +197,7 @@ void main() {
     stateA.z += uDt;
     stateB.y += motion.x * uDt;
     stateB.xy *= exp(-max(0.0, motion.y) * uDt);
-    if (abs(force.x)+abs(force.y) > 0.0 && uCircleColliderCount > 0) { vec2 delta=uCircleColliders[0].xy-stateA.xy; float distance=max(length(delta),1.0); vec2 radial=delta/distance; float falloff=force.z<.5?1.0:force.z<1.5?1.0/distance:1.0/(distance*distance); stateB.xy+=(radial*force.x+vec2(-radial.y,radial.x)*force.y)*falloff*uDt; }
+    if (abs(force.x)+abs(force.y) > 0.0 && uAttractorCount > 0) for(int fieldIndex=0;fieldIndex<16;fieldIndex++){if(fieldIndex>=uAttractorCount)break;vec4 field=uAttractorData[fieldIndex],options=uAttractorOptions[fieldIndex];vec2 delta=field.xy-stateA.xy;float rawDistance=length(delta),distance=max(max(rawDistance,options.x),.0001);vec2 radial=rawDistance>.0001?delta/rawDistance:vec2(0);float falloffMode=options.y<0.0?force.z:options.y;float falloff=falloffMode<.5?1.0:falloffMode<1.5?1.0/distance:1.0/(distance*distance);float radialStrength=force.x*field.z,tangentialStrength=force.y*field.z+options.z;stateB.xy+=(radial*radialStrength+vec2(-radial.y,radial.x)*tangentialStrength)*falloff*uDt;}
     ${turbulence ? 'float noise = hash21(stateA.xy + stateC.zz); stateB.xy += vec2(cos(noise * 6.2831853), sin(noise * 6.2831853)) * motion.z * uDt;' : ''}
     stateB.w += motion.w * uDt;
     stateB.z += stateB.w * uDt;
@@ -403,7 +406,8 @@ function buildWgslSimulation(effect: CompiledParticleEffect2D, extensions: reado
   return `struct ParticleA { position: vec2<f32>, age: f32, lifetime: f32 }
 struct ParticleB { velocity: vec2<f32>, rotation: f32, angularVelocity: f32 }
 struct ParticleC { archetype: f32, generation: f32, colorSeed: f32, flags: f32 }
-struct Frame { delta: f32, capacity: u32, viewport: vec2<f32>, commandCount: u32, commandTexels: u32, commandFrameStart: u32, padding: u32 }
+struct Frame { delta: f32, capacity: u32, viewport: vec2<f32>, commandCount: u32, commandTexels: u32, attractorCount: u32, padding: u32 }
+struct Attractor { data: vec4<f32>, options: vec4<f32> }
 @group(0) @binding(0) var<storage, read_write> stateA: array<ParticleA>;
 @group(0) @binding(1) var<storage, read_write> stateB: array<ParticleB>;
 @group(0) @binding(2) var<storage, read_write> stateC: array<ParticleC>;
@@ -411,6 +415,8 @@ struct Frame { delta: f32, capacity: u32, viewport: vec2<f32>, commandCount: u32
 @group(0) @binding(4) var<storage, read> commandData: array<vec4<f32>>;
 @group(0) @binding(5) var<storage, read> archetypeMotion: array<vec4<f32>>;
 @group(0) @binding(6) var<storage, read> emitterSource: array<vec4<f32>>;
+@group(0) @binding(7) var<storage, read> archetypeForce: array<vec4<f32>>;
+@group(0) @binding(8) var<storage, read> attractors: array<Attractor>;
 fn hash11(value: f32) -> f32 { return fract(sin(value * 91.3458 + 17.123) * 47453.5453); }
 @compute @workgroup_size(256)
 fn simulate(@builtin(global_invocation_id) gid: vec3<u32>) {
@@ -419,9 +425,11 @@ fn simulate(@builtin(global_invocation_id) gid: vec3<u32>) {
   if (stateA[i].age < stateA[i].lifetime) {
     let archetype = min(u32(stateC[i].archetype + 0.5), ${Math.max(0, effect.source.archetypes.length - 1)}u);
     let motion = archetypeMotion[archetype];
+    let force = archetypeForce[archetype];
     stateA[i].age += frame.delta;
     stateB[i].velocity.y += motion.x * frame.delta;
     stateB[i].velocity *= exp(-max(0.0, motion.y) * frame.delta);
+    if (abs(force.x) + abs(force.y) > 0.0) { for (var fieldIndex=0u; fieldIndex<min(frame.attractorCount,16u); fieldIndex+=1u) { let field=attractors[fieldIndex];let delta=field.data.xy-stateA[i].position;let rawDistance=length(delta);let distance=max(max(rawDistance,field.options.x),0.0001);let radial=select(vec2<f32>(0.0),delta/rawDistance,rawDistance>0.0001);let falloffMode=select(force.z,field.options.y,field.options.y>=0.0);let falloff=select(select(1.0/distance,1.0/(distance*distance),falloffMode>=1.5),1.0,falloffMode<0.5);let radialStrength=force.x*field.data.z;let tangentialStrength=force.y*field.data.z+field.options.z;stateB[i].velocity+=(radial*radialStrength+vec2<f32>(-radial.y,radial.x)*tangentialStrength)*falloff*frame.delta; } }
     stateB[i].rotation += stateB[i].angularVelocity * frame.delta;
     stateA[i].position += stateB[i].velocity * frame.delta;
     ${collisions ? 'stateA[i].position = clamp(stateA[i].position, vec2<f32>(0.0), frame.viewport);' : ''}
@@ -568,6 +576,9 @@ function baseBindings(targets: 2 | 3, collisions: boolean, events: boolean, exte
     { name: 'uCanvasSize', kind: 'uniform', dataType: 'vec2', required: true },
     { name: 'uArchetypeMotion', kind: 'uniform', dataType: 'vec4[]', required: true },
     { name: 'uArchetypeForce', kind: 'uniform', dataType: 'vec4[]', required: true },
+    { name: 'uAttractorData', kind: 'uniform', dataType: 'vec4[16]', required: true },
+    { name: 'uAttractorOptions', kind: 'uniform', dataType: 'vec4[16]', required: true },
+    { name: 'uAttractorCount', kind: 'uniform', dataType: 'i32', required: true },
     { name: 'uArchetypeCollision', kind: 'uniform', dataType: 'vec4[]', required: collisions },
     { name: 'uEmitterSource', kind: 'uniform', dataType: 'vec4[]', required: true },
     { name: 'uArchetypeSize', kind: 'uniform', dataType: 'vec4[]', required: true },

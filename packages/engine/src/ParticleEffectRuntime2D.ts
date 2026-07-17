@@ -70,6 +70,24 @@ export interface ParticleColliderSet2D {
   readonly revision: number;
 }
 
+export type ParticleForceFalloff2D = 'constant' | 'inverse' | 'inverse-square';
+export interface ParticleAttractor2D {
+  readonly x: number;
+  readonly y: number;
+  /** Multiplies the archetype radial/tangential force; negative values repel. */
+  readonly strength: number;
+  /** Minimum force distance in logical pixels, preventing singularities. */
+  readonly softening?: number;
+  /** Overrides the archetype falloff for this attractor when supplied. */
+  readonly falloff?: ParticleForceFalloff2D;
+  /** Additional tangential acceleration independent of the archetype profile. */
+  readonly tangentialStrength?: number;
+}
+export interface ParticleForceFieldSet2D {
+  readonly attractors: readonly ParticleAttractor2D[];
+  readonly revision: number;
+}
+
 export interface ParticleRuntimeEmission2D {
   readonly instanceId: number;
   readonly emitterIndex: number;
@@ -100,6 +118,7 @@ export interface ParticleEffectBackendResource2D {
   setPalette(palette: ParticlePalette2D): void;
   setParameters?(parameters: Readonly<Record<string, ParticleParameterValue2D>>): void;
   setColliders?(colliders: ParticleColliderSet2D): void;
+  setForceFields?(fields: ParticleForceFieldSet2D): void;
   setRenderScale?(scale: number): void;
   update(deltaSeconds: number, timescale: number): void;
   render(target: GpuRenderTarget2D, tier: ParticleRenderTier2D): void;
@@ -146,6 +165,7 @@ class RecoveringParticleEffectBackendResource2D implements ParticleEffectBackend
   setPalette(value: ParticlePalette2D): void { this.invoke((resource) => { resource.setPalette(value); }); }
   setParameters(value: Readonly<Record<string, ParticleParameterValue2D>>): void { this.invoke((resource) => { resource.setParameters?.(value); }); }
   setColliders(value: ParticleColliderSet2D): void { this.invoke((resource) => { resource.setColliders?.(value); }); }
+  setForceFields(value: ParticleForceFieldSet2D): void { this.invoke((resource) => { resource.setForceFields?.(value); }); }
   setRenderScale(value: number): void { this.invoke((resource) => { resource.setRenderScale?.(value); }); }
   update(deltaSeconds: number, timescale: number): void { this.invoke((resource) => { resource.update(deltaSeconds, timescale); }); }
   render(target: GpuRenderTarget2D, tier: ParticleRenderTier2D): void { this.invoke((resource) => { resource.render(target, tier); }); }
@@ -192,6 +212,7 @@ export interface ParticleEffectInstance2D {
   setParameter(name: string, value: ParticleParameterValue2D): void;
   setPalette(palette: ParticlePalette2D): void;
   setColliders(colliders: ParticleColliderSet2D): void;
+  setForceFields(fields: ParticleForceFieldSet2D): void;
   setTimescale(value: number): void;
   setQualityTier(tier: ParticleRenderTier2D): void;
   setRenderScale(scale: number): void;
@@ -472,6 +493,7 @@ class RuntimeParticleEffectInstance2D implements ParticleEffectInstance2D {
     backend.setPalette(this.palette);
     backend.setParameters?.(this.parameters);
     backend.setColliders?.({ revision: 0, circles: [], capsules: [] });
+    backend.setForceFields?.({ revision: 0, attractors: [] });
     backend.setRenderScale?.(this.renderScale);
   }
 
@@ -527,6 +549,16 @@ class RuntimeParticleEffectInstance2D implements ParticleEffectInstance2D {
   setParameter(name: string, value: ParticleParameterValue2D): void { this.assertUsable(); this.parameters = { ...resolveParticleParameters2D(this.program.effect.source, { ...this.parameters, [name]: value }) }; this.backend.setParameters?.(this.parameters); }
   setPalette(palette: ParticlePalette2D): void { this.assertUsable(); this.palette = palette; this.backend.setPalette(palette); }
   setColliders(colliders: ParticleColliderSet2D): void { this.assertUsable(); this.backend.setColliders?.(colliders); }
+  setForceFields(fields: ParticleForceFieldSet2D): void {
+    this.assertUsable();
+    if (!Number.isSafeInteger(fields.revision) || fields.revision < 0) throw new Error('Particle force-field revision must be a non-negative integer');
+    if (fields.attractors.length > 16) throw new Error('Particle effects support at most 16 dynamic attractors');
+    for (const field of fields.attractors) {
+      if (![field.x, field.y, field.strength, field.softening ?? 1, field.tangentialStrength ?? 0].every(Number.isFinite)) throw new Error('Particle attractor values must be finite');
+      if ((field.softening ?? 1) < 0) throw new Error('Particle attractor softening must be non-negative');
+    }
+    this.backend.setForceFields?.(fields);
+  }
   setTimescale(value: number): void { this.assertUsable(); this.timescale = validateTimescale(value); }
   setQualityTier(tier: ParticleRenderTier2D): void { this.assertUsable(); if (!this.program.effect.source.renderRecipes.recipes.some((entry) => entry.tier === tier)) throw new Error(`Particle effect does not render tier: ${tier}`); this.tier = tier; }
   setRenderScale(scale: number): void { this.assertUsable(); if (!Number.isFinite(scale) || scale < 0.0625 || scale > 1) throw new Error('Particle render scale must be between 0.0625 and 1'); this.renderScale = scale; this.backend.setRenderScale?.(scale); }

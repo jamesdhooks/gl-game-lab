@@ -2,13 +2,13 @@ import { describe, expect, it, vi } from 'vitest';
 import { adaptParticleEffectDefinition2D, compileParticleEffect2D, compileParticleProgram2D, type GpuRenderTarget2D, type ParticleEffectDefinition2D } from '@hooksjam/gl-game-lab-engine';
 import { WebGpuParticleEffectRuntimeBackend2D, type ParticleWebGpuBuffer2D, type ParticleWebGpuDevice2D } from '../index.js';
 
-class Buffer implements ParticleWebGpuBuffer2D { destroy = vi.fn(); }
+class Buffer implements ParticleWebGpuBuffer2D { destroy = vi.fn(); constructor(readonly label?:string){} }
 
 function deviceFixture() {
   const dispatchWorkgroups = vi.fn(), submit = vi.fn(), writeBuffer = vi.fn();
-  const device: ParticleWebGpuDevice2D = {
+  const buffers:Buffer[]=[]; const device: ParticleWebGpuDevice2D = {
     queue: { writeBuffer, submit },
-    createBuffer: () => new Buffer(),
+    createBuffer: (options) => { const buffer=new Buffer(options.label);buffers.push(buffer);return buffer; },
     createShaderModule: () => ({}),
     createComputePipeline: () => ({ getBindGroupLayout: () => ({}) }),
     createBindGroup: () => ({}),
@@ -17,7 +17,7 @@ function deviceFixture() {
       finish: () => ({}),
     }),
   };
-  return { device, dispatchWorkgroups, submit, writeBuffer };
+  return { device, dispatchWorkgroups, submit, writeBuffer, buffers };
 }
 
 const definition: ParticleEffectDefinition2D = {
@@ -34,7 +34,7 @@ describe('WebGpuParticleEffectRuntimeBackend2D', () => {
     const resource = backend.create(program, 512);
     resource.emit({ instanceId: 1, emitterIndex: 0, count: 40, positionX: 10, positionY: 20, direction: 0, spread: 1, power: 30, seed: 8, importance: 3 });
     resource.update(1 / 60, 1);
-    expect(fixture.writeBuffer).toHaveBeenCalledTimes(5);
+    expect(fixture.writeBuffer).toHaveBeenCalledTimes(7);
     expect(fixture.dispatchWorkgroups).toHaveBeenCalledWith(2);
     expect(fixture.submit).toHaveBeenCalledTimes(1);
     resource.render({ width: 384, height: 384 } as GpuRenderTarget2D, 'basic');
@@ -92,6 +92,21 @@ describe('WebGpuParticleEffectRuntimeBackend2D', () => {
     expect(fixture.writeBuffer).toHaveBeenCalledTimes(3);
     expect(fixture.writeBuffer.mock.calls.every((call) => (call[2] as Float32Array).byteLength === 16 * 4 * 4)).toBe(true);
     expect(resource.diagnostics().activeEstimate).toBe(0);
+    resource.dispose();
+  });
+
+  it('uploads dynamic attractors once per revision and forwards their count in the frame', () => {
+    const fixture=deviceFixture(),backend=new WebGpuParticleEffectRuntimeBackend2D(fixture.device,{render:vi.fn()});
+    const program=compileParticleProgram2D(compileParticleEffect2D(adaptParticleEffectDefinition2D(definition))),resource=backend.create(program,16);
+    fixture.writeBuffer.mockClear();
+    const fields={revision:1,attractors:[{x:8,y:9,strength:2,softening:4,falloff:'inverse' as const,tangentialStrength:3}]};
+    resource.setForceFields?.(fields);resource.setForceFields?.(fields);
+    expect(fixture.writeBuffer).toHaveBeenCalledTimes(1);
+    const upload=fixture.writeBuffer.mock.calls[0]![2] as Float32Array;
+    expect([...upload.slice(0,8)]).toEqual([8,9,2,0,4,1,3,0]);
+    resource.update(1/60,1);
+    const frameCall=fixture.writeBuffer.mock.calls.find((call)=>(call[2] as ArrayBufferView).byteLength===32);
+    expect(new Uint32Array((frameCall?.[2] as Uint8Array).buffer)[6]).toBe(1);
     resource.dispose();
   });
 });

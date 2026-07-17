@@ -81,6 +81,9 @@ describe('EngineParticleEffects2D', () => {
     instance.setRenderScale(0.25);
     expect(backend.resources[0]!.renderScale).toBe(0.25);
     expect(() => instance.setRenderScale(0)).toThrow('between 0.0625 and 1');
+    instance.setForceFields({ revision: 1, attractors: [{ x: 10, y: 20, strength: 1, softening: 4, falloff: 'inverse-square' }] });
+    expect(() => instance.setForceFields({ revision: 2, attractors: [{ x: 0, y: 0, strength: 1, softening: -1 }] })).toThrow('softening');
+    expect(() => instance.setForceFields({ revision: 3, attractors: Array.from({ length: 17 }, () => ({ x: 0, y: 0, strength: 1 })) })).toThrow('at most 16');
     const handle = instance.emitter('spark');
     expect(handle).toBe(instance.emitter('spark'));
     handle.writer().position(12, 18).count(3).power(7).submit();

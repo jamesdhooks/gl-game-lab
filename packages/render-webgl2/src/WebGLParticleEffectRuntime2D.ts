@@ -10,6 +10,7 @@ import type {
   ParticleEffectBackendResource2D,
   ParticleEffectRuntimeBackend2D,
   ParticleColliderSet2D,
+  ParticleForceFieldSet2D,
   ParticlePalette2D,
   ParticleOverflowPolicy2D,
   ParticleRenderTier2D,
@@ -22,6 +23,7 @@ const COMMAND_CAPACITY = 64;
 const COMMAND_FLOATS = 16;
 const MAX_PALETTE = 8;
 const MAX_COLLIDERS = 16;
+const MAX_ATTRACTORS = 16;
 
 export interface WebGLParticleEffectRuntimeOptions2D {
   readonly trailFade?: number;
@@ -63,8 +65,12 @@ class WebGLParticleEffectResource2D implements ParticleEffectBackendResource2D {
   private readonly circles = new Float32Array(MAX_COLLIDERS * 4);
   private readonly capsuleA = new Float32Array(MAX_COLLIDERS * 4);
   private readonly capsuleB = new Float32Array(MAX_COLLIDERS * 4);
+  private readonly attractorData = new Float32Array(MAX_ATTRACTORS * 4);
+  private readonly attractorOptions = new Float32Array(MAX_ATTRACTORS * 4);
   private circleCount = 0;
   private capsuleCount = 0;
+  private attractorCount = 0;
+  private forceFieldRevision = -1;
   private readonly batch: GpuParticleCommandBatch2D;
   private commandCount = 0;
   private preparedCommandCount = 0;
@@ -254,6 +260,18 @@ class WebGLParticleEffectResource2D implements ParticleEffectBackendResource2D {
     for (let index = 0; index < this.capsuleCount; index += 1) { const capsule=value.capsules![index]!; this.capsuleA.set([capsule.ax,capsule.ay,capsule.bx,capsule.by],index*4); this.capsuleB.set([capsule.radius,capsule.mode==='kill'?1:0,0,0],index*4); }
   }
 
+  setForceFields(value: ParticleForceFieldSet2D): void {
+    this.assertUsable();
+    if (value.revision === this.forceFieldRevision) return;
+    this.forceFieldRevision = value.revision; this.attractorData.fill(0); this.attractorOptions.fill(0);
+    this.attractorCount = Math.min(MAX_ATTRACTORS, value.attractors.length);
+    for (let index = 0; index < this.attractorCount; index += 1) {
+      const field = value.attractors[index]!, offset = index * 4;
+      this.attractorData.set([field.x, field.y, field.strength, 0], offset);
+      this.attractorOptions.set([field.softening ?? 1, forceFalloffCode(field.falloff), field.tangentialStrength ?? 0, 0], offset);
+    }
+  }
+
   setRenderScale(scale: number): void {
     this.assertUsable();
     this.renderStride = Math.max(1, Math.min(16, Math.round(1 / scale)));
@@ -365,6 +383,9 @@ class WebGLParticleEffectResource2D implements ParticleEffectBackendResource2D {
     gl.uniform2f(uniform('uCanvasSize'), this.viewportWidth, this.viewportHeight);
     gl.uniform4fv(uniform('uArchetypeMotion[0]'), this.archetypeMotion);
     gl.uniform4fv(uniform('uArchetypeForce[0]'), this.archetypeForce);
+    gl.uniform4fv(uniform('uAttractorData[0]'), this.attractorData);
+    gl.uniform4fv(uniform('uAttractorOptions[0]'), this.attractorOptions);
+    gl.uniform1i(uniform('uAttractorCount'), this.attractorCount);
     gl.uniform4fv(uniform('uArchetypeCollision[0]'), this.archetypeCollision);
     gl.uniform4fv(uniform('uArchetypePools[0]'), this.poolData);
     gl.uniform4fv(uniform('uEmitterSource[0]'), this.emitterSource);
@@ -406,6 +427,10 @@ function spawnShapeCode(shape: string): number {
 
 function overflowPolicyCode(policy: ParticleOverflowPolicy2D): number {
   return policy === 'drop-new' ? 1 : policy === 'reserve-priority' ? 2 : 0;
+}
+
+function forceFalloffCode(value: import('@hooksjam/gl-game-lab-engine').ParticleForceFalloff2D | undefined): number {
+  return value === undefined ? -1 : value === 'constant' ? 0 : value === 'inverse' ? 1 : 2;
 }
 
 function maximumEventCandidateLanes(program: CompiledParticleProgram2D): number { return Math.max(1, ...program.effect.source.archetypes.map((archetype) => archetype.events?.length ?? 0)); }

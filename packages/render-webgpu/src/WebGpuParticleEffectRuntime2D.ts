@@ -4,6 +4,7 @@ import type {
   ParticleEffectBackendDiagnostics2D,
   ParticleEffectBackendResource2D,
   ParticleEffectRuntimeBackend2D,
+  ParticleForceFieldSet2D,
   ParticlePalette2D,
   ParticleRenderTier2D,
   ParticleRuntimeEmission2D,
@@ -56,6 +57,8 @@ class WebGpuParticleEffectResource2D implements ParticleEffectBackendResource2D 
   private readonly frame: ParticleWebGpuBuffer2D;
   private readonly motion: ParticleWebGpuBuffer2D;
   private readonly sources: ParticleWebGpuBuffer2D;
+  private readonly forces: ParticleWebGpuBuffer2D;
+  private readonly attractors: ParticleWebGpuBuffer2D;
   private readonly pools: ParticleWebGpuBuffer2D;
   private readonly eventQueue: ParticleWebGpuBuffer2D | undefined;
   private readonly eventCounters: ParticleWebGpuBuffer2D | undefined;
@@ -75,6 +78,9 @@ class WebGpuParticleEffectResource2D implements ParticleEffectBackendResource2D 
   private readonly frameUints = new Uint32Array(this.frameData);
   private readonly frameBytes = new Uint8Array(this.frameData);
   private readonly zeroEventCounters: Uint32Array;
+  private readonly attractorData = new Float32Array(16 * 8);
+  private attractorCount = 0;
+  private forceFieldRevision = -1;
   /** Reused reset payload. Clearing is an authoring/lifecycle action, never a per-frame allocation. */
   private readonly zeroState: Float32Array;
   private readonly submissions: unknown[] = [undefined];
@@ -117,6 +123,15 @@ class WebGpuParticleEffectResource2D implements ParticleEffectBackendResource2D 
     });
     this.motion = device.createBuffer({ label: `${id}.motion`, size: motionData.byteLength, usage: STORAGE_COPY_USAGE });
     device.queue.writeBuffer(this.motion, 0, motionData);
+    const forceData = new Float32Array(Math.max(1, program.effect.source.archetypes.length) * 4);
+    program.effect.source.archetypes.forEach((archetype, index) => {
+      forceData[index * 4] = archetype.motion.radialAcceleration ?? 0; forceData[index * 4 + 1] = archetype.motion.tangentialAcceleration ?? 0;
+      forceData[index * 4 + 2] = archetype.motion.radialFalloff === 'inverse-square' ? 2 : archetype.motion.radialFalloff === 'inverse' ? 1 : 0;
+    });
+    this.forces = device.createBuffer({ label: `${id}.forces`, size: forceData.byteLength, usage: STORAGE_COPY_USAGE });
+    device.queue.writeBuffer(this.forces, 0, forceData);
+    this.attractors = device.createBuffer({ label: `${id}.attractors`, size: this.attractorData.byteLength, usage: STORAGE_COPY_USAGE });
+    device.queue.writeBuffer(this.attractors, 0, this.attractorData);
     const sourceData = new Float32Array(Math.max(1, program.effect.source.emitters.length) * 4);
     program.effect.source.emitters.forEach((emitter, index) => {
       const source = emitter.source;
@@ -146,7 +161,7 @@ class WebGpuParticleEffectResource2D implements ParticleEffectBackendResource2D 
     this.pipeline = device.createComputePipeline({ label: `${id}.pipeline`, layout: 'auto', compute: { module, entryPoint: program.webgpu.simulation.entryPoint } });
     this.bindGroup = device.createBindGroup({
       label: `${id}.bindings`, layout: this.pipeline.getBindGroupLayout(0),
-      entries: [this.stateA, this.stateB, this.stateC, this.frame, this.commands, this.motion, this.sources].map((buffer, binding) => ({ binding, resource: { buffer } })),
+      entries: [this.stateA, this.stateB, this.stateC, this.frame, this.commands, this.motion, this.sources, this.forces, this.attractors].map((buffer, binding) => ({ binding, resource: { buffer } })),
     });
     if (program.webgpu.event && program.webgpu.eventResolve) {
       this.eventQueue = device.createBuffer({ label: `${id}.event-queue`, size: capacity * 3 * 16, usage: STORAGE_COPY_USAGE });
@@ -192,13 +207,24 @@ class WebGpuParticleEffectResource2D implements ParticleEffectBackendResource2D 
 
   setPalette(_palette: ParticlePalette2D): void { this.assertUsable(); }
 
+  setForceFields(value: ParticleForceFieldSet2D): void {
+    this.assertUsable();
+    if (value.revision === this.forceFieldRevision) return;
+    this.forceFieldRevision = value.revision; this.attractorData.fill(0); this.attractorCount = Math.min(16, value.attractors.length);
+    for (let index = 0; index < this.attractorCount; index += 1) {
+      const field = value.attractors[index]!, offset = index * 8;
+      this.attractorData.set([field.x, field.y, field.strength, 0, field.softening ?? 1, forceFalloffCode(field.falloff), field.tangentialStrength ?? 0, 0], offset);
+    }
+    this.device.queue.writeBuffer(this.attractors, 0, this.attractorData); this.uploadBytes += this.attractorData.byteLength;
+  }
+
   update(deltaSeconds: number, timescale: number): void {
     this.assertUsable();
     this.simulationTime += deltaSeconds * timescale;
     this.prepareCommands();
     this.frameFloats[0] = deltaSeconds * timescale; this.frameUints[1] = this.capacity;
     this.frameFloats[2] = this.viewportWidth; this.frameFloats[3] = this.viewportHeight;
-    this.frameUints[4] = this.preparedCommandCount; this.frameUints[5] = 4; this.frameUints[6] = 0;
+    this.frameUints[4] = this.preparedCommandCount; this.frameUints[5] = 4; this.frameUints[6] = this.attractorCount;
     if (this.preparedCommandCount > 0) { const uploadFloats=this.preparedCommandCount*COMMAND_FLOATS;this.device.queue.writeBuffer(this.commands,0,this.preparedCommandData,0,uploadFloats);this.uploadBytes+=uploadFloats*Float32Array.BYTES_PER_ELEMENT; }
     this.device.queue.writeBuffer(this.frame, 0, this.frameBytes); this.uploadBytes += this.frameData.byteLength;
     const runEvents = this.eventWindows.hasActiveWindow(this.simulationTime) && this.eventCounters !== undefined;
@@ -235,9 +261,9 @@ class WebGpuParticleEffectResource2D implements ParticleEffectBackendResource2D 
     for (let index = 0; index < this.poolCursor.length; index += 1) this.poolCursor[index] = Math.round(this.poolData[index * 4] ?? 0);
   }
   diagnostics(): ParticleEffectBackendDiagnostics2D {
-    return Object.freeze({ capacity: this.capacity, activeEstimate: Math.min(this.capacity, this.spawnedParticles), queuedCommands: 0, droppedCommands: this.droppedCommands, spawnedParticles: this.spawnedParticles, droppedParticles: this.droppedParticles, eventCount: this.eventPasses, simulationPasses: this.simulationPasses, renderPasses: this.renderPasses, uploadBytes: this.uploadBytes, contextGeneration: 0, rebuildCount: 0, allocatedBytes: this.capacity * 4 * 4 * 3 + this.commandData.byteLength + this.frameData.byteLength + (this.eventQueue ? this.capacity * 3 * 16 + this.zeroEventCounters.byteLength : 0), eventAttempts: 0, eventOccupiedDrops: 0, eventBudgetDrops: 0, diagnosticAccuracy: 'estimated', directCommandsAdmitted: this.admittedCommands, directCommandsTruncated: this.truncatedCommands, commandUploadBytes: this.uploadBytes, allocationsAfterWarmup: 0 });
+    return Object.freeze({ capacity: this.capacity, activeEstimate: Math.min(this.capacity, this.spawnedParticles), queuedCommands: 0, droppedCommands: this.droppedCommands, spawnedParticles: this.spawnedParticles, droppedParticles: this.droppedParticles, eventCount: this.eventPasses, simulationPasses: this.simulationPasses, renderPasses: this.renderPasses, uploadBytes: this.uploadBytes, contextGeneration: 0, rebuildCount: 0, allocatedBytes: this.capacity * 4 * 4 * 3 + this.commandData.byteLength + this.frameData.byteLength + this.attractorData.byteLength + (this.eventQueue ? this.capacity * 3 * 16 + this.zeroEventCounters.byteLength : 0), eventAttempts: 0, eventOccupiedDrops: 0, eventBudgetDrops: 0, diagnosticAccuracy: 'estimated', directCommandsAdmitted: this.admittedCommands, directCommandsTruncated: this.truncatedCommands, commandUploadBytes: this.uploadBytes, allocationsAfterWarmup: 0 });
   }
-  dispose(): void { if (this.disposed) return; this.disposed = true; this.stateA.destroy(); this.stateB.destroy(); this.stateC.destroy(); this.commands.destroy(); this.frame.destroy(); this.motion.destroy(); this.sources.destroy(); this.pools.destroy(); this.eventQueue?.destroy(); this.eventCounters?.destroy(); }
+  dispose(): void { if (this.disposed) return; this.disposed = true; this.stateA.destroy(); this.stateB.destroy(); this.stateC.destroy(); this.commands.destroy(); this.frame.destroy(); this.motion.destroy(); this.sources.destroy(); this.forces.destroy(); this.attractors.destroy(); this.pools.destroy(); this.eventQueue?.destroy(); this.eventCounters?.destroy(); }
   private prepareCommands(): void {
     const result = planParticleSpawnCommands2D(this.commandData, this.commandCount, this.preparedCommandData, COMMAND_CAPACITY, this.poolData, this.poolCursor);
     this.preparedCommandCount = result.commandCount;
@@ -248,3 +274,4 @@ class WebGpuParticleEffectResource2D implements ParticleEffectBackendResource2D 
 }
 
 function spawnShapeCode(shape:string):number{return Math.max(0,['point','disc','line','cone','arc','ring','radial','spiral','pinwheel','shower','rectangle','path','texture-mask','mesh','particles','collision-contacts','external-points','custom'].indexOf(shape));}
+function forceFalloffCode(value:import('@hooksjam/gl-game-lab-engine').ParticleForceFalloff2D|undefined):number{return value===undefined?-1:value==='constant'?0:value==='inverse'?1:2;}

@@ -279,6 +279,9 @@ export {
   type ParticleCircleCollider2D,
   type ParticleCapsuleCollider2D,
   type ParticleColliderSet2D,
+  type ParticleAttractor2D,
+  type ParticleForceFalloff2D,
+  type ParticleForceFieldSet2D,
   type ParticleSignalPayload2D,
   type ParticleTransform2D,
 } from './ParticleEffectRuntime2D.js';
