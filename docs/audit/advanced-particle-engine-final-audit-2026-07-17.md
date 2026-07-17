@@ -23,7 +23,7 @@ No major rewrite is warranted. The remaining work is acceptance and targeted har
 | Plan area | Assessment |
 |---|---|
 | Executable effect graph | Pass. Archetypes, capacity shares, spawn distributions, motion, lifecycle, collision, events, appearance, render recipes, parameters, curves, aliases, preview limits, and quality overrides are compiled and validated. Registered custom modules require typed resources, backend implementations, compatibility declarations, and CPU reference behavior. |
-| Build-time compiler | Pass with a maintainability caveat. Deterministic graph/ABI hashes, GLSL/WGSL, reflection, diagnostics, and manifests are emitted and cache-keyed. Runtime compilation remains available for development/hot reload, and the compiler still generates long shader strings rather than a typed shader IR. |
+| Build-time compiler | Pass with a maintainability caveat. Deterministic graph/ABI hashes, GLSL/WGSL, reflection, diagnostics, manifests, and production TypeScript modules are emitted and cache-keyed. Production scenes consume validated generated programs; the compiler still generates long shader strings rather than a typed shader IR. |
 | Shared runtime | Pass. Capacity, command rings, overflow, dirty ranges, palettes, event windows, render recipes, pooling, prewarming, recovery, inspection, replay, and disposal are centralized. |
 | WebGL2 execution | Pass. Direct emission uses bounded binary command lookup; spawn budgets cannot overlap capacity; archetype partitions and overflow policies are explicit; event allocation is deterministic and bounded; production execution performs no full-state readback. |
 | WebGPU prototype | Pass for the promised prototype scope. Compute simulation, direct emission, event children, bounds/circle/capsule collisions, points, streaks, trails, palette curves, presentation, pipeline caching, and loss handling execute. Production-default selection remains intentionally conservative. |
@@ -40,7 +40,7 @@ The strongest decision is the graph/compiler/runtime/backend split. Scenes decla
 
 The architecture also avoids a common abstraction mistake: PIC/FLIP and other field solvers are not forced through a generic particle motion model. Their state can reuse appearance and diagnostics through an adapter while their integration and pressure solves remain specialized.
 
-The primary maintainability weakness is `ParticleEffectCompiler2D.ts`. Shader implementation and source generation are still interleaved in large strings. Tests reduce the risk but do not give mature source mapping, typed intermediate representation, or precise compiler diagnostics. Generated artifacts also are not the only production import path, leaving two compilation modes to maintain.
+The primary maintainability weakness is `ParticleEffectCompiler2D.ts`. Shader implementation and source generation are still interleaved in large strings. Tests reduce the risk but do not give mature source mapping, typed intermediate representation, or precise compiler diagnostics. Generated programs are now the sole ordinary production import path, eliminating the former duplicate scene-time shader compilation mode.
 
 The WebGPU renderer/session is deliberately narrower than the WebGL2 backend. That is acceptable for a prototype, but backend capability coverage must remain a tested matrix rather than grow through scene-specific exceptions.
 
@@ -110,7 +110,7 @@ Still below Unity, Unreal, Godot, Wicked Engine, or mature proprietary engines:
 | Area | Grade | Rationale |
 |---|---:|---|
 | Architecture | A | The graph/compiler/runtime/backend split is coherent and proven by three scenes plus an external solver adapter. |
-| API design | A- | Typed authoring, emitter handles, contextual bindings, replay, and inspection are strong; generated artifacts are not yet the sole runtime path. |
+| API design | A | Typed authoring, emitter handles, contextual bindings, replay, inspection, and validated generated runtime artifacts form a coherent boundary. |
 | Maintainability | B+ | Scene coupling is greatly reduced, but long string-generated shaders remain expensive to evolve. |
 | Performance | A- | Required GPU budgets pass and pass amplification/readback are solved; high-tier 590k Fireworks and physical-mobile behavior remain concerns. |
 | Scalability | A- | Capacity and LOD architecture is sound through 590k; active-list compaction would be needed for much larger or high-fidelity workloads. |
@@ -132,7 +132,7 @@ Still below Unity, Unreal, Godot, Wicked Engine, or mature proprietary engines:
 
 1. Shader generation remains a large string-based compiler without typed IR, source locations, or native offline validation.
 2. WebGPU has only one verified desktop adapter in this audit and is not the normal production default, so the multi-backend claim must remain qualified.
-3. Generated build artifacts are not yet the exclusive production runtime source.
+3. The generated-program hydration boundary is runtime validation rather than native offline shader validation, so driver-specific shader failures still require backend fallback and certification.
 4. Physical iOS/Android, broader GPU-vendor, and human parity gates remain external and block deletion of rollback paths.
 5. The strict 60 FPS policy is scheduler-naive, while 590k Fireworks Enhanced/Ultra exposes a real high-fidelity scalability limit.
 
@@ -148,7 +148,7 @@ Still below Unity, Unreal, Godot, Wicked Engine, or mature proprietary engines:
 
 1. Define a prospective refresh-relative FPS gate while preserving the current failed report unchanged.
 2. Add reliable WebGPU hardware benchmark collection before considering broader production selection.
-3. Introduce typed shader modules/source mapping and make generated artifacts the primary production imports.
+3. Introduce typed shader modules/source mapping and native offline shader validation; generated artifacts are already the primary production imports.
 4. If 590k high-fidelity Fireworks becomes a product target, add active-particle compaction, culling, or indirect draw reduction.
 
 ### Low priority — future engine scope
@@ -175,3 +175,5 @@ After the initial audit was written, the WebGPU compute path gained the same com
 Focused compiler/runtime tests and the complete engine/WebGPU suites pass. On the available NVIDIA WebGPU adapter, the development lab executed Orbital circular-kill and Sparks capsule/event workloads at 65,536 capacity with GPU-resident simulation, zero backend fallback, and no browser warnings or errors. These runs prove shader construction and execution, not a cross-vendor performance result.
 
 The internal WebGPU-to-WebGL2 recovery wrapper was also corrected to replay all semantic configuration before retrying the failed operation. Device loss and uncaptured validation errors invalidate resident WebGPU resources, guaranteeing that the next engine operation enters the recovery wrapper. A focused runtime test forces failure after initialization and proves that palette, colliders, force fields, domain, emitter source, viewport, render parameters, render scale, and validation diagnostics survive the switch. A live forced device destruction then reported `backendFallbackCount: 1`, resumed WebGL2 draw work, retained the Orbital workload, and produced no browser warnings or errors.
+
+The final in-repo compiler caveat was subsequently closed. The simulations build now imports graph definitions directly, emits deterministic ignored production modules under `src/.generated`, and scene plugins import those programs through `particlePrograms.ts`. `hydrateCompiledParticleProgram2D` rejects stale compiler versions, mismatched graph hashes, malformed reflection, incorrect shader roles, and corrupted shader sources before deep-freezing an artifact. Tests compile from a missing generated source, compare generated graph hashes with the authoring graphs, reject tampered payloads, and verify repeated generation is byte-identical. Runtime shader composition is no longer part of ordinary production scene imports.
