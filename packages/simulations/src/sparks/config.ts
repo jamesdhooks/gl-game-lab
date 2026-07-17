@@ -28,7 +28,7 @@ const numeric = [
   render(n('trailContinuity','Trail Continuity','Rendering',0,2,.01,.86), ['enhanced','ultra']),
   render(n('particleFidelity','Particle Fidelity','Rendering',.25,1,.05,1), ['ultra']),
   render(n('trailFidelity','Trail Fidelity','Rendering',.25,1,.05,1), ['ultra']),
-  render(n('bloomStrength','Bloom Strength','Rendering',.35,7.2,.05,3.85), ['ultra']),
+  render(n('bloomStrength','Bloom Strength','Rendering',0,7.2,.05,3.85), ['ultra']),
   render(n('bloomThreshold','Bloom Threshold','Rendering',0,1,.01,.78), ['ultra']),
   render(n('bloomRadius','Bloom Radius','Rendering',.25,8,.05,.85), ['ultra']),
   render(n('bloomFidelity','Bloom Fidelity','Rendering',.125,1,.025,.5), ['ultra']),
@@ -70,6 +70,7 @@ export function createSparksConfig(values: Readonly<Record<string, ExperienceSet
 
 export function sparksNumber(config: SparksConfig, key: string): number { const value = config[key]; if (typeof value !== 'number') throw new Error(`Sparks numeric setting is unavailable: ${key}`); return value; }
 export function sparksString(config: SparksConfig, key: string): string { const value = config[key]; if (typeof value !== 'string') throw new Error(`Sparks string setting is unavailable: ${key}`); return value; }
+export function sparksBloomIntensity(config: SparksConfig): number { return sparksNumber(config, 'bloomStrength'); }
 
 function n(key:string,label:string,section:string,min:number,max:number,step:number,defaultValue:number,visibleModes?:readonly string[]) { return Object.freeze({key,label,section,type:'number' as const,min,max,step,default:defaultValue,...(visibleModes?{visibleModes}: {})}); }
 function select(key:string,label:string,section:string,defaultValue:string,options:readonly (readonly [string,string])[]) { return Object.freeze({key,label,section,type:'select' as const,default:defaultValue,options:Object.freeze(options.map(([optionLabel,value])=>Object.freeze({label:optionLabel,value})))}); }

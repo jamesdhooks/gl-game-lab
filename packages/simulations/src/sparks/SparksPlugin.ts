@@ -738,7 +738,7 @@ export function createPreviewSparksConfig(config: SparksConfig): SparksConfig {
     bounceBurstCount: clampPreviewNumber(config, 'bounceBurstCount', 6, 20),
     buildRadius: clampPreviewNumber(config, 'buildRadius', 14, 24),
     heatRadius: clampPreviewNumber(config, 'heatRadius', 60, 110),
-    bloomStrength: clampPreviewNumber(config, 'bloomStrength', 0.35, 4.2),
+    bloomStrength: clampPreviewNumber(config, 'bloomStrength', 0, 4.2),
     particleFidelity: clampPreviewNumber(config, 'particleFidelity', 0.25, 0.75),
     trailFidelity: clampPreviewNumber(config, 'trailFidelity', 0.25, 0.6),
     bloomFidelity: clampPreviewNumber(config, 'bloomFidelity', 0.125, 0.5),

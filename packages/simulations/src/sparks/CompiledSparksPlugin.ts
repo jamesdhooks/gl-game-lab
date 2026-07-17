@@ -14,7 +14,7 @@ import {
   type ParticleEffectInstance2D,
 } from '@hooksjam/gl-game-lab-engine';
 import { registerSimulationRuntime } from '../SimulationPluginLifecycle.js';
-import { createSparksConfig, SPARKS_DEFAULTS, sparksNumber, sparksString, type SparksConfig } from './config.js';
+import { createSparksConfig, SPARKS_DEFAULTS, sparksBloomIntensity, sparksNumber, sparksString, type SparksConfig } from './config.js';
 import { SPARKS_PARTICLE_PROGRAM } from '../particlePrograms.js';
 import { SPARKS_RAIL_SHADER } from './shaders.js';
 import {
@@ -258,7 +258,7 @@ export function createCompiledSparksPlugin(initial: SparksConfig = SPARKS_DEFAUL
         renderer.setBloom({
           enabled: ultra && sparksNumber(config, 'bloomStrength') > 0,
           threshold: sparksNumber(config, 'bloomThreshold'),
-          intensity: sparksNumber(config, 'bloomStrength') * 0.12,
+          intensity: sparksBloomIntensity(config),
           radius: sparksNumber(config, 'bloomRadius'),
           iterations: Math.round(sparksNumber(config, 'bloomSamples')),
           resolutionScale: sparksNumber(config, 'bloomFidelity'),

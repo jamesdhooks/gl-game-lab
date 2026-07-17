@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { ExperienceRegistry } from '@hooksjam/gl-game-lab-engine';
 import { COMPILED_SPARKS_PLUGIN_ID, createSparksConfig, createSparksDefaultRails, createSparksPreviewRails, SPARKS_DEFAULTS, SPARKS_PARTICLE_EFFECT, SPARKS_PARTICLE_PROGRAM, SPARKS_PARTICLE_SETTING_BINDINGS, SPARKS_SETTINGS, SPARKS_STYLE_MANIFEST, sparksDefinition } from '../index.js';
 import { SPARKS_POINT_FRAGMENT_SHADER, SPARKS_POINT_VERTEX_SHADER, SPARKS_STEP_SHADER, SPARKS_TRAIL_VERTEX_SHADER } from '../sparks/shaders.js';
+import { sparksBloomIntensity } from '../sparks/config.js';
 describe('Sparks', () => {
   it('registers four interaction modes and six styles', () => {
     const registry = new ExperienceRegistry().register(sparksDefinition);
@@ -108,5 +109,10 @@ describe('Sparks', () => {
     expect(SPARKS_PARTICLE_PROGRAM.webgl2.eventClaimVertex?.source).toContain('uParticleEventC[1]');
     expect(SPARKS_PARTICLE_PROGRAM.webgl2.eventClaimVertex?.source).toContain('uVelocityState');
     expect(SPARKS_PARTICLE_PROGRAM.webgl2.vertex.source).toContain('sizeCurve.w');
+  });
+
+  it('maps Ultra bloom strength directly to additive post-process exposure', () => {
+    expect(sparksBloomIntensity(createSparksConfig({ bloomStrength: 0 }))).toBe(0);
+    expect(sparksBloomIntensity(createSparksConfig({ bloomStrength: 7.2 }))).toBe(7.2);
   });
 });
