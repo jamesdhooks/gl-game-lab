@@ -23,7 +23,21 @@ export class ParticleEventWindowScheduler2D {
   private scheduleGeneration(archetypeIndex:number,spawnStart:number,spawnEnd:number,generation:number):void{
     const archetype=this.program.effect.source.archetypes[archetypeIndex];if(!archetype)return;
     const variability=archetype.lifecycle.lifetimeVariability??0,minimum=archetype.lifecycle.lifetime*Math.max(.05,1-variability),maximum=archetype.lifecycle.lifetime*(1+variability);
-    for(const event of archetype.events??[]){if(generation>event.maxGeneration)continue;let start=spawnStart,end=spawnEnd+EVENT_EPSILON_SECONDS;if(event.trigger==='collision')end=spawnEnd+maximum;else if(event.trigger==='age'){start=spawnStart+(event.delay??0);end=spawnEnd+(event.delay??0)+EVENT_EPSILON_SECONDS;}else if(event.trigger==='death'){start=spawnStart+minimum;end=spawnEnd+maximum+EVENT_EPSILON_SECONDS;}this.add(start,end);const child=this.program.effect.archetypeIds[event.childArchetypeId];if(child!==undefined&&generation<event.maxGeneration)this.scheduleGeneration(child,start,end,generation+1);}
+    for(const event of archetype.events??[]){
+      if(generation>event.maxGeneration)continue;
+      let start=spawnStart,end=spawnEnd+EVENT_EPSILON_SECONDS;
+      if(event.trigger==='collision')end=spawnEnd+maximum;
+      else if(event.trigger==='age'){
+        start=spawnStart+(event.delay??0);
+        end=spawnEnd+(event.delay??0)+EVENT_EPSILON_SECONDS;
+      }else if(event.trigger==='death'){
+        start=spawnStart+minimum;
+        end=spawnEnd+maximum+EVENT_EPSILON_SECONDS;
+      }
+      this.add(start,end);
+      const child=this.program.effect.archetypeIds[event.childArchetypeId];
+      if(child!==undefined&&generation<event.maxGeneration)this.scheduleGeneration(child,start,end,generation+1);
+    }
   }
 
   private add(start:number,end:number):void{if(this.count>=this.starts.length){const last=this.starts.length-1;this.starts[last]=Math.min(this.starts[last]!,start);this.ends[last]=Math.max(this.ends[last]!,end);return;}this.starts[this.count]=start;this.ends[this.count]=end;this.count+=1;}

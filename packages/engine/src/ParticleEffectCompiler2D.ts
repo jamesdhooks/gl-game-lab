@@ -207,19 +207,68 @@ void main() {
     stateA.z += uDt;
     stateB.y += motion.x * uDt;
     stateB.xy *= exp(-max(0.0, motion.y) * uDt);
-    if (uAttractorCount > 0) for(int fieldIndex=0;fieldIndex<16;fieldIndex++){if(fieldIndex>=uAttractorCount)break;vec4 field=uAttractorData[fieldIndex],options=uAttractorOptions[fieldIndex],velocityField=uAttractorVelocity[fieldIndex];vec2 delta=field.xy-stateA.xy;float rawDistance=length(delta);if(field.w>0.0&&rawDistance>=field.w)continue;float envelope=1.0;if(field.w>0.0&&options.w>.5){float t=clamp(1.0-rawDistance/field.w,0.0,1.0);envelope=options.w>1.5?t*t*(3.0-2.0*t):t;}float distance=max(max(rawDistance,options.x),.0001);vec2 radial=rawDistance>.0001?delta/rawDistance:vec2(0);float falloffMode=options.y<0.0?force.z:options.y;float falloff=falloffMode<.5?1.0:falloffMode<1.5?1.0/distance:1.0/(distance*distance);float radialStrength=force.x*field.z+velocityField.w,tangentialStrength=force.y*field.z+options.z;stateB.xy+=((radial*radialStrength+vec2(-radial.y,radial.x)*tangentialStrength)*falloff+velocityField.xy*velocityField.z)*envelope*uDt;}
+    if (uAttractorCount > 0) for(int fieldIndex=0;fieldIndex<16;fieldIndex++) {
+      if(fieldIndex>=uAttractorCount) break;
+      vec4 field=uAttractorData[fieldIndex],options=uAttractorOptions[fieldIndex],velocityField=uAttractorVelocity[fieldIndex];
+      vec2 delta=field.xy-stateA.xy; float rawDistance=length(delta);
+      if(field.w>0.0&&rawDistance>=field.w) continue;
+      float envelope=1.0;
+      if(field.w>0.0&&options.w>.5) { float t=clamp(1.0-rawDistance/field.w,0.0,1.0); envelope=options.w>1.5?t*t*(3.0-2.0*t):t; }
+      float distance=max(max(rawDistance,options.x),.0001); vec2 radial=rawDistance>.0001?delta/rawDistance:vec2(0);
+      float falloffMode=options.y<0.0?force.z:options.y; float falloff=falloffMode<.5?1.0:falloffMode<1.5?1.0/distance:1.0/(distance*distance);
+      float radialStrength=force.x*field.z+velocityField.w,tangentialStrength=force.y*field.z+options.z;
+      stateB.xy+=((radial*radialStrength+vec2(-radial.y,radial.x)*tangentialStrength)*falloff+velocityField.xy*velocityField.z)*envelope*uDt;
+    }
     ${turbulence ? "float noise = hash21(stateA.xy + stateC.zz); stateB.xy += vec2(cos(noise * 6.2831853), sin(noise * 6.2831853)) * motion.z * uDt;" : ""}
     stateB.w += motion.w * uDt;
     stateB.z += stateB.w * uDt;
     float particleSpeed=length(stateB.xy);if(force.w>0.0&&particleSpeed>force.w)stateB.xy*=force.w/particleSpeed;
     stateA.xy += stateB.xy * uDt;
-    int domainShape=int(uParticleDomainOptions.x+.5),domainBehavior=int(uParticleDomainOptions.y+.5);float domainDamping=uParticleDomainOptions.z,domainMargin=uParticleDomainOptions.w;if(domainBehavior>0){if(domainShape==1){vec2 domainDelta=stateA.xy-uParticleDomainData.xy;float domainDistance=length(domainDelta),domainRadius=uParticleDomainData.z+domainMargin;if(domainDistance>domainRadius){vec2 normal=domainDistance>.0001?domainDelta/domainDistance:vec2(1,0);if(domainBehavior==1)stateA.z=stateA.w;else if(domainBehavior==2){stateA.xy=uParticleDomainData.xy+normal*uParticleDomainData.z;stateB.xy=(stateB.xy-2.0*normal*dot(stateB.xy,normal))*domainDamping;}else{stateA.xy=uParticleDomainData.xy-normal*uParticleDomainData.z;stateB.xy*=domainDamping;}}}else{vec2 domainMin=uParticleDomainData.xy-uParticleDomainData.zw-vec2(domainMargin),domainMax=uParticleDomainData.xy+uParticleDomainData.zw+vec2(domainMargin);bool outside=any(lessThan(stateA.xy,domainMin))||any(greaterThan(stateA.xy,domainMax));if(outside){if(domainBehavior==1)stateA.z=stateA.w;else if(domainBehavior==2){if(stateA.x<domainMin.x||stateA.x>domainMax.x)stateB.x=-stateB.x*domainDamping;if(stateA.y<domainMin.y||stateA.y>domainMax.y)stateB.y=-stateB.y*domainDamping;stateA.xy=clamp(stateA.xy,domainMin,domainMax);}else{if(stateA.x<domainMin.x)stateA.x=domainMax.x;else if(stateA.x>domainMax.x)stateA.x=domainMin.x;if(stateA.y<domainMin.y)stateA.y=domainMax.y;else if(stateA.y>domainMax.y)stateA.y=domainMin.y;stateB.xy*=domainDamping;}}}}
+    int domainShape=int(uParticleDomainOptions.x+.5),domainBehavior=int(uParticleDomainOptions.y+.5);
+    float domainDamping=uParticleDomainOptions.z,domainMargin=uParticleDomainOptions.w;
+    if(domainBehavior>0) {
+      if(domainShape==1) {
+        vec2 domainDelta=stateA.xy-uParticleDomainData.xy; float domainDistance=length(domainDelta),domainRadius=uParticleDomainData.z+domainMargin;
+        if(domainDistance>domainRadius) {
+          vec2 normal=domainDistance>.0001?domainDelta/domainDistance:vec2(1,0);
+          if(domainBehavior==1) stateA.z=stateA.w;
+          else if(domainBehavior==2) { stateA.xy=uParticleDomainData.xy+normal*uParticleDomainData.z; stateB.xy=(stateB.xy-2.0*normal*dot(stateB.xy,normal))*domainDamping; }
+          else { stateA.xy=uParticleDomainData.xy-normal*uParticleDomainData.z; stateB.xy*=domainDamping; }
+        }
+      } else {
+        vec2 domainMin=uParticleDomainData.xy-uParticleDomainData.zw-vec2(domainMargin),domainMax=uParticleDomainData.xy+uParticleDomainData.zw+vec2(domainMargin);
+        bool outside=any(lessThan(stateA.xy,domainMin))||any(greaterThan(stateA.xy,domainMax));
+        if(outside) {
+          if(domainBehavior==1) stateA.z=stateA.w;
+          else if(domainBehavior==2) {
+            if(stateA.x<domainMin.x||stateA.x>domainMax.x) stateB.x=-stateB.x*domainDamping;
+            if(stateA.y<domainMin.y||stateA.y>domainMax.y) stateB.y=-stateB.y*domainDamping;
+            stateA.xy=clamp(stateA.xy,domainMin,domainMax);
+          } else {
+            if(stateA.x<domainMin.x) stateA.x=domainMax.x; else if(stateA.x>domainMax.x) stateA.x=domainMin.x;
+            if(stateA.y<domainMin.y) stateA.y=domainMax.y; else if(stateA.y>domainMax.y) stateA.y=domainMin.y;
+            stateB.xy*=domainDamping;
+          }
+        }
+      }
+    }
     ${
       collisions
         ? `int collisionFlags=int(collision.w+.5);
-    if ((collisionFlags & 1) != 0) { if(stateA.x<0.0||stateA.x>uCanvasSize.x){collided=true;stateA.x=clamp(stateA.x,0.0,uCanvasSize.x);stateB.x=-stateB.x*collision.x;} if(stateA.y<0.0||stateA.y>uCanvasSize.y){collided=true;stateA.y=clamp(stateA.y,0.0,uCanvasSize.y);stateB.y=-stateB.y*collision.x;} }
-    if ((collisionFlags & 2) != 0) for(int collider=0;collider<16;collider++){if(collider>=uCircleColliderCount)break;vec4 circle=uCircleColliders[collider];vec2 delta=stateA.xy-circle.xy;float distance=length(delta);if(distance<circle.z){collided=true;if(circle.w>.5){stateA.z=stateA.w;}else{vec2 normal=distance>.0001?delta/distance:vec2(0,-1);stateA.xy=circle.xy+normal*circle.z;stateB.xy-=normal*(1.0+collision.x)*dot(stateB.xy,normal);stateB.xy*=max(0.0,1.0-collision.y);stateA.z+=stateA.w*collision.z;}}}
-    if ((collisionFlags & 4) != 0) for(int collider=0;collider<16;collider++){if(collider>=uCapsuleColliderCount)break;vec4 segment=uCapsuleA[collider];vec4 data=uCapsuleB[collider];vec2 ab=segment.zw-segment.xy;float t=clamp(dot(stateA.xy-segment.xy,ab)/max(dot(ab,ab),.0001),0.0,1.0);vec2 closest=segment.xy+ab*t,delta=stateA.xy-closest;float distance=length(delta);if(distance<data.x){collided=true;if(data.y>.5){stateA.z=stateA.w;}else{vec2 normal=distance>.0001?delta/distance:vec2(0,-1);stateA.xy=closest+normal*data.x;stateB.xy-=normal*(1.0+collision.x)*dot(stateB.xy,normal);stateB.xy*=max(0.0,1.0-collision.y);stateA.z+=stateA.w*collision.z;}}} if(collided)stateC.w=float(int(stateC.w+.5)|1);`
+    if ((collisionFlags & 1) != 0) {
+      if(stateA.x<0.0||stateA.x>uCanvasSize.x){collided=true;stateA.x=clamp(stateA.x,0.0,uCanvasSize.x);stateB.x=-stateB.x*collision.x;}
+      if(stateA.y<0.0||stateA.y>uCanvasSize.y){collided=true;stateA.y=clamp(stateA.y,0.0,uCanvasSize.y);stateB.y=-stateB.y*collision.x;}
+    }
+    if ((collisionFlags & 2) != 0) for(int collider=0;collider<16;collider++) {
+      if(collider>=uCircleColliderCount)break; vec4 circle=uCircleColliders[collider]; vec2 delta=stateA.xy-circle.xy; float distance=length(delta);
+      if(distance<circle.z){collided=true;if(circle.w>.5){stateA.z=stateA.w;}else{vec2 normal=distance>.0001?delta/distance:vec2(0,-1);stateA.xy=circle.xy+normal*circle.z;stateB.xy-=normal*(1.0+collision.x)*dot(stateB.xy,normal);stateB.xy*=max(0.0,1.0-collision.y);stateA.z+=stateA.w*collision.z;}}
+    }
+    if ((collisionFlags & 4) != 0) for(int collider=0;collider<16;collider++) {
+      if(collider>=uCapsuleColliderCount)break; vec4 segment=uCapsuleA[collider]; vec4 data=uCapsuleB[collider]; vec2 ab=segment.zw-segment.xy;
+      float t=clamp(dot(stateA.xy-segment.xy,ab)/max(dot(ab,ab),.0001),0.0,1.0); vec2 closest=segment.xy+ab*t,delta=stateA.xy-closest; float distance=length(delta);
+      if(distance<data.x){collided=true;if(data.y>.5){stateA.z=stateA.w;}else{vec2 normal=distance>.0001?delta/distance:vec2(0,-1);stateA.xy=closest+normal*data.x;stateB.xy-=normal*(1.0+collision.x)*dot(stateB.xy,normal);stateB.xy*=max(0.0,1.0-collision.y);stateA.z+=stateA.w*collision.z;}}
+    }
+    if(collided)stateC.w=float(int(stateC.w+.5)|1);`
         : ""
     }
   }
@@ -327,7 +376,14 @@ function buildGlslEventClaimVertex(effect: CompiledParticleEffect2D): string {
     for (const entry of events.filter((event) => event.parent === archetypeIndex)) {
       const trigger = eventTriggerGlsl(entry, "a", "c", `eventA.w`);
       const notFired = entry.trigger === "collision" ? "true" : `(int(c.w+.5)&${eventFlag(entry.parentSlot)})==0`;
-      branches.push(`if(archetype==${archetypeIndex} && lane==${entry.parentSlot}){vec4 eventA=uParticleEventA[${entry.global}],eventC=uParticleEventC[${entry.global}];float speed=length(b.xy),impact=smoothstep(eventC.x,max(eventC.x+1.0,eventC.z),speed);if(c.y<=eventA.z && speed>=eventC.x && (${notFired}) && (${trigger}) && hash11(float(parent*31+lane*17+${entry.global}))<=eventA.x){priority=${entry.priority};slot=${entry.prioritySlot};child=${entry.child};childCount=int(eventA.y*mix(.16,1.0+impact*eventC.y,impact)+.5);valid=childCount>0;}}`);
+      branches.push(`if(archetype==${archetypeIndex} && lane==${entry.parentSlot}) {
+  vec4 eventA=uParticleEventA[${entry.global}],eventC=uParticleEventC[${entry.global}];
+  float speed=length(b.xy),impact=smoothstep(eventC.x,max(eventC.x+1.0,eventC.z),speed);
+  if(c.y<=eventA.z && speed>=eventC.x && (${notFired}) && (${trigger}) && hash11(float(parent*31+lane*17+${entry.global}))<=eventA.x) {
+    priority=${entry.priority}; slot=${entry.prioritySlot}; child=${entry.child};
+    childCount=int(eventA.y*mix(.16,1.0+impact*eventC.y,impact)+.5); valid=childCount>0;
+  }
+}`);
     }
   }
   return `#version 300 es
@@ -338,12 +394,30 @@ float hash11(float value){return fract(sin(value*91.3458+17.123)*47453.5453);}
 void main(){int parent=gl_VertexID/${candidateLanes},lane=gl_VertexID-parent*${candidateLanes};vClaim=12582912.0;vChildCount=0.0;vPoolStart=0.0;vPoolEnd=0.0;vFallback=0.0;gl_PointSize=1.0;
  if(parent>=uCapacity){gl_Position=vec4(2.0);return;}ivec2 uv=ivec2(parent%uStateSize.x,parent/uStateSize.x);vec4 a=texelFetch(uPositionState,uv,0),b=texelFetch(uVelocityState,uv,0),c=texelFetch(uMetadataState,uv,0);int archetype=int(c.x+.5),priority=0,slot=0,child=-1,childCount=0;bool valid=false;
  ${branches.join("\n ")}
- if(!valid||child<0){gl_Position=vec4(2.0);return;}vec4 pool=uArchetypePools[child];int poolStart=int(pool.x+.5),poolCount=int(pool.y+.5);childCount=min(childCount,poolCount);int pointWidth=max(1,int(ceil(sqrt(float(childCount)))));int firstFullRow=(poolStart+uStateSize.x-1)/uStateSize.x,lastExclusive=(poolStart+poolCount)/uStateSize.x;int rowCount=max(0,lastExclusive-firstFullRow);uint hash=uint(parent)*1664525u+uint(lane)*1013904223u+uint(slot+priority*4)*2246822519u;int originX=0,originY=0;if(rowCount<=0||pointWidth>uStateSize.x){vFallback=1.0;pointWidth=min(poolCount,uStateSize.x);originX=min(poolStart%uStateSize.x,max(0,uStateSize.x-pointWidth));originY=poolStart/uStateSize.x;}else{int availableX=max(1,uStateSize.x-pointWidth+1),availableY=max(1,rowCount-pointWidth+1);originX=int(hash%uint(availableX));originY=firstFullRow+int((hash/uint(availableX))%uint(availableY));}vec2 center=vec2(float(originX)+float(pointWidth)*.5,float(originY)+float(pointWidth)*.5);vec2 clip=center/vec2(uStateSize)*2.0-1.0;gl_Position=vec4(clip,0,1);gl_PointSize=float(pointWidth);vClaim=float(priority*4194304+parent*4+slot);vChildCount=float(childCount);vPoolStart=float(poolStart);vPoolEnd=float(poolStart+poolCount);}`;
+ if(!valid||child<0){gl_Position=vec4(2.0);return;}
+ vec4 pool=uArchetypePools[child]; int poolStart=int(pool.x+.5),poolCount=int(pool.y+.5); childCount=min(childCount,poolCount);
+ int pointWidth=max(1,int(ceil(sqrt(float(childCount))))); int firstFullRow=(poolStart+uStateSize.x-1)/uStateSize.x;
+ int lastExclusive=(poolStart+poolCount)/uStateSize.x,rowCount=max(0,lastExclusive-firstFullRow);
+ uint hash=uint(parent)*1664525u+uint(lane)*1013904223u+uint(slot+priority*4)*2246822519u; int originX=0,originY=0;
+ if(rowCount<=0||pointWidth>uStateSize.x){vFallback=1.0;pointWidth=min(poolCount,uStateSize.x);originX=min(poolStart%uStateSize.x,max(0,uStateSize.x-pointWidth));originY=poolStart/uStateSize.x;}
+ else{int availableX=max(1,uStateSize.x-pointWidth+1),availableY=max(1,rowCount-pointWidth+1);originX=int(hash%uint(availableX));originY=firstFullRow+int((hash/uint(availableX))%uint(availableY));}
+ vec2 center=vec2(float(originX)+float(pointWidth)*.5,float(originY)+float(pointWidth)*.5),clip=center/vec2(uStateSize)*2.0-1.0;
+ gl_Position=vec4(clip,0,1); gl_PointSize=float(pointWidth); vClaim=float(priority*4194304+parent*4+slot);
+ vChildCount=float(childCount); vPoolStart=float(poolStart); vPoolEnd=float(poolStart+poolCount);}`;
 }
 
 function buildGlslEventClaimFragment(): string {
   return `#version 300 es
-precision highp float;precision highp int;uniform ivec2 uStateSize;flat in float vClaim;flat in float vChildCount;flat in float vPoolStart;flat in float vPoolEnd;flat in float vFallback;out vec4 outClaim;void main(){float id=floor(gl_FragCoord.y)*float(uStateSize.x)+floor(gl_FragCoord.x);if(id<vPoolStart||id>=vPoolEnd)discard;if(vFallback<.5){float width=ceil(sqrt(vChildCount));vec2 cell=floor(gl_PointCoord*width);float ordinal=cell.y*width+cell.x;if(ordinal>=vChildCount)discard;}outClaim=vec4(vClaim);}`;
+precision highp float; precision highp int;
+uniform ivec2 uStateSize;
+flat in float vClaim; flat in float vChildCount; flat in float vPoolStart; flat in float vPoolEnd; flat in float vFallback;
+out vec4 outClaim;
+void main(){
+  float id=floor(gl_FragCoord.y)*float(uStateSize.x)+floor(gl_FragCoord.x);
+  if(id<vPoolStart||id>=vPoolEnd)discard;
+  if(vFallback<.5){float width=ceil(sqrt(vChildCount));vec2 cell=floor(gl_PointCoord*width);float ordinal=cell.y*width+cell.x;if(ordinal>=vChildCount)discard;}
+  outClaim=vec4(vClaim);
+}`;
 }
 
 interface CompiledEventEntry {
@@ -549,12 +623,50 @@ fn simulate(@builtin(global_invocation_id) gid: vec3<u32>) {
     stateA[i].age += frame.delta;
     stateB[i].velocity.y += motion.x * frame.delta;
     stateB[i].velocity *= exp(-max(0.0, motion.y) * frame.delta);
-    ${turbulence ? "let turbulenceAngle=hash11(stateC[i].colorSeed+stateA[i].age*1.37+dot(stateA[i].position,vec2<f32>(0.013,0.017)))*6.2831853;stateB[i].velocity+=vec2<f32>(cos(turbulenceAngle),sin(turbulenceAngle))*motion.z*frame.delta;" : ""}
-    for (var fieldIndex=0u; fieldIndex<min(frame.attractorCount,16u); fieldIndex+=1u) { let field=attractors[fieldIndex];let delta=field.data.xy-stateA[i].position;let rawDistance=length(delta);if(field.data.w<=0.0||rawDistance<field.data.w){var envelope=1.0;if(field.data.w>0.0&&field.options.w>0.5){let t=clamp(1.0-rawDistance/field.data.w,0.0,1.0);envelope=select(t,t*t*(3.0-2.0*t),field.options.w>1.5);}let distance=max(max(rawDistance,field.options.x),0.0001);let radial=select(vec2<f32>(0.0),delta/rawDistance,rawDistance>0.0001);let falloffMode=select(force.z,field.options.y,field.options.y>=0.0);let falloff=select(select(1.0/distance,1.0/(distance*distance),falloffMode>=1.5),1.0,falloffMode<0.5);let radialStrength=force.x*field.data.z+field.velocity.w;let tangentialStrength=force.y*field.data.z+field.options.z;stateB[i].velocity+=((radial*radialStrength+vec2<f32>(-radial.y,radial.x)*tangentialStrength)*falloff+field.velocity.xy*field.velocity.z)*envelope*frame.delta;} }
+    ${turbulence ? `let turbulenceAngle=hash11(stateC[i].colorSeed+stateA[i].age*1.37+dot(stateA[i].position,vec2<f32>(0.013,0.017)))*6.2831853;
+    stateB[i].velocity+=vec2<f32>(cos(turbulenceAngle),sin(turbulenceAngle))*motion.z*frame.delta;` : ""}
+    for (var fieldIndex=0u; fieldIndex<min(frame.attractorCount,16u); fieldIndex+=1u) {
+      let field=attractors[fieldIndex]; let delta=field.data.xy-stateA[i].position; let rawDistance=length(delta);
+      if(field.data.w<=0.0||rawDistance<field.data.w) {
+        var envelope=1.0;
+        if(field.data.w>0.0&&field.options.w>0.5){let t=clamp(1.0-rawDistance/field.data.w,0.0,1.0);envelope=select(t,t*t*(3.0-2.0*t),field.options.w>1.5);}
+        let distance=max(max(rawDistance,field.options.x),0.0001); let radial=select(vec2<f32>(0.0),delta/rawDistance,rawDistance>0.0001);
+        let falloffMode=select(force.z,field.options.y,field.options.y>=0.0); let falloff=select(select(1.0/distance,1.0/(distance*distance),falloffMode>=1.5),1.0,falloffMode<0.5);
+        let radialStrength=force.x*field.data.z+field.velocity.w; let tangentialStrength=force.y*field.data.z+field.options.z;
+        stateB[i].velocity+=((radial*radialStrength+vec2<f32>(-radial.y,radial.x)*tangentialStrength)*falloff+field.velocity.xy*field.velocity.z)*envelope*frame.delta;
+      }
+    }
     stateB[i].rotation += stateB[i].angularVelocity * frame.delta;
     let particleSpeed=length(stateB[i].velocity);if(force.w>0.0&&particleSpeed>force.w){stateB[i].velocity*=force.w/particleSpeed;}
     stateA[i].position += stateB[i].velocity * frame.delta;
-    let domainShape=u32(domain.options.x+0.5);let domainBehavior=u32(domain.options.y+0.5);let domainDamping=domain.options.z;let domainMargin=domain.options.w;if(domainBehavior>0u){if(domainShape==1u){let domainDelta=stateA[i].position-domain.data.xy;let domainDistance=length(domainDelta);if(domainDistance>domain.data.z+domainMargin){let normal=select(vec2<f32>(1.0,0.0),domainDelta/domainDistance,domainDistance>0.0001);if(domainBehavior==1u){stateA[i].age=stateA[i].lifetime;}else if(domainBehavior==2u){stateA[i].position=domain.data.xy+normal*domain.data.z;stateB[i].velocity=(stateB[i].velocity-2.0*normal*dot(stateB[i].velocity,normal))*domainDamping;}else{stateA[i].position=domain.data.xy-normal*domain.data.z;stateB[i].velocity*=domainDamping;}}}else{let domainMin=domain.data.xy-domain.data.zw-vec2<f32>(domainMargin);let domainMax=domain.data.xy+domain.data.zw+vec2<f32>(domainMargin);let outside=any(stateA[i].position<domainMin)||any(stateA[i].position>domainMax);if(outside){if(domainBehavior==1u){stateA[i].age=stateA[i].lifetime;}else if(domainBehavior==2u){if(stateA[i].position.x<domainMin.x||stateA[i].position.x>domainMax.x){stateB[i].velocity.x=-stateB[i].velocity.x*domainDamping;}if(stateA[i].position.y<domainMin.y||stateA[i].position.y>domainMax.y){stateB[i].velocity.y=-stateB[i].velocity.y*domainDamping;}stateA[i].position=clamp(stateA[i].position,domainMin,domainMax);}else{if(stateA[i].position.x<domainMin.x){stateA[i].position.x=domainMax.x;}else if(stateA[i].position.x>domainMax.x){stateA[i].position.x=domainMin.x;}if(stateA[i].position.y<domainMin.y){stateA[i].position.y=domainMax.y;}else if(stateA[i].position.y>domainMax.y){stateA[i].position.y=domainMin.y;}stateB[i].velocity*=domainDamping;}}}}
+    let domainShape=u32(domain.options.x+0.5); let domainBehavior=u32(domain.options.y+0.5);
+    let domainDamping=domain.options.z; let domainMargin=domain.options.w;
+    if(domainBehavior>0u) {
+      if(domainShape==1u) {
+        let domainDelta=stateA[i].position-domain.data.xy; let domainDistance=length(domainDelta);
+        if(domainDistance>domain.data.z+domainMargin) {
+          let normal=select(vec2<f32>(1.0,0.0),domainDelta/domainDistance,domainDistance>0.0001);
+          if(domainBehavior==1u){stateA[i].age=stateA[i].lifetime;}
+          else if(domainBehavior==2u){stateA[i].position=domain.data.xy+normal*domain.data.z;stateB[i].velocity=(stateB[i].velocity-2.0*normal*dot(stateB[i].velocity,normal))*domainDamping;}
+          else{stateA[i].position=domain.data.xy-normal*domain.data.z;stateB[i].velocity*=domainDamping;}
+        }
+      } else {
+        let domainMin=domain.data.xy-domain.data.zw-vec2<f32>(domainMargin); let domainMax=domain.data.xy+domain.data.zw+vec2<f32>(domainMargin);
+        let outside=any(stateA[i].position<domainMin)||any(stateA[i].position>domainMax);
+        if(outside) {
+          if(domainBehavior==1u){stateA[i].age=stateA[i].lifetime;}
+          else if(domainBehavior==2u) {
+            if(stateA[i].position.x<domainMin.x||stateA[i].position.x>domainMax.x){stateB[i].velocity.x=-stateB[i].velocity.x*domainDamping;}
+            if(stateA[i].position.y<domainMin.y||stateA[i].position.y>domainMax.y){stateB[i].velocity.y=-stateB[i].velocity.y*domainDamping;}
+            stateA[i].position=clamp(stateA[i].position,domainMin,domainMax);
+          } else {
+            if(stateA[i].position.x<domainMin.x){stateA[i].position.x=domainMax.x;}else if(stateA[i].position.x>domainMax.x){stateA[i].position.x=domainMin.x;}
+            if(stateA[i].position.y<domainMin.y){stateA[i].position.y=domainMax.y;}else if(stateA[i].position.y>domainMax.y){stateA[i].position.y=domainMin.y;}
+            stateB[i].velocity*=domainDamping;
+          }
+        }
+      }
+    }
     ${collisions ? "stateA[i].position = clamp(stateA[i].position, vec2<f32>(0.0), frame.viewport);" : ""}
   }
   if (frame.commandCount > 0u) {

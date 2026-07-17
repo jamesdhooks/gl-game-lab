@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { EngineParticleEffects2D, FallbackParticleEffectRuntimeBackend2D, adaptParticleEffectDefinition2D, compileParticleEffect2D, compileParticleProgram2D, type GpuRenderTarget2D, type ParticleEffectBackendDiagnostics2D, type ParticleEffectBackendResource2D, type ParticleEffectDefinition2D, type ParticleEffectRuntimeBackend2D, type ParticleColliderSet2D, type ParticleDomain2D, type ParticleEmitterSourceOverride2D, type ParticleEventParameters2D, type ParticleForceFieldSet2D, type ParticlePalette2D, type ParticleRenderParameters2D, type ParticleRuntimeEmission2D, type ParticleRenderTier2D, type ParticleViewport2D } from "../index.js";
+import {
+  EngineParticleEffects2D, FallbackParticleEffectRuntimeBackend2D, adaptParticleEffectDefinition2D,
+  compileParticleEffect2D, compileParticleProgram2D, type GpuRenderTarget2D,
+  type ParticleEffectBackendDiagnostics2D, type ParticleEffectBackendResource2D,
+  type ParticleEffectDefinition2D, type ParticleEffectRuntimeBackend2D, type ParticleColliderSet2D,
+  type ParticleDomain2D, type ParticleEmitterSourceOverride2D, type ParticleEventParameters2D,
+  type ParticleForceFieldSet2D, type ParticlePalette2D, type ParticleRenderParameters2D,
+  type ParticleRuntimeEmission2D, type ParticleRenderTier2D, type ParticleViewport2D,
+} from "../index.js";
 
 class TestResource implements ParticleEffectBackendResource2D {
   emissions: ParticleRuntimeEmission2D[] = [];

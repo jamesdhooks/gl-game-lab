@@ -54,7 +54,14 @@ export { createSplashGpuImpulse, createSplashGpuObstacles, createSplashGpuPourBa
 export { validateSplashPicFlipGpuParity, type SplashPicFlipGpuParityResult } from './splash-mpm/SplashPicFlipGpuParity.js';
 export { SPLASH_MPM_PLUGIN_ID, SplashMpmControllerService, createSplashMpmPlugin, type SplashMpmController, type SplashMpmMode } from './splash-mpm/SplashMpmPlugin.js';
 export { SPLASH_MPM_STYLE_MANIFEST } from './splash-mpm/styles.js';
-export { SPLASH_PIC_FLIP_CAPACITY, SplashPicFlipModel, SplashMpmModel, computeSplashPicFlipGridUpdate, computeSplashPicFlipParticleToGrid, computeSplashPicFlipParticleUpdate, type SplashMpmTuning, type SplashPicFlipGridUpdate, type SplashPicFlipGridUpdateInput, type SplashPicFlipGridUpdateOutput, type SplashPicFlipParticleToGridInput, type SplashPicFlipParticleToGridOutput, type SplashPicFlipParticleToGridTransfer, type SplashPicFlipParticleUpdate, type SplashPicFlipParticleUpdateInput } from './splash-mpm/SplashMpmModel.js';
+export {
+  SPLASH_PIC_FLIP_CAPACITY, SplashPicFlipModel, SplashMpmModel, computeSplashPicFlipGridUpdate,
+  computeSplashPicFlipParticleToGrid, computeSplashPicFlipParticleUpdate, type SplashMpmTuning,
+  type SplashPicFlipGridUpdate, type SplashPicFlipGridUpdateInput, type SplashPicFlipGridUpdateOutput,
+  type SplashPicFlipParticleToGridInput, type SplashPicFlipParticleToGridOutput,
+  type SplashPicFlipParticleToGridTransfer, type SplashPicFlipParticleUpdate,
+  type SplashPicFlipParticleUpdateInput,
+} from './splash-mpm/SplashMpmModel.js';
 export { VASCULAR_TREE_DEFAULTS, VASCULAR_TREE_SETTINGS, createVascularTreeConfig, type VascularTreeConfig } from './alien-vascular-tree/config.js';
 export { VASCULAR_TREE_PLUGIN_ID, VascularTreeControllerService, createVascularTreePlugin, type VascularTreeController, type VascularTreeMode } from './alien-vascular-tree/VascularTreePlugin.js';
 export { VASCULAR_TREE_STYLE_MANIFEST } from './alien-vascular-tree/styles.js';

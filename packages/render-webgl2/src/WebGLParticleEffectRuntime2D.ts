@@ -1,4 +1,11 @@
-import type { CompiledParticleProgram2D, Gpu2DService, GpuParticleCommandBatch2D, GpuParticleSystem2D, GpuRenderTarget2D, GpuUniformEncoder2D, GpuUniformLookup2D, ParticleEffectBackendDiagnostics2D, ParticleEffectBackendResource2D, ParticleEffectRuntimeBackend2D, ParticleColliderSet2D, ParticleForceFieldSet2D, ParticleDomain2D, ParticleEmitterSourceOverride2D, ParticleEventParameters2D, ParticleViewport2D, ParticleRenderParameters2D, ParticlePalette2D, ParticleOverflowPolicy2D, ParticleRenderTier2D, ParticleRuntimeEmission2D, ParticleParameterValue2D } from "@hooksjam/gl-game-lab-engine";
+import type {
+  CompiledParticleProgram2D, Gpu2DService, GpuParticleCommandBatch2D, GpuParticleSystem2D,
+  GpuRenderTarget2D, GpuUniformEncoder2D, GpuUniformLookup2D, ParticleEffectBackendDiagnostics2D,
+  ParticleEffectBackendResource2D, ParticleEffectRuntimeBackend2D, ParticleColliderSet2D,
+  ParticleForceFieldSet2D, ParticleDomain2D, ParticleEmitterSourceOverride2D,
+  ParticleEventParameters2D, ParticleViewport2D, ParticleRenderParameters2D, ParticlePalette2D,
+  ParticleOverflowPolicy2D, ParticleRenderTier2D, ParticleRuntimeEmission2D, ParticleParameterValue2D,
+} from "@hooksjam/gl-game-lab-engine";
 import { ParticleEventWindowScheduler2D, planParticleSpawnCommands2D, resolveParticleArchetypePartitions2D } from "@hooksjam/gl-game-lab-engine";
 
 const COMMAND_CAPACITY = 64;

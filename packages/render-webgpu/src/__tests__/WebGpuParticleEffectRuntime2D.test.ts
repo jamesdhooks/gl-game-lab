@@ -119,9 +119,31 @@ describe('WebGpuParticleEffectRuntimeBackend2D', () => {
     resource.dispose();
   });
 
-  it('uploads circle wrap domains as backend-neutral policy data',()=>{const fixture=deviceFixture(),backend=new WebGpuParticleEffectRuntimeBackend2D(fixture.device,{render:vi.fn()}),program=compileParticleProgram2D(compileParticleEffect2D(adaptParticleEffectDefinition2D(definition))),resource=backend.create(program,16);fixture.writeBuffer.mockClear();resource.setDomain?.({revision:1,shape:'circle',behavior:'wrap',center:[100,80],radius:70,margin:4,damping:.9});expect(fixture.writeBuffer).toHaveBeenCalledTimes(1);const values=[...(fixture.writeBuffer.mock.calls[0]![2] as Float32Array)];expect(values.slice(0,6)).toEqual([100,80,70,0,1,3]);expect(values[6]).toBeCloseTo(.9);expect(values[7]).toBe(4);resource.dispose();});
+  it('uploads circle wrap domains as backend-neutral policy data',()=>{
+    const fixture=deviceFixture(),backend=new WebGpuParticleEffectRuntimeBackend2D(fixture.device,{render:vi.fn()});
+    const program=compileParticleProgram2D(compileParticleEffect2D(adaptParticleEffectDefinition2D(definition))),resource=backend.create(program,16);
+    fixture.writeBuffer.mockClear();
+    resource.setDomain?.({revision:1,shape:'circle',behavior:'wrap',center:[100,80],radius:70,margin:4,damping:.9});
+    expect(fixture.writeBuffer).toHaveBeenCalledTimes(1);
+    const values=[...(fixture.writeBuffer.mock.calls[0]![2] as Float32Array)];
+    expect(values.slice(0,6)).toEqual([100,80,70,0,1,3]);expect(values[6]).toBeCloseTo(.9);expect(values[7]).toBe(4);
+    resource.dispose();
+  });
 
-  it('encodes annulus commands and uploads runtime emitter geometry',()=>{const fixture=deviceFixture(),backend=new WebGpuParticleEffectRuntimeBackend2D(fixture.device,{render:vi.fn()}),base=adaptParticleEffectDefinition2D(definition),graph={...base,emitters:base.emitters.map((emitter)=>({...emitter,source:{kind:'annulus' as const,innerRadius:10,radius:20},initialization:{directionMode:'tangent-ccw' as const,radialPowerExponent:-.5}}))},program=compileParticleProgram2D(compileParticleEffect2D(graph)),resource=backend.create(program,16);fixture.writeBuffer.mockClear();resource.setEmitterSource?.(0,{innerRadius:12,radius:24});expect(fixture.writeBuffer).toHaveBeenCalledTimes(1);resource.emit({instanceId:1,emitterIndex:0,count:4,positionX:0,positionY:0,direction:0,spread:0,power:1,seed:2,importance:2});resource.update(1/60,1);const commandCall=fixture.writeBuffer.mock.calls.find((call)=>call[4]===16);expect(((commandCall?.[2] as Float32Array)[3]??0)%32).toBe(10);resource.dispose();});
+  it('encodes annulus commands and uploads runtime emitter geometry',()=>{
+    const fixture=deviceFixture(),backend=new WebGpuParticleEffectRuntimeBackend2D(fixture.device,{render:vi.fn()});
+    const base=adaptParticleEffectDefinition2D(definition),graph={...base,emitters:base.emitters.map((emitter)=>({
+      ...emitter,source:{kind:'annulus' as const,innerRadius:10,radius:20},
+      initialization:{directionMode:'tangent-ccw' as const,radialPowerExponent:-.5},
+    }))};
+    const program=compileParticleProgram2D(compileParticleEffect2D(graph)),resource=backend.create(program,16);
+    fixture.writeBuffer.mockClear();resource.setEmitterSource?.(0,{innerRadius:12,radius:24});
+    expect(fixture.writeBuffer).toHaveBeenCalledTimes(1);
+    resource.emit({instanceId:1,emitterIndex:0,count:4,positionX:0,positionY:0,direction:0,spread:0,power:1,seed:2,importance:2});
+    resource.update(1/60,1);
+    const commandCall=fixture.writeBuffer.mock.calls.find((call)=>call[4]===16);
+    expect(((commandCall?.[2] as Float32Array)[3]??0)%32).toBe(10);resource.dispose();
+  });
 
   it('uploads palette, bound motion and appearance parameters, and render configuration', () => {
     const fixture = deviceFixture(), render = vi.fn(), backend = new WebGpuParticleEffectRuntimeBackend2D(fixture.device, { render });
