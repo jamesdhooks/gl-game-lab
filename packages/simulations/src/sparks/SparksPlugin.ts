@@ -281,7 +281,7 @@ export function createSparksPlugin(initial: SparksConfig = SPARKS_DEFAULTS, laun
               }
           });
           const surfaceData = writeRails();
-          renderer.submitFullscreenEffect({
+          (renderer.submitOverlayEffect ?? renderer.submitFullscreenEffect).call(renderer, {
             id: 'sparks.rails',
             language: 'glsl-es-300',
             fragmentSource: SPARKS_RAIL_SHADER,

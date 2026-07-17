@@ -47,4 +47,28 @@ describe('FrameRenderPipeline', () => {
     expect(pipeline.snapshot().passes).not.toContain('plugin.late');
     expect(() => pipeline.register({ id: 'frame.effects', stage: 'frame.effects', execute: () => undefined })).toThrow('built-in id');
   });
+
+  it('can isolate non-emissive overlays after the scene composite', () => {
+    const calls: string[] = [];
+    const pipeline = new FrameRenderPipeline({
+      clear: () => undefined,
+      backdrop: () => undefined,
+      gpuSimulation: () => undefined,
+      effects: () => undefined,
+      particles: () => undefined,
+      sprites: () => undefined,
+      composite: () => { calls.push('composite'); },
+    });
+    pipeline.register({
+      id: 'frame.overlay-effects',
+      stage: 'frame.composite',
+      position: 'after',
+      execute: () => { calls.push('overlay'); },
+    });
+
+    pipeline.execute({ composite: true });
+
+    expect(calls).toEqual(['composite', 'overlay']);
+    expect(pipeline.snapshot().passes.slice(-2)).toEqual(['frame.composite', 'frame.overlay-effects']);
+  });
 });

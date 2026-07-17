@@ -465,7 +465,7 @@ export function createCompiledSparksPlugin(initial: SparksConfig = SPARKS_DEFAUL
           renderRails.set(previewRail, count * RAIL_FLOATS);
           count += 1;
         }
-        renderer.submitFullscreenEffect({
+        (renderer.submitOverlayEffect ?? renderer.submitFullscreenEffect).call(renderer, {
           id: 'sparks.compiled.rails', language: 'glsl-es-300', fragmentSource: SPARKS_RAIL_SHADER, blend: 'alpha',
           uniforms: {
             uResolution: { type: '2f', value: [renderer.viewport.width, renderer.viewport.height] },

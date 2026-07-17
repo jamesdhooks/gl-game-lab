@@ -105,6 +105,7 @@ export class WebGL2Renderer implements RenderBackend, Render2DService {
   readonly sprites: SpriteRenderQueue;
   readonly particles: ParticlePointRenderQueue;
   readonly effects: FullscreenEffectRenderQueue;
+  readonly overlayEffects: FullscreenEffectRenderQueue;
   readonly gpuPasses: GpuRenderPassQueue;
   readonly gpu2D: WebGLGpu2DService;
   private spriteRenderer: SpriteRenderer;
@@ -126,6 +127,7 @@ export class WebGL2Renderer implements RenderBackend, Render2DService {
   private pixelRatio = 1;
   private readonly unregisterContextResource: () => void;
   private readonly unregisterGpuTimer: () => void;
+  private readonly unregisterOverlayEffects: () => void;
   private readonly resources2D: ManagedRender2DResources;
   private readonly fluidFields = new Set<WebGLFluidField2D>();
   private fluidFieldId = 0;
@@ -169,6 +171,7 @@ export class WebGL2Renderer implements RenderBackend, Render2DService {
     );
     this.particles = new ParticlePointRenderQueue();
     this.effects = new FullscreenEffectRenderQueue();
+    this.overlayEffects = new FullscreenEffectRenderQueue();
     this.gpuPasses = new GpuRenderPassQueue();
     this.gpu2D = new WebGLGpu2DService(this.device, this.gpuPasses);
     this.gpuTimer = new GpuTimer(this.device.gl);
@@ -215,12 +218,18 @@ export class WebGL2Renderer implements RenderBackend, Render2DService {
       deviceDiagnostics: () => this.device.diagnostics(),
       fallbackSpritePlan: () => buildSpriteDrawPlan([], this.sprites.activeCamera),
       fallbackParticlePlan: () => this.particles.buildPlan(),
-      effectCount: () => this.effects.count,
+      effectCount: () => this.effects.count + this.overlayEffects.count,
       gpuPassCount: () => this.gpuPasses.count,
       bloomPassCount: () => this.bloom.stats.passes,
       consumeTransientAllocationBytes: () => this.spriteRenderer.consumeAllocatedBytes(),
     });
     this.framePipeline = this.frameOrchestrator.pipeline;
+    this.unregisterOverlayEffects = this.framePipeline.register({
+      id: 'frame.overlay-effects',
+      stage: 'frame.composite',
+      position: 'after',
+      execute: () => { this.effectRenderer.render(this.overlayEffects.snapshot()); },
+    });
     this.unregisterContextResource = this.device.registerContextResource({
       id: 'gl-game-lab.render-webgl2.pipeline',
       priority: 100,
@@ -480,13 +489,21 @@ export class WebGL2Renderer implements RenderBackend, Render2DService {
   }
 
   submitFullscreenEffect(effect: FullscreenShaderEffect2D): void {
+    this.submitEffect(this.effects, effect);
+  }
+
+  submitOverlayEffect(effect: FullscreenShaderEffect2D): void {
+    this.submitEffect(this.overlayEffects, effect);
+  }
+
+  private submitEffect(queue: FullscreenEffectRenderQueue, effect: FullscreenShaderEffect2D): void {
     const uniforms = effect.uniforms ? Object.fromEntries(Object.entries(effect.uniforms).map(([name, uniform]) => [
       name,
       uniform.type === 'texture'
         ? { type: 'texture' as const, value: this.resources2D.nativeTexture(uniform.value) }
         : uniform,
     ])) : undefined;
-    this.effects.submit({
+    queue.submit({
       id: effect.id,
       fragmentSource: effect.fragmentSource,
       ...(uniforms ? { uniforms } : {}),
@@ -532,6 +549,7 @@ export class WebGL2Renderer implements RenderBackend, Render2DService {
       this.sprites.count,
       this.particles.count,
       this.effects.count,
+      this.overlayEffects.count,
       this.gpuPasses.count,
     ])) return;
     const scene = this.bloom.sceneTarget;
@@ -558,11 +576,13 @@ export class WebGL2Renderer implements RenderBackend, Render2DService {
   destroy(): void {
     if (this.destroyed) return;
     this.destroyed = true;
+    this.unregisterOverlayEffects();
     this.unregisterGpuTimer();
     this.unregisterContextResource();
     this.sprites.clear();
     this.particles.clear();
     this.effects.clear();
+    this.overlayEffects.clear();
     this.gpuPasses.clear();
     this.gpu2D.destroy();
     for (const field of [...this.fluidFields]) field.dispose();
@@ -696,6 +716,7 @@ export function createWebGL2RendererPlugin(
           renderer.sprites.clear();
           renderer.particles.clear();
           renderer.effects.clear();
+          renderer.overlayEffects.clear();
           renderer.gpuPasses.clear();
         },
       });
