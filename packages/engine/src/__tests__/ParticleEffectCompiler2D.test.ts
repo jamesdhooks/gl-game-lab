@@ -37,6 +37,7 @@ describe('ParticleEffectCompiler2D', () => {
     expect(program.webgl2.simulation.source).not.toContain('commandIndex = 0; commandIndex < 64');
     expect(program.webgl2.simulation.source).toContain('shape == 8');
     expect(program.webgl2.simulation.source).toContain('shape == 10');
+    expect(program.webgl2.simulation.source).toContain('source.x*2.0');
     expect(program.webgl2.simulation.source).toContain('uEmitterInitialization');
     expect(program.webgl2.event?.source).toContain('uMetadataState');
     expect(program.webgl2.event?.source).toContain('uParticleEventClaims');
