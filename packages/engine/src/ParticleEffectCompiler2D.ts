@@ -93,7 +93,7 @@ export function compileParticleProgram2D(effect: CompiledParticleEffect2D, exten
   const wgslSimulation = buildWgslSimulation(effect, extensions, usesCollisions, usesTurbulence);
   const wgslEvent = usesEvents ? buildWgslEventAppend(effect) : undefined;
   const wgslEventResolve = usesEvents ? buildWgslEventResolve(effect) : undefined;
-  const wgslRender = buildWgslRender();
+  const wgslRender = buildWgslRender(effect);
   return Object.freeze({
     effect,
     webgl2: Object.freeze({
@@ -549,6 +549,7 @@ fn simulate(@builtin(global_invocation_id) gid: vec3<u32>) {
     stateA[i].age += frame.delta;
     stateB[i].velocity.y += motion.x * frame.delta;
     stateB[i].velocity *= exp(-max(0.0, motion.y) * frame.delta);
+    ${turbulence ? "let turbulenceAngle=hash11(stateC[i].colorSeed+stateA[i].age*1.37+dot(stateA[i].position,vec2<f32>(0.013,0.017)))*6.2831853;stateB[i].velocity+=vec2<f32>(cos(turbulenceAngle),sin(turbulenceAngle))*motion.z*frame.delta;" : ""}
     for (var fieldIndex=0u; fieldIndex<min(frame.attractorCount,16u); fieldIndex+=1u) { let field=attractors[fieldIndex];let delta=field.data.xy-stateA[i].position;let rawDistance=length(delta);if(field.data.w<=0.0||rawDistance<field.data.w){var envelope=1.0;if(field.data.w>0.0&&field.options.w>0.5){let t=clamp(1.0-rawDistance/field.data.w,0.0,1.0);envelope=select(t,t*t*(3.0-2.0*t),field.options.w>1.5);}let distance=max(max(rawDistance,field.options.x),0.0001);let radial=select(vec2<f32>(0.0),delta/rawDistance,rawDistance>0.0001);let falloffMode=select(force.z,field.options.y,field.options.y>=0.0);let falloff=select(select(1.0/distance,1.0/(distance*distance),falloffMode>=1.5),1.0,falloffMode<0.5);let radialStrength=force.x*field.data.z+field.velocity.w;let tangentialStrength=force.y*field.data.z+field.options.z;stateB[i].velocity+=((radial*radialStrength+vec2<f32>(-radial.y,radial.x)*tangentialStrength)*falloff+field.velocity.xy*field.velocity.z)*envelope*frame.delta;} }
     stateB[i].rotation += stateB[i].angularVelocity * frame.delta;
     let particleSpeed=length(stateB[i].velocity);if(force.w>0.0&&particleSpeed>force.w){stateB[i].velocity*=force.w/particleSpeed;}
@@ -556,7 +557,6 @@ fn simulate(@builtin(global_invocation_id) gid: vec3<u32>) {
     let domainShape=u32(domain.options.x+0.5);let domainBehavior=u32(domain.options.y+0.5);let domainDamping=domain.options.z;let domainMargin=domain.options.w;if(domainBehavior>0u){if(domainShape==1u){let domainDelta=stateA[i].position-domain.data.xy;let domainDistance=length(domainDelta);if(domainDistance>domain.data.z+domainMargin){let normal=select(vec2<f32>(1.0,0.0),domainDelta/domainDistance,domainDistance>0.0001);if(domainBehavior==1u){stateA[i].age=stateA[i].lifetime;}else if(domainBehavior==2u){stateA[i].position=domain.data.xy+normal*domain.data.z;stateB[i].velocity=(stateB[i].velocity-2.0*normal*dot(stateB[i].velocity,normal))*domainDamping;}else{stateA[i].position=domain.data.xy-normal*domain.data.z;stateB[i].velocity*=domainDamping;}}}else{let domainMin=domain.data.xy-domain.data.zw-vec2<f32>(domainMargin);let domainMax=domain.data.xy+domain.data.zw+vec2<f32>(domainMargin);let outside=any(stateA[i].position<domainMin)||any(stateA[i].position>domainMax);if(outside){if(domainBehavior==1u){stateA[i].age=stateA[i].lifetime;}else if(domainBehavior==2u){if(stateA[i].position.x<domainMin.x||stateA[i].position.x>domainMax.x){stateB[i].velocity.x=-stateB[i].velocity.x*domainDamping;}if(stateA[i].position.y<domainMin.y||stateA[i].position.y>domainMax.y){stateB[i].velocity.y=-stateB[i].velocity.y*domainDamping;}stateA[i].position=clamp(stateA[i].position,domainMin,domainMax);}else{if(stateA[i].position.x<domainMin.x){stateA[i].position.x=domainMax.x;}else if(stateA[i].position.x>domainMax.x){stateA[i].position.x=domainMin.x;}if(stateA[i].position.y<domainMin.y){stateA[i].position.y=domainMax.y;}else if(stateA[i].position.y>domainMax.y){stateA[i].position.y=domainMin.y;}stateB[i].velocity*=domainDamping;}}}}
     ${collisions ? "stateA[i].position = clamp(stateA[i].position, vec2<f32>(0.0), frame.viewport);" : ""}
   }
-  ${turbulence ? "// Turbulence is generated from the stable color seed in the backend module." : ""}
   if (frame.commandCount > 0u) {
     var low = 0u; var high = frame.commandCount;
     for (var iteration = 0u; iteration < 6u; iteration++) {
@@ -600,14 +600,16 @@ fn simulate(@builtin(global_invocation_id) gid: vec3<u32>) {
 function buildWgslEventAppend(effect: CompiledParticleEffect2D): string {
   const branches = compiledEvents(effect)
     .map((entry) => {
-      const trigger = wgslEventTrigger(entry);
+      const trigger = wgslEventTrigger(entry, `eventA${entry.global}.w`);
       const flag = eventFlag(entry.parentSlot);
       const notFired = entry.trigger === "collision" ? "true" : `(flags & ${flag}u) == 0u`;
       const mark = entry.trigger === "collision" ? "" : `flags = flags | ${flag}u;`;
-      return `if (archetype == ${entry.parent}u && metadata.generation <= ${glslFloat(entry.maxGeneration)} && ${notFired} && (${trigger})) {
+      return `let eventA${entry.global}=eventParameters[${entry.global * 4}u];let eventC${entry.global}=eventParameters[${entry.global * 4 + 2}u];
+    if (archetype == ${entry.parent}u && metadata.generation <= eventA${entry.global}.z && ${notFired} && (${trigger}) && length(stateB[i].velocity)>=eventC${entry.global}.x) {
       ${mark}
-      if (hash11(f32(i * 31u + ${entry.global}u * 17u)) <= ${glslFloat(entry.probability)}) {
-        for (var childOrdinal = 0u; childOrdinal < ${entry.count}u; childOrdinal += 1u) {
+      if (hash11(f32(i * 31u + ${entry.global}u * 17u)) <= eventA${entry.global}.x) {
+        let speed=length(stateB[i].velocity);let speedCount=max(0.0,eventA${entry.global}.y+floor(max(0.0,speed-eventC${entry.global}.z)/max(eventC${entry.global}.z,1.0)*eventC${entry.global}.y));
+        for (var childOrdinal = 0u; childOrdinal < u32(speedCount); childOrdinal += 1u) {
           let queueSlot = atomicAdd(&counters.values[${entry.priority}u], 1u);
           let targetSlot = atomicAdd(&counters.values[${3 + entry.child}u], 1u);
           if (queueSlot < frame.capacity) { eventQueue[${entry.priority}u * frame.capacity + queueSlot] = EventRecord(i, ${entry.global}u, targetSlot, childOrdinal); }
@@ -629,6 +631,7 @@ struct EventCounters { values: array<atomic<u32>, ${3 + effect.source.archetypes
 @group(0) @binding(4) var<storage, read> archetypePools: array<vec4<f32>>;
 @group(0) @binding(5) var<storage, read_write> eventQueue: array<EventRecord>;
 @group(0) @binding(6) var<storage, read_write> counters: EventCounters;
+@group(0) @binding(7) var<storage, read> eventParameters: array<vec4<f32>>;
 fn hash11(value: f32) -> f32 { return fract(sin(value * 91.3458 + 17.123) * 47453.5453); }
 @compute @workgroup_size(256)
 fn appendEvents(@builtin(global_invocation_id) gid: vec3<u32>) {
@@ -642,7 +645,7 @@ fn appendEvents(@builtin(global_invocation_id) gid: vec3<u32>) {
 
 function buildWgslEventResolve(effect: CompiledParticleEffect2D): string {
   const branches = compiledEvents(effect)
-    .map((entry) => `if (record.eventIndex == ${entry.global}u) { child=${entry.child}u; lifetime=${glslFloat(entry.lifetime)}; inheritance=${glslFloat(entry.inheritance)}; powerScale=${glslFloat(entry.powerScale)}; spread=${glslFloat(entry.spread)}; }`)
+    .map((entry) => `if (record.eventIndex == ${entry.global}u) { child=${entry.child}u; parameterIndex=${entry.global * 4}u; }`)
     .join("\n  else ");
   return `struct ParticleA { position: vec2<f32>, age: f32, lifetime: f32 }
 struct ParticleB { velocity: vec2<f32>, rotation: f32, angularVelocity: f32 }
@@ -657,34 +660,67 @@ struct EventCounters { values: array<atomic<u32>, ${3 + effect.source.archetypes
 @group(0) @binding(4) var<storage, read> archetypePools: array<vec4<f32>>;
 @group(0) @binding(5) var<storage, read> eventQueue: array<EventRecord>;
 @group(0) @binding(6) var<storage, read_write> counters: EventCounters;
+@group(0) @binding(7) var<storage, read> eventParameters: array<vec4<f32>>;
 fn hash11(value: f32) -> f32 { return fract(sin(value * 91.3458 + 17.123) * 47453.5453); }
 @compute @workgroup_size(256)
 fn resolveEvents(@builtin(global_invocation_id) gid: vec3<u32>) {
   let dispatchIndex=gid.x;if(dispatchIndex>=frame.capacity*3u){return;}let priority=dispatchIndex/frame.capacity;let local=dispatchIndex%frame.capacity;
   if(local>=min(atomicLoad(&counters.values[priority]),frame.capacity)){return;}let record=eventQueue[priority*frame.capacity+local];
-  var child=0xffffffffu;var lifetime=0.0;var inheritance=0.0;var powerScale=0.0;var spread=6.2831853;
+  var child=0xffffffffu;var parameterIndex=0u;
   ${branches}
-  if(child==0xffffffffu){return;}let pool=archetypePools[child];let poolCount=max(1u,u32(pool.y+.5));let target=u32(pool.x+.5)+(record.targetSlot%poolCount);
+  if(child==0xffffffffu){return;}let parametersB=eventParameters[parameterIndex+1u];let parametersC=eventParameters[parameterIndex+2u];let parametersD=eventParameters[parameterIndex+3u];let pool=archetypePools[child];let poolCount=max(1u,u32(pool.y+.5));let target=u32(pool.x+.5)+(record.targetSlot%poolCount);
   let overflow=u32(pool.z+.5);if(overflow==1u&&stateA[target].age<stateA[target].lifetime){return;}let parentA=stateA[record.parent];let parentB=stateB[record.parent];let parentC=stateC[record.parent];
-  let random=hash11(f32(record.parent*31u+record.childOrdinal*17u+record.eventIndex));let angle=random*spread;let power=max(24.0,length(parentB.velocity))*powerScale;
-  stateA[target]=ParticleA(parentA.position,0.0,lifetime);stateB[target]=ParticleB(parentB.velocity*inheritance+vec2<f32>(cos(angle),sin(angle))*power,0.0,0.0);stateC[target]=ParticleC(f32(child),parentC.generation+1.0,parentC.colorSeed+random,0.0);
+  let random=hash11(f32(record.parent*31u+record.childOrdinal*17u+record.eventIndex));let randomB=hash11(f32(record.parent*47u+record.childOrdinal*23u+record.eventIndex));let angle=random*parametersB.w;let lifetime=parametersB.x*mix(max(0.05,1.0-parametersD.x),1.0+parametersD.x,randomB);let basePower=select(max(24.0,length(parentB.velocity)),parametersC.w,parametersC.w>0.0);let power=basePower*parametersB.z*mix(max(0.0,1.0-parametersD.y),1.0+parametersD.y,random);
+  stateA[target]=ParticleA(parentA.position,0.0,lifetime);stateB[target]=ParticleB(parentB.velocity*parametersB.y+vec2<f32>(cos(angle),sin(angle))*power,0.0,0.0);stateC[target]=ParticleC(f32(child),parentC.generation+1.0,parentC.colorSeed+random,0.0);
 }`;
 }
 
-function wgslEventTrigger(entry: CompiledEventEntry): string {
+function wgslEventTrigger(entry: CompiledEventEntry, delay: string): string {
   if (entry.trigger === "death") return "position.age >= position.lifetime && position.age - frame.delta < position.lifetime";
   if (entry.trigger === "birth") return "position.age <= frame.delta";
   if (entry.trigger === "collision") return "(flags & 1u) != 0u";
-  return `position.age >= ${glslFloat(entry.delay)} && position.age - frame.delta < ${glslFloat(entry.delay)}`;
+  return `position.age >= ${delay} && position.age - frame.delta < ${delay}`;
 }
 
-function buildWgslRender(): string {
-  return `struct VertexOut { @builtin(position) position: vec4<f32>, @location(0) age: f32, @location(1) seed: f32 }
-@vertex fn particleVertex(@builtin(vertex_index) vertex: u32, @builtin(instance_index) instance: u32) -> VertexOut {
+function buildWgslRender(effect: CompiledParticleEffect2D): string {
+  return `struct ParticleA { position: vec2<f32>, age: f32, lifetime: f32 }
+struct ParticleB { velocity: vec2<f32>, rotation: f32, angularVelocity: f32 }
+struct ParticleC { archetype: f32, generation: f32, colorSeed: f32, flags: f32 }
+struct VertexOut { @builtin(position) position: vec4<f32>, @location(0) local: vec2<f32>, @location(1) color: vec4<f32>, @location(2) shape: f32 }
+@group(0) @binding(0) var<storage, read> stateA: array<ParticleA>;
+@group(0) @binding(1) var<storage, read> stateB: array<ParticleB>;
+@group(0) @binding(2) var<storage, read> stateC: array<ParticleC>;
+@group(0) @binding(3) var<storage, read> archetypeSize: array<vec4<f32>>;
+@group(0) @binding(4) var<storage, read> archetypeLength: array<vec4<f32>>;
+@group(0) @binding(5) var<storage, read> archetypeAlpha: array<vec4<f32>>;
+@group(0) @binding(6) var<storage, read> archetypeIntensity: array<vec4<f32>>;
+@group(0) @binding(7) var<storage, read> palette: array<vec4<f32>>;
+@group(0) @binding(8) var<storage, read> renderConfig: array<vec4<f32>>;
+fn curve(value: vec4<f32>, age: f32) -> f32 { return mix(value.x, value.y, pow(clamp(age, 0.0, 1.0), max(0.0001, value.z))); }
+fn buildParticleVertex(vertex: u32, instance: u32, streak: bool) -> VertexOut {
   var out: VertexOut;
-  let corner = array<vec2<f32>, 6>(vec2(-1.0,-1.0),vec2(1.0,-1.0),vec2(-1.0,1.0),vec2(-1.0,1.0),vec2(1.0,-1.0),vec2(1.0,1.0));
-  out.position = vec4<f32>(corner[vertex], 0.0, 1.0);
-  out.age = 0.0; out.seed = f32(instance); return out;
+  let corners = array<vec2<f32>, 6>(vec2(-1.0,-1.0),vec2(1.0,-1.0),vec2(-1.0,1.0),vec2(-1.0,1.0),vec2(1.0,-1.0),vec2(1.0,1.0));
+  let particle=stateA[instance]; let motion=stateB[instance]; let metadata=stateC[instance];
+  let archetype=min(u32(metadata.archetype+0.5), ${Math.max(0, effect.source.archetypes.length - 1)}u);
+  let normalizedAge=clamp(particle.age/max(particle.lifetime,0.0001),0.0,1.0); let corner=corners[vertex];
+  let configA=renderConfig[0]; let configB=renderConfig[1]; let configC=renderConfig[2];
+  let variation=1.0+(fract(sin(metadata.colorSeed*91.3458)*47453.5453)*2.0-1.0)*archetypeSize[archetype].w;
+  let radius=max(0.0,curve(archetypeSize[archetype],normalizedAge)*variation*configA.z);
+  let speed=length(motion.velocity); let direction=select(vec2<f32>(1.0,0.0),motion.velocity/speed,speed>0.0001); let normal=vec2<f32>(-direction.y,direction.x);
+  let streakLength=max(radius*2.0,curve(archetypeLength[archetype],normalizedAge)*speed*configC.x);
+  let worldOffset=select(corner*radius,direction*(corner.x*streakLength*0.5)+normal*(corner.y*radius),streak);
+  let world=particle.position+worldOffset; let viewport=max(configA.xy,vec2<f32>(1.0));
+  out.position=vec4<f32>(world.x/viewport.x*2.0-1.0,1.0-world.y/viewport.y*2.0,0.0,1.0);
+  let paletteCount=max(1u,u32(configB.y+0.5)); var coordinate=metadata.colorSeed;
+  let colorMode=u32(configB.z+0.5); if(colorMode==1u){coordinate=fract(coordinate+normalizedAge*configB.w);}else if(colorMode==2u){coordinate=fract(coordinate+metadata.generation*.1618034*configB.w);}else if(colorMode==3u){coordinate=fract(coordinate+clamp(speed*.0025,0.0,1.0)*configB.w);}
+  let color=palette[min(u32(floor(fract(coordinate)*f32(paletteCount))),paletteCount-1u)].xyz;
+  let alpha=curve(archetypeAlpha[archetype],normalizedAge); let intensity=curve(archetypeIntensity[archetype],normalizedAge)*configB.x;
+  let alive=select(0.0,1.0,particle.age<particle.lifetime&&radius>0.0); out.local=corner; out.color=vec4<f32>(color*intensity,alpha*alive); out.shape=select(0.0,1.0,streak); return out;
+}
+@vertex fn particleVertex(@builtin(vertex_index) vertex: u32, @builtin(instance_index) instance: u32) -> VertexOut { return buildParticleVertex(vertex,instance,false); }
+@vertex fn particleStreakVertex(@builtin(vertex_index) vertex: u32, @builtin(instance_index) instance: u32) -> VertexOut { return buildParticleVertex(vertex,instance,true); }
+@fragment fn particleFragment(input: VertexOut) -> @location(0) vec4<f32> {
+  let distance=length(input.local); let coverage=1.0-smoothstep(0.72,1.0,distance); return vec4<f32>(input.color.rgb,input.color.a*coverage);
 }`;
 }
 

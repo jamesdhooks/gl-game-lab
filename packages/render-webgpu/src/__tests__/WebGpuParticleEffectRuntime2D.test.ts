@@ -32,13 +32,15 @@ describe('WebGpuParticleEffectRuntimeBackend2D', () => {
     const backend = new WebGpuParticleEffectRuntimeBackend2D(fixture.device, { render });
     const program = compileParticleProgram2D(compileParticleEffect2D(adaptParticleEffectDefinition2D(definition)));
     const resource = backend.create(program, 512);
+    fixture.writeBuffer.mockClear();
     resource.emit({ instanceId: 1, emitterIndex: 0, count: 40, positionX: 10, positionY: 20, direction: 0, spread: 1, power: 30, seed: 8, importance: 3 });
     resource.update(1 / 60, 1);
-    expect(fixture.writeBuffer).toHaveBeenCalledTimes(9);
+    expect(fixture.writeBuffer).toHaveBeenCalledTimes(2);
     expect(fixture.dispatchWorkgroups).toHaveBeenCalledWith(2);
     expect(fixture.submit).toHaveBeenCalledTimes(1);
     resource.render({ width: 384, height: 384 } as GpuRenderTarget2D, 'basic');
     expect(render).toHaveBeenCalledTimes(1);
+    expect(render.mock.calls[0]![4]).toMatchObject({ paletteCount: 1 });
     expect(resource.diagnostics()).toMatchObject({ spawnedParticles: 40, simulationPasses: 1, renderPasses: 1 });
     resource.dispose();
   });
@@ -56,6 +58,13 @@ describe('WebGpuParticleEffectRuntimeBackend2D', () => {
     };
     const program = compileParticleProgram2D(compileParticleEffect2D(adaptParticleEffectDefinition2D(eventDefinition)));
     const resource = backend.create(program, 512);
+    fixture.writeBuffer.mockClear();
+    resource.setEventParameters?.(0, 0, { count: 7, probability: 0.5, basePower: 120, lifetimeVariability: 0.4 });
+    const eventUpload = fixture.writeBuffer.mock.calls.find((call) => (call[0] as Buffer).label?.includes('event-parameters'));
+    expect(eventUpload).toBeDefined();
+    const eventValues = eventUpload?.[2] as Float32Array;
+    expect(eventValues[0]).toBe(0.5); expect(eventValues[1]).toBe(7); expect(eventValues[11]).toBe(120); expect(eventValues[12]).toBeCloseTo(0.4);
+    fixture.writeBuffer.mockClear();
     resource.emit({ instanceId: 1, emitterIndex: 0, count: 1, positionX: 0, positionY: 0, direction: 0, spread: 0, power: 0, seed: 1, importance: 3 });
     resource.update(1, 1);
     expect(fixture.dispatchWorkgroups.mock.calls).toEqual([[2], [2], [6]]);
@@ -113,4 +122,41 @@ describe('WebGpuParticleEffectRuntimeBackend2D', () => {
   it('uploads circle wrap domains as backend-neutral policy data',()=>{const fixture=deviceFixture(),backend=new WebGpuParticleEffectRuntimeBackend2D(fixture.device,{render:vi.fn()}),program=compileParticleProgram2D(compileParticleEffect2D(adaptParticleEffectDefinition2D(definition))),resource=backend.create(program,16);fixture.writeBuffer.mockClear();resource.setDomain?.({revision:1,shape:'circle',behavior:'wrap',center:[100,80],radius:70,margin:4,damping:.9});expect(fixture.writeBuffer).toHaveBeenCalledTimes(1);const values=[...(fixture.writeBuffer.mock.calls[0]![2] as Float32Array)];expect(values.slice(0,6)).toEqual([100,80,70,0,1,3]);expect(values[6]).toBeCloseTo(.9);expect(values[7]).toBe(4);resource.dispose();});
 
   it('encodes annulus commands and uploads runtime emitter geometry',()=>{const fixture=deviceFixture(),backend=new WebGpuParticleEffectRuntimeBackend2D(fixture.device,{render:vi.fn()}),base=adaptParticleEffectDefinition2D(definition),graph={...base,emitters:base.emitters.map((emitter)=>({...emitter,source:{kind:'annulus' as const,innerRadius:10,radius:20},initialization:{directionMode:'tangent-ccw' as const,radialPowerExponent:-.5}}))},program=compileParticleProgram2D(compileParticleEffect2D(graph)),resource=backend.create(program,16);fixture.writeBuffer.mockClear();resource.setEmitterSource?.(0,{innerRadius:12,radius:24});expect(fixture.writeBuffer).toHaveBeenCalledTimes(1);resource.emit({instanceId:1,emitterIndex:0,count:4,positionX:0,positionY:0,direction:0,spread:0,power:1,seed:2,importance:2});resource.update(1/60,1);const commandCall=fixture.writeBuffer.mock.calls.find((call)=>call[4]===16);expect(((commandCall?.[2] as Float32Array)[3]??0)%32).toBe(10);resource.dispose();});
+
+  it('uploads palette, bound motion and appearance parameters, and render configuration', () => {
+    const fixture = deviceFixture(), render = vi.fn(), backend = new WebGpuParticleEffectRuntimeBackend2D(fixture.device, { render });
+    const base = adaptParticleEffectDefinition2D(definition), graph = {
+      ...base,
+      parameters: [
+        { id: 'gravity', kind: 'number' as const, defaultValue: 10, min: -100, max: 100 },
+        { id: 'size', kind: 'number' as const, defaultValue: 1, min: 0, max: 10 },
+      ],
+      moduleBindings: [
+        { parameterId: 'gravity', target: 'archetype.spark.motion.gravity' },
+        { parameterId: 'size', target: 'archetype.spark.appearance.size.start' },
+      ],
+    };
+    const resource = backend.create(compileParticleProgram2D(compileParticleEffect2D(graph)), 16);
+    fixture.writeBuffer.mockClear();
+    resource.setPalette({ revision: 2, colors: [[1, 0, 0], [0, 1, 0]] });
+    resource.setParameters?.({ gravity: 25, size: 4 });
+    resource.setViewport?.({ width: 320, height: 180, dpr: 2 });
+    resource.setRenderParameters?.({ pointScale: 3, intensity: 1.5, streakScale: 0.75, paletteTransition: 0.4, colorMode: 'over-life' });
+    resource.render({ width: 320, height: 180 } as GpuRenderTarget2D, 'enhanced');
+    const labels = fixture.writeBuffer.mock.calls.map((call) => (call[0] as Buffer).label);
+    expect(labels).toEqual(expect.arrayContaining([expect.stringContaining('palette'), expect.stringContaining('motion'), expect.stringContaining('appearance-size'), expect.stringContaining('render-config')]));
+    expect(render.mock.calls[0]![4]).toMatchObject({ paletteCount: 2 });
+    resource.dispose();
+  });
+
+  it('rejects unsupported collider graphs so the engine can fall back without semantic drift', () => {
+    const fixture = deviceFixture(), backend = new WebGpuParticleEffectRuntimeBackend2D(fixture.device, { render: vi.fn() });
+    const colliderDefinition: ParticleEffectDefinition2D = {
+      ...definition,
+      archetypes: [{ ...definition.archetypes[0]!, collision: { circles: true, restitution: 0.8, friction: 0.1 } }],
+      modules: { ...definition.modules, collisions: true },
+    };
+    const program = compileParticleProgram2D(compileParticleEffect2D(adaptParticleEffectDefinition2D(colliderDefinition)));
+    expect(() => backend.create(program, 16)).toThrow('WebGL2 fallback');
+  });
 });
