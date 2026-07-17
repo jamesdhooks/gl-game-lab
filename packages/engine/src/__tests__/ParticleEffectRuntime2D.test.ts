@@ -5,6 +5,7 @@ class TestResource implements ParticleEffectBackendResource2D {
   emissions: ParticleRuntimeEmission2D[] = [];
   updates = 0;
   renders = 0;
+  renderedTiers: ParticleRenderTier2D[] = [];
   transferred = false;
   parameters: Readonly<Record<string, unknown>> = {};
   paletteRevision = -1;
@@ -55,6 +56,7 @@ class TestResource implements ParticleEffectBackendResource2D {
   }
   render(_target: GpuRenderTarget2D, _tier: ParticleRenderTier2D): void {
     this.renders += 1;
+    this.renderedTiers.push(_tier);
   }
   clear(): void {
     this.emissions = [];
@@ -117,7 +119,11 @@ const definition: ParticleEffectDefinition2D = {
   modules: { motion: true, lifecycle: true },
   renderRecipes: {
     defaultTier: "basic",
-    recipes: [{ tier: "basic", points: true, blend: "additive" }],
+    recipes: [
+      { tier: "basic", points: true, blend: "additive" },
+      { tier: "enhanced", points: true, streaks: true, blend: "additive" },
+      { tier: "ultra", points: true, streaks: true, trails: true, bloom: true, blend: "additive" },
+    ],
   },
 };
 
@@ -446,5 +452,30 @@ describe("EngineParticleEffects2D", () => {
     expect(() => runtime.controlInstance(instance.id, { action: "step", deltaSeconds: 2 })).toThrow("between zero and one");
     expect(() => runtime.controlInstance(999, { action: "pause" })).toThrow("Unknown particle effect instance");
     runtime.dispose();
+  });
+
+  it("adapts render density and tier without changing simulation emission quality", () => {
+    const backend = new TestBackend(), runtime = new EngineParticleEffects2D(backend);
+    const base = adaptParticleEffectDefinition2D(definition), adaptiveProgram = compileParticleProgram2D(compileParticleEffect2D({ ...base, emitters: base.emitters.map((emitter) => ({ ...emitter, timeline: { duration: 20, rate: { kind: "constant" as const, value: 1 } } })) }));
+    runtime.register(adaptiveProgram);
+    const instance = runtime.createInstance("runtime-test", { qualityTier: "ultra", adaptiveTargetFps: 60 });
+    instance.start();
+    for (let frame = 0; frame < 8; frame += 1) runtime.update(0.04);
+    expect(instance.state()).toMatchObject({ qualityTier: "ultra", effectiveQualityTier: "ultra", adaptiveLodLevel: 1, renderScale: 0.5 });
+    for (let frame = 0; frame < 8; frame += 1) runtime.update(0.04);
+    expect(instance.state()).toMatchObject({ qualityTier: "ultra", effectiveQualityTier: "enhanced", adaptiveLodLevel: 2, renderScale: 0.25 });
+    runtime.render({} as GpuRenderTarget2D);
+    expect(backend.resources[0]!.renderedTiers.at(-1)).toBe("enhanced");
+    for (let frame = 0; frame < 120; frame += 1) runtime.update(1 / 60);
+    expect(instance.state()).toMatchObject({ adaptiveLodLevel: 1, renderScale: 0.5 });
+    runtime.dispose();
+
+    const previewBackend = new TestBackend(), previewRuntime = new EngineParticleEffects2D(previewBackend);
+    previewRuntime.register(adaptiveProgram);
+    const preview = previewRuntime.createInstance("runtime-test", { preview: true, qualityTier: "enhanced" });
+    preview.start();
+    for (let frame = 0; frame < 20; frame += 1) previewRuntime.update(1 / 30);
+    expect(preview.state().adaptiveLodLevel).toBe(0);
+    previewRuntime.dispose();
   });
 });

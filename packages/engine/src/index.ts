@@ -162,6 +162,7 @@ export {
   resolveParticleRenderRecipe2D,
   validateParticleSettingBindings2D,
   validateParticleEffectDefinition2D,
+  particleDiagnosticsSummary2D,
   type ParticleAppearanceProfile2D,
   type ParticleArchetype2D,
   type ParticleBlendMode2D,

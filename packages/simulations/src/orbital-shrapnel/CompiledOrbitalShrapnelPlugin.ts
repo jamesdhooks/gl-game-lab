@@ -132,7 +132,7 @@ export function createCompiledOrbitalShrapnelPlugin(
       effects.prewarm(ORBITAL_SHRAPNEL_PARTICLE_PROGRAM.effect.source.id);
       let instance = effects.createInstance(
         ORBITAL_SHRAPNEL_PARTICLE_PROGRAM.effect.source.id,
-        { seed: seedValue(launch.seed), qualityTier: "ultra" },
+        { seed: seedValue(launch.seed), qualityTier: "ultra", preview: launch.profile === "preview" },
       );
       let earthTexture: Texture2DHandle | undefined,
         moonTexture: Texture2DHandle | undefined,

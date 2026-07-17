@@ -3,6 +3,7 @@ import {
   EngineGpu2D,
   EngineInput,
   EngineParticleEffects,
+  particleDiagnosticsSummary2D,
   EngineRender2D,
   EngineSchedule,
   ExperiencePreviewCycleControllerService,
@@ -67,7 +68,7 @@ export function createCompiledFireworksPlugin(initial: FireworksConfig = FIREWOR
       const effects = context.get(EngineParticleEffects);
       effects.register(FIREWORKS_PARTICLE_PROGRAM, { capacity });
       effects.prewarm(EFFECT_ID);
-      const instance = effects.createInstance(EFFECT_ID, { seed: normalizeSeed(launch.seed), qualityTier: config.renderStyle });
+      const instance = effects.createInstance(EFFECT_ID, { seed: normalizeSeed(launch.seed), qualityTier: config.renderStyle, preview: launch.profile === 'preview' });
       applyStyle(instance, renderer);
       configure(instance, renderer);
       if (autonomous) queuePreviewShow(instance);
@@ -80,7 +81,7 @@ export function createCompiledFireworksPlugin(initial: FireworksConfig = FIREWOR
         get activeShells() { return shellCount; },
         get particleCapacity() { return capacity; },
         get entityCount() { return instance.diagnostics().activeEstimate; },
-        get runtimeDiagnostics() { return Object.freeze({ ...instance.diagnostics(), activeShells: shellCount }); },
+        get runtimeDiagnostics() { return Object.freeze({ ...particleDiagnosticsSummary2D(instance.diagnostics()), activeShells: shellCount }); },
         setMode: (value) => {
           if (value !== 'single' && value !== 'stream') throw new Error(`Unknown Fireworks mode: ${value}`);
           mode = value;

@@ -21,6 +21,8 @@ export interface ParticleEffectInstanceOptions2D {
   readonly timescale?: number;
   readonly qualityTier?: ParticleRenderTier2D;
   readonly preview?: boolean;
+  readonly adaptiveLod?: boolean;
+  readonly adaptiveTargetFps?: 30 | 45 | 60;
 }
 
 export interface ParticleEmissionOverride2D {
@@ -362,6 +364,9 @@ export interface ParticleEffectInstanceState2D {
   readonly seed: number;
   readonly timescale: number;
   readonly qualityTier: ParticleRenderTier2D;
+  readonly effectiveQualityTier: ParticleRenderTier2D;
+  readonly renderScale: number;
+  readonly adaptiveLodLevel: 0 | 1 | 2;
   readonly activeEmitters: number;
   readonly parameters: Readonly<Record<string, ParticleParameterValue2D>>;
   readonly diagnostics: ParticleEffectBackendDiagnostics2D;
@@ -850,6 +855,13 @@ class RuntimeParticleEffectInstance2D implements ParticleEffectInstance2D {
   private timescale: number;
   private tier: ParticleRenderTier2D;
   private renderScale = 1;
+  private appliedRenderScale = 1;
+  private effectiveTier: ParticleRenderTier2D;
+  private readonly adaptiveLod: boolean;
+  private readonly adaptiveTargetFrameSeconds: number;
+  private adaptiveLodLevel: 0 | 1 | 2 = 0;
+  private slowFrames = 0;
+  private recoveryFrames = 0;
   private colliders: ParticleColliderSet2D = {
     revision: 0,
     circles: [],
@@ -893,6 +905,10 @@ class RuntimeParticleEffectInstance2D implements ParticleEffectInstance2D {
     this.palette = options.palette ?? EMPTY_PALETTE;
     this.timescale = validateTimescale(options.timescale ?? 1);
     this.tier = options.qualityTier ?? program.effect.source.quality.defaultTier;
+    if (!program.effect.source.renderRecipes.recipes.some((entry) => entry.tier === this.tier)) throw new Error(`Particle effect does not render tier: ${this.tier}`);
+    this.effectiveTier = this.tier;
+    this.adaptiveLod = options.adaptiveLod ?? true;
+    this.adaptiveTargetFrameSeconds = 1 / (options.adaptiveTargetFps ?? (options.preview ? 30 : 60));
     this.emitters = program.effect.source.emitters.map((entry, index) => new EmitterRuntime(entry, index));
     this.emitterHandles = new Map(this.emitters.map((entry) => [entry.definition.id, new RuntimeParticleEmitterHandle2D(entry.definition.id, this)]));
     this.scheduler = new ParticleGraphScheduler2D(
@@ -1096,12 +1112,13 @@ class RuntimeParticleEffectInstance2D implements ParticleEffectInstance2D {
     this.assertUsable();
     if (!this.program.effect.source.renderRecipes.recipes.some((entry) => entry.tier === tier)) throw new Error(`Particle effect does not render tier: ${tier}`);
     this.tier = tier;
+    this.applyAdaptiveLod();
   }
   setRenderScale(scale: number): void {
     this.assertUsable();
     if (!Number.isFinite(scale) || scale < 0.0625 || scale > 1) throw new Error("Particle render scale must be between 0.0625 and 1");
     this.renderScale = scale;
-    this.backend.setRenderScale?.(scale);
+    this.applyAdaptiveLod();
   }
 
   state(): ParticleEffectInstanceState2D {
@@ -1113,6 +1130,9 @@ class RuntimeParticleEffectInstance2D implements ParticleEffectInstance2D {
       seed: this.seed,
       timescale: this.timescale,
       qualityTier: this.tier,
+      effectiveQualityTier: this.effectiveTier,
+      renderScale: this.appliedRenderScale,
+      adaptiveLodLevel: this.adaptiveLodLevel,
       activeEmitters: this.emitters.reduce((count, emitter) => count + Number(emitter.active), 0),
       parameters: Object.freeze({ ...this.parameters }),
       diagnostics: this.backend.diagnostics(),
@@ -1142,10 +1162,11 @@ class RuntimeParticleEffectInstance2D implements ParticleEffectInstance2D {
   }
 
   updateBackend(deltaSeconds: number): void {
+    this.updateAdaptiveLod(deltaSeconds);
     this.backend.update(deltaSeconds, this.timescale);
   }
   renderBackend(target: GpuRenderTarget2D): void {
-    this.backend.render(target, this.tier);
+    this.backend.render(target, this.effectiveTier);
   }
 
   update(deltaSeconds: number): void {
@@ -1189,6 +1210,7 @@ class RuntimeParticleEffectInstance2D implements ParticleEffectInstance2D {
     if (this.viewport) backend.setViewport?.(this.viewport);
     backend.setRenderParameters?.(this.renderParameters);
     backend.setRenderScale?.(this.renderScale);
+    this.applyAdaptiveLod();
     if (!stateTransferred) {
       this.elapsed = 0;
       this.emitters.forEach((emitter) => {
@@ -1270,6 +1292,34 @@ class RuntimeParticleEffectInstance2D implements ParticleEffectInstance2D {
     if (timeline.prewarm && (timeline.duration ?? 0) > 0) this.advanceEmitter(emitter, timeline.duration ?? 0);
   }
 
+  private updateAdaptiveLod(deltaSeconds: number): void {
+    if (!this.adaptiveLod || !Number.isFinite(deltaSeconds) || deltaSeconds <= 0) return;
+    if (deltaSeconds > this.adaptiveTargetFrameSeconds * 1.25) {
+      this.slowFrames += 1;
+      this.recoveryFrames = 0;
+      if (this.slowFrames >= 8 && this.adaptiveLodLevel < 2) {
+        this.adaptiveLodLevel = (this.adaptiveLodLevel + 1) as 1 | 2;
+        this.slowFrames = 0;
+        this.applyAdaptiveLod();
+      }
+    } else if (deltaSeconds < this.adaptiveTargetFrameSeconds * 1.08) {
+      this.slowFrames = 0;
+      this.recoveryFrames += 1;
+      if (this.recoveryFrames >= 120 && this.adaptiveLodLevel > 0) {
+        this.adaptiveLodLevel = (this.adaptiveLodLevel - 1) as 0 | 1;
+        this.recoveryFrames = 0;
+        this.applyAdaptiveLod();
+      }
+    }
+  }
+
+  private applyAdaptiveLod(): void {
+    this.effectiveTier = this.adaptiveLodLevel === 2 ? lowerAvailableParticleTier(this.program, this.tier) : this.tier;
+    const adaptiveScale = this.adaptiveLodLevel === 0 ? 1 : this.adaptiveLodLevel === 1 ? 0.5 : 0.25;
+    this.appliedRenderScale = Math.min(this.renderScale, adaptiveScale);
+    this.backend.setRenderScale?.(this.appliedRenderScale);
+  }
+
   private assertUsable(): void {
     if (this.statusValue === "disposed") throw new Error("Particle effect instance is disposed");
   }
@@ -1280,6 +1330,15 @@ function firstBurstCount(emitter: ParticleEmitterDefinition2D): number {
 }
 function importanceCode(importance: ParticleEmitterDefinition2D["limits"]["importance"]): number {
   return ["cosmetic", "secondary", "primary", "critical"].indexOf(importance);
+}
+function lowerAvailableParticleTier(program: CompiledParticleProgram2D, tier: ParticleRenderTier2D): ParticleRenderTier2D {
+  if (tier === "ultra" && hasParticleRenderTier(program, "enhanced")) return "enhanced";
+  if (tier !== "basic" && hasParticleRenderTier(program, "basic")) return "basic";
+  return tier;
+}
+function hasParticleRenderTier(program: CompiledParticleProgram2D, tier: ParticleRenderTier2D): boolean {
+  for (const recipe of program.effect.source.renderRecipes.recipes) if (recipe.tier === tier) return true;
+  return false;
 }
 
 function particleCapabilityRequirements(program: CompiledParticleProgram2D): string[] {

@@ -3,6 +3,7 @@ import {
   EngineGpu2D,
   EngineInput,
   EngineParticleEffects,
+  particleDiagnosticsSummary2D,
   EngineRender2D,
   EngineSchedule,
   ExperiencePreviewCycleControllerService,
@@ -84,7 +85,7 @@ export function createCompiledSparksPlugin(initial: SparksConfig = SPARKS_DEFAUL
       const effects = context.get(EngineParticleEffects);
       effects.register(SPARKS_PARTICLE_PROGRAM, { capacity });
       effects.prewarm(EFFECT_ID);
-      const instance = effects.createInstance(EFFECT_ID, { seed: randomState, qualityTier: renderTier(config) });
+      const instance = effects.createInstance(EFFECT_ID, { seed: randomState, qualityTier: renderTier(config), preview: launch.profile === "preview" });
       applyStyle(instance);
       seedRails(instance);
       configure(instance, true);
@@ -100,7 +101,7 @@ export function createCompiledSparksPlugin(initial: SparksConfig = SPARKS_DEFAUL
         get entityCount() { return instance.diagnostics().activeEstimate; },
         get runtimeDiagnostics() {
           return Object.freeze({
-            ...instance.diagnostics(),
+            ...particleDiagnosticsSummary2D(instance.diagnostics()),
             railCount,
             contactCount: contacts.size,
             compiledEffect: EFFECT_ID,

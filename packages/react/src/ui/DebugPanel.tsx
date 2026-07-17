@@ -134,9 +134,10 @@ export function DebugPanel({ engine }: DebugPanelProps): JSX.Element {
                   ))}
                   {particleInspection.instances.map((instance) => (
                     <div key={instance.id} className="mb-2 rounded-lg bg-white/5 p-2">
-                      <StatRow label={`#${instance.id} ${instance.effectId}`} value={`${instance.status} · ${instance.qualityTier}`} />
+                      <StatRow label={`#${instance.id} ${instance.effectId}`} value={`${instance.status} · ${instance.effectiveQualityTier}`} />
                       <StatRow label="active / capacity" value={`${formatInteger(instance.diagnostics.activeEstimate)} / ${formatInteger(instance.diagnostics.capacity)}`} />
                       <StatRow label="seed / elapsed" value={`${instance.seed} / ${instance.elapsed.toFixed(2)}s`} />
+                      <StatRow label="LOD / render scale" value={`${instance.adaptiveLodLevel} / ${Math.round(instance.renderScale * 100)}%`} />
                       {instance.diagnostics.archetypes && Object.entries(instance.diagnostics.archetypes).map(([id, values]) => <StatRow key={id} label={id} value={`${formatInteger(values.activeEstimate)} / ${formatInteger(values.capacity)}`} />)}
                       {instance.diagnostics.eventAttemptsByTrigger && <StatRow label="events by trigger" value={formatDiagnosticRecord(instance.diagnostics.eventAttemptsByTrigger)} />}
                       {instance.diagnostics.eventAttemptsByPriority && <StatRow label="events by priority" value={formatDiagnosticRecord(instance.diagnostics.eventAttemptsByPriority)} />}

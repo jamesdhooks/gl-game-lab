@@ -199,6 +199,25 @@ export interface ParticleEffectController2D {
   dispose(): void;
 }
 
+export function particleDiagnosticsSummary2D(diagnostics: ParticleEffectDiagnostics2D): Readonly<Record<string, string | number | boolean>> {
+  const summary: Record<string, string | number | boolean> = {
+    capacity: diagnostics.capacity,
+    activeEstimate: diagnostics.activeEstimate,
+    queuedCommands: diagnostics.queuedCommands,
+    droppedCommands: diagnostics.droppedCommands,
+    spawnedParticles: diagnostics.spawnedParticles,
+    droppedParticles: diagnostics.droppedParticles,
+    eventCount: diagnostics.eventCount,
+    simulationPasses: diagnostics.simulationPasses,
+    renderPasses: diagnostics.renderPasses,
+    uploadBytes: diagnostics.uploadBytes,
+    contextGeneration: diagnostics.contextGeneration,
+    rebuildCount: diagnostics.rebuildCount,
+  };
+  for (const [key, value] of Object.entries(diagnostics)) if ((typeof value === "string" || typeof value === "number" || typeof value === "boolean") && !(key in summary)) summary[key] = value;
+  return Object.freeze(summary);
+}
+
 export interface ParticleSettingBinding2D {
   readonly parameter: string;
   readonly persistedKey: string;
