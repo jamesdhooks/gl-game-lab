@@ -1,5 +1,21 @@
 # GPU Particle Effects Architecture Plan
 
+## Implemented architecture status — 2026-07-17
+
+This document began as the design for the shared particle subsystem. The design is now implemented as a typed graph/compiler/runtime pipeline rather than only the low-level API described below.
+
+- Serializable `ParticleEffectGraph2D` assets compile deterministically to reflected GLSL and WGSL programs, parameter tables, render recipes, capability requirements, graph hashes, and ABI hashes.
+- `EngineParticleEffects2D` owns compiled-program caching, reusable emitter writers, fixed command rings, dirty parameter/palette uploads, archetype capacity partitions, pooled render targets, reset/reseed, replay, inspection, hot replacement, and backend recovery.
+- WebGL2 is the production backend. Sorted command-prefix ranges use bounded binary lookup, direct command count does not multiply the simulation-pass count, and priority claim/resolve passes allocate event children deterministically.
+- WebGL2 event diagnostics use compact 4x1 counter textures and a three-slot fence ring. Only 16 floats are read after a fence signals; full particle state is never read in production. The detailed path is enabled by the development inspector so ordinary gameplay does not pay its extra passes. Counter accuracy is reported as `delayed` when samples are complete and `estimated` if the ring misses a sample.
+- The WebGPU prototype owns GPU-resident state, compute simulation, priority event queues, indirect-compatible presentation data, point/streak rendering, persistent feedback trails, bloom/composite presentation, pipeline caching, and device-loss handling. The development benchmark lab selects it internally on supported hardware and automatically retains or restores WebGL2 presentation when WebGPU initialization or device execution fails. Graphs requiring circle/capsule collision parity remain explicitly on WebGL2.
+- Basic, Enhanced, and Ultra render recipes are executable and shared. Adaptive render LOD can thin presentation and reduce feedback cost without modifying simulation state.
+- An external GPU-state appearance adapter lets specialized solvers reuse shared points, palettes, curves, and diagnostics without replacing their solver. Splash PIC/FLIP is the first live integration; fluid solvers remain numerically independent.
+- Sparks, Fireworks, and Orbital Shrapnel are compiled-graph architecture proofs. Their legacy paths remain only as rollback references pending human visual acceptance.
+- The development Particle Inspector exposes graphs, archetypes, parameters, resources, event flow, shaders, timings, uploads, pause/step/reset/reseed, replay, and hot-reload results. The benchmark lab records fixed-seed reports for all tiers and required capacities.
+
+Measured reports are committed under `docs/benchmarks/particle/`. The 36-workload desktop matrix and the emulated mobile preview matrix completed without page errors. GPU-time gates pass; the desktop aggregate remains a literal failure because a strict 60.00 FPS condition rejects normal 59.x refresh scheduling. Physical iOS/Android certification and human scene-parity approval are external acceptance gates, not inferred successes.
+
 ## Objective
 
 Turn the existing low-level GPU texture-particle support into a reusable particle-effects system that powers both Sparks and Fireworks without forcing either scene to expose irrelevant behavior. Sparks keeps contact emission, rails, collisions, bounce fragments, and welding-specific rendering. Fireworks keeps shell launch, patterned aerial bursts, recursive sub-bursts, and terminal sparkle/crackle events. Both use the same particle state ABI, command path, lifecycle rules, motion modules, palette system, render tiers, trails, diagnostics, and resource lifecycle.
