@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { Bug, X } from 'lucide-react';
+import { Bug, Pause, Play, RotateCcw, Shuffle, StepForward, X } from 'lucide-react';
 import { EngineParticleEffects, ExperienceRuntimeControllerService, type EngineDiagnosticsSnapshot, type GameEngine } from '@hooksjam/gl-game-lab-engine';
 
 export interface DebugPanelProps {
@@ -25,8 +25,9 @@ export function DebugPanel({ engine }: DebugPanelProps): JSX.Element {
 
   const renderer = stats?.renderer;
   const runtimeDiagnostics = engine?.kernel.tryGet(ExperienceRuntimeControllerService)?.runtimeDiagnostics;
-  const particleDiagnostics = engine?.kernel.tryGet(EngineParticleEffects)?.diagnostics();
-  const particleInspection = engine?.kernel.tryGet(EngineParticleEffects)?.inspect();
+  const particleEffects = engine?.kernel.tryGet(EngineParticleEffects);
+  const particleDiagnostics = particleEffects?.diagnostics();
+  const particleInspection = particleEffects?.inspect();
   const uploads = (renderer?.bufferUploadBytes ?? 0) + (renderer?.textureUploadBytes ?? 0);
   const systems = [...(stats?.systems ?? [])].sort((left, right) => right.cpuMs - left.cpuMs);
 
@@ -104,9 +105,54 @@ export function DebugPanel({ engine }: DebugPanelProps): JSX.Element {
                       <StatRow label="emitters" value={program.emitters.join(', ')} />
                       <StatRow label="parameters" value={String(program.parameters.length)} />
                       <StatRow label="bindings" value={String(program.persistedBindings.length)} />
+                      <StatRow label="resources" value={String(program.resources.length)} />
+                      <StatRow label="shaders" value={String(program.shaders.length)} />
+                      {program.capabilityRequirements.length > 0 && (
+                        <details className="mt-1 text-[10px] text-white/55">
+                          <summary className="cursor-pointer select-none text-white/40">Capabilities</summary>
+                          <div className="mt-1 break-words">{program.capabilityRequirements.join(' · ')}</div>
+                        </details>
+                      )}
+                      <details className="mt-1 text-[10px] text-white/55">
+                        <summary className="cursor-pointer select-none text-white/40">Resources</summary>
+                        <div className="mt-1 space-y-0.5">
+                          {program.resources.map((resource) => <div key={resource.name} className="break-all">{resource.name} · {resource.kind}{resource.required ? '' : ' · optional'}</div>)}
+                        </div>
+                      </details>
+                      <details className="mt-1 text-[10px] text-white/55">
+                        <summary className="cursor-pointer select-none text-white/40">Compiled shaders</summary>
+                        <div className="mt-1 space-y-1">
+                          {program.shaders.map((shader) => (
+                            <details key={`${shader.backend}:${shader.stage}:${shader.entryPoint}`}>
+                              <summary className="cursor-pointer break-all">{shader.backend} · {shader.stage} · {shader.hash.slice(0, 8)}</summary>
+                              <pre className="mt-1 max-h-48 overflow-auto whitespace-pre p-1 text-[9px] leading-3 text-white/45">{shader.source}</pre>
+                            </details>
+                          ))}
+                        </div>
+                      </details>
                     </div>
                   ))}
-                  {particleInspection.instances.map((instance) => <StatRow key={instance.id} label={`#${instance.id} ${instance.effectId}`} value={`${instance.status} · ${instance.qualityTier}`} />)}
+                  {particleInspection.instances.map((instance) => (
+                    <div key={instance.id} className="mb-2 rounded-lg bg-white/5 p-2">
+                      <StatRow label={`#${instance.id} ${instance.effectId}`} value={`${instance.status} · ${instance.qualityTier}`} />
+                      <StatRow label="active / capacity" value={`${formatInteger(instance.diagnostics.activeEstimate)} / ${formatInteger(instance.diagnostics.capacity)}`} />
+                      <StatRow label="seed / elapsed" value={`${instance.seed} / ${instance.elapsed.toFixed(2)}s`} />
+                      <div className="mt-2 grid grid-cols-4 gap-1">
+                        <InspectorButton label={instance.status === 'paused' ? 'Resume' : 'Pause'} onClick={() => { particleEffects?.controlInstance(instance.id, { action: instance.status === 'paused' ? 'resume' : 'pause' }); }}>
+                          {instance.status === 'paused' ? <Play size={11} /> : <Pause size={11} />}
+                        </InspectorButton>
+                        <InspectorButton label="Step" onClick={() => { particleEffects?.controlInstance(instance.id, { action: 'step' }); }}><StepForward size={11} /></InspectorButton>
+                        <InspectorButton label="Reset" onClick={() => { particleEffects?.controlInstance(instance.id, { action: 'reset' }); }}><RotateCcw size={11} /></InspectorButton>
+                        <InspectorButton label="Reseed" onClick={() => { particleEffects?.controlInstance(instance.id, { action: 'reseed', seed: randomInspectorSeed() }); }}><Shuffle size={11} /></InspectorButton>
+                      </div>
+                      {Object.keys(instance.parameters).length > 0 && (
+                        <details className="mt-1 text-[10px] text-white/55">
+                          <summary className="cursor-pointer select-none text-white/40">Parameters</summary>
+                          {Object.entries(instance.parameters).map(([key, value]) => <StatRow key={key} label={key} value={String(value)} />)}
+                        </details>
+                      )}
+                    </div>
+                  ))}
                 </DebugSection>
               )}
               {systems.length > 0 && (
@@ -144,6 +190,14 @@ function DebugSection({ title, children }: { readonly title: string; readonly ch
 
 function StatRow({ label, value }: { readonly label: string; readonly value: string }): JSX.Element {
   return <div className="flex items-center justify-between gap-4"><span className="min-w-0 truncate text-white/40">{label}</span><span className="shrink-0 text-white/80">{value}</span></div>;
+}
+
+function InspectorButton({ label, onClick, children }: { readonly label: string; readonly onClick: () => void; readonly children: ReactNode }): JSX.Element {
+  return <button type="button" onClick={onClick} title={label} aria-label={label} className="flex h-6 items-center justify-center rounded-md bg-white/5 text-white/45 transition-colors hover:bg-white/10 hover:text-amber-300">{children}</button>;
+}
+
+function randomInspectorSeed(): number {
+  return Math.floor(Math.random() * 0x7fffffff);
 }
 
 function formatBytes(value: number): string {

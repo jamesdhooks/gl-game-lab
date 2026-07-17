@@ -407,12 +407,44 @@ describe("EngineParticleEffects2D", () => {
       archetypes: ["spark"],
       emitters: ["spark"],
     });
+    expect(inspection.programs[0]!.capabilityRequirements).toContain("floating-point state targets");
+    expect(inspection.programs[0]!.resources.length).toBeGreaterThan(0);
+    expect(inspection.programs[0]!.shaders).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ backend: "webgl2", hash: expect.any(String), source: expect.any(String) }),
+        expect.objectContaining({ backend: "webgpu", hash: expect.any(String), source: expect.any(String) }),
+      ]),
+    );
     expect(inspection.instances[0]).toMatchObject({
       id: instance.id,
       effectId: "runtime-test",
       qualityTier: "enhanced",
+      parameters: {},
+      diagnostics: { capacity: 64 },
     });
     expect(Object.isFrozen(inspection.programs)).toBe(true);
+    runtime.dispose();
+  });
+
+  it("supports interactive inspector controls without bypassing instance validation", () => {
+    const backend = new TestBackend();
+    const runtime = new EngineParticleEffects2D(backend);
+    runtime.register(compileParticleProgram2D(compileParticleEffect2D(adaptParticleEffectDefinition2D(definition))));
+    const instance = runtime.createInstance("runtime-test", { seed: 11 });
+    instance.start();
+    runtime.controlInstance(instance.id, { action: "pause" });
+    expect(instance.state().status).toBe("paused");
+    runtime.controlInstance(instance.id, { action: "step", deltaSeconds: 1 / 30 });
+    expect(instance.state()).toMatchObject({ status: "paused", elapsed: 1 / 30 });
+    expect(backend.resources[0]!.updates).toBe(1);
+    runtime.controlInstance(instance.id, { action: "resume" });
+    expect(instance.state().status).toBe("running");
+    runtime.controlInstance(instance.id, { action: "reseed", seed: 99 });
+    expect(instance.state()).toMatchObject({ status: "running", seed: 99, elapsed: 0 });
+    runtime.controlInstance(instance.id, { action: "reset" });
+    expect(instance.state()).toMatchObject({ status: "running", seed: 99, elapsed: 0 });
+    expect(() => runtime.controlInstance(instance.id, { action: "step", deltaSeconds: 2 })).toThrow("between zero and one");
+    expect(() => runtime.controlInstance(999, { action: "pause" })).toThrow("Unknown particle effect instance");
     runtime.dispose();
   });
 });

@@ -269,6 +269,7 @@ export {
   type ParticleEffectInstanceOptions2D,
   type ParticleEffectInstanceState2D,
   type ParticleEffectInstanceStatus2D,
+  type ParticleInspectorCommand2D,
   type ParticleEffectRuntimeBackend2D,
   type ParticleEffects2D,
   type ParticleEffectsDiagnostics2D,

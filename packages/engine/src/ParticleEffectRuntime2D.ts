@@ -363,7 +363,15 @@ export interface ParticleEffectInstanceState2D {
   readonly timescale: number;
   readonly qualityTier: ParticleRenderTier2D;
   readonly activeEmitters: number;
+  readonly parameters: Readonly<Record<string, ParticleParameterValue2D>>;
+  readonly diagnostics: ParticleEffectBackendDiagnostics2D;
 }
+
+export type ParticleInspectorCommand2D =
+  | Readonly<{ action: "pause" | "resume" | "reset" }>
+  | Readonly<{ action: "step"; deltaSeconds?: number }>
+  | Readonly<{ action: "reseed"; seed: number }>
+  | Readonly<{ action: "trigger"; signal: string }>;
 
 export interface ParticleEffectInstance2D {
   readonly id: number;
@@ -429,6 +437,9 @@ export interface ParticleEffectProgramInspection2D {
     readonly key: string;
   }[];
   readonly renderPasses: Readonly<Record<ParticleRenderTier2D, readonly string[]>>;
+  readonly capabilityRequirements: readonly string[];
+  readonly resources: readonly { readonly name: string; readonly kind: string; readonly required: boolean }[];
+  readonly shaders: readonly { readonly backend: string; readonly stage: string; readonly entryPoint: string; readonly hash: string; readonly source: string }[];
 }
 
 export interface ParticleEffectsInspection2D {
@@ -447,6 +458,7 @@ export interface ParticleEffects2D {
   render(target: GpuRenderTarget2D): void;
   diagnostics(): ParticleEffectsDiagnostics2D;
   inspect(): ParticleEffectsInspection2D;
+  controlInstance(instanceId: number, command: ParticleInspectorCommand2D): void;
   dispose(): void;
 }
 
@@ -635,6 +647,9 @@ export class EngineParticleEffects2D implements ParticleEffects2D {
         parameters: Object.freeze(record.program.effect.source.parameters.map((entry) => entry.id)),
         persistedBindings: Object.freeze(record.program.effect.persistedBindings.map((entry) => Object.freeze({ parameterId: entry.parameterId, key: entry.key }))),
         renderPasses: Object.freeze(Object.fromEntries((["basic", "enhanced", "ultra"] as const).map((tier) => [tier, Object.freeze(record.program.renderPasses[tier].map((pass) => pass.kind))])) as Readonly<Record<ParticleRenderTier2D, readonly string[]>>),
+        capabilityRequirements: Object.freeze(particleCapabilityRequirements(record.program)),
+        resources: Object.freeze(record.program.reflection.bindings.map((entry) => Object.freeze({ name: entry.name, kind: entry.kind, required: entry.required }))),
+        shaders: Object.freeze(compiledShaderInspection(record.program)),
       }),
     );
     return Object.freeze({
@@ -642,6 +657,18 @@ export class EngineParticleEffects2D implements ParticleEffects2D {
       programs: Object.freeze(programs),
       instances: Object.freeze([...this.instances.values()].map((instance) => instance.state())),
     });
+  }
+
+  controlInstance(instanceId: number, command: ParticleInspectorCommand2D): void {
+    this.assertUsable();
+    const instance = this.instances.get(instanceId);
+    if (!instance) throw new Error(`Unknown particle effect instance: ${instanceId}`);
+    if (command.action === "pause") instance.pause();
+    else if (command.action === "resume") instance.resume();
+    else if (command.action === "reset") instance.restart(instance.state().seed);
+    else if (command.action === "reseed") instance.restart(command.seed);
+    else if (command.action === "trigger") instance.trigger(command.signal);
+    else if (command.action === "step") instance.singleStep(command.deltaSeconds ?? 1 / 60);
   }
 
   dispose(): void {
@@ -1087,7 +1114,18 @@ class RuntimeParticleEffectInstance2D implements ParticleEffectInstance2D {
       timescale: this.timescale,
       qualityTier: this.tier,
       activeEmitters: this.emitters.reduce((count, emitter) => count + Number(emitter.active), 0),
+      parameters: Object.freeze({ ...this.parameters }),
+      diagnostics: this.backend.diagnostics(),
     });
+  }
+  singleStep(deltaSeconds: number): void {
+    this.assertUsable();
+    if (!Number.isFinite(deltaSeconds) || deltaSeconds <= 0 || deltaSeconds > 1) throw new Error("Particle inspector step must be between zero and one second");
+    if (this.statusValue === "idle" || this.statusValue === "complete") this.start();
+    else if (this.statusValue === "paused") this.statusValue = "running";
+    this.update(deltaSeconds);
+    this.updateBackend(deltaSeconds);
+    this.statusValue = "paused";
   }
   diagnostics(): ParticleEffectBackendDiagnostics2D {
     return this.backend.diagnostics();
@@ -1242,6 +1280,40 @@ function firstBurstCount(emitter: ParticleEmitterDefinition2D): number {
 }
 function importanceCode(importance: ParticleEmitterDefinition2D["limits"]["importance"]): number {
   return ["cosmetic", "secondary", "primary", "critical"].indexOf(importance);
+}
+
+function particleCapabilityRequirements(program: CompiledParticleProgram2D): string[] {
+  const requirements = program.effect.backendRequirements;
+  return [
+    ...(requirements.metadata ? ["particle metadata"] : []),
+    ...(requirements.events ? ["GPU child events"] : []),
+    ...(requirements.floatTargets ? ["floating-point state targets"] : []),
+    ...(requirements.floatBlend ? ["floating-point blending"] : []),
+    `at least ${requirements.minimumDrawBuffers} draw buffers`,
+  ];
+}
+
+function compiledShaderInspection(program: CompiledParticleProgram2D): { backend: string; stage: string; entryPoint: string; hash: string; source: string }[] {
+  const shaders = [
+    program.webgl2.simulation,
+    program.webgl2.event,
+    program.webgl2.eventClaimVertex,
+    program.webgl2.eventClaimFragment,
+    program.webgl2.vertex,
+    program.webgl2.streakVertex,
+    program.webgl2.fragment,
+    program.webgpu.simulation,
+    program.webgpu.event,
+    program.webgpu.eventResolve,
+    program.webgpu.render,
+  ];
+  return shaders.filter((shader): shader is NonNullable<typeof shader> => shader !== undefined).map((shader) => ({
+    backend: shader.backend,
+    stage: shader.stage,
+    entryPoint: shader.entryPoint,
+    hash: shader.hash,
+    source: shader.source,
+  }));
 }
 
 function particleDrainDuration(program: CompiledParticleProgram2D, archetypeId: string, lifetimeOverride?: number, generation = 0): number {
