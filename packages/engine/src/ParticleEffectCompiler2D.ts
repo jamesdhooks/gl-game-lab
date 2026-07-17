@@ -437,6 +437,7 @@ out float vIntensity;
 out float vGeneration;
 out float vSpeed;
 flat out int vStreak;
+float hashSeed(float value) { return fract(sin(value * 91.3458 + 17.123) * 47453.5453); }
 void main() {
   vStreak=${streak ? "1" : "0"};
   int drawIndex = ${streak ? "gl_VertexID / 6" : "gl_VertexID"};
@@ -453,17 +454,20 @@ void main() {
   int archetype=clamp(int(c.x+.5),0,${Math.max(0, effect.source.archetypes.length - 1)});
   vec4 sizeCurve=uArchetypeSize[archetype], lengthCurve=uArchetypeLength[archetype];
   float curveAge=pow(vAge,max(.01,sizeCurve.z));
-  float size=max(0.0,mix(sizeCurve.x,sizeCurve.y,curveAge))*uPointScale;
+  float seedVariation=hashSeed(vSeed);
+  float sizeVariation=mix(max(0.0,1.0-sizeCurve.w),1.0+sizeCurve.w,seedVariation);
+  float size=max(0.0,mix(sizeCurve.x,sizeCurve.y,curveAge))*sizeVariation*uPointScale;
   vec4 alphaCurve=uArchetypeAlpha[archetype], intensityCurve=uArchetypeIntensity[archetype];
   vAlpha=mix(alphaCurve.x,alphaCurve.y,pow(vAge,max(.01,alphaCurve.z)));
-  vIntensity=mix(intensityCurve.x,intensityCurve.y,pow(vAge,max(.01,intensityCurve.z)));
+  vIntensity=mix(intensityCurve.x,intensityCurve.y,pow(vAge,max(.01,intensityCurve.z)))*mix(max(0.0,1.0-intensityCurve.w),1.0+intensityCurve.w,hashSeed(fract(vSeed+.37)));
   vec2 clip = vec2(a.x / uCanvasSize.x * 2.0 - 1.0, 1.0 - a.y / uCanvasSize.y * 2.0);
   ${
     streak
       ? `int corner=gl_VertexID%6;
   vec2 corners[6]=vec2[6](vec2(0,-1),vec2(1,-1),vec2(0,1),vec2(0,1),vec2(1,-1),vec2(1,1));
   vec2 axis=length(b.xy)>0.001?normalize(b.xy):vec2(1,0), normal=vec2(-axis.y,axis.x);
-  float streakLength=max(size,mix(lengthCurve.x,lengthCurve.y,pow(vAge,max(.01,lengthCurve.z)))*length(b.xy)*.016);
+  float lengthVariation=mix(max(0.0,1.0-lengthCurve.w),1.0+lengthCurve.w,hashSeed(fract(vSeed+.71)));
+  float streakLength=max(size,mix(lengthCurve.x,lengthCurve.y,pow(vAge,max(.01,lengthCurve.z)))*lengthVariation*length(b.xy)*.016);
   vec2 local=-axis*corners[corner].x*streakLength+normal*corners[corner].y*size*.5;
   clip+=vec2(local.x/uCanvasSize.x*2.0,-local.y/uCanvasSize.y*2.0);`
       : ""

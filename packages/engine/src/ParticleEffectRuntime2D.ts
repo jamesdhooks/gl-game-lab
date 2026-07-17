@@ -32,6 +32,7 @@ export interface ParticleEmissionOverride2D {
   readonly seed?: number;
   readonly inheritedVelocity?: readonly [number, number];
   readonly lifetime?: number;
+  readonly lifetimeVariability?: number;
 }
 
 export interface ParticleEmitterSourceOverride2D {
@@ -52,6 +53,7 @@ export interface ParticleEmissionWriter2D {
   seed(value: number): ParticleEmissionWriter2D;
   inheritedVelocity(x: number, y: number): ParticleEmissionWriter2D;
   lifetime(value: number): ParticleEmissionWriter2D;
+  lifetimeVariability(value: number): ParticleEmissionWriter2D;
   submit(): void;
   reset(): ParticleEmissionWriter2D;
 }
@@ -177,6 +179,7 @@ export interface ParticleRuntimeEmission2D {
   readonly inheritedVelocityX?: number;
   readonly inheritedVelocityY?: number;
   readonly lifetime?: number | undefined;
+  readonly lifetimeVariability?: number | undefined;
 }
 
 export interface ParticleEffectBackendDiagnostics2D extends ParticleEffectDiagnostics2D {
@@ -680,6 +683,7 @@ class MutableEmission implements ParticleRuntimeEmission2D {
   inheritedVelocityX = 0;
   inheritedVelocityY = 0;
   lifetime: number | undefined = undefined;
+  lifetimeVariability: number | undefined = undefined;
 }
 
 class EmitterRuntime {
@@ -716,6 +720,7 @@ class MutableEmissionOverride implements ParticleEmissionOverride2D {
   seed?: number;
   inheritedVelocity?: readonly [number, number];
   lifetime?: number;
+  lifetimeVariability?: number;
   readonly point: [number, number] = [0, 0];
   readonly velocity: [number, number] = [0, 0];
   clear(): void {
@@ -727,6 +732,7 @@ class MutableEmissionOverride implements ParticleEmissionOverride2D {
     delete this.seed;
     delete this.inheritedVelocity;
     delete this.lifetime;
+    delete this.lifetimeVariability;
   }
 }
 
@@ -786,6 +792,10 @@ class RuntimeParticleEmitterHandle2D implements ParticleEmitterHandle2D, Particl
   }
   lifetime(value: number): ParticleEmissionWriter2D {
     this.override.lifetime = value;
+    return this;
+  }
+  lifetimeVariability(value: number): ParticleEmissionWriter2D {
+    this.override.lifetimeVariability = value;
     return this;
   }
   submit(): void {
@@ -1180,6 +1190,7 @@ class RuntimeParticleEffectInstance2D implements ParticleEffectInstance2D {
 
   private submit(emitter: EmitterRuntime, requestedCount: number, override: ParticleEmissionOverride2D = {}): void {
     if (override.lifetime !== undefined && (!Number.isFinite(override.lifetime) || override.lifetime <= 0)) throw new Error("Particle emission lifetime must be positive and finite");
+    if (override.lifetimeVariability !== undefined && (!Number.isFinite(override.lifetimeVariability) || override.lifetimeVariability < 0 || override.lifetimeVariability > 1)) throw new Error("Particle emission lifetime variability must be between zero and one");
     const qualityScale = emitter.definition.limits.qualityScale?.[this.tier] ?? 1;
     const count = Math.max(0, Math.min(Math.round(requestedCount * qualityScale), emitter.definition.limits.maxPerFrame ?? Number.MAX_SAFE_INTEGER));
     if (count === 0) return;
@@ -1197,6 +1208,7 @@ class RuntimeParticleEffectInstance2D implements ParticleEffectInstance2D {
     emission.inheritedVelocityX = override.inheritedVelocity?.[0] ?? 0;
     emission.inheritedVelocityY = override.inheritedVelocity?.[1] ?? 0;
     emission.lifetime = override.lifetime;
+    emission.lifetimeVariability = override.lifetimeVariability;
     this.backend.emit(emission);
     const archetype = this.program.effect.source.archetypes[this.program.effect.archetypeIds[emitter.definition.archetypeId] ?? -1];
     if (archetype) this.drainRemaining = Math.max(this.drainRemaining, particleDrainDuration(this.program, emitter.definition.archetypeId, override.lifetime));

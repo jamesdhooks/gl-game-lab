@@ -268,7 +268,7 @@ class WebGLParticleEffectResource2D implements ParticleEffectBackendResource2D {
     this.commands[offset + 11] = emission.lifetime ?? archetype.lifecycle.lifetime;
     this.commands[offset + 12] = emission.seed;
     this.commands[offset + 13] = 0;
-    this.commands[offset + 14] = archetype.lifecycle.lifetimeVariability ?? 0;
+    this.commands[offset + 14] = emission.lifetimeVariability ?? archetype.lifecycle.lifetimeVariability ?? 0;
     this.commands[offset + 15] = emission.emitterIndex;
     this.particleCount += count - replacedCount;
     this.poolQueued[archetypeId] = this.poolQueued[archetypeId]! + count;
@@ -621,6 +621,6 @@ function writeBoundAppearance(size: Float32Array, length: Float32Array, alpha: F
   const [curve, component] = field.split(".");
   const target = curve === "size" ? size : curve === "length" ? length : curve === "alpha" ? alpha : curve === "intensity" ? intensity : undefined;
   if (!target) return;
-  const slot = component === "start" ? 0 : component === "end" ? 1 : component === "exponent" ? 2 : -1;
+  const slot = component === "start" ? 0 : component === "end" ? 1 : component === "exponent" ? 2 : component === "variability" ? 3 : -1;
   if (slot >= 0) target[index * 4 + slot] = value;
 }

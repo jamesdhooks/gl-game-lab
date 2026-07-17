@@ -235,15 +235,17 @@ describe("EngineParticleEffects2D", () => {
     expect(() => instance.setEmitterSource("missing", { radius: 2 })).toThrow("Unknown particle emitter");
     const handle = instance.emitter("spark");
     expect(handle).toBe(instance.emitter("spark"));
-    handle.writer().position(12, 18).count(3).power(7).lifetime(2.5).submit();
+    handle.writer().position(12, 18).count(3).power(7).lifetime(2.5).lifetimeVariability(0.4).submit();
     expect(backend.resources[0]!.emissions.at(-1)).toMatchObject({
       count: 3,
       positionX: 12,
       positionY: 18,
       power: 7,
       lifetime: 2.5,
+      lifetimeVariability: 0.4,
     });
     expect(() => handle.writer().lifetime(0).submit()).toThrow("positive and finite");
+    expect(() => handle.writer().lifetimeVariability(1.1).submit()).toThrow("between zero and one");
     expect(instance.state().status).toBe("running");
     runtime.update(2.6);
     expect(instance.state().status).toBe("complete");
