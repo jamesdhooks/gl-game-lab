@@ -420,6 +420,7 @@ describe("EngineParticleEffects2D", () => {
     instance.dispose();
     expect(runtime.diagnostics().activeInstances).toBe(0);
     runtime.dispose();
+    expect(() => runtime.setDetailedDiagnostics(false)).not.toThrow();
     expect(() => runtime.createInstance("runtime-test")).toThrow("disposed");
   });
 

@@ -811,7 +811,10 @@ export class EngineParticleEffects2D implements ParticleEffects2D {
   }
 
   setDetailedDiagnostics(enabled: boolean): void {
-    this.assertUsable();
+    // React/dev-tool cleanup can legitimately trail engine disposal by one
+    // passive-effect turn. Disabling an already-destroyed diagnostic stream is
+    // idempotent cleanup, not an engine operation that should fail teardown.
+    if (this.disposed) return;
     this.detailedDiagnostics = enabled;
     for (const instance of this.instances.values()) instance.setDetailedDiagnostics(enabled);
   }
