@@ -82,4 +82,26 @@ describe('ParticleGraphScheduler2D', () => {
     }, 3).start();
     expect(emit).toHaveBeenCalledWith('second', { parameterMap: { 'local-power': 'scene-power' }, space: 'world' });
   });
+
+  it('holds a sequence at a completion barrier until the selected emitter has drained', () => {
+    const barrierGraph: ParticleEffectGraph2D = {
+      ...graph,
+      graph: { root: particleGraph2D.sequence(
+        particleGraph2D.emit('first'),
+        { kind: 'wait-for-completion', emitterId: 'first' },
+        particleGraph2D.emit('second'),
+      ) },
+    };
+    const emit = vi.fn(); let complete = false;
+    const scheduler = new ParticleGraphScheduler2D(barrierGraph, () => ({}), {
+      emit, stop: vi.fn(), signal: vi.fn(), reference: vi.fn(), complete: () => complete,
+    }, 5);
+    scheduler.start();
+    expect(emit.mock.calls).toEqual([['first', {}]]);
+    scheduler.update(0.5);
+    expect(emit).toHaveBeenCalledTimes(1);
+    complete = true;
+    scheduler.update(1 / 120);
+    expect(emit.mock.calls.at(-1)?.[0]).toBe('second');
+  });
 });

@@ -26,6 +26,7 @@ export interface ParticleGraphSchedulerCallbacks2D {
   stop(emitterId: string | undefined, mode: 'drain' | 'kill'): void;
   signal(signal: string): void;
   reference(reference: ParticleGraphEffectReference2D, context: ParticleGraphExecutionContext2D): void;
+  complete?(emitterId: string | undefined): boolean;
 }
 
 interface ScheduledNode {
@@ -34,6 +35,8 @@ interface ScheduledNode {
   context: ParticleGraphExecutionContext2D;
   due: number;
   active: boolean;
+  continuation: readonly ParticleEmitterGraphNode2D[] | undefined;
+  continuationIndex: number;
 }
 
 export class ParticleGraphScheduler2D {
@@ -51,7 +54,7 @@ export class ParticleGraphScheduler2D {
     capacity = 256,
   ) {
     if (!Number.isSafeInteger(capacity) || capacity < 1) throw new Error('Particle graph scheduler capacity must be positive');
-    this.scheduled = Array.from({ length: capacity }, (): ScheduledNode => ({ node: undefined, event: undefined, context: EMPTY_CONTEXT, due: 0, active: false }));
+    this.scheduled = Array.from({ length: capacity }, (): ScheduledNode => ({ node: undefined, event: undefined, context: EMPTY_CONTEXT, due: 0, active: false, continuation: undefined, continuationIndex: 0 }));
     this.randomState = seed >>> 0;
   }
 
@@ -73,7 +76,7 @@ export class ParticleGraphScheduler2D {
 
   reset(seed: number): void {
     this.elapsed = 0; this.randomState = seed >>> 0; this.dropped = 0;
-    for (const action of this.scheduled) { action.node = undefined; action.event = undefined; action.context = EMPTY_CONTEXT; action.due = 0; action.active = false; }
+    for (const action of this.scheduled) { action.node = undefined; action.event = undefined; action.context = EMPTY_CONTEXT; action.due = 0; action.active = false; action.continuation = undefined; action.continuationIndex = 0; }
   }
 
   private flush(): void {
@@ -85,10 +88,15 @@ export class ParticleGraphScheduler2D {
         progressed = false;
         for (const action of this.scheduled) {
           if (!action.active || action.due > this.elapsed) continue;
-          const node = action.node, event = action.event, context = action.context;
+          const node = action.node, event = action.event, context = action.context, continuation = action.continuation, continuationIndex = action.continuationIndex;
           action.active = false; action.node = undefined; action.event = undefined; action.context = EMPTY_CONTEXT;
+          action.continuation = undefined; action.continuationIndex = 0;
           if (event) this.visitGates(this.graph.graph.root, event);
-          else if (node) this.execute(node, action.due, context);
+          else if (node?.kind === 'wait-for-completion') {
+            if (this.callbacks.complete?.(node.emitterId) ?? true) {
+              if (continuation) this.scheduleSequence(continuation, continuationIndex, action.due, context);
+            } else this.enqueueWait(node, this.elapsed + 1 / 240, context, continuation, continuationIndex);
+          } else if (node) this.execute(node, action.due, context);
           progressed = true;
         }
       }
@@ -108,11 +116,7 @@ export class ParticleGraphScheduler2D {
     if (node.kind === 'stop') { this.callbacks.stop(node.emitterId, node.mode ?? 'drain'); return; }
     if (node.kind === 'wait-for-completion' || node.kind === 'gate') return;
     if (node.kind === 'delay') { this.enqueue(node.child, due + node.duration, context); return; }
-    if (node.kind === 'sequence') {
-      let cursor = due;
-      for (const child of node.children) { this.enqueue(child, cursor, context); cursor += nodeDuration(child, this.graph); }
-      return;
-    }
+    if (node.kind === 'sequence') { this.scheduleSequence(node.children, 0, due, context); return; }
     if (node.kind === 'parallel') { node.children.forEach((child) => { this.enqueue(child, due, context); }); return; }
     if (node.kind === 'repeat') {
       const duration = nodeDuration(node.child, this.graph) + (node.interval ?? 0);
@@ -132,7 +136,7 @@ export class ParticleGraphScheduler2D {
   private scheduleStart(node: ParticleEmitterGraphNode2D, due: number, context: ParticleGraphExecutionContext2D): void {
     if (node.kind === 'gate') { if (node.event.kind === 'effect-start') this.scheduleStart(node.child, due, context); return; }
     if (node.kind === 'delay') { this.scheduleStart(node.child, due + node.duration, context); return; }
-    if (node.kind === 'sequence') { let cursor = due; for (const child of node.children) { this.scheduleStart(child, cursor, context); cursor += nodeDuration(child, this.graph); } return; }
+    if (node.kind === 'sequence') { this.scheduleStartSequence(node.children, 0, due, context); return; }
     if (node.kind === 'parallel') { node.children.forEach((child) => { this.scheduleStart(child, due, context); }); return; }
     if (node.kind === 'repeat') { const duration = nodeDuration(node.child, this.graph) + (node.interval ?? 0); for (let index = 0; index < node.count; index += 1) this.scheduleStart(node.child, due + duration * index, context); return; }
     if (node.kind === 'random-choice') { this.scheduleStart(node.children[Math.floor(this.random() * node.children.length)]!, due, context); return; }
@@ -163,6 +167,33 @@ export class ParticleGraphScheduler2D {
     slot.node = node; slot.event = undefined; slot.context = context; slot.due = due; slot.active = true;
   }
 
+  private enqueueWait(node: Extract<ParticleEmitterGraphNode2D, { readonly kind: 'wait-for-completion' }>, due: number, context: ParticleGraphExecutionContext2D, continuation?: readonly ParticleEmitterGraphNode2D[], continuationIndex = 0): void {
+    const slot = this.scheduled.find((action) => !action.active);
+    if (!slot) { this.dropped += 1; return; }
+    slot.node = node; slot.event = undefined; slot.context = context; slot.due = due; slot.active = true;
+    slot.continuation = continuation; slot.continuationIndex = continuationIndex;
+  }
+
+  private scheduleSequence(children: readonly ParticleEmitterGraphNode2D[], startIndex: number, due: number, context: ParticleGraphExecutionContext2D): void {
+    let cursor = due;
+    for (let index = startIndex; index < children.length; index += 1) {
+      const child = children[index]!;
+      if (child.kind === 'wait-for-completion') { this.enqueueWait(child, cursor, context, children, index + 1); return; }
+      this.enqueue(child, cursor, context);
+      cursor += nodeDuration(child, this.graph);
+    }
+  }
+
+  private scheduleStartSequence(children: readonly ParticleEmitterGraphNode2D[], startIndex: number, due: number, context: ParticleGraphExecutionContext2D): void {
+    let cursor = due;
+    for (let index = startIndex; index < children.length; index += 1) {
+      const child = children[index]!;
+      if (child.kind === 'wait-for-completion') { this.enqueueWait(child, cursor, context, children, index + 1); return; }
+      this.scheduleStart(child, cursor, context);
+      cursor += nodeDuration(child, this.graph);
+    }
+  }
+
   private enqueueEvent(event: ParticleGraphEvent2D, due: number): void {
     const slot = this.scheduled.find((action) => !action.active);
     if (!slot) { this.dropped += 1; return; }
@@ -185,7 +216,18 @@ function nodeDuration(node: ParticleEmitterGraphNode2D, graph: ParticleEffectGra
   if (node.kind === 'repeat') return node.count * (nodeDuration(node.child, graph) + (node.interval ?? 0));
   if (node.kind === 'condition') return Math.max(nodeDuration(node.then, graph), node.otherwise ? nodeDuration(node.otherwise, graph) : 0);
   if (node.kind === 'timeline' || node.kind === 'parameter-remap' || node.kind === 'transform') return nodeDuration(node.child, graph);
+  if (node.kind === 'wait-for-completion') return estimatedCompletionDuration(node.emitterId, graph);
   return 0;
+}
+
+function estimatedCompletionDuration(emitterId: string | undefined, graph: ParticleEffectGraph2D): number {
+  let duration = 0;
+  for (const emitter of graph.emitters) {
+    if (emitterId !== undefined && emitter.id !== emitterId) continue;
+    const archetype = graph.archetypes.find((entry) => entry.id === emitter.archetypeId);
+    duration = Math.max(duration, (emitter.timeline.startDelay ?? 0) + (emitter.timeline.duration ?? 0) + (archetype?.lifecycle.lifetime ?? 0) * (1 + (archetype?.lifecycle.lifetimeVariability ?? 0)));
+  }
+  return duration;
 }
 
 function evaluateCondition(condition: ParticleCondition2D, parameters: Readonly<Record<string, ParticleParameterValue2D>>, random: number, parameterMap?: Readonly<Record<string, string>>): boolean {

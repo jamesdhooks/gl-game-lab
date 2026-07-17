@@ -1121,6 +1121,9 @@ class RuntimeParticleEffectInstance2D implements ParticleEffectInstance2D {
           this.scheduler.trigger({ kind: "signal", signal });
         },
         reference: onReference,
+        complete: (emitterId) => emitterId === undefined
+          ? this.emitters.every((entry) => !entry.active && entry.aliveEstimate === 0)
+          : this.emitters.some((entry) => entry.definition.id === emitterId && !entry.active && entry.aliveEstimate === 0),
       },
       this.seed,
     );
