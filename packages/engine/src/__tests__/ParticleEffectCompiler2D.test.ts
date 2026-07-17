@@ -51,6 +51,8 @@ describe('ParticleEffectCompiler2D', () => {
     expect(program.webgl2.event?.source).toContain('uParticleEventC[1]');
     expect(program.webgl2.event?.source).toContain('uParticleEventD[1]');
     expect(program.webgl2.streakVertex.source).toContain('uStreakScale');
+    expect(program.webgl2.streakVertex.source).toContain('uFrameDelta');
+    expect(program.webgl2.streakVertex.source).toContain('coverageLength=length(b.xy)*clamp(uFrameDelta');
     expect(program.webgl2.streakVertex.source).toContain('min(desiredLength,max(size,length(b.xy)*max(0.0,a.z)))');
     expect(program.webgl2.eventClaimVertex?.source).toContain('gl_VertexID');
     expect(program.webgl2.eventClaimVertex?.source).toContain('priority*4194304');

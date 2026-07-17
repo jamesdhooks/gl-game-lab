@@ -620,6 +620,7 @@ uniform int uRenderPhase;
 uniform vec2 uCanvasSize;
 uniform float uPointScale;
 uniform float uStreakScale;
+uniform float uFrameDelta;
 uniform float uLayerSizeScale;
 uniform float uLayerLengthScale;
 uniform int uArchetypeMask;
@@ -665,7 +666,10 @@ void main() {
   vec2 corners[6]=vec2[6](vec2(0,-1),vec2(1,-1),vec2(0,1),vec2(0,1),vec2(1,-1),vec2(1,1));
   vec2 axis=length(b.xy)>0.001?normalize(b.xy):vec2(1,0), normal=vec2(-axis.y,axis.x);
   float lengthVariation=mix(max(0.0,1.0-lengthCurve.w),1.0+lengthCurve.w,hashSeed(fract(vSeed+.71)));
-  float desiredLength=max(size,mix(lengthCurve.x,lengthCurve.y,pow(vAge,max(.01,lengthCurve.z)))*lengthVariation*length(b.xy)*.016*uStreakScale*uLayerLengthScale);
+  float continuity=clamp(uStreakScale,0.0,2.0);
+  float visualLength=mix(lengthCurve.x,lengthCurve.y,pow(vAge,max(.01,lengthCurve.z)))*lengthVariation*length(b.xy)*.016*uLayerLengthScale;
+  float coverageLength=length(b.xy)*clamp(uFrameDelta,.001,.1)*mix(.65,1.45,continuity*.5);
+  float desiredLength=max(size,max(visualLength,coverageLength));
   float streakLength=min(desiredLength,max(size,length(b.xy)*max(0.0,a.z)));
   vec2 local=-axis*corners[corner].x*streakLength+normal*corners[corner].y*size*.5;
   clip+=vec2(local.x/uCanvasSize.x*2.0,-local.y/uCanvasSize.y*2.0);`
@@ -975,7 +979,10 @@ fn buildParticleVertex(vertex: u32, instance: u32, streak: bool) -> VertexOut {
   let variation=1.0+(fract(sin(metadata.colorSeed*91.3458)*47453.5453)*2.0-1.0)*archetypeSize[archetype].w;
   let radius=max(0.0,curve(archetypeSize[archetype],normalizedAge)*variation*configA.z);
   let speed=length(motion.velocity); let direction=select(vec2<f32>(1.0,0.0),motion.velocity/speed,speed>0.0001); let normal=vec2<f32>(-direction.y,direction.x);
-  let desiredLength=max(radius*2.0,curve(archetypeLength[archetype],normalizedAge)*speed*configC.x);
+  let continuity=clamp(configC.x,0.0,2.0);
+  let visualLength=curve(archetypeLength[archetype],normalizedAge)*speed*0.016;
+  let coverageLength=speed*0.016*mix(0.65,1.45,continuity*0.5);
+  let desiredLength=max(radius*2.0,max(visualLength,coverageLength));
   let streakLength=min(desiredLength,max(radius*2.0,speed*max(0.0,particle.age)));
   let backward=(corner.x+1.0)*0.5;
   let worldOffset=select(corner*radius,-direction*backward*streakLength+normal*(corner.y*radius),streak);

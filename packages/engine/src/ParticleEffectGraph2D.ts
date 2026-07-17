@@ -1,7 +1,7 @@
 import type { ParticleArchetype2D, ParticleCapacityPolicy2D, ParticleEffectDefinition2D, ParticleRenderRecipeSet2D, ParticleRenderTier2D, ParticleSettingValue2D, ParticleSpawnShape2D } from "./ParticleEffects2D.js";
 
 export const PARTICLE_EFFECT_GRAPH_SCHEMA_VERSION = 1;
-export const PARTICLE_EFFECT_COMPILER_VERSION = 5;
+export const PARTICLE_EFFECT_COMPILER_VERSION = 6;
 
 export type ParticleParameterValue2D = ParticleSettingValue2D | readonly [number, number] | readonly [number, number, number, number];
 export type ParticleParameterKind2D = "number" | "boolean" | "enum" | "vector2" | "color" | "palette";

@@ -92,6 +92,7 @@ class WebGLParticleEffectResource2D implements ParticleEffectBackendResource2D {
   private directComposite = true;
   private paletteTransition = 0;
   private streakScale = 1;
+  private frameDelta = 1 / 60;
   private colorMode = 0;
   private renderStride = 1;
   private renderPhase = 0;
@@ -444,6 +445,7 @@ class WebGLParticleEffectResource2D implements ParticleEffectBackendResource2D {
   update(deltaSeconds: number, timescale: number): void {
     this.assertUsable();
     const cpuStarted = particleCpuNow();
+    this.frameDelta = Math.abs(deltaSeconds * timescale);
     this.simulationTime += deltaSeconds * timescale;
     this.prepareCommands();
     this.particles.stepBatch(this.batch, (gl, uniform) => this.bindSimulation(gl, uniform, deltaSeconds * timescale));
@@ -473,7 +475,7 @@ class WebGLParticleEffectResource2D implements ParticleEffectBackendResource2D {
         Math.max(1, Math.round(target.height * this.trailResolutionScale)),
         this.trailFade,
       );
-      this.renderTier(trailTarget, tier);
+      this.renderTier(trailTarget, tier, true);
       this.particles.compositeTrails(target, this.trailBackground, this.trailBloom);
       if (this.directComposite) this.renderTier(target, tier);
       this.cpuRenderMs = particleCpuNow() - cpuStarted;
@@ -571,6 +573,7 @@ class WebGLParticleEffectResource2D implements ParticleEffectBackendResource2D {
     gl.uniform1i(uniform("uRenderPhase"), this.renderPhase);
     gl.uniform1f(uniform("uPointScale"), this.pointScale * this.viewportDpr);
     gl.uniform1f(uniform("uStreakScale"), this.streakScale);
+    gl.uniform1f(uniform("uFrameDelta"), this.frameDelta);
     gl.uniform1f(uniform("uLayerSizeScale"), this.layerSizeScale);
     gl.uniform1f(uniform("uLayerLengthScale"), this.layerLengthScale);
     gl.uniform1f(uniform("uLayerIntensityScale"), this.layerIntensityScale);
@@ -638,11 +641,12 @@ class WebGLParticleEffectResource2D implements ParticleEffectBackendResource2D {
     this.truncatedCommands += result.truncatedCommands;
   }
 
-  private renderTier(target: GpuRenderTarget2D, tier: ParticleRenderTier2D): void {
+  private renderTier(target: GpuRenderTarget2D, tier: ParticleRenderTier2D, trailOnly = false): void {
     const passes = this.program.renderPasses[tier];
     const renderCount = Math.ceil(this.particles.capacity / this.renderStride);
     for (const pass of passes) {
       if (pass.kind !== "points" && pass.kind !== "streaks") continue;
+      if (trailOnly && pass.kind !== "streaks") continue;
       this.applyRenderLayer(pass);
       this.particles.renderPass(pass.id, target, this.bindRender, renderCount);
     }

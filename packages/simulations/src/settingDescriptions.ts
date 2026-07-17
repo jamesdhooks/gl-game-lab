@@ -284,7 +284,7 @@ const EXPERIENCE_DESCRIPTIONS: Readonly<Record<string, DescriptionCatalog>> = Ob
     bounceSparkLifespanVariability: 'Controls random lifetime variation between bounce sparks.',
     bounceSparkSpeedScale: 'Scales the launch speed of bounce sparks.',
     bounceSparkSpeedVariability: 'Controls random speed variation between bounce sparks.',
-    trailContinuity: 'Controls how continuously fast-moving sparks fill gaps in their trails.',
+    trailContinuity: 'Bridges frame-to-frame gaps in fast-moving sparks without extending how long trails remain visible.',
     particleFidelity: 'Controls how many simulated particles Ultra submits to its render layers. Higher values preserve dense fine detail without changing simulation behavior.',
     trailFidelity: 'Sets the internal resolution of Ultra persistent trails. Higher values produce sharper trails at a higher GPU cost.',
     bloomThreshold: 'Sets how bright a spark must be before it contributes to Ultra bloom.',
