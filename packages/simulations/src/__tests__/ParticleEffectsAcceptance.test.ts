@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { compileParticleEffect2D } from "@hooksjam/gl-game-lab-engine";
 import { createFireworksConfig, FIREWORKS_DEFAULTS, FIREWORKS_PARTICLE_EFFECT, FIREWORKS_PARTICLE_GRAPH, FIREWORKS_PARTICLE_PROGRAM, FIREWORKS_PARTICLE_SETTING_BINDINGS, SPARKS_PARTICLE_EFFECT, SPARKS_PARTICLE_GRAPH, SPARKS_PARTICLE_PROGRAM, SPARKS_PARTICLE_SETTING_BINDINGS, ORBITAL_SHRAPNEL_PARTICLE_GRAPH, ORBITAL_SHRAPNEL_PARTICLE_PROGRAM } from "../index.js";
 import { FIREWORKS_EVENT_SHADER, FIREWORKS_STEP_SHADER } from "../fireworks/shaders.js";
 import { SPARKS_STEP_SHADER } from "../sparks/shaders.js";
@@ -85,6 +86,10 @@ describe("shared particle effect acceptance", () => {
       expect(program.webgpu.simulation.source).toContain("@compute @workgroup_size(256)");
       expect(program.webgl2.simulation.source).not.toContain("readPixels");
       expect(program.webgpu.simulation.source).not.toContain("readPixels");
+      expect(Object.isFrozen(program)).toBe(true);
     }
+    expect(SPARKS_PARTICLE_PROGRAM.effect.graphHash).toBe(compileParticleEffect2D(SPARKS_PARTICLE_GRAPH).graphHash);
+    expect(FIREWORKS_PARTICLE_PROGRAM.effect.graphHash).toBe(compileParticleEffect2D(FIREWORKS_PARTICLE_GRAPH).graphHash);
+    expect(ORBITAL_SHRAPNEL_PARTICLE_PROGRAM.effect.graphHash).toBe(compileParticleEffect2D(ORBITAL_SHRAPNEL_PARTICLE_GRAPH).graphHash);
   });
 });

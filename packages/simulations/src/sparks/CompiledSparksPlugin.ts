@@ -15,7 +15,7 @@ import {
 } from '@hooksjam/gl-game-lab-engine';
 import { registerSimulationRuntime } from '../SimulationPluginLifecycle.js';
 import { createSparksConfig, SPARKS_DEFAULTS, sparksNumber, sparksString, type SparksConfig } from './config.js';
-import { SPARKS_PARTICLE_PROGRAM } from './effect.js';
+import { SPARKS_PARTICLE_PROGRAM } from '../particlePrograms.js';
 import { SPARKS_RAIL_SHADER } from './shaders.js';
 import {
   createPreviewSparksConfig,

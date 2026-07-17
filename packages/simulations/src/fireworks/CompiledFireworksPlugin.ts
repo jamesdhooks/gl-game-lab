@@ -21,7 +21,7 @@ import {
   type FireworksColorMode,
   type FireworksConfig,
 } from './config.js';
-import { FIREWORKS_PARTICLE_PROGRAM } from './effect.js';
+import { FIREWORKS_PARTICLE_PROGRAM } from '../particlePrograms.js';
 import { resolveFireworkLaunchVelocity, type FireworksMode } from './FireworksPlugin.js';
 import { color3, FIREWORKS_STYLE_MANIFEST } from './styles.js';
 

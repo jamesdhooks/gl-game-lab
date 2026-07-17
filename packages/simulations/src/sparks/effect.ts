@@ -2,8 +2,6 @@ import {
   validateParticleEffectDefinition2D,
   validateParticleSettingBindings2D,
   adaptParticleEffectDefinition2D,
-  compileParticleEffect2D,
-  compileParticleProgram2D,
   defineParticleEffect2D,
   particleGraph2D,
   type ParticleEffectDefinition2D,
@@ -163,5 +161,3 @@ export const SPARKS_PARTICLE_GRAPH = defineParticleEffect2D({
     { target: 'archetype.bounce.appearance.length.start', parameterId: 'bounce-length' }, { target: 'archetype.bounce.appearance.length.variability', parameterId: 'bounce-length-variability' },
   ],
 });
-
-export const SPARKS_PARTICLE_PROGRAM = compileParticleProgram2D(compileParticleEffect2D(SPARKS_PARTICLE_GRAPH));

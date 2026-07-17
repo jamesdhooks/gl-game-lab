@@ -13,7 +13,7 @@
     "particle:compile": "tsx scripts/compile-particle-effects.mjs",
     "build": "pnpm particle:compile && tsc --build --force tsconfig.json && node scripts/copy-assets.mjs",
     "typecheck": "pnpm particle:compile && tsc --noEmit --project tsconfig.json",
-    "test": "vitest run --passWithNoTests",
+    "test": "pnpm particle:compile && vitest run --passWithNoTests",
     "clean": "tsc --build --clean tsconfig.json"
   },
   "dependencies": {

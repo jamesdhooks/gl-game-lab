@@ -2,8 +2,6 @@ import {
   validateParticleEffectDefinition2D,
   validateParticleSettingBindings2D,
   adaptParticleEffectDefinition2D,
-  compileParticleEffect2D,
-  compileParticleProgram2D,
   defineParticleEffect2D,
   particleGraph2D,
   type ParticleEffectDefinition2D,
@@ -122,8 +120,6 @@ export const FIREWORKS_PARTICLE_GRAPH = defineParticleEffect2D({
     { target: 'archetype.secondary.appearance.size.start', parameterId: 'secondary-size' }, { target: 'archetype.sparkle.appearance.size.start', parameterId: 'sparkle-size' },
   ],
 });
-
-export const FIREWORKS_PARTICLE_PROGRAM = compileParticleProgram2D(compileParticleEffect2D(FIREWORKS_PARTICLE_GRAPH));
 
 export function fireworksPatternCode(pattern: string): number {
   const index = ['peony', 'ring', 'chrysanthemum', 'willow', 'palm', 'spiral', 'crossette', 'comet'].indexOf(pattern);

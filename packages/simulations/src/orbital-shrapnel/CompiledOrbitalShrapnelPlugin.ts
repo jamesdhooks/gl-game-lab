@@ -35,7 +35,7 @@ import {
   orbitalGravityWorld,
 } from "./orbitalMotion.js";
 import { orbitalColor3, ORBITAL_SHRAPNEL_STYLE_MANIFEST } from "./styles.js";
-import { ORBITAL_SHRAPNEL_PARTICLE_PROGRAM } from "./effect.js";
+import { ORBITAL_SHRAPNEL_PARTICLE_PROGRAM } from "../particlePrograms.js";
 
 export type CompiledOrbitalShrapnelMode =
   | "add"

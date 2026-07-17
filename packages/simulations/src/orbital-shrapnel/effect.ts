@@ -1,4 +1,4 @@
-import { compileParticleEffect2D, compileParticleProgram2D, defineParticleEffect2D, particleGraph2D, validateParticleEffectDefinition2D, type ParticleEffectDefinition2D } from "@hooksjam/gl-game-lab-engine";
+import { defineParticleEffect2D, particleGraph2D, validateParticleEffectDefinition2D, type ParticleEffectDefinition2D } from "@hooksjam/gl-game-lab-engine";
 
 export const ORBITAL_SHRAPNEL_PARTICLE_EFFECT: ParticleEffectDefinition2D = validateParticleEffectDefinition2D({
   id: "orbital-shrapnel",
@@ -198,5 +198,3 @@ export const ORBITAL_SHRAPNEL_PARTICLE_GRAPH = defineParticleEffect2D({
     },
   ],
 });
-
-export const ORBITAL_SHRAPNEL_PARTICLE_PROGRAM = compileParticleProgram2D(compileParticleEffect2D(ORBITAL_SHRAPNEL_PARTICLE_GRAPH));
