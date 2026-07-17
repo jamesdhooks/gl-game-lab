@@ -272,6 +272,8 @@ export {
   type ParticleEffectInstanceStatus2D,
   type ParticleInspectorCommand2D,
   type ParticleEffectRuntimeBackend2D,
+  type ParticleEffectHotReloadResult2D,
+  type ParticleEffectsInspection2D,
   type ParticleEffects2D,
   type ParticleEffectsDiagnostics2D,
   type ParticleEmissionOverride2D,

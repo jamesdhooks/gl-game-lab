@@ -1,4 +1,6 @@
 import { resolveParticleParameters2D } from "./ParticleEffectAuthoring2D.js";
+import { compileParticleEffect2D, type ParticleEffectGraph2D } from "./ParticleEffectGraph2D.js";
+import { compileParticleProgram2D, type ParticleModuleCompilerExtension2D } from "./ParticleEffectCompiler2D.js";
 import type { CompiledParticleProgram2D } from "./ParticleEffectCompiler2D.js";
 import type { ParticleEmitterDefinition2D, ParticleEmitterStopMode2D, ParticleParameterValue2D } from "./ParticleEffectGraph2D.js";
 import type { ParticleEffectDiagnostics2D, ParticlePalette2D, ParticleRenderTier2D } from "./ParticleEffects2D.js";
@@ -451,12 +453,25 @@ export interface ParticleEffectsInspection2D {
   readonly backend: ParticleEffectRuntimeBackend2D["kind"];
   readonly programs: readonly ParticleEffectProgramInspection2D[];
   readonly instances: readonly ParticleEffectInstanceState2D[];
+  readonly hotReloads: readonly ParticleEffectHotReloadResult2D[];
+}
+
+export interface ParticleEffectHotReloadResult2D {
+  readonly effectId: string;
+  readonly previousGraphHash?: string;
+  readonly graphHash: string;
+  readonly abiCompatible: boolean;
+  readonly instances: number;
+  readonly statePreserved: number;
+  readonly action: "registered" | "preserved" | "reset";
+  readonly explanation: string;
 }
 
 export interface ParticleEffects2D {
   register(program: CompiledParticleProgram2D, options?: { readonly capacity?: number }): void;
   prewarm(effectId: string, count?: number): void;
   replace(program: CompiledParticleProgram2D): void;
+  reloadGraph(graph: ParticleEffectGraph2D, extensions?: readonly ParticleModuleCompilerExtension2D[]): ParticleEffectHotReloadResult2D;
   setCapacity(effectId: string, capacity: number): void;
   createInstance(effectId: string, options?: ParticleEffectInstanceOptions2D): ParticleEffectInstance2D;
   update(deltaSeconds: number): void;
@@ -489,6 +504,7 @@ export class EngineParticleEffects2D implements ParticleEffects2D {
   private readonly instances = new Map<number, RuntimeParticleEffectInstance2D>();
   private nextInstanceId = 1;
   private disposed = false;
+  private readonly hotReloadHistory: ParticleEffectHotReloadResult2D[] = [];
 
   constructor(private readonly backend: ParticleEffectRuntimeBackend2D) {}
 
@@ -516,19 +532,53 @@ export class EngineParticleEffects2D implements ParticleEffects2D {
   }
 
   replace(program: CompiledParticleProgram2D): void {
+    this.replaceProgram(program);
+  }
+
+  reloadGraph(graph: ParticleEffectGraph2D, extensions: readonly ParticleModuleCompilerExtension2D[] = []): ParticleEffectHotReloadResult2D {
+    this.assertUsable();
+    const program = compileParticleProgram2D(compileParticleEffect2D(graph), extensions);
+    const previous = this.programs.get(graph.id);
+    const previousGraphHash = previous?.program.effect.graphHash;
+    const abiCompatible = previous?.program.effect.abiHash === program.effect.abiHash;
+    const replacement = this.replaceProgram(program);
+    const result: ParticleEffectHotReloadResult2D = Object.freeze({
+      effectId: graph.id,
+      ...(previousGraphHash === undefined ? {} : { previousGraphHash }),
+      graphHash: program.effect.graphHash,
+      abiCompatible: previous === undefined || abiCompatible,
+      instances: replacement.instances,
+      statePreserved: replacement.preserved,
+      action: previous === undefined ? "registered" : replacement.preserved === replacement.instances ? "preserved" : "reset",
+      explanation: previous === undefined
+        ? "The compiled effect was registered for the first time."
+        : replacement.preserved === replacement.instances
+          ? "The ABI is compatible and every live instance transferred its GPU state."
+          : abiCompatible
+            ? "The ABI is compatible, but at least one backend could not transfer its GPU state; affected instances restarted deterministically."
+            : "The compiled ABI changed; live instances restarted deterministically with the new layout.",
+    });
+    this.hotReloadHistory.push(result);
+    if (this.hotReloadHistory.length > 16) this.hotReloadHistory.shift();
+    return result;
+  }
+
+  private replaceProgram(program: CompiledParticleProgram2D): { readonly instances: number; readonly preserved: number } {
     this.assertUsable();
     const id = program.effect.source.id;
     const previous = this.programs.get(id);
     if (!previous) {
       this.register(program);
-      return;
+      return { instances: 0, preserved: 0 };
     }
     for (const resource of previous.pooled.splice(0)) resource.dispose();
     previous.program = program;
+    let preserved = 0;
     for (const instance of previous.instances) {
       const replacement = this.backend.create(program, previous.capacity);
-      instance.replaceProgram(program, replacement);
+      if (instance.replaceProgram(program, replacement)) preserved += 1;
     }
+    return { instances: previous.instances.size, preserved };
   }
 
   setCapacity(effectId: string, capacity: number): void {
@@ -661,6 +711,7 @@ export class EngineParticleEffects2D implements ParticleEffects2D {
       backend: this.backend.kind,
       programs: Object.freeze(programs),
       instances: Object.freeze([...this.instances.values()].map((instance) => instance.state())),
+      hotReloads: Object.freeze([...this.hotReloadHistory]),
     });
   }
 
@@ -1188,7 +1239,7 @@ class RuntimeParticleEffectInstance2D implements ParticleEffectInstance2D {
     }
   }
 
-  replaceProgram(program: CompiledParticleProgram2D, backend: ParticleEffectBackendResource2D): void {
+  replaceProgram(program: CompiledParticleProgram2D, backend: ParticleEffectBackendResource2D): boolean {
     const compatible = program.effect.abiHash === this.program.effect.abiHash;
     const stateTransferred = compatible && (this.backend.transferStateTo?.(backend) ?? false);
     this.backend.dispose();
@@ -1220,6 +1271,7 @@ class RuntimeParticleEffectInstance2D implements ParticleEffectInstance2D {
       this.statusValue = "idle";
       this.start();
     }
+    return stateTransferred;
   }
 
   private advanceEmitter(emitter: EmitterRuntime, delta: number): void {

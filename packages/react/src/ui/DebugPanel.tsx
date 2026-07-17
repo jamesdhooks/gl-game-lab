@@ -157,6 +157,19 @@ export function DebugPanel({ engine }: DebugPanelProps): JSX.Element {
                       )}
                     </div>
                   ))}
+                  {particleInspection.hotReloads.length > 0 && (
+                    <details className="mb-2 rounded-lg bg-white/5 p-2 text-[10px] text-white/55">
+                      <summary className="cursor-pointer select-none text-white/40">Hot reload history</summary>
+                      <div className="mt-1 space-y-1">
+                        {particleInspection.hotReloads.map((reload, index) => (
+                          <div key={`${reload.effectId}:${reload.graphHash}:${index}`} className="rounded bg-black/20 p-1.5">
+                            <StatRow label={reload.effectId} value={`${reload.action} · ${reload.statePreserved}/${reload.instances}`} />
+                            <div className="mt-0.5 text-white/35">{reload.explanation}</div>
+                          </div>
+                        ))}
+                      </div>
+                    </details>
+                  )}
                 </DebugSection>
               )}
               {systems.length > 0 && (

@@ -293,6 +293,34 @@ describe("EngineParticleEffects2D", () => {
     expect(() => runtime.createInstance("runtime-test")).toThrow("disposed");
   });
 
+  it("compiles hot-reloaded graphs and explains state preservation versus deterministic reset", () => {
+    const backend = new TestBackend();
+    const runtime = new EngineParticleEffects2D(backend);
+    const graph = adaptParticleEffectDefinition2D(definition);
+    runtime.register(compileParticleProgram2D(compileParticleEffect2D(graph)));
+    runtime.createInstance("runtime-test");
+    const compatible = runtime.reloadGraph({
+      ...graph,
+      archetypes: graph.archetypes.map((archetype) => ({
+        ...archetype,
+        appearance: { ...archetype.appearance, flicker: 0.2 },
+      })),
+    });
+    expect(compatible).toMatchObject({ action: "preserved", abiCompatible: true, instances: 1, statePreserved: 1 });
+    expect(compatible.explanation).toContain("transferred");
+    const incompatible = runtime.reloadGraph({
+      ...graph,
+      archetypes: [...graph.archetypes, {
+        ...graph.archetypes[0]!,
+        id: "secondary",
+      }],
+    });
+    expect(incompatible).toMatchObject({ action: "reset", abiCompatible: false, instances: 1, statePreserved: 0 });
+    expect(incompatible.explanation).toContain("ABI changed");
+    expect(runtime.inspect().hotReloads).toEqual([compatible, incompatible]);
+    runtime.dispose();
+  });
+
   it("retains dynamic bindings across backend replacement and resets when state cannot transfer", () => {
     const backend = new TestBackend();
     const runtime = new EngineParticleEffects2D(backend);
