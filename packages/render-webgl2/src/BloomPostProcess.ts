@@ -147,7 +147,7 @@ export class BloomPostProcess {
     this.gl = device.gl;
     this.options = normalizeBloomOptions(options);
     this.vao = requireValue(this.gl.createVertexArray(), 'Unable to create post-process vertex array');
-    this.filterProgram = createShaderProgram(this.gl, { label: 'bloom filter', vertexSource: FULLSCREEN_VERTEX_SHADER, fragmentSource: FILTER_FRAGMENT_SHADER });
+    this.filterProgram = createShaderProgram(this.gl, { label: 'bloom filter', vertexSource: FULLSCREEN_VERTEX_SHADER, fragmentSource: BLOOM_FILTER_FRAGMENT_SHADER });
     this.compositeProgram = createShaderProgram(this.gl, { label: 'bloom composite', vertexSource: FULLSCREEN_VERTEX_SHADER, fragmentSource: COMPOSITE_FRAGMENT_SHADER });
     this.lightingProgram = createShaderProgram(this.gl, { label: 'emissive lighting', vertexSource: FULLSCREEN_VERTEX_SHADER, fragmentSource: LIGHTING_FRAGMENT_SHADER });
     this.filterTextureLocation = requireShaderUniform(this.gl, this.filterProgram, 'u_texture', 'bloom filter');
@@ -371,7 +371,7 @@ void main() {
   gl_Position = vec4(position * 2.0 - 1.0, 0.0, 1.0);
 }`;
 
-const FILTER_FRAGMENT_SHADER = `#version 300 es
+export const BLOOM_FILTER_FRAGMENT_SHADER = `#version 300 es
 precision highp float;
 uniform sampler2D u_texture;
 uniform vec2 u_texel;
@@ -383,7 +383,10 @@ void main() {
   vec3 center = texture(u_texture, v_uv).rgb;
   if (dot(u_direction, u_direction) < 0.000001) {
     float brightness = max(center.r, max(center.g, center.b));
-    outColor = vec4(center * smoothstep(u_threshold, min(1.0, u_threshold + 0.18), brightness), 1.0);
+    float kneeStart = max(0.0, u_threshold - 0.18);
+    float kneeEnd = max(kneeStart + 0.0001, u_threshold);
+    float contribution = smoothstep(kneeStart, kneeEnd, brightness);
+    outColor = vec4(center * contribution, 1.0);
     return;
   }
   vec2 offset = u_texel * u_direction;

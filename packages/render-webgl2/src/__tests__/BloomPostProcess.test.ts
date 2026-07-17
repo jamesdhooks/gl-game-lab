@@ -1,7 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { normalizeBloomOptions, normalizeEmissiveLightingOptions } from '../index.js';
+import { BLOOM_FILTER_FRAGMENT_SHADER } from '../BloomPostProcess.js';
 
 describe('normalizeBloomOptions', () => {
+  it('retains saturated highlights at the maximum threshold through a soft extraction knee', () => {
+    expect(BLOOM_FILTER_FRAGMENT_SHADER).toContain('u_threshold - 0.18');
+    expect(BLOOM_FILTER_FRAGMENT_SHADER).toContain('smoothstep(kneeStart, kneeEnd, brightness)');
+    expect(BLOOM_FILTER_FRAGMENT_SHADER).not.toContain('u_threshold + 0.18');
+  });
   it('provides an idle-by-default post-process profile', () => {
     expect(normalizeBloomOptions()).toEqual({
       enabled: false,
