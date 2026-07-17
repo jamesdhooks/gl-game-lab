@@ -298,10 +298,12 @@ export {
   ParticleEffectBudgetController2D,
   ParticleEffectRecorder2D,
   ParticleEffectReplayPlayer2D,
+  ParticleEffectCaptureSession2D,
   type ParticleBudgetDecision2D,
   type ParticleBudgetLimits2D,
   type ParticleEffectReplay2D,
   type ParticleReplayEvent2D,
+  type ParticlePointerEmissionSource2D,
 } from './ParticleEffectTools2D.js';
 export {
   allocateParticleEventClaims2D,

@@ -1,6 +1,6 @@
 import type { ParticleEmitterImportance2D, ParticleParameterValue2D } from './ParticleEffectGraph2D.js';
-import type { ParticleEffectInstance2D, ParticleEffectsDiagnostics2D, ParticleSignalPayload2D, ParticleTransform2D } from './ParticleEffectRuntime2D.js';
-import type { ParticleRenderTier2D } from './ParticleEffects2D.js';
+import type { ParticleEffectInstance2D, ParticleEffectsDiagnostics2D, ParticleEmissionOverride2D, ParticleSignalPayload2D, ParticleTransform2D } from './ParticleEffectRuntime2D.js';
+import type { ParticlePalette2D, ParticleRenderTier2D } from './ParticleEffects2D.js';
 
 export interface ParticleBudgetLimits2D {
   readonly targetFrameMs: number;
@@ -51,7 +51,18 @@ export type ParticleReplayEvent2D =
   | { readonly time: number; readonly kind: 'parameter'; readonly name: string; readonly value: ParticleParameterValue2D }
   | { readonly time: number; readonly kind: 'transform'; readonly value: ParticleTransform2D }
   | { readonly time: number; readonly kind: 'tier'; readonly value: ParticleRenderTier2D }
-  | { readonly time: number; readonly kind: 'timescale'; readonly value: number };
+  | { readonly time: number; readonly kind: 'timescale'; readonly value: number }
+  | { readonly time: number; readonly kind: 'palette'; readonly value: ParticlePalette2D }
+  | { readonly time: number; readonly kind: 'emission'; readonly emitterId: string; readonly override?: ParticleEmissionOverride2D }
+  | { readonly time: number; readonly kind: 'pointer-emission'; readonly emitterId: string; readonly pointer: ParticlePointerEmissionSource2D; readonly override?: ParticleEmissionOverride2D };
+
+export interface ParticlePointerEmissionSource2D {
+  readonly phase: 'down' | 'move' | 'up';
+  readonly pointerId: number;
+  readonly x: number;
+  readonly y: number;
+  readonly buttons: number;
+}
 
 export interface ParticleEffectReplay2D {
   readonly effectId: string;
@@ -66,7 +77,7 @@ export class ParticleEffectRecorder2D {
     if (!Number.isFinite(event.time) || event.time < 0) throw new Error('Particle replay event time must be finite and non-negative');
     const previous = this.events[this.events.length - 1];
     if (previous && event.time < previous.time) throw new Error('Particle replay events must be chronological');
-    this.events.push(Object.freeze(event));
+    this.events.push(freezeReplayEvent(event));
   }
   finish(): ParticleEffectReplay2D { return Object.freeze({ effectId: this.effectId, initialSeed: this.initialSeed, events: Object.freeze([...this.events]) }); }
 }
@@ -96,7 +107,61 @@ export class ParticleEffectReplayPlayer2D {
     else if (event.kind === 'transform') this.instance.setTransform(event.value);
     else if (event.kind === 'tier') this.instance.setQualityTier(event.value);
     else if (event.kind === 'timescale') this.instance.setTimescale(event.value);
+    else if (event.kind === 'palette') this.instance.setPalette(event.value);
+    else if (event.kind === 'emission' || event.kind === 'pointer-emission') this.instance.emit(event.emitterId, event.override);
   }
+}
+
+/** Records and applies authoring-level commands while keeping particle state GPU-resident. */
+export class ParticleEffectCaptureSession2D {
+  readonly recorder: ParticleEffectRecorder2D;
+  constructor(
+    private readonly instance: ParticleEffectInstance2D,
+    private readonly clock: () => number,
+  ) {
+    const state = instance.state();
+    this.recorder = new ParticleEffectRecorder2D(state.effectId, state.seed);
+  }
+  emit(emitterId: string, override?: ParticleEmissionOverride2D): void {
+    this.instance.emit(emitterId, override);
+    this.recorder.record({ time: this.time(), kind: 'emission', emitterId, ...(override ? { override } : {}) });
+  }
+  emitFromPointer(emitterId: string, pointer: ParticlePointerEmissionSource2D, override?: ParticleEmissionOverride2D): void {
+    this.instance.emit(emitterId, override);
+    this.recorder.record({ time: this.time(), kind: 'pointer-emission', emitterId, pointer, ...(override ? { override } : {}) });
+  }
+  setParameter(name: string, value: ParticleParameterValue2D): void {
+    this.instance.setParameter(name, value);
+    this.recorder.record({ time: this.time(), kind: 'parameter', name, value });
+  }
+  setPalette(value: ParticlePalette2D): void {
+    this.instance.setPalette(value);
+    this.recorder.record({ time: this.time(), kind: 'palette', value });
+  }
+  trigger(name: string, payload?: ParticleSignalPayload2D): void {
+    this.instance.trigger(name, payload);
+    this.recorder.record({ time: this.time(), kind: 'signal', name, ...(payload ? { payload } : {}) });
+  }
+  finish(): ParticleEffectReplay2D { return this.recorder.finish(); }
+  private time(): number {
+    const value = this.clock();
+    if (!Number.isFinite(value) || value < 0) throw new Error('Particle capture clock must be finite and non-negative');
+    return value;
+  }
+}
+
+function freezeReplayEvent(event: ParticleReplayEvent2D): ParticleReplayEvent2D {
+  if (event.kind === 'palette') {
+    return Object.freeze({ ...event, value: Object.freeze({ revision: event.value.revision, colors: Object.freeze(event.value.colors.map((color) => Object.freeze([...color] as [number, number, number]))) }) });
+  }
+  if (event.kind === 'emission' || event.kind === 'pointer-emission') {
+    const override = event.override ? Object.freeze({ ...event.override, ...(event.override.position ? { position: Object.freeze([...event.override.position] as [number, number]) } : {}), ...(event.override.inheritedVelocity ? { inheritedVelocity: Object.freeze([...event.override.inheritedVelocity] as [number, number]) } : {}) }) : undefined;
+    if (event.kind === 'pointer-emission') return Object.freeze({ ...event, pointer: Object.freeze({ ...event.pointer }), ...(override ? { override } : {}) });
+    return Object.freeze({ ...event, ...(override ? { override } : {}) });
+  }
+  if (event.kind === 'signal') return Object.freeze({ ...event, ...(event.payload ? { payload: Object.freeze({ ...event.payload, ...(event.payload.position ? { position: Object.freeze([...event.payload.position] as [number, number]) } : {}), ...(event.payload.velocity ? { velocity: Object.freeze([...event.payload.velocity] as [number, number]) } : {}) }) } : {}) });
+  if (event.kind === 'transform') return Object.freeze({ ...event, value: Object.freeze({ ...event.value, position: Object.freeze([...event.value.position] as [number, number]), scale: Object.freeze([...event.value.scale] as [number, number]) }) });
+  return Object.freeze({ ...event });
 }
 
 function budgetReason(frameMs: number, diagnostics: ParticleEffectsDiagnostics2D, limits: ParticleBudgetLimits2D): ParticleBudgetDecision2D['reason'] | undefined {
