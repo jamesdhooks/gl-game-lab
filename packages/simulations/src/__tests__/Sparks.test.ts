@@ -61,6 +61,9 @@ describe('Sparks', () => {
     expect(byKey.get('trailFade')?.visibleRenderStyles).toEqual(['ultra']);
     expect(byKey.get('trailContinuity')?.visibleRenderStyles).toEqual(['enhanced', 'ultra']);
     expect(byKey.get('heatRadius')?.visibleRenderStyles).toEqual(['enhanced', 'ultra']);
+    for (const key of ['bloomThreshold', 'bloomRadius', 'environmentLight', 'lightShafts', 'shaftLength', 'heatDistortion']) {
+      expect(byKey.get(key)?.visibleRenderStyles).toEqual(['ultra']);
+    }
   });
 
   it('keeps collision, turbulence, and bounce sub-emission in the GPU step contract', () => {
@@ -76,6 +79,9 @@ describe('Sparks', () => {
     expect(SPARKS_PARTICLE_EFFECT.archetypes.map((archetype) => archetype.id)).toEqual(['core', 'primary', 'bounce']);
     expect(SPARKS_PARTICLE_EFFECT.capacity.commandCapacity).toBe(64);
     expect(SPARKS_PARTICLE_EFFECT.renderRecipes.recipes.map((recipe) => recipe.tier)).toEqual(['basic', 'enhanced', 'ultra']);
+    expect(SPARKS_PARTICLE_PROGRAM.renderPasses.basic.map((pass) => pass.layerKind)).toEqual(['point']);
+    expect(SPARKS_PARTICLE_PROGRAM.renderPasses.enhanced.filter((pass) => pass.layerKind).map((pass) => pass.layerKind)).toEqual(['halo', 'streak', 'core']);
+    expect(SPARKS_PARTICLE_PROGRAM.renderPasses.ultra.filter((pass) => pass.layerKind).map((pass) => pass.layerKind)).toEqual(['halo', 'streak', 'core']);
     expect(SPARKS_PARTICLE_SETTING_BINDINGS.map((binding) => binding.persistedKey)).toContain('primarySparkLength');
     expect(SPARKS_STEP_SHADER).toContain('uParticleCommandData');
     expect(SPARKS_STEP_SHADER).toContain('layout(location=2) out vec4 outMetadata');

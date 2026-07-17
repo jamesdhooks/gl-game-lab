@@ -64,7 +64,10 @@ const cases: readonly [string, readonly ExperienceSetting[], StyleExpectation][]
   ['Sparks', SPARKS_SETTINGS, {
     basic: ['rawParticleTextureSize'],
     enhanced: ['trailContinuity', 'heatRadius', 'rawParticleTextureSize'],
-    ultra: ['trailFade', 'trailContinuity', 'bloomStrength', 'heatRadius', 'rawParticleTextureSize'],
+    ultra: [
+      'trailFade', 'trailContinuity', 'bloomStrength', 'bloomThreshold', 'bloomRadius',
+      'environmentLight', 'lightShafts', 'shaftLength', 'heatDistortion', 'heatRadius', 'rawParticleTextureSize',
+    ],
   }],
   ['Splash PIC/FLIP', SPLASH_MPM_SETTINGS, {
     basic: ['opacity'],

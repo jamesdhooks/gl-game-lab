@@ -96,6 +96,31 @@ describe('ParticleEffectCompiler2D', () => {
     expect(compileParticleProgram2D(effect).webgl2.simulation.hash).toBe(compileParticleProgram2D(effect).webgl2.simulation.hash);
   });
 
+  it('compiles ordered render layers with independent appearance controls', () => {
+    const base = adaptParticleEffectDefinition2D(definition);
+    const program = compileParticleProgram2D(compileParticleEffect2D({
+      ...base,
+      renderRecipes: {
+        defaultTier: 'enhanced',
+        recipes: base.renderRecipes.recipes.map((recipe) => recipe.tier !== 'enhanced' ? recipe : ({
+            tier: 'enhanced', points: true, streaks: true, blend: 'additive' as const,
+            layers: [
+              { id: 'halo', kind: 'halo' as const, sizeScale: 2.5, intensityScale: 0.2, alphaScale: 0.3 },
+              { id: 'tail', kind: 'streak' as const, lengthScale: 1.8 },
+              { id: 'core', kind: 'core' as const, sizeScale: 0.7, intensityScale: 1.4 },
+            ],
+          })),
+      },
+    }));
+    expect(program.renderPasses.enhanced).toMatchObject([
+      { id: 'enhanced.halo', kind: 'points', layerKind: 'halo', sizeScale: 2.5, intensityScale: 0.2, alphaScale: 0.3 },
+      { id: 'enhanced.tail', kind: 'streaks', layerKind: 'streak', lengthScale: 1.8 },
+      { id: 'enhanced.core', kind: 'points', layerKind: 'core', sizeScale: 0.7, intensityScale: 1.4 },
+    ]);
+    expect(program.webgl2.vertex.source).toContain('uLayerSizeScale');
+    expect(program.webgl2.fragment.source).toContain('uLayerKind');
+  });
+
   it('fires collision events once unless the effect explicitly enables retriggering', () => {
     const base = adaptParticleEffectDefinition2D(definition);
     const collisionEvent = { trigger: 'collision' as const, childArchetypeId: 'spark', probability: 1, count: 1, maxGeneration: 1 };

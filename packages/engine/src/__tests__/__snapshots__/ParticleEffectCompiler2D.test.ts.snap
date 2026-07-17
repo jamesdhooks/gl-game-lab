@@ -249,6 +249,9 @@ precision highp int;
 uniform vec3 uPalette[8];
 uniform int uPaletteCount;
 uniform float uIntensity;
+uniform float uLayerIntensityScale;
+uniform float uLayerAlphaScale;
+uniform int uLayerKind;
 uniform float uPaletteTransition;
 uniform int uColorMode;
 in float vAge;
@@ -261,14 +264,16 @@ flat in int vStreak;
 out vec4 outColor;
 void main() {
   vec2 p = gl_PointCoord * 2.0 - 1.0;
-  float coverage = vStreak == 1 ? 1.0 : 1.0 - smoothstep(0.72, 1.0, length(p));
+  float radialDistance=length(p);
+  float coverage = vStreak == 1 ? 1.0 : 1.0 - smoothstep(uLayerKind==2?0.0:0.72, 1.0, radialDistance);
   float paletteCoordinate=vSeed;
   if(uColorMode==1)paletteCoordinate=fract(vSeed+vAge*uPaletteTransition);
   else if(uColorMode==2)paletteCoordinate=fract(vSeed+vGeneration*.1618034*uPaletteTransition);
   else if(uColorMode==3)paletteCoordinate=fract(vSeed+clamp(vSpeed*.0025,0.0,1.0)*uPaletteTransition);
   int paletteIndex = int(floor(paletteCoordinate * float(max(1, uPaletteCount)))) % max(1, uPaletteCount);
   vec3 color = uPalette[paletteIndex];
-  outColor = vec4(color * uIntensity * vIntensity, coverage * vAlpha);
+  if(uLayerKind==1) color=mix(color,vec3(1.0),0.74*(1.0-clamp(radialDistance,0.0,1.0)));
+  outColor = vec4(color * uIntensity * vIntensity * uLayerIntensityScale, coverage * vAlpha * uLayerAlphaScale);
   
 }",
     "simulation": "#version 300 es
@@ -451,6 +456,9 @@ uniform int uRenderPhase;
 uniform vec2 uCanvasSize;
 uniform float uPointScale;
 uniform float uStreakScale;
+uniform float uLayerSizeScale;
+uniform float uLayerLengthScale;
+uniform int uArchetypeMask;
 uniform vec4 uArchetypeSize[1];
 uniform vec4 uArchetypeLength[1];
 uniform vec4 uArchetypeAlpha[1];
@@ -477,11 +485,12 @@ void main() {
   vGeneration = c.y;
   vSpeed = length(b.xy);
   int archetype=clamp(int(c.x+.5),0,0);
+  if ((uArchetypeMask & (1 << archetype)) == 0) { gl_Position=vec4(2.0); gl_PointSize=0.0; vAlpha=0.0; return; }
   vec4 sizeCurve=uArchetypeSize[archetype], lengthCurve=uArchetypeLength[archetype];
   float curveAge=pow(vAge,max(.01,sizeCurve.z));
   float seedVariation=hashSeed(vSeed);
   float sizeVariation=mix(max(0.0,1.0-sizeCurve.w),1.0+sizeCurve.w,seedVariation);
-  float size=max(0.0,mix(sizeCurve.x,sizeCurve.y,curveAge))*sizeVariation*uPointScale;
+  float size=max(0.0,mix(sizeCurve.x,sizeCurve.y,curveAge))*sizeVariation*uPointScale*uLayerSizeScale;
   vec4 alphaCurve=uArchetypeAlpha[archetype], intensityCurve=uArchetypeIntensity[archetype];
   vAlpha=mix(alphaCurve.x,alphaCurve.y,pow(vAge,max(.01,alphaCurve.z)));
   vIntensity=mix(intensityCurve.x,intensityCurve.y,pow(vAge,max(.01,intensityCurve.z)))*mix(max(0.0,1.0-intensityCurve.w),1.0+intensityCurve.w,hashSeed(fract(vSeed+.37)));
@@ -490,7 +499,7 @@ void main() {
   vec2 corners[6]=vec2[6](vec2(0,-1),vec2(1,-1),vec2(0,1),vec2(0,1),vec2(1,-1),vec2(1,1));
   vec2 axis=length(b.xy)>0.001?normalize(b.xy):vec2(1,0), normal=vec2(-axis.y,axis.x);
   float lengthVariation=mix(max(0.0,1.0-lengthCurve.w),1.0+lengthCurve.w,hashSeed(fract(vSeed+.71)));
-  float streakLength=max(size,mix(lengthCurve.x,lengthCurve.y,pow(vAge,max(.01,lengthCurve.z)))*lengthVariation*length(b.xy)*.016*uStreakScale);
+  float streakLength=max(size,mix(lengthCurve.x,lengthCurve.y,pow(vAge,max(.01,lengthCurve.z)))*lengthVariation*length(b.xy)*.016*uStreakScale*uLayerLengthScale);
   vec2 local=-axis*corners[corner].x*streakLength+normal*corners[corner].y*size*.5;
   clip+=vec2(local.x/uCanvasSize.x*2.0,-local.y/uCanvasSize.y*2.0);
   gl_Position = vec4(clip, 0.0, a.z < a.w ? 1.0 : 0.0);
@@ -511,6 +520,9 @@ uniform int uRenderPhase;
 uniform vec2 uCanvasSize;
 uniform float uPointScale;
 uniform float uStreakScale;
+uniform float uLayerSizeScale;
+uniform float uLayerLengthScale;
+uniform int uArchetypeMask;
 uniform vec4 uArchetypeSize[1];
 uniform vec4 uArchetypeLength[1];
 uniform vec4 uArchetypeAlpha[1];
@@ -537,11 +549,12 @@ void main() {
   vGeneration = c.y;
   vSpeed = length(b.xy);
   int archetype=clamp(int(c.x+.5),0,0);
+  if ((uArchetypeMask & (1 << archetype)) == 0) { gl_Position=vec4(2.0); gl_PointSize=0.0; vAlpha=0.0; return; }
   vec4 sizeCurve=uArchetypeSize[archetype], lengthCurve=uArchetypeLength[archetype];
   float curveAge=pow(vAge,max(.01,sizeCurve.z));
   float seedVariation=hashSeed(vSeed);
   float sizeVariation=mix(max(0.0,1.0-sizeCurve.w),1.0+sizeCurve.w,seedVariation);
-  float size=max(0.0,mix(sizeCurve.x,sizeCurve.y,curveAge))*sizeVariation*uPointScale;
+  float size=max(0.0,mix(sizeCurve.x,sizeCurve.y,curveAge))*sizeVariation*uPointScale*uLayerSizeScale;
   vec4 alphaCurve=uArchetypeAlpha[archetype], intensityCurve=uArchetypeIntensity[archetype];
   vAlpha=mix(alphaCurve.x,alphaCurve.y,pow(vAge,max(.01,alphaCurve.z)));
   vIntensity=mix(intensityCurve.x,intensityCurve.y,pow(vAge,max(.01,intensityCurve.z)))*mix(max(0.0,1.0-intensityCurve.w),1.0+intensityCurve.w,hashSeed(fract(vSeed+.37)));

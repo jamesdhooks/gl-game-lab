@@ -28,7 +28,7 @@ describe('WebGLParticleEffectRuntimeBackend2D extension bindings', () => {
       stepBatch: (_batch, bindings) => run(typeof bindings === 'function' ? bindings : undefined),
       stepEvents: vi.fn(),
       render: (_target, bindings) => run(typeof bindings === 'function' ? bindings : undefined),
-      renderPass: vi.fn(), beginTrails: () => ({ width: 1, height: 1 }), compositeTrails: vi.fn(), clearTrails: vi.fn(),
+      renderPass: (_pass, _target, bindings) => run(typeof bindings === 'function' ? bindings : undefined), beginTrails: () => ({ width: 1, height: 1 }), compositeTrails: vi.fn(), clearTrails: vi.fn(),
       debugReadback: () => ({ positions: new Float32Array(), velocities: new Float32Array(), metadata: new Float32Array() }),
       diagnostics: () => ({ commandCapacity: 64, queuedCommands: 0, droppedCommands: 0, spawnedParticles: 0, simulationPasses: 0, eventPasses: 0, renderPasses: 0, uploadBytes: 0, contextGeneration: 1, rebuildCount: 0 }),
       dispose: vi.fn(),
@@ -55,8 +55,10 @@ describe('WebGLParticleEffectRuntimeBackend2D extension bindings', () => {
     resource.setExtensionBindings?.({ uCustomSimulation: 2, uCustomRender: 0.5, uCustomTexture: texture });
     resource.update(1 / 60, 1);
     resource.render({ width: 64, height: 64 }, 'basic');
+    expect(particleOptions?.renderPasses).toHaveProperty('basic.points');
     expect(particleOptions?.renderPasses).toHaveProperty('basic.streaks');
-    expect(calls).toEqual(['uCustomSimulation:2', 'uCustomRender:0.5']);
+    expect(calls).toEqual(['uCustomSimulation:2', 'uCustomRender:0.5', 'uCustomRender:0.5']);
+    expect(uniformTexture).toHaveBeenCalledTimes(2);
     expect(uniformTexture).toHaveBeenCalledWith({ name: 'uCustomTexture' }, texture, 8);
   });
 });
