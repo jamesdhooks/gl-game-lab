@@ -24,6 +24,7 @@ import {
   type TriangleMeshBatch2D,
   type MetaballBatch2D,
   type FullscreenShaderEffect2D,
+  type EmissiveLighting2DOptions,
   type FluidDisplay2DOptions,
   type FluidField2D,
   type Text2DDraw,
@@ -118,6 +119,7 @@ export class WebGL2Renderer implements RenderBackend, Render2DService {
   private readonly gpuTimer: GpuTimer;
   private clearColor: readonly [number, number, number, number];
   private bloomOptions: NormalizedBloomOptions;
+  private emissiveLightingOptions: EmissiveLighting2DOptions = Object.freeze({ enabled: false });
   private backdropOptions: PaletteBackdropOptions | undefined = undefined;
   private logicalWidth: number;
   private logicalHeight: number;
@@ -250,6 +252,7 @@ export class WebGL2Renderer implements RenderBackend, Render2DService {
     this.logicalHeight = cssHeight;
     this.pixelRatio = pixelRatio;
     this.sprites.setCamera(camera);
+    this.setEmissiveLighting(this.emissiveLightingOptions);
     this.renderInvalidated = true;
   }
 
@@ -270,6 +273,28 @@ export class WebGL2Renderer implements RenderBackend, Render2DService {
     this.assertUsable();
     this.bloomOptions = normalizeBloomOptions(options);
     if (this.state === 'ready') this.bloom.configure(this.bloomOptions);
+    this.renderInvalidated = true;
+  }
+
+  setEmissiveLighting(options: EmissiveLighting2DOptions): void {
+    this.assertUsable();
+    this.emissiveLightingOptions = options;
+    const source = options.source;
+    this.bloom.configureLighting({
+      enabled: options.enabled && source !== undefined,
+      ...(source ? {
+        source: [source.x / Math.max(1, this.logicalWidth), 1 - source.y / Math.max(1, this.logicalHeight)] as const,
+        radius: source.radius / Math.max(1, Math.min(this.logicalWidth, this.logicalHeight)),
+        color: source.color,
+        sourceIntensity: source.intensity ?? 1,
+      } : {}),
+      ...(options.environmentStrength === undefined ? {} : { environmentStrength: options.environmentStrength }),
+      ...(options.shaftStrength === undefined ? {} : { shaftStrength: options.shaftStrength }),
+      ...(options.shaftLength === undefined ? {} : { shaftLength: options.shaftLength }),
+      ...(options.heatDistortion === undefined ? {} : { heatDistortion: options.heatDistortion }),
+      ...(options.timeSeconds === undefined ? {} : { timeSeconds: options.timeSeconds }),
+      ...(options.resolutionScale === undefined ? {} : { resolutionScale: options.resolutionScale }),
+    });
     this.renderInvalidated = true;
   }
 
@@ -575,6 +600,7 @@ export class WebGL2Renderer implements RenderBackend, Render2DService {
     this.meshRenderer = new DynamicTriangleMeshRenderer(this.device.gl);
     this.metaballRenderer = new DensityMetaballRenderer(this.device.gl);
     this.bloom = new BloomPostProcess(this.device, this.bloomOptions);
+    this.setEmissiveLighting(this.emissiveLightingOptions);
     this.backdrop = new PaletteBackdropRenderer(this.device);
     this.backdrop.configure(this.backdropOptions);
     this.device.resize(this.logicalWidth, this.logicalHeight, this.pixelRatio);

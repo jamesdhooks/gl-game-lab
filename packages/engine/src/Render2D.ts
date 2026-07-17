@@ -81,6 +81,26 @@ export interface Bloom2DOptions {
   readonly resolutionScale?: number;
 }
 
+export interface EmissiveLightSource2D {
+  readonly x: number;
+  readonly y: number;
+  readonly radius: number;
+  readonly color: readonly [number, number, number];
+  readonly intensity?: number;
+}
+
+/** Shared scene-space emissive lighting driven by an explicit dominant source. */
+export interface EmissiveLighting2DOptions {
+  readonly enabled: boolean;
+  readonly source?: EmissiveLightSource2D;
+  readonly environmentStrength?: number;
+  readonly shaftStrength?: number;
+  readonly shaftLength?: number;
+  readonly heatDistortion?: number;
+  readonly timeSeconds?: number;
+  readonly resolutionScale?: number;
+}
+
 export interface Backdrop2DOptions {
   /** Prefer applyPaletteGradientBackdrop2D for the standard scene background. */
   readonly base: ColorRgba;
@@ -276,6 +296,7 @@ export interface Render2DService {
   setCamera(camera: Camera2DState): void;
   setClearColor(color: ColorRgba): void;
   setBloom(options: Bloom2DOptions): void;
+  setEmissiveLighting?(options: EmissiveLighting2DOptions): void;
   setBackdrop(options: Backdrop2DOptions | undefined): void;
 }
 

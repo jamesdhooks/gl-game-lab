@@ -99,8 +99,10 @@ export {
 export {
   BloomPostProcess,
   normalizeBloomOptions,
+  normalizeEmissiveLightingOptions,
   type BloomOptions,
   type BloomPostProcessStats,
+  type EmissiveLightingOptions,
   type NormalizedBloomOptions,
 } from './BloomPostProcess.js';
 export {
