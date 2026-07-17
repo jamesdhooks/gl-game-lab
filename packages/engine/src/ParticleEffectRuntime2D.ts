@@ -6,7 +6,7 @@ import type {
   ParticleParameterValue2D,
 } from './ParticleEffectGraph2D.js';
 import type { ParticleEffectDiagnostics2D, ParticlePalette2D, ParticleRenderTier2D } from './ParticleEffects2D.js';
-import type { GpuRenderTarget2D } from './Gpu2D.js';
+import type { GpuParticleStateSnapshot2D, GpuRenderTarget2D } from './Gpu2D.js';
 import { ParticleGraphScheduler2D } from './ParticleGraphScheduler2D.js';
 
 export type ParticleEffectInstanceStatus2D = 'idle' | 'running' | 'paused' | 'draining' | 'complete' | 'disposed';
@@ -105,6 +105,7 @@ export interface ParticleEffectBackendResource2D {
   render(target: GpuRenderTarget2D, tier: ParticleRenderTier2D): void;
   clear(): void;
   transferStateTo?(target: ParticleEffectBackendResource2D): boolean;
+  debugReadback?(): GpuParticleStateSnapshot2D;
   diagnostics(): ParticleEffectBackendDiagnostics2D;
   dispose(): void;
 }
@@ -150,6 +151,7 @@ class RecoveringParticleEffectBackendResource2D implements ParticleEffectBackend
   render(target: GpuRenderTarget2D, tier: ParticleRenderTier2D): void { this.invoke((resource) => { resource.render(target, tier); }); }
   clear(): void { this.invoke((resource) => { resource.clear(); }); }
   transferStateTo(target: ParticleEffectBackendResource2D): boolean { return this.resource.transferStateTo?.(target) ?? false; }
+  debugReadback(): GpuParticleStateSnapshot2D { const snapshot=this.resource.debugReadback?.();if(!snapshot)throw new Error('Particle backend does not support debug state snapshots');return snapshot; }
   diagnostics(): ParticleEffectBackendDiagnostics2D { return { ...this.resource.diagnostics(), backendFallbackCount: this.fallbackCount }; }
   dispose(): void { this.resource.dispose(); }
   private invoke(operation: (resource: ParticleEffectBackendResource2D) => void): void {
@@ -195,6 +197,7 @@ export interface ParticleEffectInstance2D {
   setRenderScale(scale: number): void;
   state(): ParticleEffectInstanceState2D;
   diagnostics(): ParticleEffectBackendDiagnostics2D;
+  debugSnapshot(): GpuParticleStateSnapshot2D;
   dispose(): void;
 }
 
@@ -493,6 +496,7 @@ class RuntimeParticleEffectInstance2D implements ParticleEffectInstance2D {
     return Object.freeze({ id: this.id, effectId: this.program.effect.source.id, status: this.statusValue, elapsed: this.elapsed, seed: this.seed, timescale: this.timescale, qualityTier: this.tier, activeEmitters: this.emitters.reduce((count, emitter) => count + Number(emitter.active), 0) });
   }
   diagnostics(): ParticleEffectBackendDiagnostics2D { return this.backend.diagnostics(); }
+  debugSnapshot(): GpuParticleStateSnapshot2D { const snapshot=this.backend.debugReadback?.();if(!snapshot)throw new Error(`Particle backend does not support debug state snapshots: ${this.program.effect.source.id}`);return snapshot; }
   dispose(): void { if (this.statusValue === 'disposed') return; this.statusValue = 'disposed'; this.onDispose(this.id, this.backend); }
 
   updateBackend(deltaSeconds: number): void { this.backend.update(deltaSeconds, this.timescale); }

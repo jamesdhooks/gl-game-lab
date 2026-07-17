@@ -35,6 +35,10 @@ describe('ParticleEffectCompiler2D', () => {
     expect(program.webgl2.simulation.source).not.toContain('commandIndex = 0; commandIndex < 64');
     expect(program.webgl2.simulation.source).toContain('shape == 8');
     expect(program.webgl2.event?.source).toContain('uMetadataState');
+    expect(program.webgl2.event?.source).toContain('uParticleEventClaims');
+    expect(program.webgl2.eventClaimVertex?.source).toContain('gl_VertexID');
+    expect(program.webgl2.eventClaimVertex?.source).toContain('priority*4194304');
+    expect(program.webgl2.eventClaimFragment?.source).toContain('outClaim');
     expect(program.webgpu.simulation.source).toContain('@compute @workgroup_size(256)');
     expect(program.webgpu.simulation.source).toContain('iteration < 6u');
     expect(program.webgpu.simulation.source).toContain('archetypeMotion[archetype]');

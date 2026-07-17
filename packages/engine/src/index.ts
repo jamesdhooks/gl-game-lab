@@ -127,6 +127,7 @@ export {
   type GpuParticleGridUpdateOptions2D,
   type GpuParticleGridValidation2D,
   type GpuParticleSeed2D,
+  type GpuParticleStateSnapshot2D,
   type GpuParticleCommandBatch2D,
   type GpuParticleSystemDiagnostics2D,
   type GpuParticleSystem2D,

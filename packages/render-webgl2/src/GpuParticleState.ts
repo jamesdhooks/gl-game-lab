@@ -21,6 +21,8 @@ export interface GpuParticleStateSize {
   readonly height: number;
 }
 
+export interface GpuParticleStateSnapshot { readonly positions: Float32Array; readonly velocities: Float32Array; readonly metadata?: Float32Array }
+
 export function resolveGpuParticleStateSize(options: GpuParticleStateOptions): GpuParticleStateSize {
   if (!Number.isSafeInteger(options.capacity) || options.capacity < 1) throw new Error('GPU particle capacity must be a positive integer');
   if (options.width !== undefined || options.height !== undefined) {
@@ -121,6 +123,11 @@ export class GpuParticleState {
     return true;
   }
 
+  debugReadback(): GpuParticleStateSnapshot {
+    this.assertUsable();
+    return Object.freeze({ positions: this.read(this.positions.read.framebuffer), velocities: this.read(this.velocities.read.framebuffer), ...(this.metadata ? { metadata: this.read(this.metadata.read.framebuffer) } : {}) });
+  }
+
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
@@ -146,6 +153,14 @@ export class GpuParticleState {
   private ensureScratch(length: number): Float32Array {
     if (this.scratch.length < length) this.scratch = new Float32Array(length);
     return this.scratch;
+  }
+
+  private read(framebuffer: WebGLFramebuffer): Float32Array {
+    const output = new Float32Array(this.width * this.height * 4);
+    this.gl.bindFramebuffer(this.gl.FRAMEBUFFER, framebuffer);
+    this.gl.readPixels(0, 0, this.width, this.height, this.gl.RGBA, this.gl.FLOAT, output);
+    this.gl.bindFramebuffer(this.gl.FRAMEBUFFER, null);
+    return output;
   }
 
   private assertUsable(): void { if (this.disposed) throw new Error('GPU particle state has been disposed'); }

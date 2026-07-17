@@ -15,6 +15,7 @@ import type {
   ParticleRuntimeEmission2D,
   ParticleParameterValue2D,
 } from '@hooksjam/gl-game-lab-engine';
+import { ParticleEventWindowScheduler } from './ParticleEventWindowScheduler.js';
 
 const COMMAND_CAPACITY = 64;
 const COMMAND_FLOATS = 16;
@@ -75,7 +76,8 @@ class WebGLParticleEffectResource2D implements ParticleEffectBackendResource2D {
   private eventAttempts = 0;
   private eventOccupiedDrops = 0;
   private eventBudgetDrops = 0;
-  private eventWindow = 0;
+  private readonly eventWindows: ParticleEventWindowScheduler;
+  private simulationTime = 0;
   private disposed = false;
 
   constructor(
@@ -93,7 +95,12 @@ class WebGLParticleEffectResource2D implements ParticleEffectBackendResource2D {
       capacity,
       precision: 'float',
       simulationFragmentSource: program.webgl2.simulation.source,
-      ...(program.webgl2.event ? { eventFragmentSource: program.webgl2.event.source } : {}),
+      ...(program.webgl2.event && program.webgl2.eventClaimVertex && program.webgl2.eventClaimFragment ? {
+        eventFragmentSource: program.webgl2.event.source,
+        eventClaimVertexSource: program.webgl2.eventClaimVertex.source,
+        eventClaimFragmentSource: program.webgl2.eventClaimFragment.source,
+        eventCandidateLanes: maximumEventCandidateLanes(program),
+      } : {}),
       particleVertexSource: program.webgl2.vertex.source,
       particleFragmentSource: program.webgl2.fragment.source,
       renderPasses,
@@ -102,6 +109,7 @@ class WebGLParticleEffectResource2D implements ParticleEffectBackendResource2D {
       commandCapacity: COMMAND_CAPACITY,
       metadata: program.reflection.stateTargets === 3,
     });
+    this.eventWindows = new ParticleEventWindowScheduler(program);
     this.archetypeMotion = new Float32Array(Math.max(1, program.effect.source.archetypes.length) * 4);
     this.archetypeForce = new Float32Array(Math.max(1, program.effect.source.archetypes.length) * 4);
     this.archetypeCollision = new Float32Array(Math.max(1, program.effect.source.archetypes.length) * 4);
@@ -191,7 +199,9 @@ class WebGLParticleEffectResource2D implements ParticleEffectBackendResource2D {
     this.particleCount += count - replacedCount;
     this.droppedParticles += emission.count - count;
     if (count < emission.count) this.truncatedCommands += 1;
-    if ((archetype.events?.length ?? 0) > 0) this.eventWindow = Math.max(this.eventWindow, eventWindowSeconds(archetype));
+    if ((archetype.events?.length ?? 0) > 0) {
+      this.eventWindows.schedule(archetypeId, this.simulationTime);
+    }
   }
 
   setPalette(value: ParticlePalette2D): void {
@@ -232,12 +242,13 @@ class WebGLParticleEffectResource2D implements ParticleEffectBackendResource2D {
 
   update(deltaSeconds: number, timescale: number): void {
     this.assertUsable();
+    this.simulationTime += deltaSeconds * timescale;
     this.prepareCommands();
     this.particles.stepBatch(this.batch, (gl, uniform) => this.bindSimulation(gl, uniform, deltaSeconds * timescale));
-    if (this.eventWindow > 0 && this.program.webgl2.event) {
+    if (this.eventWindows.hasActiveWindow(this.simulationTime) && this.program.webgl2.event) {
       this.particles.stepEvents((gl, uniform) => this.bindSimulation(gl, uniform, deltaSeconds * timescale));
-      this.eventWindow = Math.max(0, this.eventWindow - deltaSeconds * timescale);
     }
+    this.eventWindows.compact(this.simulationTime);
     this.cursor = (this.frameStart + this.particleCount) % this.particles.capacity;
     this.commandCount = 0;
     this.particleCount = 0;
@@ -258,10 +269,20 @@ class WebGLParticleEffectResource2D implements ParticleEffectBackendResource2D {
     this.renderTier(target, tier);
   }
 
-  clear(): void { this.assertUsable(); this.particles.clear(); this.particles.clearTrails(); this.commandCount = 0; this.particleCount = 0; this.cursor = 0; this.eventWindow = 0; }
+  clear(): void {
+    this.assertUsable();
+    this.particles.clear();
+    this.particles.clearTrails();
+    this.commandCount = 0;
+    this.particleCount = 0;
+    this.cursor = 0;
+    this.eventWindows.clear();
+    this.simulationTime = 0;
+  }
   transferStateTo(target: ParticleEffectBackendResource2D): boolean {
     return target instanceof WebGLParticleEffectResource2D && (this.particles.copyStateTo?.(target.particles) ?? false);
   }
+  debugReadback(): import('@hooksjam/gl-game-lab-engine').GpuParticleStateSnapshot2D { return this.particles.debugReadback(); }
 
   diagnostics(): ParticleEffectBackendDiagnostics2D {
     const diagnostics = this.particles.diagnostics();
@@ -361,11 +382,7 @@ function spawnShapeCode(shape: string): number {
   return Math.max(0, index);
 }
 
-function eventWindowSeconds(archetype: CompiledParticleProgram2D['effect']['source']['archetypes'][number]): number {
-  let latest = archetype.lifecycle.lifetime * (1 + (archetype.lifecycle.lifetimeVariability ?? 0));
-  for (const event of archetype.events ?? []) latest = Math.max(latest, archetype.lifecycle.lifetime + (event.delay ?? 0));
-  return latest;
-}
+function maximumEventCandidateLanes(program: CompiledParticleProgram2D): number { return Math.max(1, ...program.effect.source.archetypes.map((archetype) => archetype.events?.length ?? 0)); }
 
 function writeCurve(target: Float32Array, index: number, curve: { readonly start: number; readonly end: number; readonly exponent?: number }): void {
   const offset = index * 4; target[offset] = curve.start; target[offset + 1] = curve.end; target[offset + 2] = curve.exponent ?? 1; target[offset + 3] = 0;

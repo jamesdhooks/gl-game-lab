@@ -68,6 +68,13 @@ export interface GpuParticleSeed2D {
   readonly metadata?: Float32Array;
 }
 
+/** Synchronous full-state snapshot for small-capacity tests and development tools only. */
+export interface GpuParticleStateSnapshot2D {
+  readonly positions: Float32Array;
+  readonly velocities: Float32Array;
+  readonly metadata?: Float32Array;
+}
+
 export interface GpuParticleSystem2DOptions {
   readonly capacity: number;
   readonly width?: number;
@@ -75,6 +82,9 @@ export interface GpuParticleSystem2DOptions {
   readonly precision?: 'half-float' | 'float';
   readonly simulationFragmentSource: string;
   readonly eventFragmentSource?: string;
+  readonly eventClaimVertexSource?: string;
+  readonly eventClaimFragmentSource?: string;
+  readonly eventCandidateLanes?: number;
   readonly particleVertexSource: string;
   readonly particleFragmentSource: string;
   /**
@@ -136,6 +146,7 @@ export interface GpuParticleSystem2D {
   clearTrails(): void;
   /** GPU-to-GPU state transfer used for ABI-compatible shader hot reloads. */
   copyStateTo?(target: GpuParticleSystem2D): boolean;
+  debugReadback(): GpuParticleStateSnapshot2D;
   diagnostics(): GpuParticleSystemDiagnostics2D;
   dispose(): void;
 }

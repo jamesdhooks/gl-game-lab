@@ -344,7 +344,7 @@ export function compileParticleEffect2D(graph: ParticleEffectGraph2D): CompiledP
     metadata: maximumEventGeneration > 0 || graph.archetypes.some((entry) => entry.events?.length),
     events: graph.archetypes.some((entry) => entry.events?.length),
     floatTargets: true,
-    floatBlend: false,
+    floatBlend: graph.archetypes.some((entry) => entry.events?.length),
     minimumDrawBuffers: maximumEventGeneration > 0 || graph.archetypes.some((entry) => entry.events?.length) ? 3 : 2,
   });
   const graphHash = hashParticleGraph2D(graph);

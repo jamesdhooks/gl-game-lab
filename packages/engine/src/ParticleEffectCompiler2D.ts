@@ -51,6 +51,8 @@ export interface CompiledParticleProgram2D {
   readonly webgl2: {
     readonly simulation: ParticleCompiledShader2D;
     readonly event?: ParticleCompiledShader2D;
+    readonly eventClaimVertex?: ParticleCompiledShader2D;
+    readonly eventClaimFragment?: ParticleCompiledShader2D;
     readonly vertex: ParticleCompiledShader2D;
     readonly streakVertex: ParticleCompiledShader2D;
     readonly fragment: ParticleCompiledShader2D;
@@ -84,6 +86,8 @@ export function compileParticleProgram2D(
   });
   const glslSimulation = buildGlslSimulation(effect, extensions, usesCollisions, usesTurbulence);
   const glslEvent = usesEvents ? buildGlslEvent(effect) : undefined;
+  const glslEventClaimVertex = usesEvents ? buildGlslEventClaimVertex(effect) : undefined;
+  const glslEventClaimFragment = usesEvents ? buildGlslEventClaimFragment() : undefined;
   const glslVertex = buildGlslVertex(effect, extensions, false);
   const glslStreakVertex = buildGlslVertex(effect, extensions, true);
   const glslFragment = buildGlslFragment(extensions);
@@ -94,6 +98,8 @@ export function compileParticleProgram2D(
     webgl2: Object.freeze({
       simulation: shader('webgl2', 'simulation', 'main', glslSimulation),
       ...(glslEvent === undefined ? {} : { event: shader('webgl2', 'event', 'main', glslEvent) }),
+      ...(glslEventClaimVertex === undefined ? {} : { eventClaimVertex: shader('webgl2', 'event', 'main', glslEventClaimVertex) }),
+      ...(glslEventClaimFragment === undefined ? {} : { eventClaimFragment: shader('webgl2', 'event', 'main', glslEventClaimFragment) }),
       vertex: shader('webgl2', 'vertex', 'main', glslVertex),
       streakVertex: shader('webgl2', 'vertex', 'main', glslStreakVertex),
       fragment: shader('webgl2', 'fragment', 'main', glslFragment),
@@ -178,6 +184,7 @@ void main() {
   vec4 force = uArchetypeForce[archetype];
   vec4 collision = uArchetypeCollision[archetype];
   if (stateA.z < stateA.w) {
+    stateC.w = 0.0; bool collided = false;
     stateA.z += uDt;
     stateB.y += motion.x * uDt;
     stateB.xy *= exp(-max(0.0, motion.y) * uDt);
@@ -187,9 +194,9 @@ void main() {
     stateB.z += stateB.w * uDt;
     stateA.xy += stateB.xy * uDt;
     ${collisions ? `int collisionFlags=int(collision.w+.5);
-    if ((collisionFlags & 1) != 0) { if(stateA.x<0.0||stateA.x>uCanvasSize.x){stateA.x=clamp(stateA.x,0.0,uCanvasSize.x);stateB.x=-stateB.x*collision.x;} if(stateA.y<0.0||stateA.y>uCanvasSize.y){stateA.y=clamp(stateA.y,0.0,uCanvasSize.y);stateB.y=-stateB.y*collision.x;} }
-    if ((collisionFlags & 2) != 0) for(int collider=0;collider<16;collider++){if(collider>=uCircleColliderCount)break;vec4 circle=uCircleColliders[collider];vec2 delta=stateA.xy-circle.xy;float distance=length(delta);if(distance<circle.z){if(circle.w>.5){stateA.z=stateA.w;}else{vec2 normal=distance>.0001?delta/distance:vec2(0,-1);stateA.xy=circle.xy+normal*circle.z;stateB.xy-=normal*(1.0+collision.x)*dot(stateB.xy,normal);stateB.xy*=max(0.0,1.0-collision.y);stateA.z+=stateA.w*collision.z;}}}
-    if ((collisionFlags & 4) != 0) for(int collider=0;collider<16;collider++){if(collider>=uCapsuleColliderCount)break;vec4 segment=uCapsuleA[collider];vec4 data=uCapsuleB[collider];vec2 ab=segment.zw-segment.xy;float t=clamp(dot(stateA.xy-segment.xy,ab)/max(dot(ab,ab),.0001),0.0,1.0);vec2 closest=segment.xy+ab*t,delta=stateA.xy-closest;float distance=length(delta);if(distance<data.x){if(data.y>.5){stateA.z=stateA.w;}else{vec2 normal=distance>.0001?delta/distance:vec2(0,-1);stateA.xy=closest+normal*data.x;stateB.xy-=normal*(1.0+collision.x)*dot(stateB.xy,normal);stateB.xy*=max(0.0,1.0-collision.y);stateA.z+=stateA.w*collision.z;}}}` : ''}
+    if ((collisionFlags & 1) != 0) { if(stateA.x<0.0||stateA.x>uCanvasSize.x){collided=true;stateA.x=clamp(stateA.x,0.0,uCanvasSize.x);stateB.x=-stateB.x*collision.x;} if(stateA.y<0.0||stateA.y>uCanvasSize.y){collided=true;stateA.y=clamp(stateA.y,0.0,uCanvasSize.y);stateB.y=-stateB.y*collision.x;} }
+    if ((collisionFlags & 2) != 0) for(int collider=0;collider<16;collider++){if(collider>=uCircleColliderCount)break;vec4 circle=uCircleColliders[collider];vec2 delta=stateA.xy-circle.xy;float distance=length(delta);if(distance<circle.z){collided=true;if(circle.w>.5){stateA.z=stateA.w;}else{vec2 normal=distance>.0001?delta/distance:vec2(0,-1);stateA.xy=circle.xy+normal*circle.z;stateB.xy-=normal*(1.0+collision.x)*dot(stateB.xy,normal);stateB.xy*=max(0.0,1.0-collision.y);stateA.z+=stateA.w*collision.z;}}}
+    if ((collisionFlags & 4) != 0) for(int collider=0;collider<16;collider++){if(collider>=uCapsuleColliderCount)break;vec4 segment=uCapsuleA[collider];vec4 data=uCapsuleB[collider];vec2 ab=segment.zw-segment.xy;float t=clamp(dot(stateA.xy-segment.xy,ab)/max(dot(ab,ab),.0001),0.0,1.0);vec2 closest=segment.xy+ab*t,delta=stateA.xy-closest;float distance=length(delta);if(distance<data.x){collided=true;if(data.y>.5){stateA.z=stateA.w;}else{vec2 normal=distance>.0001?delta/distance:vec2(0,-1);stateA.xy=closest+normal*data.x;stateB.xy-=normal*(1.0+collision.x)*dot(stateB.xy,normal);stateB.xy*=max(0.0,1.0-collision.y);stateA.z+=stateA.w*collision.z;}}} if(collided)stateC.w=1.0;` : ''}
   }
   vec4 commandA=vec4(0), commandB=vec4(0), commandC=vec4(0), commandD=vec4(0); int relative=0;
   if (id < uCapacity && readCommand(id, commandA, commandB, commandC, commandD, relative)) {
@@ -219,25 +226,74 @@ void main() {
 }
 
 function buildGlslEvent(effect: CompiledParticleEffect2D): string {
+  const events = compiledEvents(effect);
+  const eventBranches = events.map((entry) => `if (priority == ${entry.priority} && slot == ${entry.prioritySlot}) { child=${entry.child}; lifetime=${glslFloat(entry.lifetime)}; inheritance=${glslFloat(entry.inheritance)}; powerScale=${glslFloat(entry.powerScale)}; spread=${glslFloat(entry.spread)}; }`).join('\n  else ');
   return `#version 300 es
 precision highp float;
 uniform sampler2D uPositionState;
 uniform sampler2D uVelocityState;
 uniform sampler2D uMetadataState;
+uniform sampler2D uParticleEventClaims;
 uniform float uDt;
+uniform ivec2 uStateSize;
+uniform int uCapacity;
 layout(location=0) out vec4 outPosition;
 layout(location=1) out vec4 outVelocity;
 layout(location=2) out vec4 outMetadata;
+float hash21(vec2 p) { return fract(sin(dot(p, vec2(127.1,311.7))) * 43758.5453); }
 void main() {
   ivec2 uv = ivec2(gl_FragCoord.xy);
   vec4 a = texelFetch(uPositionState, uv, 0);
   vec4 b = texelFetch(uVelocityState, uv, 0);
   vec4 c = texelFetch(uMetadataState, uv, 0);
-  // Event allocation remains backend-owned; the compiler supplies the versioned metadata semantics.
-  c.w = c.w;
+  float claim=texelFetch(uParticleEventClaims,uv,0).x;
+  int id=uv.y*uStateSize.x+uv.x;
+  if(id<uCapacity && a.z>=a.w && claim<12582912.0){
+    int code=int(claim+.5), priority=code/4194304, packed=code-priority*4194304;
+    int parent=packed/4, slot=packed-parent*4;
+    ivec2 parentUv=ivec2(parent%uStateSize.x,parent/uStateSize.x);
+    vec4 pa=texelFetch(uPositionState,parentUv,0),pb=texelFetch(uVelocityState,parentUv,0),pc=texelFetch(uMetadataState,parentUv,0);
+    int child=-1;float lifetime=0.0,inheritance=0.0,powerScale=0.0,spread=6.2831853;
+    ${eventBranches}
+    if(child>=0){float random=hash21(vec2(float(id),claim));float angle=random*spread;float power=max(24.0,length(pb.xy))*powerScale;
+      a=vec4(pa.xy,0.0,lifetime);b=vec4(pb.xy*inheritance+vec2(cos(angle),sin(angle))*power,0.0,0.0);c=vec4(float(child),pc.y+1.0,pc.z+random,0.0);}
+  }
   outPosition = a; outVelocity = b; outMetadata = c;
 }`;
 }
+
+function buildGlslEventClaimVertex(effect: CompiledParticleEffect2D): string {
+  const events = compiledEvents(effect);
+  const candidateLanes = Math.max(1, ...effect.source.archetypes.map((archetype) => archetype.events?.length ?? 0));
+  const branches: string[] = [];
+  for (let archetypeIndex = 0; archetypeIndex < effect.source.archetypes.length; archetypeIndex += 1) {
+    for (const entry of events.filter((event) => event.parent === archetypeIndex)) {
+      const trigger = entry.trigger === 'death' ? 'a.z>=a.w && a.z-uDt<a.w' : entry.trigger === 'birth' ? 'a.z<=uDt' : entry.trigger === 'collision' ? 'c.w>=0.5' : `a.z>=${glslFloat(entry.delay)} && a.z-uDt<${glslFloat(entry.delay)}`;
+      branches.push(`if(archetype==${archetypeIndex} && lane==${entry.parentSlot} && c.y<=${glslFloat(entry.maxGeneration)} && (${trigger}) && hash11(float(parent*31+lane*17+${entry.global}))<=${glslFloat(entry.probability)}){priority=${entry.priority};slot=${entry.prioritySlot};childCount=${entry.count};valid=true;}`);
+    }
+  }
+  return `#version 300 es
+precision highp float;precision highp sampler2D;
+uniform sampler2D uPositionState;uniform sampler2D uMetadataState;uniform ivec2 uStateSize;uniform int uCapacity;uniform float uDt;
+flat out float vClaim;flat out float vChildCount;
+float hash11(float value){return fract(sin(value*91.3458+17.123)*47453.5453);}
+void main(){int parent=gl_VertexID/${candidateLanes},lane=gl_VertexID-parent*${candidateLanes};vClaim=12582912.0;vChildCount=0.0;gl_PointSize=1.0;
+ if(parent>=uCapacity){gl_Position=vec4(2.0);return;}ivec2 uv=ivec2(parent%uStateSize.x,parent/uStateSize.x);vec4 a=texelFetch(uPositionState,uv,0),c=texelFetch(uMetadataState,uv,0);int archetype=int(c.x+.5),priority=0,slot=0,childCount=0;bool valid=false;
+ ${branches.join('\n ')}
+ if(!valid){gl_Position=vec4(2.0);return;}int pointWidth=int(ceil(sqrt(float(childCount)))),availableX=max(1,uStateSize.x-pointWidth),availableY=max(1,uStateSize.y-pointWidth);uint hash=uint(parent)*1664525u+uint(lane)*1013904223u+uint(slot+priority*4)*2246822519u;int originX=int(hash%uint(availableX)),originY=int((hash/uint(max(1,availableX)))%uint(availableY));vec2 center=vec2(float(originX)+float(pointWidth)*.5,float(originY)+float(pointWidth)*.5);vec2 clip=center/vec2(uStateSize)*2.0-1.0;gl_Position=vec4(clip,0,1);gl_PointSize=float(pointWidth);vClaim=float(priority*4194304+parent*4+slot);vChildCount=float(childCount);}`;
+}
+
+function buildGlslEventClaimFragment(): string { return `#version 300 es
+precision highp float;flat in float vClaim;flat in float vChildCount;out vec4 outClaim;void main(){float width=ceil(sqrt(vChildCount));vec2 cell=floor(gl_PointCoord*width);float ordinal=cell.y*width+cell.x;if(ordinal>=vChildCount)discard;outClaim=vec4(vClaim);}`; }
+
+interface CompiledEventEntry { parent:number; parentSlot:number; child:number; global:number; priority:number; prioritySlot:number; count:number; trigger:string; probability:number; maxGeneration:number; delay:number; inheritance:number; powerScale:number; spread:number; lifetime:number }
+function compiledEvents(effect: CompiledParticleEffect2D): CompiledEventEntry[] {
+  const result: CompiledEventEntry[]=[]; const slots=[0,0,0]; let global=0;
+  effect.source.archetypes.forEach((archetype,parent)=>{(archetype.events??[]).forEach((event,parentSlot)=>{const priority=event.priority==='primary'?0:event.priority==='secondary'?1:2,prioritySlot=slots[priority] ?? 0;if(prioritySlot>=4)throw new Error(`Particle event priority ${event.priority ?? 'cosmetic'} exceeds four compiled slots`);slots[priority]=prioritySlot+1;const child=effect.archetypeIds[event.childArchetypeId];if(child===undefined)throw new Error(`Unknown particle event child ${event.childArchetypeId}`);result.push({parent,parentSlot,child,global:global++,priority,prioritySlot,count:event.count,trigger:event.trigger,probability:event.probability,maxGeneration:event.maxGeneration,delay:event.delay??0,inheritance:event.velocityInheritance??0,powerScale:event.powerScale??0.35,spread:event.spread??Math.PI*2,lifetime:effect.source.archetypes[child]!.lifecycle.lifetime});});});
+  return result;
+}
+
+function glslFloat(value: number): string { const serialized=String(value); return serialized.includes('.') || serialized.includes('e') ? serialized : `${serialized}.0`; }
 
 function buildGlslVertex(effect: CompiledParticleEffect2D, extensions: readonly ParticleModuleCompilerExtension2D[], streak: boolean): string {
   const targets = effect.report.requiredStateTargets;

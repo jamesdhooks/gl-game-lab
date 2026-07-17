@@ -40,6 +40,7 @@ import { GpuParticleGridPointRenderer } from './GpuParticleGridPointRenderer.js'
 import { GpuParticleState } from './GpuParticleState.js';
 import type { GpuParticleRenderDestination } from './GpuParticleRenderer.js';
 import { GpuSimulationPass } from './GpuSimulationPass.js';
+import { GpuParticleEventAllocator } from './GpuParticleEventAllocator.js';
 import { createShaderProgram } from './ShaderProgram.js';
 import type { GpuFrameRenderPass, GpuRenderPassQueue } from './GpuRenderPassQueue.js';
 import type { RestorableResourceOwner } from './RestorableResourceOwner.js';
@@ -56,7 +57,7 @@ interface FieldBundle {
 interface ParticleBundle {
   readonly state: GpuParticleState;
   readonly stepper: GpuSimulationPass;
-  readonly eventStepper: GpuSimulationPass | undefined;
+  readonly eventAllocator: GpuParticleEventAllocator | undefined;
   readonly points: GpuParticleRenderer;
   readonly renderPasses: ReadonlyMap<string, GpuParticleRenderer>;
   readonly trails: TrailFeedbackRenderer | undefined;
@@ -214,9 +215,9 @@ class WebGLGpuParticleSystem implements GpuParticleSystem2D {
   }
   stepEvents(uniforms: GpuUniforms2D | GpuUniformBinder2D = {}): void {
     const bundle = this.owner.value;
-    if (!bundle.eventStepper) throw new Error('GPU particle system was created without an event pass');
-    bundle.eventStepper.run(bundle.state, (gl, uniform) => { applyBindings(gl, uniform, uniforms); });
-    this.countDraw();
+    if (!bundle.eventAllocator) throw new Error('GPU particle system was created without an event allocator');
+    bundle.eventAllocator.run(bundle.state, (gl, uniform) => { applyBindings(gl, uniform, uniforms); });
+    this.countDraw(); this.countDraw();
     this.simulationPasses += 1;
     this.eventPasses += 1;
   }
@@ -254,6 +255,7 @@ class WebGLGpuParticleSystem implements GpuParticleSystem2D {
   copyStateTo(target: GpuParticleSystem2D): boolean {
     return target instanceof WebGLGpuParticleSystem && this.owner.value.state.copyTo(target.owner.value.state);
   }
+  debugReadback(): import('@hooksjam/gl-game-lab-engine').GpuParticleStateSnapshot2D { return this.owner.value.state.debugReadback(); }
   diagnostics(): GpuParticleSystemDiagnostics2D {
     return Object.freeze({
       commandCapacity: this.owner.value.commands.capacity,
@@ -518,10 +520,10 @@ function createParticleBundle(gl: WebGL2RenderingContext, options: GpuParticleSy
   try {
     const state = new GpuParticleState(gl, options); disposers.push(() => { state.dispose(); });
     const stepper = new GpuSimulationPass(gl, options.simulationFragmentSource, `${label}.simulation`); disposers.push(() => { stepper.dispose(); });
-    const eventStepper = options.eventFragmentSource
-      ? new GpuSimulationPass(gl, options.eventFragmentSource, `${label}.events`)
+    const eventAllocator = options.eventFragmentSource && options.eventClaimVertexSource && options.eventClaimFragmentSource
+      ? new GpuParticleEventAllocator(gl, state, options.eventClaimVertexSource, options.eventClaimFragmentSource, options.eventFragmentSource, options.eventCandidateLanes ?? 1, `${label}.events`)
       : undefined;
-    if (eventStepper) disposers.push(() => { eventStepper.dispose(); });
+    if (eventAllocator) disposers.push(() => { eventAllocator.dispose(); });
     const points = new GpuParticleRenderer(gl, {
       label: `${label}.particles`,
       vertexSource: options.particleVertexSource,
@@ -545,7 +547,7 @@ function createParticleBundle(gl: WebGL2RenderingContext, options: GpuParticleSy
     if (trails) disposers.push(() => { trails.dispose(); });
     const commands = new GpuParticleCommandBuffer(gl, options.commandCapacity ?? GPU_PARTICLE_COMMAND_CAPACITY);
     disposers.push(() => { commands.dispose(); });
-    return { state, stepper, eventStepper, points, renderPasses, trails, commands };
+    return { state, stepper, eventAllocator, points, renderPasses, trails, commands };
   } catch (error) {
     for (const dispose of disposers.reverse()) dispose();
     throw error;
@@ -554,7 +556,7 @@ function createParticleBundle(gl: WebGL2RenderingContext, options: GpuParticleSy
 
 function disposeParticleBundle(bundle: ParticleBundle): void {
   bundle.commands.dispose();
-  bundle.eventStepper?.dispose();
+  bundle.eventAllocator?.dispose();
   bundle.trails?.dispose();
   for (const pass of bundle.renderPasses.values()) pass.dispose();
   bundle.points.dispose();
@@ -657,6 +659,7 @@ function particleBytes(options: GpuParticleSystem2DOptions): number {
   const width = options.width ?? Math.ceil(Math.sqrt(options.capacity));
   const height = options.height ?? Math.ceil(options.capacity / width);
   return width * height * (options.precision === 'half-float' ? 8 : 16) * (options.metadata ? 6 : 4)
+    + (options.eventFragmentSource ? width * height * 16 : 0)
     + (options.commandCapacity ?? GPU_PARTICLE_COMMAND_CAPACITY) * GPU_PARTICLE_COMMAND_FLOATS * Float32Array.BYTES_PER_ELEMENT;
 }
 
