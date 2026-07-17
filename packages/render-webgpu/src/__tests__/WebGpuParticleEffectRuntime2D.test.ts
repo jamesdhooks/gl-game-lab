@@ -79,4 +79,19 @@ describe('WebGpuParticleEffectRuntimeBackend2D', () => {
     expect(commands[2]).toBe(4);
     resource.dispose();
   });
+
+  it('clears all GPU-resident particle state and resets the active estimate', () => {
+    const fixture = deviceFixture();
+    const backend = new WebGpuParticleEffectRuntimeBackend2D(fixture.device, { render: vi.fn() });
+    const program = compileParticleProgram2D(compileParticleEffect2D(adaptParticleEffectDefinition2D(definition)));
+    const resource = backend.create(program, 16);
+    resource.emit({ instanceId: 1, emitterIndex: 0, count: 4, positionX: 0, positionY: 0, direction: 0, spread: 0, power: 1, seed: 2, importance: 2 });
+    resource.update(1 / 60, 1);
+    fixture.writeBuffer.mockClear();
+    resource.clear();
+    expect(fixture.writeBuffer).toHaveBeenCalledTimes(3);
+    expect(fixture.writeBuffer.mock.calls.every((call) => (call[2] as Float32Array).byteLength === 16 * 4 * 4)).toBe(true);
+    expect(resource.diagnostics().activeEstimate).toBe(0);
+    resource.dispose();
+  });
 });

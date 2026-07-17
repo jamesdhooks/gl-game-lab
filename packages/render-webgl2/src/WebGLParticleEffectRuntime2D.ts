@@ -16,7 +16,7 @@ import type {
   ParticleRuntimeEmission2D,
   ParticleParameterValue2D,
 } from '@hooksjam/gl-game-lab-engine';
-import { ParticleEventWindowScheduler2D, resolveParticleArchetypePartitions2D } from '@hooksjam/gl-game-lab-engine';
+import { ParticleEventWindowScheduler2D, planParticleSpawnCommands2D, resolveParticleArchetypePartitions2D } from '@hooksjam/gl-game-lab-engine';
 
 const COMMAND_CAPACITY = 64;
 const COMMAND_FLOATS = 16;
@@ -376,36 +376,10 @@ class WebGLParticleEffectResource2D implements ParticleEffectBackendResource2D {
   }
 
   private prepareCommands(): void {
-    this.preparedCommandCount = 0;
-    for (let index = 0; index < this.commandCount; index += 1) {
-      const sourceOffset = index * COMMAND_FLOATS;
-      const archetype = Math.max(0, Math.round(this.commands[sourceOffset] ?? 0));
-      const poolOffset = archetype * 4;
-      const poolStart = Math.round(this.poolData[poolOffset] ?? 0);
-      const poolCount = Math.max(1, Math.round(this.poolData[poolOffset + 1] ?? 1));
-      const poolEnd = poolStart + poolCount;
-      let target = this.poolCursor[archetype] ?? poolStart;
-      let remaining = Math.max(0, Math.round(this.commands[sourceOffset + 2] ?? 0));
-      let relativeBase = 0;
-      while (remaining > 0 && this.preparedCommandCount < COMMAND_CAPACITY) {
-        const segmentCount = Math.min(remaining, poolEnd - target);
-        const destinationOffset = this.preparedCommandCount * COMMAND_FLOATS;
-        copyCommand(this.commands, sourceOffset, this.preparedCommands, destinationOffset);
-        this.preparedCommands[destinationOffset + 1] = target;
-        this.preparedCommands[destinationOffset + 2] = segmentCount;
-        this.preparedCommands[destinationOffset + 13] = relativeBase;
-        this.preparedCommandCount += 1;
-        remaining -= segmentCount;
-        relativeBase += segmentCount;
-        target = remaining > 0 ? poolStart : target + segmentCount;
-      }
-      if (remaining > 0) {
-        this.droppedParticles += remaining;
-        this.truncatedCommands += 1;
-      }
-      this.poolCursor[archetype] = target >= poolEnd ? poolStart : target;
-    }
-    sortCommandsByTarget(this.preparedCommands, this.preparedCommandCount);
+    const result = planParticleSpawnCommands2D(this.commands, this.commandCount, this.preparedCommands, COMMAND_CAPACITY, this.poolData, this.poolCursor);
+    this.preparedCommandCount = result.commandCount;
+    this.droppedParticles += result.droppedParticles;
+    this.truncatedCommands += result.truncatedCommands;
   }
 
   private renderTier(target: GpuRenderTarget2D, tier: ParticleRenderTier2D): void {
@@ -432,29 +406,6 @@ function spawnShapeCode(shape: string): number {
 
 function overflowPolicyCode(policy: ParticleOverflowPolicy2D): number {
   return policy === 'drop-new' ? 1 : policy === 'reserve-priority' ? 2 : 0;
-}
-
-function copyCommand(source: Float32Array, sourceOffset: number, target: Float32Array, targetOffset: number): void {
-  for (let index = 0; index < COMMAND_FLOATS; index += 1) {
-    target[targetOffset + index] = source[sourceOffset + index]!;
-  }
-}
-
-function sortCommandsByTarget(commands: Float32Array, count: number): void {
-  for (let index = 1; index < count; index += 1) {
-    let current = index;
-    while (current > 0) {
-      const leftOffset = (current - 1) * COMMAND_FLOATS;
-      const rightOffset = current * COMMAND_FLOATS;
-      if (commands[leftOffset + 1]! <= commands[rightOffset + 1]!) break;
-      for (let component = 0; component < COMMAND_FLOATS; component += 1) {
-        const temporary = commands[leftOffset + component]!;
-        commands[leftOffset + component] = commands[rightOffset + component]!;
-        commands[rightOffset + component] = temporary;
-      }
-      current -= 1;
-    }
-  }
 }
 
 function maximumEventCandidateLanes(program: CompiledParticleProgram2D): number { return Math.max(1, ...program.effect.source.archetypes.map((archetype) => archetype.events?.length ?? 0)); }

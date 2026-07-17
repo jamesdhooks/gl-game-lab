@@ -8,7 +8,7 @@ import type {
   ParticleRenderTier2D,
   ParticleRuntimeEmission2D,
 } from '@hooksjam/gl-game-lab-engine';
-import { ParticleEventWindowScheduler2D, resolveParticleArchetypePartitions2D } from '@hooksjam/gl-game-lab-engine';
+import { ParticleEventWindowScheduler2D, planParticleSpawnCommands2D, resolveParticleArchetypePartitions2D } from '@hooksjam/gl-game-lab-engine';
 
 const COMMAND_CAPACITY = 64;
 const COMMAND_FLOATS = 16;
@@ -75,6 +75,8 @@ class WebGpuParticleEffectResource2D implements ParticleEffectBackendResource2D 
   private readonly frameUints = new Uint32Array(this.frameData);
   private readonly frameBytes = new Uint8Array(this.frameData);
   private readonly zeroEventCounters: Uint32Array;
+  /** Reused reset payload. Clearing is an authoring/lifecycle action, never a per-frame allocation. */
+  private readonly zeroState: Float32Array;
   private readonly submissions: unknown[] = [undefined];
   private readonly eventWindows: ParticleEventWindowScheduler2D;
   private commandCount = 0;
@@ -102,6 +104,7 @@ class WebGpuParticleEffectResource2D implements ParticleEffectBackendResource2D 
     private readonly renderEffect: WebGpuParticleEffectRender2D,
   ) {
     const stateBytes = capacity * 4 * Float32Array.BYTES_PER_ELEMENT;
+    this.zeroState = new Float32Array(capacity * 4);
     this.stateA = device.createBuffer({ label: `${id}.state-a`, size: stateBytes, usage: STORAGE_COPY_USAGE });
     this.stateB = device.createBuffer({ label: `${id}.state-b`, size: stateBytes, usage: STORAGE_COPY_USAGE });
     this.stateC = device.createBuffer({ label: `${id}.state-c`, size: stateBytes, usage: STORAGE_COPY_USAGE });
@@ -218,15 +221,30 @@ class WebGpuParticleEffectResource2D implements ParticleEffectBackendResource2D 
     this.assertUsable(); this.viewportWidth = target.width; this.viewportHeight = target.height;
     this.renderEffect(this.program, [this.stateA, this.stateB, this.stateC], target, tier); this.renderPasses += 1;
   }
-  clear(): void { this.assertUsable(); this.commandCount = 0; this.preparedCommandCount = 0; this.particleCount = 0; this.simulationTime = 0; this.eventWindows.clear();this.poolQueued.fill(0);for(let index=0;index<this.poolCursor.length;index+=1)this.poolCursor[index]=Math.round(this.poolData[index*4]??0); }
+  clear(): void {
+    this.assertUsable();
+    // WebGPU buffers are not initialized by our runtime contract. Explicitly
+    // clear all resident state so reset cannot resurrect old particles.
+    this.device.queue.writeBuffer(this.stateA, 0, this.zeroState);
+    this.device.queue.writeBuffer(this.stateB, 0, this.zeroState);
+    this.device.queue.writeBuffer(this.stateC, 0, this.zeroState);
+    if (this.eventCounters) this.device.queue.writeBuffer(this.eventCounters, 0, this.zeroEventCounters);
+    this.uploadBytes += this.zeroState.byteLength * 3 + (this.eventCounters ? this.zeroEventCounters.byteLength : 0);
+    this.commandCount = 0; this.preparedCommandCount = 0; this.particleCount = 0;
+    this.spawnedParticles = 0; this.simulationTime = 0; this.eventWindows.clear(); this.poolQueued.fill(0);
+    for (let index = 0; index < this.poolCursor.length; index += 1) this.poolCursor[index] = Math.round(this.poolData[index * 4] ?? 0);
+  }
   diagnostics(): ParticleEffectBackendDiagnostics2D {
     return Object.freeze({ capacity: this.capacity, activeEstimate: Math.min(this.capacity, this.spawnedParticles), queuedCommands: 0, droppedCommands: this.droppedCommands, spawnedParticles: this.spawnedParticles, droppedParticles: this.droppedParticles, eventCount: this.eventPasses, simulationPasses: this.simulationPasses, renderPasses: this.renderPasses, uploadBytes: this.uploadBytes, contextGeneration: 0, rebuildCount: 0, allocatedBytes: this.capacity * 4 * 4 * 3 + this.commandData.byteLength + this.frameData.byteLength + (this.eventQueue ? this.capacity * 3 * 16 + this.zeroEventCounters.byteLength : 0), eventAttempts: 0, eventOccupiedDrops: 0, eventBudgetDrops: 0, diagnosticAccuracy: 'estimated', directCommandsAdmitted: this.admittedCommands, directCommandsTruncated: this.truncatedCommands, commandUploadBytes: this.uploadBytes, allocationsAfterWarmup: 0 });
   }
   dispose(): void { if (this.disposed) return; this.disposed = true; this.stateA.destroy(); this.stateB.destroy(); this.stateC.destroy(); this.commands.destroy(); this.frame.destroy(); this.motion.destroy(); this.sources.destroy(); this.pools.destroy(); this.eventQueue?.destroy(); this.eventCounters?.destroy(); }
-  private prepareCommands():void{this.preparedCommandCount=0;for(let index=0;index<this.commandCount;index+=1){const source=index*COMMAND_FLOATS,archetype=Math.max(0,Math.round(this.commandData[source]??0)),poolOffset=archetype*4,poolStart=Math.round(this.poolData[poolOffset]??0),poolCount=Math.max(1,Math.round(this.poolData[poolOffset+1]??1)),poolEnd=poolStart+poolCount;let target=this.poolCursor[archetype]??poolStart,remaining=Math.max(0,Math.round(this.commandData[source+2]??0)),relativeBase=0;while(remaining>0&&this.preparedCommandCount<COMMAND_CAPACITY){const segment=Math.min(remaining,poolEnd-target),destination=this.preparedCommandCount*COMMAND_FLOATS;copyCommand(this.commandData,source,this.preparedCommandData,destination);this.preparedCommandData[destination+1]=target;this.preparedCommandData[destination+2]=segment;this.preparedCommandData[destination+13]=relativeBase;this.preparedCommandCount+=1;remaining-=segment;relativeBase+=segment;target=remaining>0?poolStart:target+segment;}if(remaining>0){this.droppedParticles+=remaining;this.truncatedCommands+=1;}this.poolCursor[archetype]=target>=poolEnd?poolStart:target;}sortCommandsByTarget(this.preparedCommandData,this.preparedCommandCount);}
+  private prepareCommands(): void {
+    const result = planParticleSpawnCommands2D(this.commandData, this.commandCount, this.preparedCommandData, COMMAND_CAPACITY, this.poolData, this.poolCursor);
+    this.preparedCommandCount = result.commandCount;
+    this.droppedParticles += result.droppedParticles;
+    this.truncatedCommands += result.truncatedCommands;
+  }
   private assertUsable(): void { if (this.disposed) throw new Error('WebGPU particle effect resource is disposed'); }
 }
 
 function spawnShapeCode(shape:string):number{return Math.max(0,['point','disc','line','cone','arc','ring','radial','spiral','pinwheel','shower','rectangle','path','texture-mask','mesh','particles','collision-contacts','external-points','custom'].indexOf(shape));}
-function copyCommand(source:Float32Array,sourceOffset:number,target:Float32Array,targetOffset:number):void{for(let index=0;index<COMMAND_FLOATS;index+=1)target[targetOffset+index]=source[sourceOffset+index]!;}
-function sortCommandsByTarget(commands:Float32Array,count:number):void{for(let index=1;index<count;index+=1){let current=index;while(current>0){const left=(current-1)*COMMAND_FLOATS,right=current*COMMAND_FLOATS;if(commands[left+1]!<=commands[right+1]!)break;for(let component=0;component<COMMAND_FLOATS;component+=1){const temporary=commands[left+component]!;commands[left+component]=commands[right+component]!;commands[right+component]=temporary;}current-=1;}}}

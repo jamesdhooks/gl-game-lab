@@ -48,6 +48,11 @@ export {
   type ParticleArchetypePartition2D,
 } from './ParticleCapacityPartitions2D.js';
 export {
+  PARTICLE_SPAWN_COMMAND_FLOATS_2D,
+  planParticleSpawnCommands2D,
+  type ParticleSpawnCommandPlanResult2D,
+} from './ParticleSpawnCommandPlanner2D.js';
+export {
   DEFAULT_PERFORMANCE_BUDGETS,
   EngineDiagnostics,
   type EngineDiagnosticsSnapshot,
