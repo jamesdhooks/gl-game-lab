@@ -257,6 +257,7 @@ export {
 } from './ParticleEffectAuthoring2D.js';
 export {
   compileParticleProgram2D,
+  hydrateCompiledParticleProgram2D,
   validateParticleShaderBindings2D,
   type CompiledParticleProgram2D,
   type CompiledParticleRenderPass2D,

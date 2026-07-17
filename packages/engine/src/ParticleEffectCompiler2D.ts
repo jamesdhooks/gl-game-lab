@@ -1,4 +1,9 @@
-import type { CompiledParticleEffect2D } from "./ParticleEffectGraph2D.js";
+import {
+  PARTICLE_EFFECT_COMPILER_VERSION,
+  hashParticleGraph2D,
+  validateParticleEffectGraph2D,
+  type CompiledParticleEffect2D,
+} from "./ParticleEffectGraph2D.js";
 import type { ParticleRenderTier2D } from "./ParticleEffects2D.js";
 
 export type ParticleShaderBackend2D = "webgl2" | "webgpu";
@@ -65,6 +70,60 @@ export interface CompiledParticleProgram2D {
   };
   readonly renderPasses: Readonly<Record<ParticleRenderTier2D, readonly CompiledParticleRenderPass2D[]>>;
   readonly reflection: ParticleShaderReflection2D;
+}
+
+/**
+ * Validates and freezes a build-generated particle program without rebuilding
+ * its shaders. This is the only trusted boundary between serialized compiler
+ * output and the executable runtime contract.
+ */
+export function hydrateCompiledParticleProgram2D(value: unknown): CompiledParticleProgram2D {
+  if (!isRecord(value) || !isRecord(value.effect) || !isRecord(value.webgl2) || !isRecord(value.webgpu)) {
+    throw new Error("Invalid compiled particle program artifact");
+  }
+  const effect = value.effect;
+  if (effect.compilerVersion !== PARTICLE_EFFECT_COMPILER_VERSION) {
+    throw new Error(`Particle artifact compiler version ${String(effect.compilerVersion)} does not match runtime ${PARTICLE_EFFECT_COMPILER_VERSION}`);
+  }
+  if (effect.stateAbiVersion !== 1 || !isHash(effect.graphHash) || !isHash(effect.abiHash) || !isRecord(effect.source)) {
+    throw new Error("Invalid compiled particle effect metadata");
+  }
+  validateParticleEffectGraph2D(effect.source as unknown as CompiledParticleEffect2D["source"]);
+  if (hashParticleGraph2D(effect.source as unknown as CompiledParticleEffect2D["source"]) !== effect.graphHash) {
+    throw new Error("Compiled particle artifact graph hash mismatch");
+  }
+  if (!isRecord(value.reflection) || !Array.isArray(value.reflection.bindings) || !isRecord(value.renderPasses)) {
+    throw new Error("Invalid compiled particle reflection data");
+  }
+  const archetypeCount = (effect.source.archetypes as unknown[]).length;
+  const usesEvents = (effect.source.archetypes as unknown[]).some((entry) => isRecord(entry) && Array.isArray(entry.events) && entry.events.length > 0);
+  const usesCollisions = (effect.source.archetypes as unknown[]).some((entry) => isRecord(entry) && entry.collision !== undefined);
+  const usesTurbulence = (effect.source.archetypes as unknown[]).some((entry) => isRecord(entry) && isRecord(entry.motion) && typeof entry.motion.turbulence === "number" && entry.motion.turbulence !== 0);
+  const stateTargets = usesEvents ? 3 : 2;
+  if (value.reflection.archetypeCount !== archetypeCount || value.reflection.stateTargets !== stateTargets
+    || value.reflection.usesEvents !== usesEvents || value.reflection.usesCollisions !== usesCollisions || value.reflection.usesTurbulence !== usesTurbulence) {
+    throw new Error("Compiled particle reflection does not match its graph");
+  }
+  validateArtifactEffectTables(effect, archetypeCount);
+  for (const binding of value.reflection.bindings) validateArtifactBinding(binding);
+  for (const tier of ["basic", "enhanced", "ultra"] as const) validateArtifactRenderPasses(value.renderPasses[tier], tier);
+  validateArtifactShader(value.webgl2.simulation, "webgl2", "simulation");
+  validateArtifactShader(value.webgl2.vertex, "webgl2", "vertex");
+  validateArtifactShader(value.webgl2.streakVertex, "webgl2", "vertex");
+  validateArtifactShader(value.webgl2.fragment, "webgl2", "fragment");
+  validateOptionalArtifactShader(value.webgl2.event, "webgl2", "event");
+  validateOptionalArtifactShader(value.webgl2.eventClaimVertex, "webgl2", "event");
+  validateOptionalArtifactShader(value.webgl2.eventClaimFragment, "webgl2", "event");
+  validateArtifactShader(value.webgpu.simulation, "webgpu", "simulation");
+  validateArtifactShader(value.webgpu.render, "webgpu", "vertex");
+  validateOptionalArtifactShader(value.webgpu.event, "webgpu", "event");
+  validateOptionalArtifactShader(value.webgpu.eventResolve, "webgpu", "event");
+  if (usesEvents !== (value.webgl2.event !== undefined) || usesEvents !== (value.webgl2.eventClaimVertex !== undefined)
+    || usesEvents !== (value.webgl2.eventClaimFragment !== undefined) || usesEvents !== (value.webgpu.event !== undefined)
+    || usesEvents !== (value.webgpu.eventResolve !== undefined)) {
+    throw new Error("Compiled particle event shaders do not match graph capabilities");
+  }
+  return deepFreeze(value) as unknown as CompiledParticleProgram2D;
 }
 
 export function compileParticleProgram2D(effect: CompiledParticleEffect2D, extensions: readonly ParticleModuleCompilerExtension2D[] = []): CompiledParticleProgram2D {
@@ -1082,6 +1141,61 @@ function hashSource(source: string): string {
     hash = Math.imul(hash, 16777619);
   }
   return (hash >>> 0).toString(16).padStart(8, "0");
+}
+
+function validateOptionalArtifactShader(value: unknown, backend: ParticleShaderBackend2D, stage: ParticleShaderStage2D): void {
+  if (value !== undefined) validateArtifactShader(value, backend, stage);
+}
+
+function validateArtifactShader(value: unknown, backend: ParticleShaderBackend2D, stage: ParticleShaderStage2D): void {
+  if (!isRecord(value) || value.backend !== backend || value.stage !== stage || typeof value.entryPoint !== "string" || value.entryPoint.length === 0 || typeof value.source !== "string" || value.source.length === 0 || !isHash(value.hash)) {
+    throw new Error(`Invalid ${backend} ${stage} particle shader artifact`);
+  }
+  if (hashSource(value.source) !== value.hash) throw new Error(`Compiled ${backend} ${stage} particle shader hash mismatch`);
+}
+
+function validateArtifactEffectTables(effect: Record<string, unknown>, archetypeCount: number): void {
+  if (!isRecord(effect.archetypeIds) || !isRecord(effect.emitterIds) || !isRecord(effect.parameterIds)
+    || !Array.isArray(effect.instructions) || !Array.isArray(effect.archetypeCapacity) || !Array.isArray(effect.persistedBindings)
+    || !isRecord(effect.report) || !isRecord(effect.backendRequirements)) {
+    throw new Error("Invalid compiled particle effect tables");
+  }
+  if (Object.keys(effect.archetypeIds).length !== archetypeCount || effect.report.archetypeCount !== archetypeCount
+    || effect.report.instructionCount !== effect.instructions.length) {
+    throw new Error("Compiled particle effect tables do not match its graph");
+  }
+}
+
+function validateArtifactBinding(value: unknown): void {
+  if (!isRecord(value) || typeof value.name !== "string" || typeof value.kind !== "string"
+    || typeof value.dataType !== "string" || typeof value.required !== "boolean") {
+    throw new Error("Invalid compiled particle shader binding");
+  }
+}
+
+function validateArtifactRenderPasses(value: unknown, tier: ParticleRenderTier2D): void {
+  if (!Array.isArray(value)) throw new Error(`Missing compiled particle ${tier} render passes`);
+  for (const pass of value) {
+    if (!isRecord(pass) || typeof pass.id !== "string" || pass.tier !== tier
+      || !["points", "streaks", "trails", "bloom"].includes(String(pass.kind))
+      || !["opaque", "alpha", "additive", "multiply"].includes(String(pass.blend))) {
+      throw new Error(`Invalid compiled particle ${tier} render pass`);
+    }
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isHash(value: unknown): value is string {
+  return typeof value === "string" && /^[0-9a-f]{8}$/.test(value);
+}
+
+function deepFreeze<T>(value: T): T {
+  if (typeof value !== "object" || value === null || Object.isFrozen(value)) return value;
+  for (const child of Object.values(value as Record<string, unknown>)) deepFreeze(child);
+  return Object.freeze(value);
 }
 
 function validateExtensions(extensions: readonly ParticleModuleCompilerExtension2D[]): void {

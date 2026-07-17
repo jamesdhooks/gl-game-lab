@@ -3,6 +3,7 @@ import {
   adaptParticleEffectDefinition2D,
   compileParticleEffect2D,
   compileParticleProgram2D,
+  hydrateCompiledParticleProgram2D,
   validateParticleShaderBindings2D,
   type ParticleEffectDefinition2D,
 } from '../index.js';
@@ -87,6 +88,25 @@ describe('ParticleEffectCompiler2D', () => {
   it('deduplicates generated programs through stable source hashes', () => {
     const effect = compileParticleEffect2D(adaptParticleEffectDefinition2D(definition));
     expect(compileParticleProgram2D(effect).webgl2.simulation.hash).toBe(compileParticleProgram2D(effect).webgl2.simulation.hash);
+  });
+
+  it('hydrates validated build artifacts without regenerating shaders', () => {
+    const compiled = compileParticleProgram2D(compileParticleEffect2D(adaptParticleEffectDefinition2D(definition)));
+    const artifact: unknown = JSON.parse(JSON.stringify(compiled));
+    const hydrated = hydrateCompiledParticleProgram2D(artifact);
+    expect(hydrated.webgl2.simulation.source).toBe(compiled.webgl2.simulation.source);
+    expect(Object.isFrozen(hydrated)).toBe(true);
+    expect(Object.isFrozen(hydrated.effect.source.archetypes)).toBe(true);
+  });
+
+  it('rejects stale or corrupted build artifacts', () => {
+    const compiled = compileParticleProgram2D(compileParticleEffect2D(adaptParticleEffectDefinition2D(definition)));
+    const stale = JSON.parse(JSON.stringify(compiled)) as { effect: { compilerVersion: number } };
+    stale.effect.compilerVersion += 1;
+    expect(() => hydrateCompiledParticleProgram2D(stale)).toThrow('compiler version');
+    const corrupted = JSON.parse(JSON.stringify(compiled)) as { webgl2: { simulation: { source: string } } };
+    corrupted.webgl2.simulation.source += '\n// corrupt';
+    expect(() => hydrateCompiledParticleProgram2D(corrupted)).toThrow('shader hash mismatch');
   });
 
   it('validates reflected bindings and compiler extensions', () => {

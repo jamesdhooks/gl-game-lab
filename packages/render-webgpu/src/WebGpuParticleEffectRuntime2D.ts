@@ -761,7 +761,26 @@ class WebGpuParticleEffectResource2D implements ParticleEffectBackendResource2D 
       uploadBytes: this.uploadBytes,
       contextGeneration: 0,
       rebuildCount: 0,
-      allocatedBytes: this.capacity * 4 * 4 * 3 + this.commandData.byteLength + this.frameData.byteLength + this.attractorData.byteLength + this.domainData.byteLength + this.collisionProfileData.byteLength + this.colliderCountData.byteLength + this.circleData.byteLength + this.capsuleAData.byteLength + this.capsuleBData.byteLength + this.sizeData.byteLength + this.lengthData.byteLength + this.alphaData.byteLength + this.intensityData.byteLength + this.paletteData.byteLength + this.renderConfigData.byteLength + (this.eventQueue ? this.capacity * 3 * 16 + this.zeroEventCounters.byteLength + this.eventParameterData.byteLength : 0),
+      allocatedBytes:
+        this.capacity * 4 * 4 * 3
+        + this.commandData.byteLength
+        + this.frameData.byteLength
+        + this.attractorData.byteLength
+        + this.domainData.byteLength
+        + this.collisionProfileData.byteLength
+        + this.colliderCountData.byteLength
+        + this.circleData.byteLength
+        + this.capsuleAData.byteLength
+        + this.capsuleBData.byteLength
+        + this.sizeData.byteLength
+        + this.lengthData.byteLength
+        + this.alphaData.byteLength
+        + this.intensityData.byteLength
+        + this.paletteData.byteLength
+        + this.renderConfigData.byteLength
+        + (this.eventQueue
+          ? this.capacity * 3 * 16 + this.zeroEventCounters.byteLength + this.eventParameterData.byteLength
+          : 0),
       eventAttempts: this.eventAttempts,
       eventOccupiedDrops: 0,
       eventBudgetDrops: 0,
