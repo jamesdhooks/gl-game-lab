@@ -19,10 +19,20 @@ describe('Sparks', () => {
     expect(SPARKS_SETTINGS.length).toBeGreaterThan(40);
     expect(createSparksConfig({
       renderStyle: 'ultra',
-      rawParticleTextureSize: '512'
+      rawParticleTextureSize: '512',
+      particleFidelity: 0.75,
+      trailFidelity: 0.8,
+      bloomFidelity: 0.625,
+      bloomSamples: 6,
+      lightingFidelity: 0.7,
     })).toMatchObject({
       renderStyle: 'ultra',
-      rawParticleTextureSize: '512'
+      rawParticleTextureSize: '512',
+      particleFidelity: 0.75,
+      trailFidelity: 0.8,
+      bloomFidelity: 0.625,
+      bloomSamples: 6,
+      lightingFidelity: 0.7,
     });
     expect(() => createSparksConfig({
       gravity: 20
@@ -61,7 +71,7 @@ describe('Sparks', () => {
     expect(byKey.get('trailFade')?.visibleRenderStyles).toEqual(['ultra']);
     expect(byKey.get('trailContinuity')?.visibleRenderStyles).toEqual(['enhanced', 'ultra']);
     expect(byKey.get('heatRadius')?.visibleRenderStyles).toEqual(['enhanced', 'ultra']);
-    for (const key of ['bloomThreshold', 'bloomRadius', 'environmentLight', 'lightShafts', 'shaftLength', 'heatDistortion']) {
+    for (const key of ['particleFidelity', 'trailFidelity', 'bloomThreshold', 'bloomRadius', 'bloomFidelity', 'bloomSamples', 'environmentLight', 'lightShafts', 'shaftLength', 'heatDistortion', 'lightingFidelity']) {
       expect(byKey.get(key)?.visibleRenderStyles).toEqual(['ultra']);
     }
   });

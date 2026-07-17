@@ -26,13 +26,18 @@ const numeric = [
   n('bounceSparkSpeedScale','Speed Scale','Spark Profile: Bounce',0,3,.01,.72), n('bounceSparkSpeedVariability','Speed Variability','Spark Profile: Bounce',0,2,.01,0),
   render(n('trailFade','Trail Persistence','Rendering',.72,.992,.004,.952), ['ultra']),
   render(n('trailContinuity','Trail Continuity','Rendering',0,2,.01,.86), ['enhanced','ultra']),
+  render(n('particleFidelity','Particle Fidelity','Rendering',.25,1,.05,1), ['ultra']),
+  render(n('trailFidelity','Trail Fidelity','Rendering',.25,1,.05,1), ['ultra']),
   render(n('bloomStrength','Bloom Strength','Rendering',.35,7.2,.05,3.85), ['ultra']),
   render(n('bloomThreshold','Bloom Threshold','Rendering',0,1,.01,.78), ['ultra']),
   render(n('bloomRadius','Bloom Radius','Rendering',.25,8,.05,.85), ['ultra']),
+  render(n('bloomFidelity','Bloom Fidelity','Rendering',.125,1,.025,.5), ['ultra']),
+  render(n('bloomSamples','Bloom Samples','Rendering',1,8,1,4), ['ultra']),
   render(n('environmentLight','Environmental Light','Rendering',0,3,.01,.32), ['ultra']),
   render(n('lightShafts','Light Shafts','Rendering',0,2,.01,.08), ['ultra']),
   render(n('shaftLength','Shaft Length','Rendering',.05,2,.01,.65), ['ultra']),
   render(n('heatDistortion','Heat Distortion','Rendering',0,1,.01,.08), ['ultra']),
+  render(n('lightingFidelity','Lighting Fidelity','Rendering',.125,1,.025,.5), ['ultra']),
   render(n('heatRadius','Heat Radius','Rendering',0,130,1,72), ['enhanced','ultra']),
 ] as const;
 

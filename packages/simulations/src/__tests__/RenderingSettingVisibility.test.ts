@@ -65,8 +65,8 @@ const cases: readonly [string, readonly ExperienceSetting[], StyleExpectation][]
     basic: ['rawParticleTextureSize'],
     enhanced: ['trailContinuity', 'heatRadius', 'rawParticleTextureSize'],
     ultra: [
-      'trailFade', 'trailContinuity', 'bloomStrength', 'bloomThreshold', 'bloomRadius',
-      'environmentLight', 'lightShafts', 'shaftLength', 'heatDistortion', 'heatRadius', 'rawParticleTextureSize',
+      'trailFade', 'trailContinuity', 'particleFidelity', 'trailFidelity', 'bloomStrength', 'bloomThreshold', 'bloomRadius',
+      'bloomFidelity', 'bloomSamples', 'environmentLight', 'lightShafts', 'shaftLength', 'heatDistortion', 'lightingFidelity', 'heatRadius', 'rawParticleTextureSize',
     ],
   }],
   ['Splash PIC/FLIP', SPLASH_MPM_SETTINGS, {

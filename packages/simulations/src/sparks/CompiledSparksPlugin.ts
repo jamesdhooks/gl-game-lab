@@ -232,7 +232,7 @@ export function createCompiledSparksPlugin(initial: SparksConfig = SPARKS_DEFAUL
           intensity: 1,
           trailFade: sparksNumber(config, 'trailFade'),
           trailBloom: 0.42,
-          trailResolutionScale: 0.5,
+          trailResolutionScale: sparksNumber(config, 'trailFidelity'),
           trailBackground: background,
           directComposite: true,
           paletteTransition: 0.18,
@@ -260,8 +260,8 @@ export function createCompiledSparksPlugin(initial: SparksConfig = SPARKS_DEFAUL
           threshold: sparksNumber(config, 'bloomThreshold'),
           intensity: sparksNumber(config, 'bloomStrength') * 0.12,
           radius: sparksNumber(config, 'bloomRadius'),
-          iterations: launch.profile === 'preview' ? 2 : 3,
-          resolutionScale: 0.25,
+          iterations: Math.round(sparksNumber(config, 'bloomSamples')),
+          resolutionScale: sparksNumber(config, 'bloomFidelity'),
         });
         if (!ultra) renderer.setEmissiveLighting?.({ enabled: false });
       }
@@ -286,7 +286,7 @@ export function createCompiledSparksPlugin(initial: SparksConfig = SPARKS_DEFAUL
           shaftLength: sparksNumber(config, 'shaftLength'),
           heatDistortion: sparksNumber(config, 'heatDistortion'),
           timeSeconds: elapsed,
-          resolutionScale: 0.25,
+          resolutionScale: sparksNumber(config, 'lightingFidelity'),
         });
       }
 
@@ -514,7 +514,7 @@ function capacityFor(config: SparksConfig, autonomous: boolean): number {
   return size * size;
 }
 function renderScale(config: SparksConfig, capacity: number): number {
-  if (renderTier(config) === 'ultra') return Math.min(1, 196_608 / Math.max(1, capacity));
+  if (renderTier(config) === 'ultra') return sparksNumber(config, 'particleFidelity');
   if (renderTier(config) === 'enhanced') return Math.min(1, 393_216 / Math.max(1, capacity));
   return 1;
 }
