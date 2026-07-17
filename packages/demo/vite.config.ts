@@ -16,6 +16,8 @@ const previewProfilesEndpoint = '/__gl-game-lab-preview-profiles';
 const previewCaptureEndpoint = '/__gl-game-lab-preview-capture';
 const virtualPreviewProfilesId = 'virtual:gl-game-lab-preview-profiles';
 const resolvedVirtualPreviewProfilesId = `\0${virtualPreviewProfilesId}`;
+const particleBenchmarkEndpoint = '/__gl-game-lab-particle-benchmark';
+const particleBenchmarkDirectory = path.join(workspaceRoot, 'docs/benchmarks/particle');
 
 function sceneDefaultsPlugin() {
   return {
@@ -102,6 +104,18 @@ function sceneDefaultsPlugin() {
           jsonResponse(response, next);
         }, response);
       });
+      server.middlewares.use(particleBenchmarkEndpoint, (request, response) => {
+        if (request.method !== 'PUT') return response.writeHead(405).end('Method Not Allowed');
+        readRequestBody(request, 1_000_000, (raw) => {
+          const report = normalizeParticleBenchmarkReport(parseRecord(raw));
+          if (!report) return response.writeHead(400).end('Invalid particle benchmark report');
+          fs.mkdirSync(particleBenchmarkDirectory, { recursive: true });
+          const date = new Date().toISOString().slice(0, 10), configuration = report.configuration as Record<string, unknown>;
+          const filename = `${date}-${configuration.effectId}-${Math.round(Number(configuration.capacity) / 1024)}k-${configuration.tier}.json`;
+          atomicWrite(path.join(particleBenchmarkDirectory, filename), `${JSON.stringify(report, null, 2)}\n`);
+          jsonResponse(response, JSON.stringify({ filename: `docs/benchmarks/particle/${filename}` }));
+        }, response);
+      });
     },
   };
 }
@@ -155,6 +169,22 @@ function normalizePreviewProfile(value: unknown): Record<string, unknown> | unde
 
 function validExperienceId(value: unknown): string | undefined {
   return typeof value === 'string' && /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(value) ? value : undefined;
+}
+
+function normalizeParticleBenchmarkReport(value: Record<string, unknown>): Record<string, unknown> | undefined {
+  if (value.schemaVersion !== 1 || !isFiniteRecord(value.configuration, ['capacity', 'renderScale', 'warmupMs', 'sampleMs']) || !isFiniteRecord(value.fps, ['average', 'p05']) || !isFiniteRecord(value.frameCpuMs, ['average', 'p95'])) return undefined;
+  const configuration = value.configuration as Record<string, unknown>, effectId = validExperienceId(configuration.effectId), tier = configuration.tier;
+  if (!effectId || (tier !== 'basic' && tier !== 'enhanced' && tier !== 'ultra') || !Number.isInteger(configuration.capacity) || Number(configuration.capacity) <= 0 || typeof value.samples !== 'number' || !Number.isInteger(value.samples) || value.samples <= 0) return undefined;
+  if (typeof value.particle !== 'object' || value.particle === null || Array.isArray(value.particle)) return undefined;
+  const gpuMs = parseRecord(value.gpuMs);
+  if (typeof gpuMs.available !== 'boolean' || (gpuMs.available && !isFiniteRecord(gpuMs, ['average', 'p95']))) return undefined;
+  return value;
+}
+
+function isFiniteRecord(value: unknown, keys: readonly string[]): boolean {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false;
+  const record = value as Record<string, unknown>;
+  return keys.every((key) => typeof record[key] === 'number' && Number.isFinite(record[key]));
 }
 
 function atomicWrite(target: string, content: string | Buffer): void {
