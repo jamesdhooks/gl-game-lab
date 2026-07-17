@@ -530,7 +530,7 @@ export function validateParticleEffectGraph2D(graph: ParticleEffectGraph2D): Par
   for (const parameter of graph.parameters) validateParameter(parameter);
   for (const emitter of graph.emitters) {
     if (!archetypes.has(emitter.archetypeId)) throw new Error(`Particle emitter ${emitter.id} references unknown archetype ${emitter.archetypeId}`);
-    validateEmitter(emitter, parameters, archetypes);
+    validateEmitter(emitter, parameters, archetypes, new Set(graph.customModules ?? []));
   }
   validateArchetypeCapacity(graph, archetypes);
   validatePersistedBindings(graph, parameters);
@@ -605,7 +605,7 @@ function validateParameter(parameter: ParticleParameterDefinition2D): void {
   if (parameter.kind === "enum" && (!parameter.values || parameter.values.length === 0 || !parameter.values.includes(String(parameter.defaultValue)))) throw new Error(`Particle enum parameter ${parameter.id} requires values containing its default`);
 }
 
-function validateEmitter(emitter: ParticleEmitterDefinition2D, parameters: ReadonlySet<string>, archetypes: ReadonlySet<string>): void {
+function validateEmitter(emitter: ParticleEmitterDefinition2D, parameters: ReadonlySet<string>, archetypes: ReadonlySet<string>, customModules: ReadonlySet<string>): void {
   if (emitter.timeline.duration !== undefined && (!Number.isFinite(emitter.timeline.duration) || emitter.timeline.duration < 0)) throw new Error(`Particle emitter ${emitter.id} has an invalid duration`);
   if (emitter.timeline.loop && emitter.timeline.maxLoops === undefined && emitter.timeline.duration === undefined) throw new Error(`Particle emitter ${emitter.id} has an unbounded loop without a duration`);
   if (emitter.timeline.maxLoops !== undefined && (!Number.isSafeInteger(emitter.timeline.maxLoops) || emitter.timeline.maxLoops < 1)) throw new Error(`Particle emitter ${emitter.id} has an invalid loop count`);
@@ -617,7 +617,7 @@ function validateEmitter(emitter: ParticleEmitterDefinition2D, parameters: Reado
   }
   for (const limit of [emitter.limits.maxAlive, emitter.limits.maxPerFrame]) if (limit !== undefined && (!Number.isSafeInteger(limit) || limit < 0)) throw new Error(`Particle emitter ${emitter.id} has an invalid particle limit`);
   if (emitter.limits.maxGeneration !== undefined && (!Number.isSafeInteger(emitter.limits.maxGeneration) || emitter.limits.maxGeneration < 0)) throw new Error(`Particle emitter ${emitter.id} has an invalid generation limit`);
-  validateSource(emitter.source, archetypes, emitter.id);
+  validateSource(emitter.source, archetypes, customModules, emitter.id);
   const initialization = emitter.initialization;
   for (const source of [initialization?.direction, initialization?.spread, initialization?.power, initialization?.lifetimeScale, initialization?.paletteSeed]) if (source) validateValueSource(source, parameters, emitter.id);
   if (initialization?.radialPowerExponent !== undefined && !Number.isFinite(initialization.radialPowerExponent)) throw new Error(`Particle emitter ${emitter.id} has an invalid radial power exponent`);
@@ -625,10 +625,12 @@ function validateEmitter(emitter: ParticleEmitterDefinition2D, parameters: Reado
   for (const binding of emitter.parameters ?? []) validateValueSource(binding.source, parameters, emitter.id);
 }
 
-function validateSource(source: ParticleSpawnSource2D, archetypes: ReadonlySet<string>, emitterId: string): void {
+function validateSource(source: ParticleSpawnSource2D, archetypes: ReadonlySet<string>, customModules: ReadonlySet<string>, emitterId: string): void {
   if (source.kind === "path" && source.points.length < 2) throw new Error(`Particle emitter ${emitterId} path requires at least two points`);
   if (source.kind === "particles" && source.archetypeId && !archetypes.has(source.archetypeId)) throw new Error(`Particle emitter ${emitterId} samples unknown archetype ${source.archetypeId}`);
   if (source.kind === "rectangle" && (source.width < 0 || source.height < 0)) throw new Error(`Particle emitter ${emitterId} rectangle dimensions must be non-negative`);
+  if (["path", "texture-mask", "mesh", "particles", "collision-contacts", "external-points"].includes(source.kind)) throw new Error(`Particle emitter ${emitterId} source ${source.kind} requires a registered executable source extension`);
+  if (source.kind === "custom" && !customModules.has(source.moduleId)) throw new Error(`Particle emitter ${emitterId} custom source requires compiler extension ${source.moduleId}`);
   if ("radius" in source && source.radius !== undefined && (!Number.isFinite(source.radius) || source.radius < 0)) throw new Error(`Particle emitter ${emitterId} radius must be non-negative`);
   if ("innerRadius" in source && source.innerRadius !== undefined && (!Number.isFinite(source.innerRadius) || source.innerRadius < 0 || source.innerRadius > (source.radius ?? Infinity))) throw new Error(`Particle emitter ${emitterId} inner radius is invalid`);
 }

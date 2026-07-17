@@ -40,6 +40,7 @@ describe('ParticleEffectCompiler2D', () => {
     expect(program.webgl2.simulation.source).not.toContain('commandIndex = 0; commandIndex < 64');
     expect(program.webgl2.simulation.source).toContain('shape == 8');
     expect(program.webgl2.simulation.source).toContain('shape == 10');
+    expect(program.webgl2.simulation.source).toContain('shape == 11');
     expect(program.webgl2.simulation.source).toContain('source.x*2.0');
     expect(program.webgl2.simulation.source).toContain('uEmitterInitialization');
     expect(program.webgl2.event?.source).toContain('uMetadataState');
@@ -75,6 +76,7 @@ describe('ParticleEffectCompiler2D', () => {
     expect(program.webgpu.simulation.source).toContain('capsuleColliderA[collider]');
     expect(program.webgpu.simulation.source).toContain('stateC[i].flags=f32');
     expect(program.webgpu.simulation.source).toContain('shape == 9u');
+    expect(program.webgpu.simulation.source).toContain('shape == 11u');
     expect(program.webgpu.event?.source).toContain('atomicAdd');
     expect(program.webgpu.event?.source).toContain('appendEvents');
     expect(program.webgpu.event?.source).toContain('eventParameters');

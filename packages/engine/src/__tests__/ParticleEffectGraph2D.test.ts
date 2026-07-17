@@ -69,6 +69,9 @@ describe('ParticleEffectGraph2D', () => {
     expect(() => defineParticleEffect2D({ ...base, emitters: [{ ...base.emitters[0]!, timeline: { loop: true } }] })).toThrow('unbounded loop');
     expect(() => defineParticleEffect2D({ ...base, graph: { root: { kind: 'repeat', count: 0, child: particleGraph2D.emit('spark') } } })).toThrow('repeat must be bounded');
     expect(() => defineParticleEffect2D({ ...base, graph: { root: particleGraph2D.emit('missing') } })).toThrow('unknown emitter');
+    expect(() => defineParticleEffect2D({ ...base, emitters: [{ ...base.emitters[0]!, source: { kind: 'path', points: [[0, 0], [1, 1]] } }] })).toThrow('requires a registered executable source extension');
+    expect(() => defineParticleEffect2D({ ...base, emitters: [{ ...base.emitters[0]!, source: { kind: 'custom', moduleId: 'path-source' } }] })).toThrow('requires compiler extension');
+    expect(() => defineParticleEffect2D({ ...base, emitters: [{ ...base.emitters[0]!, source: { kind: 'rectangle', width: 10, height: 5 } }] })).not.toThrow();
   });
 
   it('rejects recursive graph depth and unknown parameter bindings', () => {

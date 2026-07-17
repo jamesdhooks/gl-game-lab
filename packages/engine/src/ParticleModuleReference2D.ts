@@ -141,7 +141,7 @@ export function applyParticleDomainReference2D(state: ParticleReferenceState2D, 
   }
 }
 
-export function sampleParticleSpawnReference2D(shape: ParticleSpawnShape2D, index: number, count: number, randomA: number, randomB: number, radius: number, length: number, arc: number, direction: number, spread: number): ParticleReferenceSpawn2D {
+export function sampleParticleSpawnReference2D(shape: ParticleSpawnShape2D | "rectangle", index: number, count: number, randomA: number, randomB: number, radius: number, length: number, arc: number, direction: number, spread: number): ParticleReferenceSpawn2D {
   let angle = direction + (randomA - 0.5) * spread,
     x = 0,
     y = 0;
@@ -169,6 +169,9 @@ export function sampleParticleSpawnReference2D(shape: ParticleSpawnShape2D, inde
     x = Math.cos(a) * r;
     y = Math.sin(a) * r;
     angle = a;
+  } else if (shape === "rectangle") {
+    x = (randomA - 0.5) * radius * 2;
+    y = (randomB - 0.5) * length * 2;
   }
   return Object.freeze({ x, y, angle });
 }

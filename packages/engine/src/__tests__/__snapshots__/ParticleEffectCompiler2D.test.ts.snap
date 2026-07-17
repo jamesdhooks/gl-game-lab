@@ -423,6 +423,7 @@ void main() {
     else if (shape == 8) { angle=commandC.x+float(relative%4)*1.5707963+float(relative)*.075+(randomA-.5)*commandC.y; }
     else if (shape == 9) { offset=vec2((randomA-.5)*source.x*2.0,0.0); angle=commandC.x+(randomB-.5)*commandC.y; }
     else if (shape == 10) { float a=randomA*6.2831853;float radius=sqrt(max(0.0,source.y*source.y+(source.x*source.x-source.y*source.y)*randomB));offset=vec2(cos(a),sin(a))*radius;angle=a; }
+    else if (shape == 11) { offset=vec2((randomA-.5)*source.x*2.0,(randomB-.5)*source.y*2.0); }
     if(initialization.x>.5&&length(offset)>.0001){angle=atan(offset.y,offset.x)+(initialization.x>2.5?-1.5707963:initialization.x>1.5?1.5707963:0.0);}
     float radialPower=abs(initialization.y)>.0001&&length(offset)>.0001?pow(max(length(offset),.0001)/max(initialization.z,.0001),initialization.y):1.0;
     float power = commandC.z * radialPower * mix(1.0-initialization.w, 1.0+initialization.w, hash21(vec2(commandSeed, float(relative)+2.0)));
@@ -777,6 +778,7 @@ fn simulate(@builtin(global_invocation_id) gid: vec3<u32>) {
       else if (shape == 8u) { angle=c.x+f32(relative%4u)*1.5707963+f32(relative)*0.075+(randomA-0.5)*c.y; }
       else if (shape == 9u) { offsetPosition=vec2<f32>((randomA-0.5)*source.x*2.0,0.0); angle=c.x+(randomB-0.5)*c.y; }
       else if (shape == 10u) { let sourceAngle=randomA*6.2831853;let sourceRadius=sqrt(max(0.0,source.y*source.y+(source.x*source.x-source.y*source.y)*randomB));offsetPosition=vec2<f32>(cos(sourceAngle),sin(sourceAngle))*sourceRadius;angle=sourceAngle; }
+      else if (shape == 11u) { offsetPosition=vec2<f32>((randomA-0.5)*source.x*2.0,(randomB-0.5)*source.y*2.0); }
       if(initialization.x>0.5&&length(offsetPosition)>0.0001){angle=atan2(offsetPosition.y,offsetPosition.x)+select(select(0.0,1.5707963,initialization.x>1.5),-1.5707963,initialization.x>2.5);}
       let radialPower=select(1.0,pow(max(length(offsetPosition),0.0001)/max(initialization.z,0.0001),initialization.y),abs(initialization.y)>0.0001&&length(offsetPosition)>0.0001);
       let power = c.z * radialPower * mix(1.0-initialization.w, 1.0+initialization.w, hash11(seed + 2.0));
