@@ -64,9 +64,26 @@ export const SPARKS_PARTICLE_EFFECT: ParticleEffectDefinition2D = validatePartic
   renderRecipes: {
     defaultTier: 'enhanced',
     recipes: [
-      { tier: 'basic', points: true, streaks: true, blend: 'additive' },
-      { tier: 'enhanced', points: true, streaks: true, blend: 'additive' },
-      { tier: 'ultra', points: true, streaks: true, trails: true, bloom: true, blend: 'additive' },
+      {
+        tier: 'basic', points: true, blend: 'additive',
+        layers: [{ id: 'particles', kind: 'point', sizeScale: 1, intensityScale: 0.92, alphaScale: 0.94 }],
+      },
+      {
+        tier: 'enhanced', points: true, streaks: true, blend: 'additive',
+        layers: [
+          { id: 'halos', kind: 'halo', sizeScale: 2.35, intensityScale: 0.25, alphaScale: 0.34 },
+          { id: 'streaks', kind: 'streak', sizeScale: 0.72, lengthScale: 1, intensityScale: 0.82, alphaScale: 0.78 },
+          { id: 'cores', kind: 'core', sizeScale: 0.74, intensityScale: 1.34, alphaScale: 0.96 },
+        ],
+      },
+      {
+        tier: 'ultra', points: true, streaks: true, trails: true, bloom: true, blend: 'additive',
+        layers: [
+          { id: 'afterglow', kind: 'halo', sizeScale: 2.8, intensityScale: 0.14, alphaScale: 0.2 },
+          { id: 'streaks', kind: 'streak', sizeScale: 0.74, lengthScale: 1.05, intensityScale: 0.82, alphaScale: 0.76 },
+          { id: 'cores', kind: 'core', sizeScale: 0.68, intensityScale: 1.3, alphaScale: 0.94 },
+        ],
+      },
     ],
   },
 });

@@ -738,8 +738,12 @@ export function createPreviewSparksConfig(config: SparksConfig): SparksConfig {
     bounceBurstCount: clampPreviewNumber(config, 'bounceBurstCount', 6, 20),
     buildRadius: clampPreviewNumber(config, 'buildRadius', 14, 24),
     heatRadius: clampPreviewNumber(config, 'heatRadius', 60, 110),
+    bloomStrength: clampPreviewNumber(config, 'bloomStrength', 0.35, 4.2),
+    environmentLight: clampPreviewNumber(config, 'environmentLight', 0, 0.7),
+    lightShafts: clampPreviewNumber(config, 'lightShafts', 0, 0.28),
+    heatDistortion: clampPreviewNumber(config, 'heatDistortion', 0, 0.12),
     rawParticleTextureSize: '256',
-    renderStyle: sparksString(config, 'renderStyle') === 'basic' ? 'basic' : 'enhanced',
+    renderStyle: sparksString(config, 'renderStyle'),
   });
 }
 function clampPreviewNumber(config: SparksConfig, key: string, min: number, max: number): number {

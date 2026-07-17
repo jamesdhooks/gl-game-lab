@@ -172,6 +172,7 @@ export interface ParticleRenderParameters2D {
   readonly intensity?: number;
   readonly trailFade?: number;
   readonly trailBloom?: number;
+  readonly trailResolutionScale?: number;
   readonly trailBackground?: readonly [number, number, number];
   readonly directComposite?: boolean;
   readonly paletteTransition?: number;

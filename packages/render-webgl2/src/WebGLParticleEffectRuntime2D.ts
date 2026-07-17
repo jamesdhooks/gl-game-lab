@@ -87,6 +87,7 @@ class WebGLParticleEffectResource2D implements ParticleEffectBackendResource2D {
   private intensity = 1;
   private trailFade: number;
   private trailBloom: number;
+  private trailResolutionScale = 1;
   private trailBackground: readonly [number, number, number];
   private directComposite = true;
   private paletteTransition = 0;
@@ -421,6 +422,7 @@ class WebGLParticleEffectResource2D implements ParticleEffectBackendResource2D {
     if (value.intensity !== undefined) this.intensity = value.intensity;
     if (value.trailFade !== undefined) this.trailFade = value.trailFade;
     if (value.trailBloom !== undefined) this.trailBloom = value.trailBloom;
+    if (value.trailResolutionScale !== undefined) this.trailResolutionScale = Math.max(0.25, Math.min(1, value.trailResolutionScale));
     if (value.trailBackground !== undefined) this.trailBackground = value.trailBackground;
     if (value.directComposite !== undefined) this.directComposite = value.directComposite;
     if (value.paletteTransition !== undefined) this.paletteTransition = value.paletteTransition;
@@ -466,7 +468,11 @@ class WebGLParticleEffectResource2D implements ParticleEffectBackendResource2D {
       this.viewportDpr = 1;
     }
     if (tier === "ultra" && this.program.renderPasses.ultra.some((pass) => pass.kind === "trails")) {
-      const trailTarget = this.particles.beginTrails(target.width, target.height, this.trailFade);
+      const trailTarget = this.particles.beginTrails(
+        Math.max(1, Math.round(target.width * this.trailResolutionScale)),
+        Math.max(1, Math.round(target.height * this.trailResolutionScale)),
+        this.trailFade,
+      );
       this.renderTier(trailTarget, tier);
       this.particles.compositeTrails(target, this.trailBackground, this.trailBloom);
       if (this.directComposite) this.renderTier(target, tier);

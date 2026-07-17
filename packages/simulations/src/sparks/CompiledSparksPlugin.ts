@@ -69,6 +69,9 @@ export function createCompiledSparksPlugin(initial: SparksConfig = SPARKS_DEFAUL
   let buildStartY = 0;
   let buildActive = false;
   let previewActive = false;
+  let lightX = 0;
+  let lightY = 0;
+  let lightEnergy = 0;
   const rails = new Float32Array(MAX_RAILS * RAIL_FLOATS);
   const previewRail = new Float32Array(RAIL_FLOATS);
   const renderRails = new Float32Array(MAX_RAILS * RAIL_FLOATS);
@@ -154,6 +157,7 @@ export function createCompiledSparksPlugin(initial: SparksConfig = SPARKS_DEFAUL
         run: ({ time }) => {
           const dt = Math.min(0.05, time.deltaSeconds);
           elapsed += dt;
+          lightEnergy *= Math.exp(-dt * 4.6);
           if (renderer.viewport.width !== configuredWidth || renderer.viewport.height !== configuredHeight) {
             seedRails(instance);
             configure(instance, true);
@@ -168,6 +172,7 @@ export function createCompiledSparksPlugin(initial: SparksConfig = SPARKS_DEFAUL
         id: 'gl-game-lab.simulations.sparks.compiled.render',
         stage: 'renderExtract',
         run: () => {
+          submitEmissiveLighting();
           gpu.submit('sparks.compiled-particles', (target) => effects.render(target));
           submitRails();
         },
@@ -220,18 +225,21 @@ export function createCompiledSparksPlugin(initial: SparksConfig = SPARKS_DEFAUL
           powerVariability: sparksNumber(config, 'bounceSparkSpeedVariability'),
         });
         effect.setQualityTier(renderTier(config));
+        effect.setRenderScale(renderScale(config, capacity));
         const background = sparksColor3(requireStyle().background);
         effect.setRenderParameters({
           pointScale: 1,
           intensity: 1,
           trailFade: sparksNumber(config, 'trailFade'),
-          trailBloom: sparksNumber(config, 'bloomStrength') * 0.32,
+          trailBloom: 0.42,
+          trailResolutionScale: 0.5,
           trailBackground: background,
-          directComposite: renderTier(config) !== 'ultra',
+          directComposite: true,
           paletteTransition: 0.18,
           streakScale: renderTier(config) === 'basic' ? 0.45 : sparksNumber(config, 'trailContinuity'),
           colorMode: 'seeded',
         });
+        configurePostProcessing();
         if (collidersChanged) publishColliders(effect);
       }
 
@@ -240,9 +248,46 @@ export function createCompiledSparksPlugin(initial: SparksConfig = SPARKS_DEFAUL
         const background = sparksColor3(style.background);
         renderer.setClearColor([background[0], background[1], background[2], 1]);
         renderer.setBackdrop(undefined);
-        renderer.setBloom({ enabled: false });
         effect.setPalette({ revision: nextSeed(), colors: style.palette.slice(0, 8).map(sparksColor3) });
         effect.setRenderParameters({ trailBackground: background });
+        configurePostProcessing();
+      }
+
+      function configurePostProcessing(): void {
+        const ultra = renderTier(config) === 'ultra';
+        renderer.setBloom({
+          enabled: ultra && sparksNumber(config, 'bloomStrength') > 0,
+          threshold: sparksNumber(config, 'bloomThreshold'),
+          intensity: sparksNumber(config, 'bloomStrength') * 0.12,
+          radius: sparksNumber(config, 'bloomRadius'),
+          iterations: launch.profile === 'preview' ? 2 : 3,
+          resolutionScale: 0.25,
+        });
+        if (!ultra) renderer.setEmissiveLighting?.({ enabled: false });
+      }
+
+      function submitEmissiveLighting(): void {
+        const ultra = renderTier(config) === 'ultra';
+        if (!ultra || lightEnergy < 0.002) {
+          renderer.setEmissiveLighting?.({ enabled: false });
+          return;
+        }
+        const color = sparksColor3(requireStyle().palette[0] ?? 0xffffff);
+        renderer.setEmissiveLighting?.({
+          enabled: true,
+          source: {
+            x: lightX, y: lightY,
+            radius: Math.max(1, sparksNumber(config, 'heatRadius') + sparksNumber(config, 'torchRadius') * 0.5),
+            color,
+            intensity: lightEnergy,
+          },
+          environmentStrength: sparksNumber(config, 'environmentLight'),
+          shaftStrength: sparksNumber(config, 'lightShafts'),
+          shaftLength: sparksNumber(config, 'shaftLength'),
+          heatDistortion: sparksNumber(config, 'heatDistortion'),
+          timeSeconds: elapsed,
+          resolutionScale: 0.25,
+        });
       }
 
       function seedRails(effect: ParticleEffectInstance2D): void {
@@ -338,6 +383,9 @@ export function createCompiledSparksPlugin(initial: SparksConfig = SPARKS_DEFAUL
 
       function emitContact(effect: ParticleEffectInstance2D, contact: Contact, burst: boolean, burstMultiplier: number): void {
         const scaledHeat = Math.max(0, sparksNumber(config, 'contactHeat')) * clamp(contact.strength, 0.3, 2.2);
+        lightX = contact.x;
+        lightY = contact.y;
+        lightEnergy = Math.max(lightEnergy, clamp(scaledHeat * (burst ? 0.22 : 0.16), 0.08, 1.6));
         const count = Math.max(0, Math.round((burst ? 34 : 10) * scaledHeat * Math.max(1, burstMultiplier)));
         if (count <= 0) return;
         const power = sparksNumber(config, 'sparkPower') * sparksNumber(config, 'primarySparkSpeedScale');
@@ -434,6 +482,8 @@ export function createCompiledSparksPlugin(initial: SparksConfig = SPARKS_DEFAUL
         contacts.clear();
         buildActive = false;
         previewActive = false;
+        lightEnergy = 0;
+        renderer.setEmissiveLighting?.({ enabled: false });
         randomState = normalizeSeed(launch.seed);
         effect.restart(randomState);
         seedRails(effect);
@@ -462,6 +512,11 @@ function capacityFor(config: SparksConfig, autonomous: boolean): number {
   const requested = Number(sparksString(config, 'rawParticleTextureSize'));
   const size = autonomous ? Math.min(256, requested) : requested;
   return size * size;
+}
+function renderScale(config: SparksConfig, capacity: number): number {
+  if (renderTier(config) === 'ultra') return Math.min(1, 196_608 / Math.max(1, capacity));
+  if (renderTier(config) === 'enhanced') return Math.min(1, 393_216 / Math.max(1, capacity));
+  return 1;
 }
 function validMode(value: string | undefined): SparksMode | undefined { return value === 'welding' || value === 'pinwheel' || value === 'shower' || value === 'build' ? value : undefined; }
 function validStyle(value: string | undefined): string | undefined { return value && SPARKS_STYLE_MANIFEST.styles.some((style) => style.id === value) ? value : undefined; }
