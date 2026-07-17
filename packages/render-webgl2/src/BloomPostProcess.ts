@@ -228,8 +228,9 @@ export class BloomPostProcess {
       gl.uniform1f(this.filterThresholdLocation, this.options.threshold);
       this.drawFilter(scene, ping, 0, 0);
       for (let index = 0; index < this.options.iterations; index += 1) {
-        this.drawFilter(ping, pong, this.options.radius, 0);
-        this.drawFilter(pong, ping, 0, this.options.radius);
+        const directions = bloomBlurPassDirections(this.options.radius, this.options.iterations, index);
+        this.drawFilter(ping, pong, directions.horizontal[0], directions.horizontal[1]);
+        this.drawFilter(pong, ping, directions.vertical[0], directions.vertical[1]);
       }
     }
     if (this.lighting) this.drawLighting(this.lighting);
@@ -339,6 +340,30 @@ export class BloomPostProcess {
     if (this.disposed) throw new Error('Bloom post-process has been destroyed');
     if (this.device.isContextLost) throw new Error('WebGL2 context is lost');
   }
+}
+
+export interface BloomBlurPassDirections {
+  readonly horizontal: readonly [number, number];
+  readonly vertical: readonly [number, number];
+}
+
+/**
+ * Splits the authored radius across repeated passes and slightly rotates each
+ * separable pair. Reusing one large axis-aligned offset creates a visible
+ * sampling lattice at full resolution; decorrelated sub-pixel directions
+ * converge toward a smooth Gaussian instead.
+ */
+export function bloomBlurPassDirections(radius: number, iterations: number, index: number): BloomBlurPassDirections {
+  const safeIterations = Math.max(1, Math.floor(iterations));
+  const safeIndex = Math.max(0, Math.floor(index));
+  const phase = (safeIndex * 0.7548776662466927 + 0.5) % 1;
+  const step = Math.min(4, Math.max(0.01, radius) / Math.sqrt(safeIterations) * (0.92 + phase * 0.16));
+  const angle = (phase - 0.5) * 0.24;
+  const cosine = Math.cos(angle), sine = Math.sin(angle);
+  return Object.freeze({
+    horizontal: Object.freeze([cosine * step, sine * step] as const),
+    vertical: Object.freeze([-sine * step, cosine * step] as const),
+  });
 }
 
 function finiteRange(value: number, minimum: number, maximum: number, label: string): number {

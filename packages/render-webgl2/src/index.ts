@@ -98,10 +98,12 @@ export {
 } from './PaletteBackdropRenderer.js';
 export {
   BloomPostProcess,
+  bloomBlurPassDirections,
   normalizeBloomOptions,
   normalizeEmissiveLightingOptions,
   type BloomOptions,
   type BloomPostProcessStats,
+  type BloomBlurPassDirections,
   type EmissiveLightingOptions,
   type NormalizedBloomOptions,
 } from './BloomPostProcess.js';

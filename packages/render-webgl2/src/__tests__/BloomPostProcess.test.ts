@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { normalizeBloomOptions, normalizeEmissiveLightingOptions } from '../index.js';
+import { bloomBlurPassDirections, normalizeBloomOptions, normalizeEmissiveLightingOptions } from '../index.js';
 import { BLOOM_FILTER_FRAGMENT_SHADER } from '../BloomPostProcess.js';
 
 describe('normalizeBloomOptions', () => {
@@ -39,6 +39,17 @@ describe('normalizeBloomOptions', () => {
 
   it('supports wide-kernel bloom used by liquid surfaces', () => {
     expect(normalizeBloomOptions({ enabled: true, radius: 8 }).radius).toBe(8);
+  });
+
+  it('decorrelates wide full-resolution blur passes without increasing total radius per sample', () => {
+    const passes = Array.from({ length: 8 }, (_, index) => bloomBlurPassDirections(8, 8, index));
+    const lengths = passes.map(({ horizontal }) => Math.hypot(...horizontal));
+    expect(Math.max(...lengths)).toBeLessThanOrEqual(4);
+    expect(new Set(passes.map(({ horizontal }) => horizontal.map((value) => value.toFixed(5)).join(','))).size).toBe(8);
+    expect(passes.some(({ horizontal }) => Math.abs(horizontal[1]) > 0.01)).toBe(true);
+    for (const { horizontal, vertical } of passes) {
+      expect(horizontal[0] * vertical[0] + horizontal[1] * vertical[1]).toBeCloseTo(0, 10);
+    }
   });
 
   it.each([
