@@ -409,6 +409,7 @@ class WebGLParticleEffectResource2D implements ParticleEffectBackendResource2D {
     if (value.basePower !== undefined) this.eventDataC[offset + 3] = value.basePower;
     if (value.lifetimeVariability !== undefined) this.eventDataD[offset] = value.lifetimeVariability;
     if (value.powerVariability !== undefined) this.eventDataD[offset + 1] = value.powerVariability;
+    if (value.impactPowerScale !== undefined) this.eventDataD[offset + 2] = value.impactPowerScale;
   }
   setViewport(value: ParticleViewport2D): void {
     this.assertUsable();

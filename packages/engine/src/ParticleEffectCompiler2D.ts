@@ -422,7 +422,7 @@ function buildGlslEvent(effect: CompiledParticleEffect2D): string {
   const eventBranches = events
     .map(
       (entry) =>
-        `if (priority == ${entry.priority} && slot == ${entry.prioritySlot}) { child=${entry.child}; vec4 eventB=uParticleEventB[${entry.global}]; vec4 eventC=uParticleEventC[${entry.global}]; vec4 eventD=uParticleEventD[${entry.global}]; lifetime=eventB.x; inheritance=eventB.y; powerScale=eventB.z; spread=eventB.w; basePower=eventC.w; lifetimeVariability=eventD.x; powerVariability=eventD.y; }`,
+        `if (priority == ${entry.priority} && slot == ${entry.prioritySlot}) { child=${entry.child}; vec4 eventB=uParticleEventB[${entry.global}]; vec4 eventC=uParticleEventC[${entry.global}]; vec4 eventD=uParticleEventD[${entry.global}]; lifetime=eventB.x; inheritance=eventB.y; powerScale=eventB.z; spread=eventB.w; basePower=eventC.w; speedReference=eventC.z; lifetimeVariability=eventD.x; powerVariability=eventD.y; impactPowerScale=eventD.z; }`,
     )
     .join("\n  else ");
   const markBranches = events
@@ -464,10 +464,10 @@ void main() {
     int parent=packed/4, slot=packed-parent*4;
     ivec2 parentUv=ivec2(parent%uStateSize.x,parent/uStateSize.x);
     vec4 pa=texelFetch(uPositionState,parentUv,0),pb=texelFetch(uVelocityState,parentUv,0),pc=texelFetch(uMetadataState,parentUv,0);
-    int child=-1;float lifetime=0.0,inheritance=0.0,powerScale=0.0,spread=6.2831853,basePower=24.0,lifetimeVariability=0.0,powerVariability=0.0;
+    int child=-1;float lifetime=0.0,inheritance=0.0,powerScale=0.0,spread=6.2831853,basePower=24.0,speedReference=1.0,lifetimeVariability=0.0,powerVariability=0.0,impactPowerScale=0.0;
     ${eventBranches}
     if(child>=0){vec4 pool=uArchetypePools[child];bool inPool=id>=int(pool.x+.5)&&id<int(pool.x+pool.y+.5);bool writable=a.z>=a.w||int(pool.z+.5)!=1;
-      if(inPool&&writable){float random=hash21(vec2(float(id),claim));float angle=random*spread;float power=max(basePower,length(pb.xy))*powerScale*mix(max(0.0,1.0-powerVariability),1.0+powerVariability,hash21(vec2(random,31.7)));
+      if(inPool&&writable){float random=hash21(vec2(float(id),claim));float parentSpeed=length(pb.xy);float parentAngle=parentSpeed>.0001?atan(pb.y,pb.x):0.0;float angle=parentAngle+(random-.5)*spread;float impact=smoothstep(0.0,max(1.0,speedReference),parentSpeed);float power=max(basePower,parentSpeed)*powerScale*(1.0+impact*impactPowerScale)*mix(max(0.0,1.0-powerVariability),1.0+powerVariability,hash21(vec2(random,31.7)));
         float variedLifetime=lifetime*mix(max(.05,1.0-lifetimeVariability),1.0+lifetimeVariability,hash21(vec2(random,73.1)));
         a=vec4(pa.xy,0.0,variedLifetime);b=vec4(pb.xy*inheritance+vec2(cos(angle),sin(angle))*power,0.0,0.0);c=vec4(float(child),pc.y+1.0,pc.z+random,0.0);}}
   }
@@ -488,7 +488,7 @@ function buildGlslEventClaimVertex(effect: CompiledParticleEffect2D): string {
   float speed=length(b.xy),impact=smoothstep(eventC.x,max(eventC.x+1.0,eventC.z),speed);
   if(speed>=eventC.x && (${notFired}) && (${trigger}) && hash11(float(parent*31+lane*17+${entry.global}))<=eventA.x) {
     priority=${entry.priority}; slot=${entry.prioritySlot}; child=${entry.child};
-    rawChildCount=int(eventA.y*mix(.16,1.0+impact*eventC.y,impact)+.5);triggerCode=${eventTriggerCode(entry.trigger)};triggered=rawChildCount>0;generationValid=c.y<=eventA.z;childCount=generationValid?rawChildCount:0;valid=childCount>0;
+    rawChildCount=int(eventA.y*(1.0+impact*eventC.y)+.5);triggerCode=${eventTriggerCode(entry.trigger)};triggered=rawChildCount>0;generationValid=c.y<=eventA.z;childCount=generationValid?rawChildCount:0;valid=childCount>0;
   }
 }`);
     }
@@ -880,7 +880,7 @@ function buildWgslEventAppend(effect: CompiledParticleEffect2D): string {
     if (archetype == ${entry.parent}u && metadata.generation <= eventA${entry.global}.z && ${notFired} && (${trigger}) && length(stateB[i].velocity)>=eventC${entry.global}.x) {
       ${mark}
       if (hash11(f32(i * 31u + ${entry.global}u * 17u)) <= eventA${entry.global}.x) {
-        let speed=length(stateB[i].velocity);let speedCount=max(0.0,eventA${entry.global}.y+floor(max(0.0,speed-eventC${entry.global}.z)/max(eventC${entry.global}.z,1.0)*eventC${entry.global}.y));
+        let speed=length(stateB[i].velocity);let impact=smoothstep(eventC${entry.global}.x,max(eventC${entry.global}.x+1.0,eventC${entry.global}.z),speed);let speedCount=max(0.0,floor(eventA${entry.global}.y*(1.0+impact*eventC${entry.global}.y)+0.5));
         for (var childOrdinal = 0u; childOrdinal < u32(speedCount); childOrdinal += 1u) {
           let queueSlot = atomicAdd(&counters.values[${entry.priority}u], 1u);
           let targetSlot = atomicAdd(&counters.values[${3 + entry.child}u], 1u);
@@ -942,7 +942,7 @@ fn resolveEvents(@builtin(global_invocation_id) gid: vec3<u32>) {
   ${branches}
   if(child==0xffffffffu){return;}let parametersB=eventParameters[parameterIndex+1u];let parametersC=eventParameters[parameterIndex+2u];let parametersD=eventParameters[parameterIndex+3u];let pool=archetypePools[child];let poolCount=max(1u,u32(pool.y+.5));let target=u32(pool.x+.5)+(record.targetSlot%poolCount);
   let overflow=u32(pool.z+.5);if(overflow==1u&&stateA[target].age<stateA[target].lifetime){return;}let parentA=stateA[record.parent];let parentB=stateB[record.parent];let parentC=stateC[record.parent];
-  let random=hash11(f32(record.parent*31u+record.childOrdinal*17u+record.eventIndex));let randomB=hash11(f32(record.parent*47u+record.childOrdinal*23u+record.eventIndex));let angle=random*parametersB.w;let lifetime=parametersB.x*mix(max(0.05,1.0-parametersD.x),1.0+parametersD.x,randomB);let basePower=select(max(24.0,length(parentB.velocity)),parametersC.w,parametersC.w>0.0);let power=basePower*parametersB.z*mix(max(0.0,1.0-parametersD.y),1.0+parametersD.y,random);
+  let random=hash11(f32(record.parent*31u+record.childOrdinal*17u+record.eventIndex));let randomB=hash11(f32(record.parent*47u+record.childOrdinal*23u+record.eventIndex));let parentSpeed=length(parentB.velocity);let parentAngle=select(0.0,atan2(parentB.velocity.y,parentB.velocity.x),parentSpeed>0.0001);let angle=parentAngle+(random-0.5)*parametersB.w;let lifetime=parametersB.x*mix(max(0.05,1.0-parametersD.x),1.0+parametersD.x,randomB);let basePower=select(max(24.0,parentSpeed),parametersC.w,parametersC.w>0.0);let impact=smoothstep(0.0,max(1.0,parametersC.z),parentSpeed);let power=basePower*parametersB.z*(1.0+impact*parametersD.z)*mix(max(0.0,1.0-parametersD.y),1.0+parametersD.y,random);
   stateA[target]=ParticleA(parentA.position,0.0,lifetime);stateB[target]=ParticleB(parentB.velocity*parametersB.y+vec2<f32>(cos(angle),sin(angle))*power,0.0,0.0);stateC[target]=ParticleC(f32(child),parentC.generation+1.0,parentC.colorSeed+random,0.0);
 }`;
 }

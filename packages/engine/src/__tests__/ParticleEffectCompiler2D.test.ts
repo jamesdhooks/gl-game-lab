@@ -136,6 +136,10 @@ describe('ParticleEffectCompiler2D', () => {
     expect(once.webgl2.event?.source).toContain('(int(c.w+.5)&1)!=0))c.w=float(int(c.w+.5)|2)');
     expect(once.webgpu.event?.source).toContain('(flags & 2u) == 0u');
     expect(once.webgpu.event?.source).toContain('flags = flags | 2u;');
+    expect(once.webgl2.eventClaimVertex?.source).toContain('eventA.y*(1.0+impact*eventC.y)');
+    expect(once.webgl2.event?.source).toContain('parentAngle+(random-.5)*spread');
+    expect(once.webgl2.event?.source).toContain('(1.0+impact*impactPowerScale)');
+    expect(once.webgpu.eventResolve?.source).toContain('parentAngle+(random-0.5)*parametersB.w');
 
     const repeating = compileParticleProgram2D(compileParticleEffect2D({
       ...base,
