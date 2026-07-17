@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { EngineParticleEffects2D, FallbackParticleEffectRuntimeBackend2D, adaptParticleEffectDefinition2D, compileParticleEffect2D, compileParticleProgram2D, type GpuRenderTarget2D, type ParticleEffectBackendDiagnostics2D, type ParticleEffectBackendResource2D, type ParticleEffectDefinition2D, type ParticleEffectRuntimeBackend2D, type ParticleColliderSet2D, type ParticleDomain2D, type ParticleEmitterSourceOverride2D, type ParticleForceFieldSet2D, type ParticlePalette2D, type ParticleRenderParameters2D, type ParticleRuntimeEmission2D, type ParticleRenderTier2D, type ParticleViewport2D } from "../index.js";
+import { EngineParticleEffects2D, FallbackParticleEffectRuntimeBackend2D, adaptParticleEffectDefinition2D, compileParticleEffect2D, compileParticleProgram2D, type GpuRenderTarget2D, type ParticleEffectBackendDiagnostics2D, type ParticleEffectBackendResource2D, type ParticleEffectDefinition2D, type ParticleEffectRuntimeBackend2D, type ParticleColliderSet2D, type ParticleDomain2D, type ParticleEmitterSourceOverride2D, type ParticleEventParameters2D, type ParticleForceFieldSet2D, type ParticlePalette2D, type ParticleRenderParameters2D, type ParticleRuntimeEmission2D, type ParticleRenderTier2D, type ParticleViewport2D } from "../index.js";
 
 class TestResource implements ParticleEffectBackendResource2D {
   emissions: ParticleRuntimeEmission2D[] = [];
@@ -15,6 +15,7 @@ class TestResource implements ParticleEffectBackendResource2D {
   viewport?: ParticleViewport2D;
   renderParameters?: ParticleRenderParameters2D;
   emitterSources = new Map<number, ParticleEmitterSourceOverride2D>();
+  eventParameters = new Map<string, ParticleEventParameters2D>();
   disposed = false;
   emit(emission: ParticleRuntimeEmission2D): void {
     this.emissions.push({ ...emission });
@@ -36,6 +37,9 @@ class TestResource implements ParticleEffectBackendResource2D {
   }
   setEmitterSource(index: number, source: ParticleEmitterSourceOverride2D): void {
     this.emitterSources.set(index, source);
+  }
+  setEventParameters(archetypeIndex: number, eventIndex: number, parameters: ParticleEventParameters2D): void {
+    this.eventParameters.set(`${archetypeIndex}:${eventIndex}`, parameters);
   }
   setViewport(viewport: ParticleViewport2D): void {
     this.viewport = viewport;
@@ -231,16 +235,38 @@ describe("EngineParticleEffects2D", () => {
     expect(() => instance.setEmitterSource("missing", { radius: 2 })).toThrow("Unknown particle emitter");
     const handle = instance.emitter("spark");
     expect(handle).toBe(instance.emitter("spark"));
-    handle.writer().position(12, 18).count(3).power(7).submit();
+    handle.writer().position(12, 18).count(3).power(7).lifetime(2.5).submit();
     expect(backend.resources[0]!.emissions.at(-1)).toMatchObject({
       count: 3,
       positionX: 12,
       positionY: 18,
       power: 7,
+      lifetime: 2.5,
     });
+    expect(() => handle.writer().lifetime(0).submit()).toThrow("positive and finite");
     expect(instance.state().status).toBe("running");
-    runtime.update(1.1);
+    runtime.update(2.6);
     expect(instance.state().status).toBe("complete");
+  });
+
+  it("validates and forwards dynamic event parameters", () => {
+    const backend = new TestBackend();
+    const runtime = new EngineParticleEffects2D(backend);
+    const base = adaptParticleEffectDefinition2D(definition);
+    const graph = {
+      ...base,
+      archetypes: base.archetypes.map((archetype) => ({
+        ...archetype,
+        events: [{ trigger: "death" as const, childArchetypeId: "spark", probability: 1, count: 2, maxGeneration: 1 }],
+      })),
+    };
+    runtime.register(compileParticleProgram2D(compileParticleEffect2D(graph)));
+    const instance = runtime.createInstance("runtime-test");
+    instance.setEventParameters("spark", 0, { probability: 0.5, count: 7, delay: 0.2, powerScale: 0.8 });
+    expect(backend.resources[0]!.eventParameters.get("0:0")).toEqual({ probability: 0.5, count: 7, delay: 0.2, powerScale: 0.8 });
+    expect(() => instance.setEventParameters("spark", 0, { probability: 2 })).toThrow("between zero and one");
+    expect(() => instance.setEventParameters("missing", 0, {})).toThrow("Unknown particle event");
+    runtime.dispose();
   });
 
   it("hot replaces compatible programs and rejects use after disposal", () => {

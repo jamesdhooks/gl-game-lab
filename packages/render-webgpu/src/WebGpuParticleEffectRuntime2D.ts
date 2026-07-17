@@ -345,7 +345,7 @@ class WebGpuParticleEffectResource2D implements ParticleEffectBackendResource2D 
     this.commandData[offset + 8] = emission.direction;
     this.commandData[offset + 9] = emission.spread || archetype.spawn.spread;
     this.commandData[offset + 10] = emission.power;
-    this.commandData[offset + 11] = archetype.lifecycle.lifetime;
+    this.commandData[offset + 11] = emission.lifetime ?? archetype.lifecycle.lifetime;
     this.commandData[offset + 12] = emission.seed;
     this.commandData[offset + 13] = 0;
     this.commandData[offset + 14] = archetype.lifecycle.lifetimeVariability ?? 0;

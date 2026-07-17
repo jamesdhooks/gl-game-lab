@@ -31,6 +31,7 @@ export interface ParticleEmissionOverride2D {
   readonly power?: number;
   readonly seed?: number;
   readonly inheritedVelocity?: readonly [number, number];
+  readonly lifetime?: number;
 }
 
 export interface ParticleEmitterSourceOverride2D {
@@ -50,6 +51,7 @@ export interface ParticleEmissionWriter2D {
   power(value: number): ParticleEmissionWriter2D;
   seed(value: number): ParticleEmissionWriter2D;
   inheritedVelocity(x: number, y: number): ParticleEmissionWriter2D;
+  lifetime(value: number): ParticleEmissionWriter2D;
   submit(): void;
   reset(): ParticleEmissionWriter2D;
 }
@@ -143,6 +145,18 @@ export interface ParticleRenderParameters2D {
   readonly trailBloom?: number;
   readonly trailBackground?: readonly [number, number, number];
   readonly directComposite?: boolean;
+  readonly paletteTransition?: number;
+  readonly colorMode?: "seeded" | "over-life" | "generation" | "velocity";
+}
+export interface ParticleEventParameters2D {
+  readonly probability?: number;
+  readonly count?: number;
+  readonly maxGeneration?: number;
+  readonly delay?: number;
+  readonly lifetime?: number;
+  readonly velocityInheritance?: number;
+  readonly powerScale?: number;
+  readonly spread?: number;
 }
 
 export interface ParticleRuntimeEmission2D {
@@ -158,6 +172,7 @@ export interface ParticleRuntimeEmission2D {
   readonly importance: number;
   readonly inheritedVelocityX?: number;
   readonly inheritedVelocityY?: number;
+  readonly lifetime?: number | undefined;
 }
 
 export interface ParticleEffectBackendDiagnostics2D extends ParticleEffectDiagnostics2D {
@@ -178,6 +193,7 @@ export interface ParticleEffectBackendResource2D {
   setForceFields?(fields: ParticleForceFieldSet2D): void;
   setDomain?(domain: ParticleDomain2D): void;
   setEmitterSource?(emitterIndex: number, source: ParticleEmitterSourceOverride2D): void;
+  setEventParameters?(archetypeIndex: number, eventIndex: number, parameters: ParticleEventParameters2D): void;
   setViewport?(viewport: ParticleViewport2D): void;
   setRenderParameters?(parameters: ParticleRenderParameters2D): void;
   setRenderScale?(scale: number): void;
@@ -260,6 +276,11 @@ class RecoveringParticleEffectBackendResource2D implements ParticleEffectBackend
   setEmitterSource(emitterIndex: number, value: ParticleEmitterSourceOverride2D): void {
     this.invoke((resource) => {
       resource.setEmitterSource?.(emitterIndex, value);
+    });
+  }
+  setEventParameters(archetypeIndex: number, eventIndex: number, value: ParticleEventParameters2D): void {
+    this.invoke((resource) => {
+      resource.setEventParameters?.(archetypeIndex, eventIndex, value);
     });
   }
   setViewport(value: ParticleViewport2D): void {
@@ -351,6 +372,7 @@ export interface ParticleEffectInstance2D {
   setForceFields(fields: ParticleForceFieldSet2D): void;
   setDomain(domain: ParticleDomain2D): void;
   setEmitterSource(emitterId: string, source: ParticleEmitterSourceOverride2D): void;
+  setEventParameters(archetypeId: string, eventIndex: number, parameters: ParticleEventParameters2D): void;
   setViewport(viewport: ParticleViewport2D): void;
   setRenderParameters(parameters: ParticleRenderParameters2D): void;
   setTimescale(value: number): void;
@@ -653,6 +675,7 @@ class MutableEmission implements ParticleRuntimeEmission2D {
   importance = 0;
   inheritedVelocityX = 0;
   inheritedVelocityY = 0;
+  lifetime: number | undefined = undefined;
 }
 
 class EmitterRuntime {
@@ -688,6 +711,7 @@ class MutableEmissionOverride implements ParticleEmissionOverride2D {
   power?: number;
   seed?: number;
   inheritedVelocity?: readonly [number, number];
+  lifetime?: number;
   readonly point: [number, number] = [0, 0];
   readonly velocity: [number, number] = [0, 0];
   clear(): void {
@@ -698,6 +722,7 @@ class MutableEmissionOverride implements ParticleEmissionOverride2D {
     delete this.power;
     delete this.seed;
     delete this.inheritedVelocity;
+    delete this.lifetime;
   }
 }
 
@@ -755,6 +780,10 @@ class RuntimeParticleEmitterHandle2D implements ParticleEmitterHandle2D, Particl
     this.override.inheritedVelocity = this.override.velocity;
     return this;
   }
+  lifetime(value: number): ParticleEmissionWriter2D {
+    this.override.lifetime = value;
+    return this;
+  }
   submit(): void {
     this.owner.emit(this.id, this.override);
     this.override.clear();
@@ -796,6 +825,7 @@ class RuntimeParticleEffectInstance2D implements ParticleEffectInstance2D {
   private viewport?: ParticleViewport2D;
   private renderParameters: ParticleRenderParameters2D = {};
   private readonly emitterSources = new Map<number, ParticleEmitterSourceOverride2D>();
+  private readonly eventParameters = new Map<string, ParticleEventParameters2D>();
   private drainRemaining = 0;
   private readonly emitters: EmitterRuntime[];
   private readonly emitterHandles: Map<string, RuntimeParticleEmitterHandle2D>;
@@ -982,6 +1012,23 @@ class RuntimeParticleEffectInstance2D implements ParticleEffectInstance2D {
     this.emitterSources.set(index, source);
     this.backend.setEmitterSource?.(index, source);
   }
+  setEventParameters(archetypeId: string, eventIndex: number, parameters: ParticleEventParameters2D): void {
+    this.assertUsable();
+    const archetypeIndex = this.program.effect.archetypeIds[archetypeId];
+    const event = archetypeIndex === undefined ? undefined : this.program.effect.source.archetypes[archetypeIndex]?.events?.[eventIndex];
+    if (!event || archetypeIndex === undefined) throw new Error(`Unknown particle event: ${archetypeId}[${eventIndex}]`);
+    const values = [parameters.probability, parameters.count, parameters.maxGeneration, parameters.delay, parameters.lifetime, parameters.velocityInheritance, parameters.powerScale, parameters.spread].filter(
+      (value): value is number => value !== undefined,
+    );
+    if (values.some((value) => !Number.isFinite(value) || value < 0)) throw new Error("Particle event parameters must be finite and non-negative");
+    if (parameters.probability !== undefined && parameters.probability > 1) throw new Error("Particle event probability must be between zero and one");
+    if (parameters.count !== undefined && !Number.isSafeInteger(parameters.count)) throw new Error("Particle event count must be an integer");
+    if (parameters.maxGeneration !== undefined && !Number.isSafeInteger(parameters.maxGeneration)) throw new Error("Particle event generation depth must be an integer");
+    const key = `${archetypeIndex}:${eventIndex}`;
+    const merged = { ...this.eventParameters.get(key), ...parameters };
+    this.eventParameters.set(key, merged);
+    this.backend.setEventParameters?.(archetypeIndex, eventIndex, merged);
+  }
   setViewport(viewport: ParticleViewport2D): void {
     this.assertUsable();
     if (![viewport.width, viewport.height, viewport.dpr].every(Number.isFinite) || viewport.width <= 0 || viewport.height <= 0 || viewport.dpr <= 0) throw new Error("Particle viewport dimensions and DPR must be positive and finite");
@@ -990,7 +1037,7 @@ class RuntimeParticleEffectInstance2D implements ParticleEffectInstance2D {
   }
   setRenderParameters(parameters: ParticleRenderParameters2D): void {
     this.assertUsable();
-    const numeric = [parameters.pointScale, parameters.intensity, parameters.trailFade, parameters.trailBloom, ...(parameters.trailBackground ?? [])].filter((value): value is number => value !== undefined);
+    const numeric = [parameters.pointScale, parameters.intensity, parameters.trailFade, parameters.trailBloom, parameters.paletteTransition, ...(parameters.trailBackground ?? [])].filter((value): value is number => value !== undefined);
     if (numeric.some((value) => !Number.isFinite(value) || value < 0)) throw new Error("Particle render parameters must be finite and non-negative");
     if (parameters.trailFade !== undefined && parameters.trailFade > 1) throw new Error("Particle trail fade must be between zero and one");
     this.renderParameters = { ...this.renderParameters, ...parameters };
@@ -1079,6 +1126,10 @@ class RuntimeParticleEffectInstance2D implements ParticleEffectInstance2D {
     backend.setForceFields?.(this.forceFields);
     backend.setDomain?.(this.domain);
     for (const [emitterIndex, source] of this.emitterSources) backend.setEmitterSource?.(emitterIndex, source);
+    for (const [key, parameters] of this.eventParameters) {
+      const [archetypeIndex, eventIndex] = key.split(":").map(Number);
+      backend.setEventParameters?.(archetypeIndex!, eventIndex!, parameters);
+    }
     if (this.viewport) backend.setViewport?.(this.viewport);
     backend.setRenderParameters?.(this.renderParameters);
     backend.setRenderScale?.(this.renderScale);
@@ -1124,6 +1175,7 @@ class RuntimeParticleEffectInstance2D implements ParticleEffectInstance2D {
   }
 
   private submit(emitter: EmitterRuntime, requestedCount: number, override: ParticleEmissionOverride2D = {}): void {
+    if (override.lifetime !== undefined && (!Number.isFinite(override.lifetime) || override.lifetime <= 0)) throw new Error("Particle emission lifetime must be positive and finite");
     const qualityScale = emitter.definition.limits.qualityScale?.[this.tier] ?? 1;
     const count = Math.max(0, Math.min(Math.round(requestedCount * qualityScale), emitter.definition.limits.maxPerFrame ?? Number.MAX_SAFE_INTEGER));
     if (count === 0) return;
@@ -1140,9 +1192,10 @@ class RuntimeParticleEffectInstance2D implements ParticleEffectInstance2D {
     emission.importance = importanceCode(emitter.definition.limits.importance);
     emission.inheritedVelocityX = override.inheritedVelocity?.[0] ?? 0;
     emission.inheritedVelocityY = override.inheritedVelocity?.[1] ?? 0;
+    emission.lifetime = override.lifetime;
     this.backend.emit(emission);
     const archetype = this.program.effect.source.archetypes[this.program.effect.archetypeIds[emitter.definition.archetypeId] ?? -1];
-    if (archetype) this.drainRemaining = Math.max(this.drainRemaining, archetype.lifecycle.lifetime * (1 + (archetype.lifecycle.lifetimeVariability ?? 0)));
+    if (archetype) this.drainRemaining = Math.max(this.drainRemaining, particleDrainDuration(this.program, emitter.definition.archetypeId, override.lifetime));
   }
 
   private activateGraphEmitter(emitterId: string): void {
@@ -1169,6 +1222,21 @@ function firstBurstCount(emitter: ParticleEmitterDefinition2D): number {
 }
 function importanceCode(importance: ParticleEmitterDefinition2D["limits"]["importance"]): number {
   return ["cosmetic", "secondary", "primary", "critical"].indexOf(importance);
+}
+
+function particleDrainDuration(program: CompiledParticleProgram2D, archetypeId: string, lifetimeOverride?: number, generation = 0): number {
+  const archetypeIndex = program.effect.archetypeIds[archetypeId];
+  const archetype = archetypeIndex === undefined ? undefined : program.effect.source.archetypes[archetypeIndex];
+  if (!archetype) return 0;
+  const lifetime = (lifetimeOverride ?? archetype.lifecycle.lifetime) * (1 + (archetype.lifecycle.lifetimeVariability ?? 0));
+  if (generation >= 8) return lifetime;
+  let descendants = 0;
+  for (const event of archetype.events ?? []) {
+    if (generation > event.maxGeneration) continue;
+    const triggerTime = event.trigger === "birth" ? 0 : event.trigger === "age" ? (event.delay ?? 0) : lifetime;
+    descendants = Math.max(descendants, triggerTime + particleDrainDuration(program, event.childArchetypeId, undefined, generation + 1));
+  }
+  return Math.max(lifetime, descendants);
 }
 function validateTimescale(value: number): number {
   if (!Number.isFinite(value) || value < 0 || value > 16) throw new Error("Particle effect timescale must be between 0 and 16");

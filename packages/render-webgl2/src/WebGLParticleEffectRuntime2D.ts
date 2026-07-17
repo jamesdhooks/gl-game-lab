@@ -1,4 +1,4 @@
-import type { CompiledParticleProgram2D, Gpu2DService, GpuParticleCommandBatch2D, GpuParticleSystem2D, GpuRenderTarget2D, GpuUniformEncoder2D, GpuUniformLookup2D, ParticleEffectBackendDiagnostics2D, ParticleEffectBackendResource2D, ParticleEffectRuntimeBackend2D, ParticleColliderSet2D, ParticleForceFieldSet2D, ParticleDomain2D, ParticleEmitterSourceOverride2D, ParticleViewport2D, ParticleRenderParameters2D, ParticlePalette2D, ParticleOverflowPolicy2D, ParticleRenderTier2D, ParticleRuntimeEmission2D, ParticleParameterValue2D } from "@hooksjam/gl-game-lab-engine";
+import type { CompiledParticleProgram2D, Gpu2DService, GpuParticleCommandBatch2D, GpuParticleSystem2D, GpuRenderTarget2D, GpuUniformEncoder2D, GpuUniformLookup2D, ParticleEffectBackendDiagnostics2D, ParticleEffectBackendResource2D, ParticleEffectRuntimeBackend2D, ParticleColliderSet2D, ParticleForceFieldSet2D, ParticleDomain2D, ParticleEmitterSourceOverride2D, ParticleEventParameters2D, ParticleViewport2D, ParticleRenderParameters2D, ParticlePalette2D, ParticleOverflowPolicy2D, ParticleRenderTier2D, ParticleRuntimeEmission2D, ParticleParameterValue2D } from "@hooksjam/gl-game-lab-engine";
 import { ParticleEventWindowScheduler2D, planParticleSpawnCommands2D, resolveParticleArchetypePartitions2D } from "@hooksjam/gl-game-lab-engine";
 
 const COMMAND_CAPACITY = 64;
@@ -40,6 +40,9 @@ class WebGLParticleEffectResource2D implements ParticleEffectBackendResource2D {
   private readonly archetypeCollision: Float32Array;
   private readonly emitterSource: Float32Array;
   private readonly emitterInitialization: Float32Array;
+  private readonly eventDataA: Float32Array;
+  private readonly eventDataB: Float32Array;
+  private readonly eventLookup = new Map<string, number>();
   private readonly archetypeSize: Float32Array;
   private readonly archetypeLength: Float32Array;
   private readonly archetypeAlpha: Float32Array;
@@ -72,6 +75,8 @@ class WebGLParticleEffectResource2D implements ParticleEffectBackendResource2D {
   private trailBloom: number;
   private trailBackground: readonly [number, number, number];
   private directComposite = true;
+  private paletteTransition = 0;
+  private colorMode = 0;
   private renderStride = 1;
   private renderPhase = 0;
   private droppedCommands = 0;
@@ -149,6 +154,9 @@ class WebGLParticleEffectResource2D implements ParticleEffectBackendResource2D {
     this.archetypeCollision = new Float32Array(Math.max(1, program.effect.source.archetypes.length) * 4);
     this.emitterSource = new Float32Array(Math.max(1, program.effect.source.emitters.length) * 4);
     this.emitterInitialization = new Float32Array(Math.max(1, program.effect.source.emitters.length) * 4);
+    const eventCount = program.effect.source.archetypes.reduce((count, archetype) => count + (archetype.events?.length ?? 0), 0);
+    this.eventDataA = new Float32Array(Math.max(1, eventCount) * 4);
+    this.eventDataB = new Float32Array(Math.max(1, eventCount) * 4);
     this.archetypeSize = new Float32Array(Math.max(1, program.effect.source.archetypes.length) * 4);
     this.archetypeLength = new Float32Array(Math.max(1, program.effect.source.archetypes.length) * 4);
     this.archetypeAlpha = new Float32Array(Math.max(1, program.effect.source.archetypes.length) * 4);
@@ -181,6 +189,16 @@ class WebGLParticleEffectResource2D implements ParticleEffectBackendResource2D {
       const initialization = emitter.initialization,
         mode = initialization?.directionMode;
       this.emitterInitialization.set([mode === "radial" ? 1 : mode === "tangent-ccw" ? 2 : mode === "tangent-cw" ? 3 : 0, initialization?.radialPowerExponent ?? 0, "radius" in source ? (source.radius ?? 1) : 1, initialization?.powerVariability ?? 0.28], index * 4);
+    });
+    let globalEventIndex = 0;
+    program.effect.source.archetypes.forEach((archetype, archetypeIndex) => {
+      archetype.events?.forEach((event, eventIndex) => {
+        const childIndex = program.effect.archetypeIds[event.childArchetypeId]!, child = program.effect.source.archetypes[childIndex]!;
+        this.eventLookup.set(`${archetypeIndex}:${eventIndex}`, globalEventIndex);
+        this.eventDataA.set([event.probability, event.count, event.maxGeneration, event.delay ?? 0], globalEventIndex * 4);
+        this.eventDataB.set([child.lifecycle.lifetime, event.velocityInheritance ?? 0, event.powerScale ?? 0.35, event.spread ?? Math.PI * 2], globalEventIndex * 4);
+        globalEventIndex += 1;
+      });
     });
     this.palette.set([1, 1, 1]);
     const owner = this;
@@ -244,7 +262,7 @@ class WebGLParticleEffectResource2D implements ParticleEffectBackendResource2D {
     this.commands[offset + 8] = emission.direction;
     this.commands[offset + 9] = emission.spread || archetype.spawn.spread;
     this.commands[offset + 10] = emission.power;
-    this.commands[offset + 11] = archetype.lifecycle.lifetime;
+    this.commands[offset + 11] = emission.lifetime ?? archetype.lifecycle.lifetime;
     this.commands[offset + 12] = emission.seed;
     this.commands[offset + 13] = 0;
     this.commands[offset + 14] = archetype.lifecycle.lifetimeVariability ?? 0;
@@ -336,6 +354,20 @@ class WebGLParticleEffectResource2D implements ParticleEffectBackendResource2D {
     if (value.arc !== undefined) this.emitterSource[offset + 2] = value.arc;
     if (value.spread !== undefined) this.emitterSource[offset + 3] = value.spread;
   }
+  setEventParameters(archetypeIndex: number, eventIndex: number, value: ParticleEventParameters2D): void {
+    this.assertUsable();
+    const globalIndex = this.eventLookup.get(`${archetypeIndex}:${eventIndex}`);
+    if (globalIndex === undefined) throw new Error(`Unknown compiled particle event: ${archetypeIndex}[${eventIndex}]`);
+    const offset = globalIndex * 4;
+    if (value.probability !== undefined) this.eventDataA[offset] = value.probability;
+    if (value.count !== undefined) this.eventDataA[offset + 1] = value.count;
+    if (value.maxGeneration !== undefined) this.eventDataA[offset + 2] = value.maxGeneration;
+    if (value.delay !== undefined) this.eventDataA[offset + 3] = value.delay;
+    if (value.lifetime !== undefined) this.eventDataB[offset] = value.lifetime;
+    if (value.velocityInheritance !== undefined) this.eventDataB[offset + 1] = value.velocityInheritance;
+    if (value.powerScale !== undefined) this.eventDataB[offset + 2] = value.powerScale;
+    if (value.spread !== undefined) this.eventDataB[offset + 3] = value.spread;
+  }
   setViewport(value: ParticleViewport2D): void {
     this.assertUsable();
     this.viewportWidth = value.width;
@@ -351,6 +383,8 @@ class WebGLParticleEffectResource2D implements ParticleEffectBackendResource2D {
     if (value.trailBloom !== undefined) this.trailBloom = value.trailBloom;
     if (value.trailBackground !== undefined) this.trailBackground = value.trailBackground;
     if (value.directComposite !== undefined) this.directComposite = value.directComposite;
+    if (value.paletteTransition !== undefined) this.paletteTransition = value.paletteTransition;
+    if (value.colorMode !== undefined) this.colorMode = value.colorMode === "over-life" ? 1 : value.colorMode === "generation" ? 2 : value.colorMode === "velocity" ? 3 : 0;
   }
 
   setRenderScale(scale: number): void {
@@ -461,6 +495,8 @@ class WebGLParticleEffectResource2D implements ParticleEffectBackendResource2D {
     gl.uniform3fv(uniform("uPalette[0]"), this.palette);
     gl.uniform1i(uniform("uPaletteCount"), this.paletteCount);
     gl.uniform1f(uniform("uIntensity"), this.intensity);
+    gl.uniform1f(uniform("uPaletteTransition"), this.paletteTransition);
+    gl.uniform1i(uniform("uColorMode"), this.colorMode);
     gl.uniform4fv(uniform("uArchetypeSize[0]"), this.archetypeSize);
     gl.uniform4fv(uniform("uArchetypeLength[0]"), this.archetypeLength);
     gl.uniform4fv(uniform("uArchetypeAlpha[0]"), this.archetypeAlpha);
@@ -481,6 +517,8 @@ class WebGLParticleEffectResource2D implements ParticleEffectBackendResource2D {
     gl.uniform4fv(uniform("uParticleDomainOptions"), this.domainOptions);
     gl.uniform4fv(uniform("uArchetypeCollision[0]"), this.archetypeCollision);
     gl.uniform4fv(uniform("uArchetypePools[0]"), this.poolData);
+    gl.uniform4fv(uniform("uParticleEventA[0]"), this.eventDataA);
+    gl.uniform4fv(uniform("uParticleEventB[0]"), this.eventDataB);
     gl.uniform4fv(uniform("uEmitterSource[0]"), this.emitterSource);
     gl.uniform4fv(uniform("uEmitterInitialization[0]"), this.emitterInitialization);
     gl.uniform1i(uniform("uCircleColliderCount"), this.circleCount);

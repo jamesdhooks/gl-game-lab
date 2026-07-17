@@ -263,12 +263,17 @@ void main() {
 
 function buildGlslEvent(effect: CompiledParticleEffect2D): string {
   const events = compiledEvents(effect);
-  const eventBranches = events.map((entry) => `if (priority == ${entry.priority} && slot == ${entry.prioritySlot}) { child=${entry.child}; lifetime=${glslFloat(entry.lifetime)}; inheritance=${glslFloat(entry.inheritance)}; powerScale=${glslFloat(entry.powerScale)}; spread=${glslFloat(entry.spread)}; }`).join("\n  else ");
+  const eventBranches = events
+    .map(
+      (entry) =>
+        `if (priority == ${entry.priority} && slot == ${entry.prioritySlot}) { child=${entry.child}; vec4 eventB=uParticleEventB[${entry.global}]; lifetime=eventB.x; inheritance=eventB.y; powerScale=eventB.z; spread=eventB.w; }`,
+    )
+    .join("\n  else ");
   const markBranches = events
     .filter((entry) => entry.trigger !== "collision")
     .map((entry) => {
-      const trigger = eventTriggerGlsl(entry, "a", "c");
-      return `if(int(c.x+.5)==${entry.parent} && c.y<=${glslFloat(entry.maxGeneration)} && (${trigger}))c.w=float(int(c.w+.5)|${eventFlag(entry.parentSlot)});`;
+      const trigger = eventTriggerGlsl(entry, "a", "c", `uParticleEventA[${entry.global}].w`);
+      return `if(int(c.x+.5)==${entry.parent} && c.y<=uParticleEventA[${entry.global}].z && (${trigger}))c.w=float(int(c.w+.5)|${eventFlag(entry.parentSlot)});`;
     })
     .join("\n  ");
   return `#version 300 es
@@ -282,6 +287,8 @@ uniform float uDt;
 uniform ivec2 uStateSize;
 uniform int uCapacity;
 uniform vec4 uArchetypePools[${Math.max(1, effect.source.archetypes.length)}];
+uniform vec4 uParticleEventA[${Math.max(1, events.length)}];
+uniform vec4 uParticleEventB[${Math.max(1, events.length)}];
 layout(location=0) out vec4 outPosition;
 layout(location=1) out vec4 outVelocity;
 layout(location=2) out vec4 outMetadata;
@@ -315,14 +322,14 @@ function buildGlslEventClaimVertex(effect: CompiledParticleEffect2D): string {
   const branches: string[] = [];
   for (let archetypeIndex = 0; archetypeIndex < effect.source.archetypes.length; archetypeIndex += 1) {
     for (const entry of events.filter((event) => event.parent === archetypeIndex)) {
-      const trigger = eventTriggerGlsl(entry, "a", "c");
+      const trigger = eventTriggerGlsl(entry, "a", "c", `eventA.w`);
       const notFired = entry.trigger === "collision" ? "true" : `(int(c.w+.5)&${eventFlag(entry.parentSlot)})==0`;
-      branches.push(`if(archetype==${archetypeIndex} && lane==${entry.parentSlot} && c.y<=${glslFloat(entry.maxGeneration)} && (${notFired}) && (${trigger}) && hash11(float(parent*31+lane*17+${entry.global}))<=${glslFloat(entry.probability)}){priority=${entry.priority};slot=${entry.prioritySlot};child=${entry.child};childCount=${entry.count};valid=true;}`);
+      branches.push(`if(archetype==${archetypeIndex} && lane==${entry.parentSlot}){vec4 eventA=uParticleEventA[${entry.global}];if(c.y<=eventA.z && (${notFired}) && (${trigger}) && hash11(float(parent*31+lane*17+${entry.global}))<=eventA.x){priority=${entry.priority};slot=${entry.prioritySlot};child=${entry.child};childCount=int(eventA.y+.5);valid=true;}}`);
     }
   }
   return `#version 300 es
 precision highp float;precision highp int;precision highp sampler2D;
-uniform sampler2D uPositionState;uniform sampler2D uMetadataState;uniform ivec2 uStateSize;uniform int uCapacity;uniform float uDt;uniform vec4 uArchetypePools[${Math.max(1, effect.source.archetypes.length)}];
+uniform sampler2D uPositionState;uniform sampler2D uMetadataState;uniform ivec2 uStateSize;uniform int uCapacity;uniform float uDt;uniform vec4 uArchetypePools[${Math.max(1, effect.source.archetypes.length)}];uniform vec4 uParticleEventA[${Math.max(1, events.length)}];
 flat out float vClaim;flat out float vChildCount;flat out float vPoolStart;flat out float vPoolEnd;flat out float vFallback;
 float hash11(float value){return fract(sin(value*91.3458+17.123)*47453.5453);}
 void main(){int parent=gl_VertexID/${candidateLanes},lane=gl_VertexID-parent*${candidateLanes};vClaim=12582912.0;vChildCount=0.0;vPoolStart=0.0;vPoolEnd=0.0;vFallback=0.0;gl_PointSize=1.0;
@@ -388,11 +395,11 @@ function compiledEvents(effect: CompiledParticleEffect2D): CompiledEventEntry[] 
   return result;
 }
 
-function eventTriggerGlsl(entry: CompiledEventEntry, position: string, metadata: string): string {
+function eventTriggerGlsl(entry: CompiledEventEntry, position: string, metadata: string, delay = glslFloat(entry.delay)): string {
   if (entry.trigger === "death") return `${position}.z>=${position}.w && ${position}.z-uDt<${position}.w`;
   if (entry.trigger === "birth") return `${position}.z<=uDt`;
   if (entry.trigger === "collision") return `(int(${metadata}.w+.5)&1)!=0`;
-  return `${position}.z>=${glslFloat(entry.delay)} && ${position}.z-uDt<${glslFloat(entry.delay)}`;
+  return `${position}.z>=${delay} && ${position}.z-uDt<${delay}`;
 }
 
 function eventFlag(parentSlot: number): number {
@@ -426,6 +433,8 @@ out float vAge;
 out float vSeed;
 out float vAlpha;
 out float vIntensity;
+out float vGeneration;
+out float vSpeed;
 flat out int vStreak;
 void main() {
   vStreak=${streak ? "1" : "0"};
@@ -433,10 +442,13 @@ void main() {
   int index = drawIndex * max(1, uRenderStride) + uRenderPhase;
   ivec2 uv = ivec2(index % int(uStateSize.x), index / int(uStateSize.x));
   vec4 a = texelFetch(uPositionState, uv, 0);
+  vec4 b = texelFetch(uVelocityState, uv, 0);
   ${targets === 3 ? "vec4 c = texelFetch(uMetadataState, uv, 0);" : "vec4 c = vec4(0.0);"}
-  if (index >= uParticleCapacity || a.w <= 0.0) { gl_Position=vec4(2.0); gl_PointSize=0.0; vAge=1.0; vSeed=0.0; vAlpha=0.0; vIntensity=0.0; return; }
+  if (index >= uParticleCapacity || a.w <= 0.0) { gl_Position=vec4(2.0); gl_PointSize=0.0; vAge=1.0; vSeed=0.0; vAlpha=0.0; vIntensity=0.0; vGeneration=0.0; vSpeed=0.0; return; }
   vAge = clamp(a.z / max(a.w, 0.0001), 0.0, 1.0);
   vSeed = c.z;
+  vGeneration = c.y;
+  vSpeed = length(b.xy);
   int archetype=clamp(int(c.x+.5),0,${Math.max(0, effect.source.archetypes.length - 1)});
   vec4 sizeCurve=uArchetypeSize[archetype], lengthCurve=uArchetypeLength[archetype];
   float curveAge=pow(vAge,max(.01,sizeCurve.z));
@@ -447,7 +459,7 @@ void main() {
   vec2 clip = vec2(a.x / uCanvasSize.x * 2.0 - 1.0, 1.0 - a.y / uCanvasSize.y * 2.0);
   ${
     streak
-      ? `vec4 b=texelFetch(uVelocityState,uv,0); int corner=gl_VertexID%6;
+      ? `int corner=gl_VertexID%6;
   vec2 corners[6]=vec2[6](vec2(0,-1),vec2(1,-1),vec2(0,1),vec2(0,1),vec2(1,-1),vec2(1,1));
   vec2 axis=length(b.xy)>0.001?normalize(b.xy):vec2(1,0), normal=vec2(-axis.y,axis.x);
   float streakLength=max(size,mix(lengthCurve.x,lengthCurve.y,pow(vAge,max(.01,lengthCurve.z)))*length(b.xy)*.016);
@@ -472,16 +484,24 @@ precision highp int;
 uniform vec3 uPalette[8];
 uniform int uPaletteCount;
 uniform float uIntensity;
+uniform float uPaletteTransition;
+uniform int uColorMode;
 in float vAge;
 in float vSeed;
 in float vAlpha;
 in float vIntensity;
+in float vGeneration;
+in float vSpeed;
 flat in int vStreak;
 out vec4 outColor;
 void main() {
   vec2 p = gl_PointCoord * 2.0 - 1.0;
   float coverage = vStreak == 1 ? 1.0 : 1.0 - smoothstep(0.72, 1.0, length(p));
-  int paletteIndex = int(floor(vSeed * float(max(1, uPaletteCount)))) % max(1, uPaletteCount);
+  float paletteCoordinate=vSeed;
+  if(uColorMode==1)paletteCoordinate=fract(vSeed+vAge*uPaletteTransition);
+  else if(uColorMode==2)paletteCoordinate=fract(vSeed+vGeneration*.1618034*uPaletteTransition);
+  else if(uColorMode==3)paletteCoordinate=fract(vSeed+clamp(vSpeed*.0025,0.0,1.0)*uPaletteTransition);
+  int paletteIndex = int(floor(paletteCoordinate * float(max(1, uPaletteCount)))) % max(1, uPaletteCount);
   vec3 color = uPalette[paletteIndex];
   outColor = vec4(color * uIntensity * vIntensity, coverage * vAlpha);
   ${extensions
