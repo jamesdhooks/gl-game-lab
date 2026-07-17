@@ -265,6 +265,7 @@ export {
   type ParticleCompiledShader2D,
   type ParticleModuleCompilerExtension2D,
   type ParticleModuleReferenceValue2D,
+  type ParticleExtensionBindingStage2D,
   type ParticleShaderBackend2D,
   type ParticleShaderBinding2D,
   type ParticleShaderReflection2D,

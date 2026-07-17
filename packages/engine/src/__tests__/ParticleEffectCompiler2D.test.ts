@@ -190,4 +190,24 @@ describe('ParticleEffectCompiler2D', () => {
     expect(state[0]).toBe(9);
     expect(() => evaluateParticleModuleExtensionsReference2D(effect, [first, second], state, { amount: 2, enabled: true, axis: [3, 0, 1, 1] }, 1 / 60)).toThrow('axis must be vector2');
   });
+
+  it('generates deterministic backend declarations for typed extension resources', () => {
+    const base = adaptParticleEffectDefinition2D(definition);
+    const extension = {
+      id: 'resource-module', supports: ['webgl2', 'webgpu'] as const, cpuReference: () => undefined,
+      glslSimulation: 'stateA.x += uBias;', glslFragment: 'outColor.rgb *= texture(uRamp, vec2(vAge, .5)).rgb;',
+      wgslSimulation: 'stateA[i].position.x += uBias;', wgslFragment: 'color = vec4<f32>(color.rgb * textureLoad(uRamp, vec2<i32>(0, 0), 0).rgb, color.a);',
+      bindings: [
+        { name: 'uBias', kind: 'uniform' as const, dataType: 'f32', required: true, stages: ['simulation'] as const },
+        { name: 'uRamp', kind: 'texture' as const, dataType: 'rgba8unorm', required: true, stages: ['render'] as const },
+      ],
+    };
+    const program = compileParticleProgram2D(compileParticleEffect2D({ ...base, customModules: [extension.id] }), [extension]);
+    expect(program.webgl2.simulation.source).toContain('uniform float uBias;');
+    expect(program.webgl2.vertex.source).toContain('uniform sampler2D uRamp;');
+    expect(program.webgpu.simulation.source).toContain('@group(1) @binding(0) var<uniform> uBias: f32;');
+    expect(program.webgpu.render.source).toContain('@group(1) @binding(0) var uRamp: texture_2d<f32>;');
+    const invalid = { ...extension, bindings: [{ name: 'particles', kind: 'storage' as const, dataType: 'vec4', required: true, stages: ['simulation'] as const }] };
+    expect(() => compileParticleProgram2D(compileParticleEffect2D({ ...base, customModules: [invalid.id] }), [invalid])).toThrow('not WebGL2-compatible');
+  });
 });

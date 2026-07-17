@@ -8,12 +8,15 @@ import type { ParticleRenderTier2D } from "./ParticleEffects2D.js";
 
 export type ParticleShaderBackend2D = "webgl2" | "webgpu";
 export type ParticleShaderStage2D = "simulation" | "event" | "vertex" | "fragment";
+export type ParticleExtensionBindingStage2D = "simulation" | "render";
 
 export interface ParticleShaderBinding2D {
   readonly name: string;
   readonly kind: "uniform" | "texture" | "sampler" | "storage" | "render-target";
   readonly dataType: string;
   readonly required: boolean;
+  /** Custom-extension visibility. Built-in reflected bindings omit this. */
+  readonly stages?: readonly ParticleExtensionBindingStage2D[];
 }
 
 export interface ParticleShaderReflection2D {
@@ -46,9 +49,15 @@ export interface ParticleModuleCompilerExtension2D {
   readonly parameters?: Readonly<Record<string, "number" | "boolean" | "vector2" | "color">>;
   readonly cpuReference: (state: Float32Array, parameters: Readonly<Record<string, ParticleModuleReferenceValue2D>>, deltaSeconds: number) => void;
   readonly glslSimulation?: string;
+  /** @deprecated Use glslVertex. Retained as the vertex-stage alias. */
   readonly glslRender?: string;
+  readonly glslVertex?: string;
+  readonly glslFragment?: string;
   readonly wgslSimulation?: string;
+  /** @deprecated Use wgslVertex. Retained as the vertex-stage alias. */
   readonly wgslRender?: string;
+  readonly wgslVertex?: string;
+  readonly wgslFragment?: string;
   readonly bindings?: readonly ParticleShaderBinding2D[];
   /** Required extension ids that must appear earlier in the graph's customModules list. */
   readonly runsAfter?: readonly string[];
@@ -229,7 +238,7 @@ function buildGlslSimulation(effect: CompiledParticleEffect2D, extensions: reado
   return `#version 300 es
 precision highp float;
 precision highp int;
-precision highp sampler2D;
+${customGlslBindingDeclarations(extensions, "simulation")}precision highp sampler2D;
 in vec2 vUv;
 uniform sampler2D uPositionState;
 uniform sampler2D uVelocityState;
@@ -593,7 +602,7 @@ function buildGlslVertex(effect: CompiledParticleEffect2D, extensions: readonly 
   return `#version 300 es
 precision highp float;
 precision highp int;
-uniform sampler2D uPositionState;
+${customGlslBindingDeclarations(extensions, "render")}uniform sampler2D uPositionState;
 uniform sampler2D uVelocityState;
 ${targets === 3 ? "uniform sampler2D uMetadataState;" : ""}
 uniform ivec2 uStateSize;
@@ -653,7 +662,7 @@ void main() {
   gl_PointSize = max(0.0, mix(uPointScale, 0.0, vAge));
   ${streak ? "gl_PointSize=1.0;" : "gl_PointSize=size;"}
   ${extensions
-    .map((entry) => entry.glslRender ?? "")
+    .map((entry) => entry.glslVertex ?? entry.glslRender ?? "")
     .filter(Boolean)
     .join("\n  ")}
 }`;
@@ -663,7 +672,7 @@ function buildGlslFragment(extensions: readonly ParticleModuleCompilerExtension2
   return `#version 300 es
 precision highp float;
 precision highp int;
-uniform vec3 uPalette[8];
+${customGlslBindingDeclarations(extensions, "render")}uniform vec3 uPalette[8];
 uniform int uPaletteCount;
 uniform float uIntensity;
 uniform float uPaletteTransition;
@@ -687,7 +696,7 @@ void main() {
   vec3 color = uPalette[paletteIndex];
   outColor = vec4(color * uIntensity * vIntensity, coverage * vAlpha);
   ${extensions
-    .map((entry) => entry.glslRender ?? "")
+    .map((entry) => entry.glslFragment ?? "")
     .filter(Boolean)
     .join("\n  ")}
 }`;
@@ -698,7 +707,7 @@ function buildWgslSimulation(effect: CompiledParticleEffect2D, extensions: reado
 struct ParticleB { velocity: vec2<f32>, rotation: f32, angularVelocity: f32 }
 struct ParticleC { archetype: f32, generation: f32, colorSeed: f32, flags: f32 }
 struct Frame { delta: f32, capacity: u32, viewport: vec2<f32>, commandCount: u32, commandTexels: u32, attractorCount: u32, padding: u32 }
-struct Attractor { data: vec4<f32>, options: vec4<f32>, velocity: vec4<f32> }
+${customWgslBindingDeclarations(extensions, "simulation")}struct Attractor { data: vec4<f32>, options: vec4<f32>, velocity: vec4<f32> }
 struct ParticleDomain { data: vec4<f32>, options: vec4<f32> }
 @group(0) @binding(0) var<storage, read_write> stateA: array<ParticleA>;
 @group(0) @binding(1) var<storage, read_write> stateB: array<ParticleB>;
@@ -927,7 +936,7 @@ function buildWgslRender(effect: CompiledParticleEffect2D, extensions: readonly 
   return `struct ParticleA { position: vec2<f32>, age: f32, lifetime: f32 }
 struct ParticleB { velocity: vec2<f32>, rotation: f32, angularVelocity: f32 }
 struct ParticleC { archetype: f32, generation: f32, colorSeed: f32, flags: f32 }
-struct VertexOut { @builtin(position) position: vec4<f32>, @location(0) local: vec2<f32>, @location(1) color: vec4<f32>, @location(2) shape: f32 }
+${customWgslBindingDeclarations(extensions, "render")}struct VertexOut { @builtin(position) position: vec4<f32>, @location(0) local: vec2<f32>, @location(1) color: vec4<f32>, @location(2) shape: f32 }
 @group(0) @binding(0) var<storage, read> stateA: array<ParticleA>;
 @group(0) @binding(1) var<storage, read> stateB: array<ParticleB>;
 @group(0) @binding(2) var<storage, read> stateC: array<ParticleC>;
@@ -957,13 +966,15 @@ fn buildParticleVertex(vertex: u32, instance: u32, streak: bool) -> VertexOut {
   let color=palette[min(u32(floor(fract(coordinate)*f32(paletteCount))),paletteCount-1u)].xyz;
   let alpha=curve(archetypeAlpha[archetype],normalizedAge); let intensity=curve(archetypeIntensity[archetype],normalizedAge)*configB.x;
   let alive=select(0.0,1.0,particle.age<particle.lifetime&&radius>0.0); out.local=corner; out.color=vec4<f32>(color*intensity,alpha*alive); out.shape=select(0.0,1.0,streak);
-  ${extensions.map((entry) => entry.wgslRender ?? "").filter(Boolean).join("\n  ")}
+  ${extensions.map((entry) => entry.wgslVertex ?? entry.wgslRender ?? "").filter(Boolean).join("\n  ")}
   return out;
 }
 @vertex fn particleVertex(@builtin(vertex_index) vertex: u32, @builtin(instance_index) instance: u32) -> VertexOut { return buildParticleVertex(vertex,instance,false); }
 @vertex fn particleStreakVertex(@builtin(vertex_index) vertex: u32, @builtin(instance_index) instance: u32) -> VertexOut { return buildParticleVertex(vertex,instance,true); }
 @fragment fn particleFragment(input: VertexOut) -> @location(0) vec4<f32> {
-  let distance=length(input.local); let coverage=1.0-smoothstep(0.72,1.0,distance); return vec4<f32>(input.color.rgb,input.color.a*coverage);
+  let distance=length(input.local); let coverage=1.0-smoothstep(0.72,1.0,distance); var color=vec4<f32>(input.color.rgb,input.color.a*coverage);
+  ${extensions.map((entry) => entry.wgslFragment ?? "").filter(Boolean).join("\n  ")}
+  return color;
 }`;
 }
 
@@ -1244,11 +1255,64 @@ function validateExtensions(extensions: readonly ParticleModuleCompilerExtension
   for (const extension of extensions) {
     if (!/^[a-z][a-z0-9-]*$/.test(extension.id) || ids.has(extension.id)) throw new Error(`Invalid or duplicate particle compiler extension: ${extension.id}`);
     if (extension.supports.length === 0) throw new Error(`Particle compiler extension ${extension.id} declares no compatible backend`);
-    if (extension.supports.includes("webgl2") && !extension.glslSimulation && !extension.glslRender) throw new Error(`Particle compiler extension ${extension.id} is missing its GLSL implementation`);
-    if (extension.supports.includes("webgpu") && !extension.wgslSimulation && !extension.wgslRender) throw new Error(`Particle compiler extension ${extension.id} is missing its WGSL implementation`);
+    if (extension.supports.includes("webgl2") && !extension.glslSimulation && !extension.glslRender && !extension.glslVertex && !extension.glslFragment) throw new Error(`Particle compiler extension ${extension.id} is missing its GLSL implementation`);
+    if (extension.supports.includes("webgpu") && !extension.wgslSimulation && !extension.wgslRender && !extension.wgslVertex && !extension.wgslFragment) throw new Error(`Particle compiler extension ${extension.id} is missing its WGSL implementation`);
+    for (const binding of extension.bindings ?? []) validateExtensionBinding(extension, binding);
     for (const dependency of [...(extension.runsAfter ?? []), ...(extension.runsBefore ?? [])]) if (!/^[a-z][a-z0-9-]*$/.test(dependency) || dependency === extension.id) throw new Error(`Particle compiler extension ${extension.id} has an invalid ordering dependency`);
     ids.add(extension.id);
   }
+}
+
+const CUSTOM_BINDING_TYPES = new Set(["f32", "i32", "u32", "bool", "vec2", "vec3", "vec4", "mat4", "rgba8unorm", "rgba16float", "rgba32float"]);
+
+function validateExtensionBinding(extension: ParticleModuleCompilerExtension2D, binding: ParticleShaderBinding2D): void {
+  if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(binding.name)) throw new Error(`Particle compiler extension ${extension.id} has invalid binding name ${binding.name}`);
+  if (!binding.stages || binding.stages.length === 0 || binding.stages.some((stage) => stage !== "simulation" && stage !== "render")) throw new Error(`Particle compiler extension ${extension.id} binding ${binding.name} requires simulation or render visibility`);
+  if (!CUSTOM_BINDING_TYPES.has(binding.dataType)) throw new Error(`Particle compiler extension ${extension.id} binding ${binding.name} has unsupported type ${binding.dataType}`);
+  if (extension.supports.includes("webgl2") && (binding.kind === "storage" || binding.kind === "sampler" || binding.kind === "render-target")) {
+    throw new Error(`Particle compiler extension ${extension.id} binding ${binding.name} is not WebGL2-compatible`);
+  }
+}
+
+function customGlslBindingDeclarations(extensions: readonly ParticleModuleCompilerExtension2D[], stage: ParticleExtensionBindingStage2D): string {
+  const declarations: string[] = [];
+  for (const extension of extensions) for (const binding of extension.bindings ?? []) {
+    if (!binding.stages?.includes(stage)) continue;
+    if (binding.kind === "texture") declarations.push(`uniform sampler2D ${binding.name};`);
+    else if (binding.kind === "uniform") declarations.push(`uniform ${glslBindingType(binding.dataType)} ${binding.name};`);
+  }
+  return declarations.length === 0 ? "" : `${declarations.join("\n")}\n`;
+}
+
+function customWgslBindingDeclarations(extensions: readonly ParticleModuleCompilerExtension2D[], stage: ParticleExtensionBindingStage2D): string {
+  const declarations: string[] = [];
+  let bindingIndex = 0;
+  for (const extension of extensions) for (const binding of extension.bindings ?? []) {
+    if (!binding.stages?.includes(stage)) continue;
+    const prefix = `@group(1) @binding(${bindingIndex++})`;
+    if (binding.kind === "uniform") declarations.push(`${prefix} var<uniform> ${binding.name}: ${wgslBindingType(binding.dataType)};`);
+    else if (binding.kind === "texture") declarations.push(`${prefix} var ${binding.name}: texture_2d<f32>;`);
+    else if (binding.kind === "sampler") declarations.push(`${prefix} var ${binding.name}: sampler;`);
+    else if (binding.kind === "storage") declarations.push(`${prefix} var<storage, read_write> ${binding.name}: array<${wgslBindingType(binding.dataType)}>;`);
+    else declarations.push(`${prefix} var ${binding.name}: texture_storage_2d<${binding.dataType}, write>;`);
+  }
+  return declarations.length === 0 ? "" : `${declarations.join("\n")}\n`;
+}
+
+function glslBindingType(type: string): string {
+  if (type === "f32") return "float";
+  if (type === "i32") return "int";
+  if (type === "u32") return "uint";
+  if (type === "bool") return "bool";
+  if (type === "mat4") return "mat4";
+  return type;
+}
+
+function wgslBindingType(type: string): string {
+  if (type === "bool") return "u32";
+  if (type === "vec2" || type === "vec3" || type === "vec4") return `${type}<f32>`;
+  if (type === "mat4") return "mat4x4<f32>";
+  return type;
 }
 
 function matchesReferenceParameterType(value: ParticleModuleReferenceValue2D, type: "number" | "boolean" | "vector2" | "color"): boolean {
