@@ -1,25 +1,5 @@
-import type {
-  CompiledParticleProgram2D,
-  Gpu2DService,
-  GpuParticleCommandBatch2D,
-  GpuParticleSystem2D,
-  GpuRenderTarget2D,
-  GpuUniformEncoder2D,
-  GpuUniformLookup2D,
-  ParticleEffectBackendDiagnostics2D,
-  ParticleEffectBackendResource2D,
-  ParticleEffectRuntimeBackend2D,
-  ParticleColliderSet2D,
-  ParticleForceFieldSet2D,
-  ParticleDomain2D,
-  ParticleEmitterSourceOverride2D,
-  ParticlePalette2D,
-  ParticleOverflowPolicy2D,
-  ParticleRenderTier2D,
-  ParticleRuntimeEmission2D,
-  ParticleParameterValue2D,
-} from '@hooksjam/gl-game-lab-engine';
-import { ParticleEventWindowScheduler2D, planParticleSpawnCommands2D, resolveParticleArchetypePartitions2D } from '@hooksjam/gl-game-lab-engine';
+import type { CompiledParticleProgram2D, Gpu2DService, GpuParticleCommandBatch2D, GpuParticleSystem2D, GpuRenderTarget2D, GpuUniformEncoder2D, GpuUniformLookup2D, ParticleEffectBackendDiagnostics2D, ParticleEffectBackendResource2D, ParticleEffectRuntimeBackend2D, ParticleColliderSet2D, ParticleForceFieldSet2D, ParticleDomain2D, ParticleEmitterSourceOverride2D, ParticleViewport2D, ParticleRenderParameters2D, ParticlePalette2D, ParticleOverflowPolicy2D, ParticleRenderTier2D, ParticleRuntimeEmission2D, ParticleParameterValue2D } from "@hooksjam/gl-game-lab-engine";
+import { ParticleEventWindowScheduler2D, planParticleSpawnCommands2D, resolveParticleArchetypePartitions2D } from "@hooksjam/gl-game-lab-engine";
 
 const COMMAND_CAPACITY = 64;
 const COMMAND_FLOATS = 16;
@@ -34,7 +14,7 @@ export interface WebGLParticleEffectRuntimeOptions2D {
 }
 
 export class WebGLParticleEffectRuntimeBackend2D implements ParticleEffectRuntimeBackend2D {
-  readonly kind = 'webgl2';
+  readonly kind = "webgl2";
   private serial = 0;
 
   constructor(
@@ -84,6 +64,14 @@ class WebGLParticleEffectResource2D implements ParticleEffectBackendResource2D {
   private paletteCount = 1;
   private viewportWidth = 1;
   private viewportHeight = 1;
+  private viewportDpr = 1;
+  private viewportConfigured = false;
+  private pointScale = 2;
+  private intensity = 1;
+  private trailFade: number;
+  private trailBloom: number;
+  private trailBackground: readonly [number, number, number];
+  private directComposite = true;
   private renderStride = 1;
   private renderPhase = 0;
   private droppedCommands = 0;
@@ -103,25 +91,44 @@ class WebGLParticleEffectResource2D implements ParticleEffectBackendResource2D {
     capacity: number,
     private readonly options: WebGLParticleEffectRuntimeOptions2D,
   ) {
+    this.trailFade = options.trailFade ?? 0.9;
+    this.trailBloom = options.trailBloom ?? 0.65;
+    this.trailBackground = options.trailBackground ?? [0, 0, 0];
     const renderPasses = Object.fromEntries(
-      [...new Set(program.renderPasses.enhanced.concat(program.renderPasses.ultra).filter((pass) => pass.kind === 'streaks').map((pass) => pass.id))]
-        .map((passId) => [passId, { vertexSource: program.webgl2.streakVertex.source, fragmentSource: program.webgl2.fragment.source, blend: 'additive' as const, verticesPerParticle: 6 }]),
+      [
+        ...new Set(
+          program.renderPasses.enhanced
+            .concat(program.renderPasses.ultra)
+            .filter((pass) => pass.kind === "streaks")
+            .map((pass) => pass.id),
+        ),
+      ].map((passId) => [
+        passId,
+        {
+          vertexSource: program.webgl2.streakVertex.source,
+          fragmentSource: program.webgl2.fragment.source,
+          blend: "additive" as const,
+          verticesPerParticle: 6,
+        },
+      ]),
     );
     this.particles = gpu.createParticleSystem(id, {
       capacity,
-      precision: 'float',
+      precision: "float",
       simulationFragmentSource: program.webgl2.simulation.source,
-      ...(program.webgl2.event && program.webgl2.eventClaimVertex && program.webgl2.eventClaimFragment ? {
-        eventFragmentSource: program.webgl2.event.source,
-        eventClaimVertexSource: program.webgl2.eventClaimVertex.source,
-        eventClaimFragmentSource: program.webgl2.eventClaimFragment.source,
-        eventCandidateLanes: maximumEventCandidateLanes(program),
-      } : {}),
+      ...(program.webgl2.event && program.webgl2.eventClaimVertex && program.webgl2.eventClaimFragment
+        ? {
+            eventFragmentSource: program.webgl2.event.source,
+            eventClaimVertexSource: program.webgl2.eventClaimVertex.source,
+            eventClaimFragmentSource: program.webgl2.eventClaimFragment.source,
+            eventCandidateLanes: maximumEventCandidateLanes(program),
+          }
+        : {}),
       particleVertexSource: program.webgl2.vertex.source,
       particleFragmentSource: program.webgl2.fragment.source,
       renderPasses,
-      blend: 'additive',
-      trails: program.renderPasses.ultra.some((pass) => pass.kind === 'trails'),
+      blend: "additive",
+      trails: program.renderPasses.ultra.some((pass) => pass.kind === "trails"),
       commandCapacity: COMMAND_CAPACITY,
       metadata: program.reflection.stateTargets === 3,
     });
@@ -153,7 +160,7 @@ class WebGLParticleEffectResource2D implements ParticleEffectBackendResource2D {
       this.archetypeMotion[index * 4 + 3] = archetype.motion.angularVelocity ?? 0;
       this.archetypeForce[index * 4] = archetype.motion.radialAcceleration ?? 0;
       this.archetypeForce[index * 4 + 1] = archetype.motion.tangentialAcceleration ?? 0;
-      this.archetypeForce[index * 4 + 2] = archetype.motion.radialFalloff === 'inverse-square' ? 2 : archetype.motion.radialFalloff === 'inverse' ? 1 : 0;
+      this.archetypeForce[index * 4 + 2] = archetype.motion.radialFalloff === "inverse-square" ? 2 : archetype.motion.radialFalloff === "inverse" ? 1 : 0;
       this.archetypeForce[index * 4 + 3] = archetype.motion.maxSpeed ?? 0;
       const collision = archetype.collision;
       this.archetypeCollision[index * 4] = collision?.restitution ?? 0;
@@ -167,19 +174,26 @@ class WebGLParticleEffectResource2D implements ParticleEffectBackendResource2D {
     });
     program.effect.source.emitters.forEach((emitter, index) => {
       const source = emitter.source;
-      this.emitterSource[index * 4] = 'radius' in source ? source.radius ?? 0 : 'width' in source ? source.width * 0.5 : 0;
-      this.emitterSource[index * 4 + 1] = 'innerRadius' in source ? source.innerRadius ?? ('length' in source ? source.length ?? 0 : 0) : 'length' in source ? source.length ?? 0 : 'height' in source ? source.height * 0.5 : 0;
-      this.emitterSource[index * 4 + 2] = 'arc' in source ? source.arc ?? Math.PI * 2 : Math.PI * 2;
-      this.emitterSource[index * 4 + 3] = 'spread' in source ? source.spread ?? 0 : 0;
-      const initialization=emitter.initialization,mode=initialization?.directionMode;
-      this.emitterInitialization.set([mode==='radial'?1:mode==='tangent-ccw'?2:mode==='tangent-cw'?3:0,initialization?.radialPowerExponent??0,'radius' in source?source.radius??1:1,0],index*4);
+      this.emitterSource[index * 4] = "radius" in source ? (source.radius ?? 0) : "width" in source ? source.width * 0.5 : 0;
+      this.emitterSource[index * 4 + 1] = "innerRadius" in source ? (source.innerRadius ?? ("length" in source ? (source.length ?? 0) : 0)) : "length" in source ? (source.length ?? 0) : "height" in source ? source.height * 0.5 : 0;
+      this.emitterSource[index * 4 + 2] = "arc" in source ? (source.arc ?? Math.PI * 2) : Math.PI * 2;
+      this.emitterSource[index * 4 + 3] = "spread" in source ? (source.spread ?? 0) : 0;
+      const initialization = emitter.initialization,
+        mode = initialization?.directionMode;
+      this.emitterInitialization.set([mode === "radial" ? 1 : mode === "tangent-ccw" ? 2 : mode === "tangent-cw" ? 3 : 0, initialization?.radialPowerExponent ?? 0, "radius" in source ? (source.radius ?? 1) : 1, initialization?.powerVariability ?? 0.28], index * 4);
     });
     this.palette.set([1, 1, 1]);
     const owner = this;
     this.batch = Object.freeze({
-      get data() { return owner.preparedCommands; },
-      get count() { return owner.preparedCommandCount; },
-      get particleCount() { return owner.particleCount; },
+      get data() {
+        return owner.preparedCommands;
+      },
+      get count() {
+        return owner.preparedCommandCount;
+      },
+      get particleCount() {
+        return owner.particleCount;
+      },
     });
   }
 
@@ -189,7 +203,11 @@ class WebGLParticleEffectResource2D implements ParticleEffectBackendResource2D {
     let replacing = false;
     if (index >= COMMAND_CAPACITY) {
       index = lowestPriorityIndex(this.commandImportance);
-      if (emission.importance <= this.commandImportance[index]!) { this.droppedCommands += 1; this.droppedParticles += emission.count; return; }
+      if (emission.importance <= this.commandImportance[index]!) {
+        this.droppedCommands += 1;
+        this.droppedParticles += emission.count;
+        return;
+      }
       replacing = true;
       this.droppedCommands += 1;
       this.droppedParticles += Math.max(0, Math.round(this.commands[index * COMMAND_FLOATS + 2] ?? 0));
@@ -252,44 +270,88 @@ class WebGLParticleEffectResource2D implements ParticleEffectBackendResource2D {
 
   setParameters(parameters: Readonly<Record<string, ParticleParameterValue2D>>): void {
     for (const binding of this.program.effect.source.moduleBindings ?? []) {
-      const raw=parameters[binding.parameterId]; if(typeof raw!=='number')continue;
-      const value=raw*(binding.scale??1)+(binding.offset??0), parts=binding.target.split('.');
-      const archetypeIndex=this.program.effect.archetypeIds[parts[1]??'']; if(archetypeIndex===undefined)continue;
-      const section=parts[2],field=parts.slice(3).join('.');
-      if(section==='motion') writeBoundMotion(this.archetypeMotion,this.archetypeForce,archetypeIndex,field,value);
-      else if(section==='collision') writeBoundCollision(this.archetypeCollision,archetypeIndex,field,value);
-      else if(section==='appearance') writeBoundAppearance(this.archetypeSize,this.archetypeLength,this.archetypeAlpha,this.archetypeIntensity,archetypeIndex,field,value);
+      const raw = parameters[binding.parameterId];
+      if (typeof raw !== "number") continue;
+      const value = raw * (binding.scale ?? 1) + (binding.offset ?? 0),
+        parts = binding.target.split(".");
+      const archetypeIndex = this.program.effect.archetypeIds[parts[1] ?? ""];
+      if (archetypeIndex === undefined) continue;
+      const section = parts[2],
+        field = parts.slice(3).join(".");
+      if (section === "motion") writeBoundMotion(this.archetypeMotion, this.archetypeForce, archetypeIndex, field, value);
+      else if (section === "collision") writeBoundCollision(this.archetypeCollision, archetypeIndex, field, value);
+      else if (section === "appearance") writeBoundAppearance(this.archetypeSize, this.archetypeLength, this.archetypeAlpha, this.archetypeIntensity, archetypeIndex, field, value);
     }
   }
 
   setColliders(value: ParticleColliderSet2D): void {
-    this.assertUsable(); this.circles.fill(0); this.capsuleA.fill(0); this.capsuleB.fill(0);
+    this.assertUsable();
+    this.circles.fill(0);
+    this.capsuleA.fill(0);
+    this.capsuleB.fill(0);
     this.circleCount = Math.min(MAX_COLLIDERS, value.circles?.length ?? 0);
     this.capsuleCount = Math.min(MAX_COLLIDERS, value.capsules?.length ?? 0);
-    for (let index = 0; index < this.circleCount; index += 1) { const circle=value.circles![index]!; this.circles.set([circle.x,circle.y,circle.radius,circle.mode==='kill'?1:0],index*4); }
-    for (let index = 0; index < this.capsuleCount; index += 1) { const capsule=value.capsules![index]!; this.capsuleA.set([capsule.ax,capsule.ay,capsule.bx,capsule.by],index*4); this.capsuleB.set([capsule.radius,capsule.mode==='kill'?1:0,0,0],index*4); }
+    for (let index = 0; index < this.circleCount; index += 1) {
+      const circle = value.circles![index]!;
+      this.circles.set([circle.x, circle.y, circle.radius, circle.mode === "kill" ? 1 : 0], index * 4);
+    }
+    for (let index = 0; index < this.capsuleCount; index += 1) {
+      const capsule = value.capsules![index]!;
+      this.capsuleA.set([capsule.ax, capsule.ay, capsule.bx, capsule.by], index * 4);
+      this.capsuleB.set([capsule.radius, capsule.mode === "kill" ? 1 : 0, 0, 0], index * 4);
+    }
   }
 
   setForceFields(value: ParticleForceFieldSet2D): void {
     this.assertUsable();
     if (value.revision === this.forceFieldRevision) return;
-    this.forceFieldRevision = value.revision; this.attractorData.fill(0); this.attractorOptions.fill(0); this.attractorVelocity.fill(0);
+    this.forceFieldRevision = value.revision;
+    this.attractorData.fill(0);
+    this.attractorOptions.fill(0);
+    this.attractorVelocity.fill(0);
     this.attractorCount = Math.min(MAX_ATTRACTORS, value.attractors.length);
     for (let index = 0; index < this.attractorCount; index += 1) {
-      const field = value.attractors[index]!, offset = index * 4;
+      const field = value.attractors[index]!,
+        offset = index * 4;
       this.attractorData.set([field.x, field.y, field.strength, field.radius ?? 0], offset);
       this.attractorOptions.set([field.softening ?? 1, forceFalloffCode(field.falloff), field.tangentialStrength ?? 0, forceEnvelopeCode(field.envelope)], offset);
-      this.attractorVelocity.set([field.velocity?.[0] ?? 0, field.velocity?.[1] ?? 0, field.velocityCoupling ?? 0, 0], offset);
+      this.attractorVelocity.set([field.velocity?.[0] ?? 0, field.velocity?.[1] ?? 0, field.velocityCoupling ?? 0, field.radialStrength ?? 0], offset);
     }
   }
 
   setDomain(value: ParticleDomain2D): void {
-    this.assertUsable(); const extents=value.halfExtents??[0,0];
-    this.domainData.set([value.center[0],value.center[1],value.shape==='circle'?(value.radius??0):extents[0],value.shape==='circle'?0:extents[1]]);
-    this.domainOptions.set([value.shape==='circle'?1:0,domainBehaviorCode(value.behavior),value.damping??1,value.margin??0]);
+    this.assertUsable();
+    const extents = value.halfExtents ?? [0, 0];
+    this.domainData.set([value.center[0], value.center[1], value.shape === "circle" ? (value.radius ?? 0) : extents[0], value.shape === "circle" ? 0 : extents[1]]);
+    this.domainOptions.set([value.shape === "circle" ? 1 : 0, domainBehaviorCode(value.behavior), value.damping ?? 1, value.margin ?? 0]);
   }
 
-  setEmitterSource(emitterIndex:number,value:ParticleEmitterSourceOverride2D):void{this.assertUsable();const offset=emitterIndex*4;if(offset<0||offset+3>=this.emitterSource.length)throw new Error(`Invalid particle emitter source index: ${emitterIndex}`);if(value.radius!==undefined)this.emitterSource[offset]=value.radius;if(value.innerRadius!==undefined)this.emitterSource[offset+1]=value.innerRadius;else if(value.length!==undefined)this.emitterSource[offset+1]=value.length;if(value.arc!==undefined)this.emitterSource[offset+2]=value.arc;if(value.spread!==undefined)this.emitterSource[offset+3]=value.spread;}
+  setEmitterSource(emitterIndex: number, value: ParticleEmitterSourceOverride2D): void {
+    this.assertUsable();
+    const offset = emitterIndex * 4;
+    if (offset < 0 || offset + 3 >= this.emitterSource.length) throw new Error(`Invalid particle emitter source index: ${emitterIndex}`);
+    if (value.radius !== undefined) this.emitterSource[offset] = value.radius;
+    if (value.innerRadius !== undefined) this.emitterSource[offset + 1] = value.innerRadius;
+    else if (value.length !== undefined) this.emitterSource[offset + 1] = value.length;
+    if (value.arc !== undefined) this.emitterSource[offset + 2] = value.arc;
+    if (value.spread !== undefined) this.emitterSource[offset + 3] = value.spread;
+  }
+  setViewport(value: ParticleViewport2D): void {
+    this.assertUsable();
+    this.viewportWidth = value.width;
+    this.viewportHeight = value.height;
+    this.viewportDpr = value.dpr;
+    this.viewportConfigured = true;
+  }
+  setRenderParameters(value: ParticleRenderParameters2D): void {
+    this.assertUsable();
+    if (value.pointScale !== undefined) this.pointScale = value.pointScale;
+    if (value.intensity !== undefined) this.intensity = value.intensity;
+    if (value.trailFade !== undefined) this.trailFade = value.trailFade;
+    if (value.trailBloom !== undefined) this.trailBloom = value.trailBloom;
+    if (value.trailBackground !== undefined) this.trailBackground = value.trailBackground;
+    if (value.directComposite !== undefined) this.directComposite = value.directComposite;
+  }
 
   setRenderScale(scale: number): void {
     this.assertUsable();
@@ -315,13 +377,16 @@ class WebGLParticleEffectResource2D implements ParticleEffectBackendResource2D {
 
   render(target: GpuRenderTarget2D, tier: ParticleRenderTier2D): void {
     this.assertUsable();
-    this.viewportWidth = target.width;
-    this.viewportHeight = target.height;
-    if (tier === 'ultra' && this.program.renderPasses.ultra.some((pass) => pass.kind === 'trails')) {
-      const trailTarget = this.particles.beginTrails(target.width, target.height, this.options.trailFade ?? 0.9);
+    if (!this.viewportConfigured) {
+      this.viewportWidth = target.width;
+      this.viewportHeight = target.height;
+      this.viewportDpr = 1;
+    }
+    if (tier === "ultra" && this.program.renderPasses.ultra.some((pass) => pass.kind === "trails")) {
+      const trailTarget = this.particles.beginTrails(target.width, target.height, this.trailFade);
       this.renderTier(trailTarget, tier);
-      this.particles.compositeTrails(target, this.options.trailBackground ?? [0, 0, 0], this.options.trailBloom ?? 0.65);
-      this.renderTier(target, tier);
+      this.particles.compositeTrails(target, this.trailBackground, this.trailBloom);
+      if (this.directComposite) this.renderTier(target, tier);
       return;
     }
     this.renderTier(target, tier);
@@ -344,7 +409,9 @@ class WebGLParticleEffectResource2D implements ParticleEffectBackendResource2D {
   transferStateTo(target: ParticleEffectBackendResource2D): boolean {
     return target instanceof WebGLParticleEffectResource2D && (this.particles.copyStateTo?.(target.particles) ?? false);
   }
-  debugReadback(): import('@hooksjam/gl-game-lab-engine').GpuParticleStateSnapshot2D { return this.particles.debugReadback(); }
+  debugReadback(): import("@hooksjam/gl-game-lab-engine").GpuParticleStateSnapshot2D {
+    return this.particles.debugReadback();
+  }
 
   diagnostics(): ParticleEffectBackendDiagnostics2D {
     const diagnostics = this.particles.diagnostics();
@@ -361,13 +428,13 @@ class WebGLParticleEffectResource2D implements ParticleEffectBackendResource2D {
       uploadBytes: diagnostics.uploadBytes,
       contextGeneration: diagnostics.contextGeneration,
       rebuildCount: diagnostics.rebuildCount,
-      diagnosticAccuracy: 'estimated',
+      diagnosticAccuracy: "estimated",
       directCommandsAdmitted: diagnostics.queuedCommands,
       directCommandsTruncated: this.truncatedCommands,
       eventContentionLosses: this.eventOccupiedDrops,
       eventCapacityDrops: this.eventBudgetDrops,
-      trailPasses: this.program.renderPasses.ultra.filter((pass) => pass.kind === 'trails').length > 0 ? diagnostics.renderPasses : 0,
-      bloomPasses: this.program.renderPasses.ultra.filter((pass) => pass.kind === 'bloom').length > 0 ? diagnostics.renderPasses : 0,
+      trailPasses: this.program.renderPasses.ultra.filter((pass) => pass.kind === "trails").length > 0 ? diagnostics.renderPasses : 0,
+      bloomPasses: this.program.renderPasses.ultra.filter((pass) => pass.kind === "bloom").length > 0 ? diagnostics.renderPasses : 0,
       commandUploadBytes: diagnostics.uploadBytes,
       parameterUploadBytes: 0,
       paletteUploadBytes: 0,
@@ -379,44 +446,48 @@ class WebGLParticleEffectResource2D implements ParticleEffectBackendResource2D {
     });
   }
 
-  dispose(): void { if (this.disposed) return; this.disposed = true; this.particles.dispose(); }
+  dispose(): void {
+    if (this.disposed) return;
+    this.disposed = true;
+    this.particles.dispose();
+  }
 
   private readonly bindRender = (gl: GpuUniformEncoder2D, uniform: GpuUniformLookup2D): void => {
-    gl.uniform2f(uniform('uCanvasSize'), this.viewportWidth, this.viewportHeight);
-    gl.uniform1i(uniform('uParticleCapacity'), this.particles.capacity);
-    gl.uniform1i(uniform('uRenderStride'), this.renderStride);
-    gl.uniform1i(uniform('uRenderPhase'), this.renderPhase);
-    gl.uniform1f(uniform('uPointScale'), 2);
-    gl.uniform3fv(uniform('uPalette[0]'), this.palette);
-    gl.uniform1i(uniform('uPaletteCount'), this.paletteCount);
-    gl.uniform1f(uniform('uIntensity'), 1);
-    gl.uniform4fv(uniform('uArchetypeSize[0]'), this.archetypeSize);
-    gl.uniform4fv(uniform('uArchetypeLength[0]'), this.archetypeLength);
-    gl.uniform4fv(uniform('uArchetypeAlpha[0]'), this.archetypeAlpha);
-    gl.uniform4fv(uniform('uArchetypeIntensity[0]'), this.archetypeIntensity);
+    gl.uniform2f(uniform("uCanvasSize"), this.viewportWidth, this.viewportHeight);
+    gl.uniform1i(uniform("uParticleCapacity"), this.particles.capacity);
+    gl.uniform1i(uniform("uRenderStride"), this.renderStride);
+    gl.uniform1i(uniform("uRenderPhase"), this.renderPhase);
+    gl.uniform1f(uniform("uPointScale"), this.pointScale * this.viewportDpr);
+    gl.uniform3fv(uniform("uPalette[0]"), this.palette);
+    gl.uniform1i(uniform("uPaletteCount"), this.paletteCount);
+    gl.uniform1f(uniform("uIntensity"), this.intensity);
+    gl.uniform4fv(uniform("uArchetypeSize[0]"), this.archetypeSize);
+    gl.uniform4fv(uniform("uArchetypeLength[0]"), this.archetypeLength);
+    gl.uniform4fv(uniform("uArchetypeAlpha[0]"), this.archetypeAlpha);
+    gl.uniform4fv(uniform("uArchetypeIntensity[0]"), this.archetypeIntensity);
   };
 
   private bindSimulation(gl: GpuUniformEncoder2D, uniform: GpuUniformLookup2D, delta: number): void {
-    gl.uniform1i(uniform('uCapacity'), this.particles.capacity);
-    gl.uniform1f(uniform('uDt'), delta);
-    gl.uniform2f(uniform('uCanvasSize'), this.viewportWidth, this.viewportHeight);
-    gl.uniform4fv(uniform('uArchetypeMotion[0]'), this.archetypeMotion);
-    gl.uniform4fv(uniform('uArchetypeForce[0]'), this.archetypeForce);
-    gl.uniform4fv(uniform('uAttractorData[0]'), this.attractorData);
-    gl.uniform4fv(uniform('uAttractorOptions[0]'), this.attractorOptions);
-    gl.uniform4fv(uniform('uAttractorVelocity[0]'), this.attractorVelocity);
-    gl.uniform1i(uniform('uAttractorCount'), this.attractorCount);
-    gl.uniform4fv(uniform('uParticleDomainData'), this.domainData);
-    gl.uniform4fv(uniform('uParticleDomainOptions'), this.domainOptions);
-    gl.uniform4fv(uniform('uArchetypeCollision[0]'), this.archetypeCollision);
-    gl.uniform4fv(uniform('uArchetypePools[0]'), this.poolData);
-    gl.uniform4fv(uniform('uEmitterSource[0]'), this.emitterSource);
-    gl.uniform4fv(uniform('uEmitterInitialization[0]'), this.emitterInitialization);
-    gl.uniform1i(uniform('uCircleColliderCount'), this.circleCount);
-    gl.uniform1i(uniform('uCapsuleColliderCount'), this.capsuleCount);
-    gl.uniform4fv(uniform('uCircleColliders[0]'), this.circles);
-    gl.uniform4fv(uniform('uCapsuleA[0]'), this.capsuleA);
-    gl.uniform4fv(uniform('uCapsuleB[0]'), this.capsuleB);
+    gl.uniform1i(uniform("uCapacity"), this.particles.capacity);
+    gl.uniform1f(uniform("uDt"), delta);
+    gl.uniform2f(uniform("uCanvasSize"), this.viewportWidth, this.viewportHeight);
+    gl.uniform4fv(uniform("uArchetypeMotion[0]"), this.archetypeMotion);
+    gl.uniform4fv(uniform("uArchetypeForce[0]"), this.archetypeForce);
+    gl.uniform4fv(uniform("uAttractorData[0]"), this.attractorData);
+    gl.uniform4fv(uniform("uAttractorOptions[0]"), this.attractorOptions);
+    gl.uniform4fv(uniform("uAttractorVelocity[0]"), this.attractorVelocity);
+    gl.uniform1i(uniform("uAttractorCount"), this.attractorCount);
+    gl.uniform4fv(uniform("uParticleDomainData"), this.domainData);
+    gl.uniform4fv(uniform("uParticleDomainOptions"), this.domainOptions);
+    gl.uniform4fv(uniform("uArchetypeCollision[0]"), this.archetypeCollision);
+    gl.uniform4fv(uniform("uArchetypePools[0]"), this.poolData);
+    gl.uniform4fv(uniform("uEmitterSource[0]"), this.emitterSource);
+    gl.uniform4fv(uniform("uEmitterInitialization[0]"), this.emitterInitialization);
+    gl.uniform1i(uniform("uCircleColliderCount"), this.circleCount);
+    gl.uniform1i(uniform("uCapsuleColliderCount"), this.capsuleCount);
+    gl.uniform4fv(uniform("uCircleColliders[0]"), this.circles);
+    gl.uniform4fv(uniform("uCapsuleA[0]"), this.capsuleA);
+    gl.uniform4fv(uniform("uCapsuleB[0]"), this.capsuleB);
   }
 
   private prepareCommands(): void {
@@ -429,12 +500,14 @@ class WebGLParticleEffectResource2D implements ParticleEffectBackendResource2D {
   private renderTier(target: GpuRenderTarget2D, tier: ParticleRenderTier2D): void {
     const passes = this.program.renderPasses[tier];
     const renderCount = Math.ceil(this.particles.capacity / this.renderStride);
-    if (passes.some((pass) => pass.kind === 'points')) this.particles.render(target, this.bindRender, renderCount);
-    for (const pass of passes) if (pass.kind === 'streaks') this.particles.renderPass(pass.id, target, this.bindRender, renderCount);
+    if (passes.some((pass) => pass.kind === "points")) this.particles.render(target, this.bindRender, renderCount);
+    for (const pass of passes) if (pass.kind === "streaks") this.particles.renderPass(pass.id, target, this.bindRender, renderCount);
     this.renderPhase = (this.renderPhase + 1) % this.renderStride;
   }
 
-  private assertUsable(): void { if (this.disposed) throw new Error(`WebGL particle effect resource is disposed: ${this.id}`); }
+  private assertUsable(): void {
+    if (this.disposed) throw new Error(`WebGL particle effect resource is disposed: ${this.id}`);
+  }
 }
 
 function lowestPriorityIndex(priorities: Int8Array): number {
@@ -444,26 +517,64 @@ function lowestPriorityIndex(priorities: Int8Array): number {
 }
 
 function spawnShapeCode(shape: string): number {
-  const index = ['point', 'disc', 'line', 'cone', 'arc', 'ring', 'radial', 'spiral', 'pinwheel', 'shower', 'annulus', 'rectangle', 'path', 'texture-mask', 'mesh', 'particles', 'collision-contacts', 'external-points', 'custom'].indexOf(shape);
+  const index = ["point", "disc", "line", "cone", "arc", "ring", "radial", "spiral", "pinwheel", "shower", "annulus", "rectangle", "path", "texture-mask", "mesh", "particles", "collision-contacts", "external-points", "custom"].indexOf(shape);
   return Math.max(0, index);
 }
 
 function overflowPolicyCode(policy: ParticleOverflowPolicy2D): number {
-  return policy === 'drop-new' ? 1 : policy === 'reserve-priority' ? 2 : 0;
+  return policy === "drop-new" ? 1 : policy === "reserve-priority" ? 2 : 0;
 }
 
-function forceFalloffCode(value: import('@hooksjam/gl-game-lab-engine').ParticleForceFalloff2D | undefined): number {
-  return value === undefined ? -1 : value === 'constant' ? 0 : value === 'inverse' ? 1 : 2;
+function forceFalloffCode(value: import("@hooksjam/gl-game-lab-engine").ParticleForceFalloff2D | undefined): number {
+  return value === undefined ? -1 : value === "constant" ? 0 : value === "inverse" ? 1 : 2;
 }
-function forceEnvelopeCode(value: import('@hooksjam/gl-game-lab-engine').ParticleForceEnvelope2D | undefined): number { return value===undefined||value==='none'?0:value==='linear'?1:2; }
-function domainBehaviorCode(value: import('@hooksjam/gl-game-lab-engine').ParticleDomainBehavior2D): number { return value==='none'?0:value==='kill'?1:value==='bounce'?2:3; }
-
-function maximumEventCandidateLanes(program: CompiledParticleProgram2D): number { return Math.max(1, ...program.effect.source.archetypes.map((archetype) => archetype.events?.length ?? 0)); }
-
-function writeCurve(target: Float32Array, index: number, curve: { readonly start: number; readonly end: number; readonly exponent?: number }): void {
-  const offset = index * 4; target[offset] = curve.start; target[offset + 1] = curve.end; target[offset + 2] = curve.exponent ?? 1; target[offset + 3] = 0;
+function forceEnvelopeCode(value: import("@hooksjam/gl-game-lab-engine").ParticleForceEnvelope2D | undefined): number {
+  return value === undefined || value === "none" ? 0 : value === "linear" ? 1 : 2;
+}
+function domainBehaviorCode(value: import("@hooksjam/gl-game-lab-engine").ParticleDomainBehavior2D): number {
+  return value === "none" ? 0 : value === "kill" ? 1 : value === "bounce" ? 2 : 3;
 }
 
-function writeBoundMotion(motion: Float32Array, force: Float32Array, index: number, field: string, value: number): void { const offset=index*4;if(field==='gravity')motion[offset]=value;else if(field==='drag')motion[offset+1]=value;else if(field==='turbulence')motion[offset+2]=value;else if(field==='angularVelocity')motion[offset+3]=value;else if(field==='radialAcceleration')force[offset]=value;else if(field==='tangentialAcceleration')force[offset+1]=value;else if(field==='maxSpeed')force[offset+3]=value; }
-function writeBoundCollision(target: Float32Array,index:number,field:string,value:number):void{const offset=index*4;if(field==='restitution')target[offset]=value;else if(field==='friction')target[offset+1]=value;else if(field==='lifetimeLoss')target[offset+2]=value;}
-function writeBoundAppearance(size:Float32Array,length:Float32Array,alpha:Float32Array,intensity:Float32Array,index:number,field:string,value:number):void{const [curve,component]=field.split('.');const target=curve==='size'?size:curve==='length'?length:curve==='alpha'?alpha:curve==='intensity'?intensity:undefined;if(!target)return;const slot=component==='start'?0:component==='end'?1:component==='exponent'?2:-1;if(slot>=0)target[index*4+slot]=value;}
+function maximumEventCandidateLanes(program: CompiledParticleProgram2D): number {
+  return Math.max(1, ...program.effect.source.archetypes.map((archetype) => archetype.events?.length ?? 0));
+}
+
+function writeCurve(
+  target: Float32Array,
+  index: number,
+  curve: {
+    readonly start: number;
+    readonly end: number;
+    readonly exponent?: number;
+  },
+): void {
+  const offset = index * 4;
+  target[offset] = curve.start;
+  target[offset + 1] = curve.end;
+  target[offset + 2] = curve.exponent ?? 1;
+  target[offset + 3] = 0;
+}
+
+function writeBoundMotion(motion: Float32Array, force: Float32Array, index: number, field: string, value: number): void {
+  const offset = index * 4;
+  if (field === "gravity") motion[offset] = value;
+  else if (field === "drag") motion[offset + 1] = value;
+  else if (field === "turbulence") motion[offset + 2] = value;
+  else if (field === "angularVelocity") motion[offset + 3] = value;
+  else if (field === "radialAcceleration") force[offset] = value;
+  else if (field === "tangentialAcceleration") force[offset + 1] = value;
+  else if (field === "maxSpeed") force[offset + 3] = value;
+}
+function writeBoundCollision(target: Float32Array, index: number, field: string, value: number): void {
+  const offset = index * 4;
+  if (field === "restitution") target[offset] = value;
+  else if (field === "friction") target[offset + 1] = value;
+  else if (field === "lifetimeLoss") target[offset + 2] = value;
+}
+function writeBoundAppearance(size: Float32Array, length: Float32Array, alpha: Float32Array, intensity: Float32Array, index: number, field: string, value: number): void {
+  const [curve, component] = field.split(".");
+  const target = curve === "size" ? size : curve === "length" ? length : curve === "alpha" ? alpha : curve === "intensity" ? intensity : undefined;
+  if (!target) return;
+  const slot = component === "start" ? 0 : component === "end" ? 1 : component === "exponent" ? 2 : -1;
+  if (slot >= 0) target[index * 4 + slot] = value;
+}

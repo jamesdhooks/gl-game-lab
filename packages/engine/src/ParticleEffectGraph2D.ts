@@ -1,24 +1,16 @@
-import type {
-  ParticleArchetype2D,
-  ParticleCapacityPolicy2D,
-  ParticleEffectDefinition2D,
-  ParticleRenderRecipeSet2D,
-  ParticleRenderTier2D,
-  ParticleSettingValue2D,
-  ParticleSpawnShape2D,
-} from './ParticleEffects2D.js';
+import type { ParticleArchetype2D, ParticleCapacityPolicy2D, ParticleEffectDefinition2D, ParticleRenderRecipeSet2D, ParticleRenderTier2D, ParticleSettingValue2D, ParticleSpawnShape2D } from "./ParticleEffects2D.js";
 
 export const PARTICLE_EFFECT_GRAPH_SCHEMA_VERSION = 1;
 export const PARTICLE_EFFECT_COMPILER_VERSION = 2;
 
 export type ParticleParameterValue2D = ParticleSettingValue2D | readonly [number, number] | readonly [number, number, number, number];
-export type ParticleParameterKind2D = 'number' | 'boolean' | 'enum' | 'vector2' | 'color' | 'palette';
-export type ParticleCoordinateSpace2D = 'local' | 'parent' | 'effect' | 'scene' | 'world';
-export type ParticleEmitterImportance2D = 'critical' | 'primary' | 'secondary' | 'cosmetic';
-export type ParticleEmitterStopMode2D = 'drain' | 'kill';
-export type ParticleOverflowPolicy2D = 'recycle-oldest' | 'drop-new' | 'reserve-priority';
-export type ParticleBackendFallbackPolicy2D = 'webgl2' | 'static-preview' | 'fail';
-export type ParticleInterpolation2D = 'linear' | 'smooth' | 'step' | 'exponential' | 'cubic';
+export type ParticleParameterKind2D = "number" | "boolean" | "enum" | "vector2" | "color" | "palette";
+export type ParticleCoordinateSpace2D = "local" | "parent" | "effect" | "scene" | "world";
+export type ParticleEmitterImportance2D = "critical" | "primary" | "secondary" | "cosmetic";
+export type ParticleEmitterStopMode2D = "drain" | "kill";
+export type ParticleOverflowPolicy2D = "recycle-oldest" | "drop-new" | "reserve-priority";
+export type ParticleBackendFallbackPolicy2D = "webgl2" | "static-preview" | "fail";
+export type ParticleInterpolation2D = "linear" | "smooth" | "step" | "exponential" | "cubic";
 
 export interface ParticleParameterDefinition2D {
   readonly id: string;
@@ -40,21 +32,53 @@ export interface ParticleCurve2D {
 }
 
 export type ParticleValueSource2D =
-  | { readonly kind: 'constant'; readonly value: number }
-  | { readonly kind: 'parameter'; readonly parameterId: string; readonly scale?: number; readonly offset?: number }
-  | { readonly kind: 'random'; readonly min: number; readonly max: number }
-  | { readonly kind: 'curve'; readonly curve: ParticleCurve2D };
+  | { readonly kind: "constant"; readonly value: number }
+  | {
+      readonly kind: "parameter";
+      readonly parameterId: string;
+      readonly scale?: number;
+      readonly offset?: number;
+    }
+  | { readonly kind: "random"; readonly min: number; readonly max: number }
+  | { readonly kind: "curve"; readonly curve: ParticleCurve2D };
 
 export type ParticleSpawnSource2D =
-  | { readonly kind: ParticleSpawnShape2D; readonly radius?: number; readonly innerRadius?: number; readonly length?: number; readonly arc?: number; readonly spread?: number }
-  | { readonly kind: 'rectangle'; readonly width: number; readonly height: number }
-  | { readonly kind: 'path'; readonly points: readonly (readonly [number, number])[]; readonly closed?: boolean }
-  | { readonly kind: 'texture-mask'; readonly textureId: string; readonly threshold?: number }
-  | { readonly kind: 'mesh'; readonly meshId: string; readonly sample: 'vertices' | 'edges' | 'surface' }
-  | { readonly kind: 'particles'; readonly archetypeId?: string }
-  | { readonly kind: 'collision-contacts'; readonly colliderSetId?: string }
-  | { readonly kind: 'external-points'; readonly sourceId: string }
-  | { readonly kind: 'custom'; readonly moduleId: string; readonly parameters?: Readonly<Record<string, number>> };
+  | {
+      readonly kind: ParticleSpawnShape2D;
+      readonly radius?: number;
+      readonly innerRadius?: number;
+      readonly length?: number;
+      readonly arc?: number;
+      readonly spread?: number;
+    }
+  | {
+      readonly kind: "rectangle";
+      readonly width: number;
+      readonly height: number;
+    }
+  | {
+      readonly kind: "path";
+      readonly points: readonly (readonly [number, number])[];
+      readonly closed?: boolean;
+    }
+  | {
+      readonly kind: "texture-mask";
+      readonly textureId: string;
+      readonly threshold?: number;
+    }
+  | {
+      readonly kind: "mesh";
+      readonly meshId: string;
+      readonly sample: "vertices" | "edges" | "surface";
+    }
+  | { readonly kind: "particles"; readonly archetypeId?: string }
+  | { readonly kind: "collision-contacts"; readonly colliderSetId?: string }
+  | { readonly kind: "external-points"; readonly sourceId: string }
+  | {
+      readonly kind: "custom";
+      readonly moduleId: string;
+      readonly parameters?: Readonly<Record<string, number>>;
+    };
 
 export interface ParticleEmitterBurst2D {
   readonly time: number;
@@ -105,9 +129,10 @@ export interface ParticleInitialization2D {
   readonly lifetimeScale?: ParticleValueSource2D;
   readonly paletteSeed?: ParticleValueSource2D;
   /** Reorients velocity relative to the sampled source position. */
-  readonly directionMode?: 'authored' | 'radial' | 'tangent-cw' | 'tangent-ccw';
+  readonly directionMode?: "authored" | "radial" | "tangent-cw" | "tangent-ccw";
   /** Scales power by `(sampleRadius / referenceRadius) ^ exponent`. */
   readonly radialPowerExponent?: number;
+  readonly powerVariability?: number;
 }
 
 export interface ParticleParameterBinding2D {
@@ -129,33 +154,102 @@ export interface ParticleEmitterDefinition2D {
 }
 
 export type ParticleGraphEvent2D =
-  | { readonly kind: 'effect-start' | 'effect-stop' | 'effect-complete' }
-  | { readonly kind: 'emitter-start' | 'emitter-burst' | 'emitter-loop' | 'emitter-stop' | 'emitter-complete'; readonly emitterId: string }
-  | { readonly kind: 'particle-birth' | 'particle-death' | 'particle-collision'; readonly archetypeId: string }
-  | { readonly kind: 'particle-age'; readonly archetypeId: string; readonly age: number }
-  | { readonly kind: 'signal'; readonly signal: string }
-  | { readonly kind: 'marker'; readonly marker: string };
+  | { readonly kind: "effect-start" | "effect-stop" | "effect-complete" }
+  | {
+      readonly kind: "emitter-start" | "emitter-burst" | "emitter-loop" | "emitter-stop" | "emitter-complete";
+      readonly emitterId: string;
+    }
+  | {
+      readonly kind: "particle-birth" | "particle-death" | "particle-collision";
+      readonly archetypeId: string;
+    }
+  | {
+      readonly kind: "particle-age";
+      readonly archetypeId: string;
+      readonly age: number;
+    }
+  | { readonly kind: "signal"; readonly signal: string }
+  | { readonly kind: "marker"; readonly marker: string };
 
 export type ParticleCondition2D =
-  | { readonly kind: 'parameter'; readonly parameterId: string; readonly operator: 'eq' | 'neq' | 'lt' | 'lte' | 'gt' | 'gte'; readonly value: ParticleParameterValue2D }
-  | { readonly kind: 'chance'; readonly probability: number };
+  | {
+      readonly kind: "parameter";
+      readonly parameterId: string;
+      readonly operator: "eq" | "neq" | "lt" | "lte" | "gt" | "gte";
+      readonly value: ParticleParameterValue2D;
+    }
+  | { readonly kind: "chance"; readonly probability: number };
 
 export type ParticleEmitterGraphNode2D =
-  | { readonly kind: 'emit'; readonly emitterId: string }
-  | { readonly kind: 'effect-reference'; readonly effectId: string; readonly inherit?: ParticleInheritancePolicy2D; readonly parameterMap?: Readonly<Record<string, string>> }
-  | { readonly kind: 'sequence' | 'parallel'; readonly children: readonly ParticleEmitterGraphNode2D[] }
-  | { readonly kind: 'delay'; readonly duration: number; readonly child: ParticleEmitterGraphNode2D }
-  | { readonly kind: 'repeat'; readonly count: number; readonly interval?: number; readonly child: ParticleEmitterGraphNode2D }
-  | { readonly kind: 'random-choice'; readonly children: readonly ParticleEmitterGraphNode2D[] }
-  | { readonly kind: 'weighted-choice'; readonly choices: readonly { readonly weight: number; readonly child: ParticleEmitterGraphNode2D }[] }
-  | { readonly kind: 'condition'; readonly condition: ParticleCondition2D; readonly then: ParticleEmitterGraphNode2D; readonly otherwise?: ParticleEmitterGraphNode2D }
-  | { readonly kind: 'gate'; readonly event: ParticleGraphEvent2D; readonly child: ParticleEmitterGraphNode2D }
-  | { readonly kind: 'timeline'; readonly markers: readonly { readonly time: number; readonly marker: string }[]; readonly child: ParticleEmitterGraphNode2D }
-  | { readonly kind: 'parameter-remap'; readonly map: Readonly<Record<string, string>>; readonly child: ParticleEmitterGraphNode2D }
-  | { readonly kind: 'transform'; readonly space: ParticleCoordinateSpace2D; readonly child: ParticleEmitterGraphNode2D }
-  | { readonly kind: 'trigger'; readonly signal: string }
-  | { readonly kind: 'stop'; readonly emitterId?: string; readonly mode?: ParticleEmitterStopMode2D }
-  | { readonly kind: 'wait-for-completion'; readonly emitterId?: string };
+  | { readonly kind: "emit"; readonly emitterId: string }
+  | {
+      readonly kind: "effect-reference";
+      readonly effectId: string;
+      readonly inherit?: ParticleInheritancePolicy2D;
+      readonly parameterMap?: Readonly<Record<string, string>>;
+    }
+  | {
+      readonly kind: "sequence" | "parallel";
+      readonly children: readonly ParticleEmitterGraphNode2D[];
+    }
+  | {
+      readonly kind: "delay";
+      readonly duration: number;
+      readonly child: ParticleEmitterGraphNode2D;
+    }
+  | {
+      readonly kind: "repeat";
+      readonly count: number;
+      readonly interval?: number;
+      readonly child: ParticleEmitterGraphNode2D;
+    }
+  | {
+      readonly kind: "random-choice";
+      readonly children: readonly ParticleEmitterGraphNode2D[];
+    }
+  | {
+      readonly kind: "weighted-choice";
+      readonly choices: readonly {
+        readonly weight: number;
+        readonly child: ParticleEmitterGraphNode2D;
+      }[];
+    }
+  | {
+      readonly kind: "condition";
+      readonly condition: ParticleCondition2D;
+      readonly then: ParticleEmitterGraphNode2D;
+      readonly otherwise?: ParticleEmitterGraphNode2D;
+    }
+  | {
+      readonly kind: "gate";
+      readonly event: ParticleGraphEvent2D;
+      readonly child: ParticleEmitterGraphNode2D;
+    }
+  | {
+      readonly kind: "timeline";
+      readonly markers: readonly {
+        readonly time: number;
+        readonly marker: string;
+      }[];
+      readonly child: ParticleEmitterGraphNode2D;
+    }
+  | {
+      readonly kind: "parameter-remap";
+      readonly map: Readonly<Record<string, string>>;
+      readonly child: ParticleEmitterGraphNode2D;
+    }
+  | {
+      readonly kind: "transform";
+      readonly space: ParticleCoordinateSpace2D;
+      readonly child: ParticleEmitterGraphNode2D;
+    }
+  | { readonly kind: "trigger"; readonly signal: string }
+  | {
+      readonly kind: "stop";
+      readonly emitterId?: string;
+      readonly mode?: ParticleEmitterStopMode2D;
+    }
+  | { readonly kind: "wait-for-completion"; readonly emitterId?: string };
 
 export interface ParticleEmitterGraph2D {
   readonly root: ParticleEmitterGraphNode2D;
@@ -216,12 +310,15 @@ export interface ParticleEffectGraph2D {
 }
 
 export type ParticleGraphInstruction2D =
-  | { readonly opcode: 'emit'; readonly operand: number }
-  | { readonly opcode: 'begin-sequence' | 'end-sequence' | 'begin-parallel' | 'end-parallel'; readonly operand: number }
-  | { readonly opcode: 'delay' | 'repeat'; readonly operand: number }
-  | { readonly opcode: 'gate'; readonly operand: number }
-  | { readonly opcode: 'effect-reference'; readonly operand: number }
-  | { readonly opcode: 'control'; readonly operand: number };
+  | { readonly opcode: "emit"; readonly operand: number }
+  | {
+      readonly opcode: "begin-sequence" | "end-sequence" | "begin-parallel" | "end-parallel";
+      readonly operand: number;
+    }
+  | { readonly opcode: "delay" | "repeat"; readonly operand: number }
+  | { readonly opcode: "gate"; readonly operand: number }
+  | { readonly opcode: "effect-reference"; readonly operand: number }
+  | { readonly opcode: "control"; readonly operand: number };
 
 export interface ParticleEffectCompileReport2D {
   readonly archetypeCount: number;
@@ -262,26 +359,36 @@ export function emitter2D(definition: ParticleEmitterDefinition2D): ParticleEmit
 }
 
 export const particleGraph2D = Object.freeze({
-  emit: (emitterId: string): ParticleEmitterGraphNode2D => ({ kind: 'emit', emitterId }),
-  effect: (effectId: string, inherit?: ParticleInheritancePolicy2D): ParticleEmitterGraphNode2D => inherit ? ({ kind: 'effect-reference', effectId, inherit }) : ({ kind: 'effect-reference', effectId }),
-  sequence: (...children: readonly ParticleEmitterGraphNode2D[]): ParticleEmitterGraphNode2D => ({ kind: 'sequence', children }),
-  parallel: (...children: readonly ParticleEmitterGraphNode2D[]): ParticleEmitterGraphNode2D => ({ kind: 'parallel', children }),
-  delay: (duration: number, child: ParticleEmitterGraphNode2D): ParticleEmitterGraphNode2D => ({ kind: 'delay', duration, child }),
-  repeat: (count: number, child: ParticleEmitterGraphNode2D, interval?: number): ParticleEmitterGraphNode2D => interval === undefined ? ({ kind: 'repeat', count, child }) : ({ kind: 'repeat', count, interval, child }),
-  gate: (event: ParticleGraphEvent2D, child: ParticleEmitterGraphNode2D): ParticleEmitterGraphNode2D => ({ kind: 'gate', event, child }),
-  signal: (signal: string): ParticleEmitterGraphNode2D => ({ kind: 'trigger', signal }),
+  emit: (emitterId: string): ParticleEmitterGraphNode2D => ({
+    kind: "emit",
+    emitterId,
+  }),
+  effect: (effectId: string, inherit?: ParticleInheritancePolicy2D): ParticleEmitterGraphNode2D => (inherit ? { kind: "effect-reference", effectId, inherit } : { kind: "effect-reference", effectId }),
+  sequence: (...children: readonly ParticleEmitterGraphNode2D[]): ParticleEmitterGraphNode2D => ({ kind: "sequence", children }),
+  parallel: (...children: readonly ParticleEmitterGraphNode2D[]): ParticleEmitterGraphNode2D => ({ kind: "parallel", children }),
+  delay: (duration: number, child: ParticleEmitterGraphNode2D): ParticleEmitterGraphNode2D => ({ kind: "delay", duration, child }),
+  repeat: (count: number, child: ParticleEmitterGraphNode2D, interval?: number): ParticleEmitterGraphNode2D => (interval === undefined ? { kind: "repeat", count, child } : { kind: "repeat", count, interval, child }),
+  gate: (event: ParticleGraphEvent2D, child: ParticleEmitterGraphNode2D): ParticleEmitterGraphNode2D => ({ kind: "gate", event, child }),
+  signal: (signal: string): ParticleEmitterGraphNode2D => ({
+    kind: "trigger",
+    signal,
+  }),
 });
 
-export function particleConstant2D(value: number): ParticleValueSource2D { return { kind: 'constant', value }; }
+export function particleConstant2D(value: number): ParticleValueSource2D {
+  return { kind: "constant", value };
+}
 export function particleParameter2D(parameterId: string, scale?: number, offset?: number): ParticleValueSource2D {
   return {
-    kind: 'parameter',
+    kind: "parameter",
     parameterId,
     ...(scale === undefined ? {} : { scale }),
     ...(offset === undefined ? {} : { offset }),
   };
 }
-export function particleRandom2D(min: number, max: number): ParticleValueSource2D { return { kind: 'random', min, max }; }
+export function particleRandom2D(min: number, max: number): ParticleValueSource2D {
+  return { kind: "random", min, max };
+}
 
 export function particleOnce2D(count = 1): ParticleEmitterTimeline2D {
   return { duration: 0, bursts: [{ time: 0, count }] };
@@ -292,24 +399,45 @@ export function particleRate2D(rate: ParticleValueSource2D, duration?: number, l
 }
 
 export function adaptParticleEffectDefinition2D(definition: ParticleEffectDefinition2D): ParticleEffectGraph2D {
-  const emitters = definition.archetypes.map((archetype): ParticleEmitterDefinition2D => ({
-    id: archetype.id,
-    archetypeId: archetype.id,
-    timeline: { manual: true },
-    source: { kind: archetype.spawn.shape, spread: archetype.spawn.spread, ...(archetype.spawn.radius === undefined ? {} : { radius: archetype.spawn.radius }), ...(archetype.spawn.arc === undefined ? {} : { arc: archetype.spawn.arc }) },
-    transform: { space: 'scene' },
-    limits: { importance: archetype.id === 'core' || archetype.id === 'shell' ? 'critical' : archetype.id === 'primary' ? 'primary' : 'secondary' },
-  }));
+  const emitters = definition.archetypes.map(
+    (archetype): ParticleEmitterDefinition2D => ({
+      id: archetype.id,
+      archetypeId: archetype.id,
+      timeline: { manual: true },
+      source: {
+        kind: archetype.spawn.shape,
+        spread: archetype.spawn.spread,
+        ...(archetype.spawn.radius === undefined ? {} : { radius: archetype.spawn.radius }),
+        ...(archetype.spawn.arc === undefined ? {} : { arc: archetype.spawn.arc }),
+      },
+      transform: { space: "scene" },
+      limits: {
+        importance: archetype.id === "core" || archetype.id === "shell" ? "critical" : archetype.id === "primary" ? "primary" : "secondary",
+      },
+    }),
+  );
   return defineParticleEffect2D({
     schemaVersion: PARTICLE_EFFECT_GRAPH_SCHEMA_VERSION,
     id: definition.id,
     parameters: [],
     archetypes: definition.archetypes,
     emitters,
-    graph: { root: { kind: 'parallel', children: emitters.map((emitter) => ({ kind: 'emit', emitterId: emitter.id })) } },
+    graph: {
+      root: {
+        kind: "parallel",
+        children: emitters.map((emitter) => ({
+          kind: "emit",
+          emitterId: emitter.id,
+        })),
+      },
+    },
     renderRecipes: definition.renderRecipes,
     capacity: definition.capacity,
-    quality: { defaultTier: definition.renderRecipes.defaultTier, allowRuntimeScaling: true, targetFrameMs: 16.67 },
+    quality: {
+      defaultTier: definition.renderRecipes.defaultTier,
+      allowRuntimeScaling: true,
+      targetFrameMs: 16.67,
+    },
   });
 }
 
@@ -352,7 +480,14 @@ export function compileParticleEffect2D(graph: ParticleEffectGraph2D): CompiledP
     minimumDrawBuffers: maximumEventGeneration > 0 || graph.archetypes.some((entry) => entry.events?.length) ? 3 : 2,
   });
   const graphHash = hashParticleGraph2D(graph);
-  const abiHash = hashText2D(JSON.stringify({ state: 1, resources: 2, archetypes: graph.archetypes.map((entry) => entry.id), metadata: backendRequirements.metadata }));
+  const abiHash = hashText2D(
+    JSON.stringify({
+      state: 1,
+      resources: 2,
+      archetypes: graph.archetypes.map((entry) => entry.id),
+      metadata: backendRequirements.metadata,
+    }),
+  );
   return Object.freeze({
     compilerVersion: PARTICLE_EFFECT_COMPILER_VERSION,
     stateAbiVersion: 1,
@@ -376,7 +511,7 @@ export function compileParticleEffect2D(graph: ParticleEffectGraph2D): CompiledP
     }),
     archetypeCapacity: Object.freeze(archetypeCapacity),
     backendRequirements,
-    fallbackPolicy: graph.fallbackPolicy ?? 'webgl2',
+    fallbackPolicy: graph.fallbackPolicy ?? "webgl2",
     persistedBindings: Object.freeze([...(graph.persistedBindings ?? [])]),
   });
 }
@@ -387,10 +522,10 @@ export function hashParticleGraph2D(graph: ParticleEffectGraph2D): string {
 
 export function validateParticleEffectGraph2D(graph: ParticleEffectGraph2D): ParticleEffectGraph2D {
   if (graph.schemaVersion !== PARTICLE_EFFECT_GRAPH_SCHEMA_VERSION) throw new Error(`Unsupported particle effect graph schema: ${graph.schemaVersion}`);
-  requireId(graph.id, 'effect');
-  const archetypes = uniqueIds(graph.archetypes, 'archetype');
-  const emitters = uniqueIds(graph.emitters, 'emitter');
-  const parameters = uniqueIds(graph.parameters, 'parameter');
+  requireId(graph.id, "effect");
+  const archetypes = uniqueIds(graph.archetypes, "archetype");
+  const emitters = uniqueIds(graph.emitters, "emitter");
+  const parameters = uniqueIds(graph.parameters, "parameter");
   if (archetypes.size === 0) throw new Error(`Particle effect ${graph.id} requires at least one archetype`);
   for (const parameter of graph.parameters) validateParameter(parameter);
   for (const emitter of graph.emitters) {
@@ -401,23 +536,26 @@ export function validateParticleEffectGraph2D(graph: ParticleEffectGraph2D): Par
   validatePersistedBindings(graph, parameters);
   validateModuleBindings(graph, parameters, archetypes);
   validateEventCycles(graph);
-  validateGraphNode(graph.graph.root, emitters, archetypes, parameters, 'root', 0);
+  validateGraphNode(graph.graph.root, emitters, archetypes, parameters, "root", 0);
   if (!graph.renderRecipes.recipes.some((entry) => entry.tier === graph.quality.defaultTier)) throw new Error(`Particle effect ${graph.id} quality tier is not rendered`);
   return graph;
 }
 
 function validateArchetypeCapacity(graph: ParticleEffectGraph2D, archetypes: ReadonlySet<string>): void {
   if (!graph.archetypeCapacity) return;
-  const seen = new Set<string>(); let share = 0; let reserved = 0;
+  const seen = new Set<string>();
+  let share = 0;
+  let reserved = 0;
   for (const policy of graph.archetypeCapacity) {
     if (!archetypes.has(policy.archetypeId) || seen.has(policy.archetypeId)) throw new Error(`Invalid particle archetype capacity policy: ${policy.archetypeId}`);
     if (!Number.isFinite(policy.share) || policy.share <= 0 || policy.share > 1) throw new Error(`Particle archetype ${policy.archetypeId} has an invalid capacity share`);
     if (policy.reserved !== undefined && (!Number.isSafeInteger(policy.reserved) || policy.reserved < 0)) throw new Error(`Particle archetype ${policy.archetypeId} has an invalid reservation`);
     reserved += policy.reserved ?? 0;
-    seen.add(policy.archetypeId); share += policy.share;
+    seen.add(policy.archetypeId);
+    share += policy.share;
   }
-  if (seen.size !== archetypes.size) throw new Error('Particle archetype capacity policy must include every archetype');
-  if (share > 1.000001) throw new Error('Particle archetype capacity shares exceed one');
+  if (seen.size !== archetypes.size) throw new Error("Particle archetype capacity policy must include every archetype");
+  if (share > 1.000001) throw new Error("Particle archetype capacity shares exceed one");
   if (reserved > graph.capacity.min) throw new Error(`Particle archetype reservations require ${reserved} slots but minimum capacity is ${graph.capacity.min}`);
 }
 
@@ -433,12 +571,13 @@ function validatePersistedBindings(graph: ParticleEffectGraph2D, parameters: Rea
 }
 
 function validateModuleBindings(graph: ParticleEffectGraph2D, parameters: ReadonlySet<string>, archetypes: ReadonlySet<string>): void {
-  const targets=new Set<string>();
-  for(const binding of graph.moduleBindings??[]){
-    if(!parameters.has(binding.parameterId))throw new Error(`Particle module binding references unknown parameter: ${binding.parameterId}`);
-    const match=/^archetype\.([a-z][a-z0-9-]*)\.(motion|collision|appearance)\.[a-z][a-zA-Z0-9.]*$/.exec(binding.target);
-    if(!match||!archetypes.has(match[1]!))throw new Error(`Invalid particle module binding target: ${binding.target}`);
-    if(targets.has(binding.target))throw new Error(`Duplicate particle module binding target: ${binding.target}`);targets.add(binding.target);
+  const targets = new Set<string>();
+  for (const binding of graph.moduleBindings ?? []) {
+    if (!parameters.has(binding.parameterId)) throw new Error(`Particle module binding references unknown parameter: ${binding.parameterId}`);
+    const match = /^archetype\.([a-z][a-z0-9-]*)\.(motion|collision|appearance)\.[a-z][a-zA-Z0-9.]*$/.exec(binding.target);
+    if (!match || !archetypes.has(match[1]!)) throw new Error(`Invalid particle module binding target: ${binding.target}`);
+    if (targets.has(binding.target)) throw new Error(`Duplicate particle module binding target: ${binding.target}`);
+    targets.add(binding.target);
   }
 }
 
@@ -446,21 +585,24 @@ function validateEventCycles(graph: ParticleEffectGraph2D): void {
   const edges = new Map(graph.archetypes.map((entry) => [entry.id, entry.events ?? []] as const));
   const visit = (id: string, path: Set<string>): void => {
     if (path.has(id)) return;
-    const nextPath = new Set(path); nextPath.add(id);
+    const nextPath = new Set(path);
+    nextPath.add(id);
     for (const event of edges.get(id) ?? []) {
       if (nextPath.has(event.childArchetypeId) && event.maxGeneration > 8) throw new Error(`Particle event cycle at ${event.childArchetypeId} exceeds the supported generation depth`);
       visit(event.childArchetypeId, nextPath);
     }
   };
-  graph.archetypes.forEach((entry) => { visit(entry.id, new Set()); });
+  graph.archetypes.forEach((entry) => {
+    visit(entry.id, new Set());
+  });
 }
 
 function validateParameter(parameter: ParticleParameterDefinition2D): void {
-  if (parameter.kind === 'number') {
-    if (typeof parameter.defaultValue !== 'number' || !Number.isFinite(parameter.defaultValue)) throw new Error(`Particle number parameter ${parameter.id} requires a finite default`);
+  if (parameter.kind === "number") {
+    if (typeof parameter.defaultValue !== "number" || !Number.isFinite(parameter.defaultValue)) throw new Error(`Particle number parameter ${parameter.id} requires a finite default`);
     if (parameter.min !== undefined && parameter.max !== undefined && parameter.min > parameter.max) throw new Error(`Particle parameter ${parameter.id} has an invalid range`);
   }
-  if (parameter.kind === 'enum' && (!parameter.values || parameter.values.length === 0 || !parameter.values.includes(String(parameter.defaultValue)))) throw new Error(`Particle enum parameter ${parameter.id} requires values containing its default`);
+  if (parameter.kind === "enum" && (!parameter.values || parameter.values.length === 0 || !parameter.values.includes(String(parameter.defaultValue)))) throw new Error(`Particle enum parameter ${parameter.id} requires values containing its default`);
 }
 
 function validateEmitter(emitter: ParticleEmitterDefinition2D, parameters: ReadonlySet<string>, archetypes: ReadonlySet<string>): void {
@@ -471,24 +613,25 @@ function validateEmitter(emitter: ParticleEmitterDefinition2D, parameters: Reado
   }
   if (emitter.limits.maxGeneration !== undefined && (!Number.isSafeInteger(emitter.limits.maxGeneration) || emitter.limits.maxGeneration < 0)) throw new Error(`Particle emitter ${emitter.id} has an invalid generation limit`);
   validateSource(emitter.source, archetypes, emitter.id);
-  const initialization=emitter.initialization;
-  for(const source of [initialization?.direction,initialization?.spread,initialization?.power,initialization?.lifetimeScale,initialization?.paletteSeed])if(source)validateValueSource(source,parameters,emitter.id);
-  if(initialization?.radialPowerExponent!==undefined&&!Number.isFinite(initialization.radialPowerExponent))throw new Error(`Particle emitter ${emitter.id} has an invalid radial power exponent`);
+  const initialization = emitter.initialization;
+  for (const source of [initialization?.direction, initialization?.spread, initialization?.power, initialization?.lifetimeScale, initialization?.paletteSeed]) if (source) validateValueSource(source, parameters, emitter.id);
+  if (initialization?.radialPowerExponent !== undefined && !Number.isFinite(initialization.radialPowerExponent)) throw new Error(`Particle emitter ${emitter.id} has an invalid radial power exponent`);
+  if (initialization?.powerVariability !== undefined && (!Number.isFinite(initialization.powerVariability) || initialization.powerVariability < 0 || initialization.powerVariability > 1)) throw new Error(`Particle emitter ${emitter.id} has invalid power variability`);
   for (const binding of emitter.parameters ?? []) validateValueSource(binding.source, parameters, emitter.id);
 }
 
 function validateSource(source: ParticleSpawnSource2D, archetypes: ReadonlySet<string>, emitterId: string): void {
-  if (source.kind === 'path' && source.points.length < 2) throw new Error(`Particle emitter ${emitterId} path requires at least two points`);
-  if (source.kind === 'particles' && source.archetypeId && !archetypes.has(source.archetypeId)) throw new Error(`Particle emitter ${emitterId} samples unknown archetype ${source.archetypeId}`);
-  if (source.kind === 'rectangle' && (source.width < 0 || source.height < 0)) throw new Error(`Particle emitter ${emitterId} rectangle dimensions must be non-negative`);
-  if ('radius' in source && source.radius !== undefined && (!Number.isFinite(source.radius) || source.radius < 0)) throw new Error(`Particle emitter ${emitterId} radius must be non-negative`);
-  if ('innerRadius' in source && source.innerRadius !== undefined && (!Number.isFinite(source.innerRadius) || source.innerRadius < 0 || source.innerRadius > (source.radius ?? Infinity))) throw new Error(`Particle emitter ${emitterId} inner radius is invalid`);
+  if (source.kind === "path" && source.points.length < 2) throw new Error(`Particle emitter ${emitterId} path requires at least two points`);
+  if (source.kind === "particles" && source.archetypeId && !archetypes.has(source.archetypeId)) throw new Error(`Particle emitter ${emitterId} samples unknown archetype ${source.archetypeId}`);
+  if (source.kind === "rectangle" && (source.width < 0 || source.height < 0)) throw new Error(`Particle emitter ${emitterId} rectangle dimensions must be non-negative`);
+  if ("radius" in source && source.radius !== undefined && (!Number.isFinite(source.radius) || source.radius < 0)) throw new Error(`Particle emitter ${emitterId} radius must be non-negative`);
+  if ("innerRadius" in source && source.innerRadius !== undefined && (!Number.isFinite(source.innerRadius) || source.innerRadius < 0 || source.innerRadius > (source.radius ?? Infinity))) throw new Error(`Particle emitter ${emitterId} inner radius is invalid`);
 }
 
 function validateValueSource(source: ParticleValueSource2D, parameters: ReadonlySet<string>, owner: string): void {
-  if (source.kind === 'parameter' && !parameters.has(source.parameterId)) throw new Error(`Particle ${owner} references unknown parameter ${source.parameterId}`);
-  if (source.kind === 'random' && (!Number.isFinite(source.min) || !Number.isFinite(source.max) || source.min > source.max)) throw new Error(`Particle ${owner} has an invalid random range`);
-  if (source.kind === 'curve') validateCurve(source.curve, owner);
+  if (source.kind === "parameter" && !parameters.has(source.parameterId)) throw new Error(`Particle ${owner} references unknown parameter ${source.parameterId}`);
+  if (source.kind === "random" && (!Number.isFinite(source.min) || !Number.isFinite(source.max) || source.min > source.max)) throw new Error(`Particle ${owner} has an invalid random range`);
+  if (source.kind === "curve") validateCurve(source.curve, owner);
 }
 
 function validateCurve(curve: ParticleCurve2D, owner: string): void {
@@ -502,76 +645,109 @@ function validateCurve(curve: ParticleCurve2D, owner: string): void {
 
 function validateGraphNode(node: ParticleEmitterGraphNode2D, emitters: ReadonlySet<string>, archetypes: ReadonlySet<string>, parameters: ReadonlySet<string>, path: string, depth: number): void {
   if (depth > 64) throw new Error(`Particle graph ${path} exceeds the maximum nesting depth`);
-  if (node.kind === 'emit' && !emitters.has(node.emitterId)) throw new Error(`Particle graph ${path} references unknown emitter ${node.emitterId}`);
-  if ((node.kind === 'sequence' || node.kind === 'parallel' || node.kind === 'random-choice') && node.children.length === 0) throw new Error(`Particle graph ${path} requires children`);
-  if (node.kind === 'repeat' && (!Number.isSafeInteger(node.count) || node.count < 1 || node.count > 10_000)) throw new Error(`Particle graph ${path} repeat must be bounded`);
-  if (node.kind === 'delay' && (!Number.isFinite(node.duration) || node.duration < 0)) throw new Error(`Particle graph ${path} delay must be non-negative`);
-  if (node.kind === 'weighted-choice' && (node.choices.length === 0 || node.choices.some((entry) => !Number.isFinite(entry.weight) || entry.weight <= 0))) throw new Error(`Particle graph ${path} has invalid weighted choices`);
-  if (node.kind === 'condition' && node.condition.kind === 'parameter' && !parameters.has(node.condition.parameterId)) throw new Error(`Particle graph ${path} references unknown parameter ${node.condition.parameterId}`);
-  if (node.kind === 'gate' && 'archetypeId' in node.event && !archetypes.has(node.event.archetypeId)) throw new Error(`Particle graph ${path} references unknown archetype ${node.event.archetypeId}`);
-  if (node.kind === 'gate' && 'emitterId' in node.event && !emitters.has(node.event.emitterId)) throw new Error(`Particle graph ${path} references unknown emitter ${node.event.emitterId}`);
+  if (node.kind === "emit" && !emitters.has(node.emitterId)) throw new Error(`Particle graph ${path} references unknown emitter ${node.emitterId}`);
+  if ((node.kind === "sequence" || node.kind === "parallel" || node.kind === "random-choice") && node.children.length === 0) throw new Error(`Particle graph ${path} requires children`);
+  if (node.kind === "repeat" && (!Number.isSafeInteger(node.count) || node.count < 1 || node.count > 10_000)) throw new Error(`Particle graph ${path} repeat must be bounded`);
+  if (node.kind === "delay" && (!Number.isFinite(node.duration) || node.duration < 0)) throw new Error(`Particle graph ${path} delay must be non-negative`);
+  if (node.kind === "weighted-choice" && (node.choices.length === 0 || node.choices.some((entry) => !Number.isFinite(entry.weight) || entry.weight <= 0))) throw new Error(`Particle graph ${path} has invalid weighted choices`);
+  if (node.kind === "condition" && node.condition.kind === "parameter" && !parameters.has(node.condition.parameterId)) throw new Error(`Particle graph ${path} references unknown parameter ${node.condition.parameterId}`);
+  if (node.kind === "gate" && "archetypeId" in node.event && !archetypes.has(node.event.archetypeId)) throw new Error(`Particle graph ${path} references unknown archetype ${node.event.archetypeId}`);
+  if (node.kind === "gate" && "emitterId" in node.event && !emitters.has(node.event.emitterId)) throw new Error(`Particle graph ${path} references unknown emitter ${node.event.emitterId}`);
   for (const [index, child] of nodeChildren(node).entries()) validateGraphNode(child, emitters, archetypes, parameters, `${path}.${node.kind}[${index}]`, depth + 1);
 }
 
 function nodeChildren(node: ParticleEmitterGraphNode2D): readonly ParticleEmitterGraphNode2D[] {
-  if (node.kind === 'sequence' || node.kind === 'parallel' || node.kind === 'random-choice') return node.children;
-  if (node.kind === 'weighted-choice') return node.choices.map((entry) => entry.child);
-  if (node.kind === 'delay' || node.kind === 'repeat' || node.kind === 'gate' || node.kind === 'timeline' || node.kind === 'parameter-remap' || node.kind === 'transform') return [node.child];
-  if (node.kind === 'condition') return node.otherwise ? [node.then, node.otherwise] : [node.then];
+  if (node.kind === "sequence" || node.kind === "parallel" || node.kind === "random-choice") return node.children;
+  if (node.kind === "weighted-choice") return node.choices.map((entry) => entry.child);
+  if (node.kind === "delay" || node.kind === "repeat" || node.kind === "gate" || node.kind === "timeline" || node.kind === "parameter-remap" || node.kind === "transform") return [node.child];
+  if (node.kind === "condition") return node.otherwise ? [node.then, node.otherwise] : [node.then];
   return [];
 }
 
 function compileNode(node: ParticleEmitterGraphNode2D, emitters: Readonly<Record<string, number>>, output: ParticleGraphInstruction2D[], references: Set<string>): void {
-  if (node.kind === 'emit') { output.push({ opcode: 'emit', operand: emitters[node.emitterId] ?? -1 }); return; }
-  if (node.kind === 'effect-reference') { references.add(node.effectId); output.push({ opcode: 'effect-reference', operand: references.size - 1 }); return; }
-  if (node.kind === 'sequence' || node.kind === 'parallel') {
-    output.push({ opcode: node.kind === 'sequence' ? 'begin-sequence' : 'begin-parallel', operand: node.children.length });
-    node.children.forEach((child) => { compileNode(child, emitters, output, references); });
-    output.push({ opcode: node.kind === 'sequence' ? 'end-sequence' : 'end-parallel', operand: 0 });
+  if (node.kind === "emit") {
+    output.push({ opcode: "emit", operand: emitters[node.emitterId] ?? -1 });
     return;
   }
-  if (node.kind === 'delay' || node.kind === 'repeat') output.push({ opcode: node.kind, operand: node.kind === 'delay' ? node.duration : node.count });
-  else if (node.kind === 'gate') output.push({ opcode: 'gate', operand: graphEventCode(node.event) });
-  else output.push({ opcode: 'control', operand: 0 });
-  nodeChildren(node).forEach((child) => { compileNode(child, emitters, output, references); });
+  if (node.kind === "effect-reference") {
+    references.add(node.effectId);
+    output.push({ opcode: "effect-reference", operand: references.size - 1 });
+    return;
+  }
+  if (node.kind === "sequence" || node.kind === "parallel") {
+    output.push({
+      opcode: node.kind === "sequence" ? "begin-sequence" : "begin-parallel",
+      operand: node.children.length,
+    });
+    node.children.forEach((child) => {
+      compileNode(child, emitters, output, references);
+    });
+    output.push({
+      opcode: node.kind === "sequence" ? "end-sequence" : "end-parallel",
+      operand: 0,
+    });
+    return;
+  }
+  if (node.kind === "delay" || node.kind === "repeat")
+    output.push({
+      opcode: node.kind,
+      operand: node.kind === "delay" ? node.duration : node.count,
+    });
+  else if (node.kind === "gate") output.push({ opcode: "gate", operand: graphEventCode(node.event) });
+  else output.push({ opcode: "control", operand: 0 });
+  nodeChildren(node).forEach((child) => {
+    compileNode(child, emitters, output, references);
+  });
 }
 
 function graphEventCode(event: ParticleGraphEvent2D): number {
-  return ['effect-start', 'effect-stop', 'effect-complete', 'emitter-start', 'emitter-burst', 'emitter-loop', 'emitter-stop', 'emitter-complete', 'particle-birth', 'particle-death', 'particle-collision', 'particle-age', 'signal', 'marker'].indexOf(event.kind);
+  return ["effect-start", "effect-stop", "effect-complete", "emitter-start", "emitter-burst", "emitter-loop", "emitter-stop", "emitter-complete", "particle-birth", "particle-death", "particle-collision", "particle-age", "signal", "marker"].indexOf(event.kind);
 }
 
 function collectWarnings(graph: ParticleEffectGraph2D): string[] {
   const warnings: string[] = [];
-  if (graph.emitters.length === 0) warnings.push('Effect has no emitters');
-  if (graph.capacity.previewMax > 262_144) warnings.push('Preview capacity exceeds the recommended 262144-particle ceiling');
-  if (graph.archetypes.some((entry) => (entry.events ?? []).some((event) => event.count > 1024))) warnings.push('A particle event emits more than 1024 children');
+  if (graph.emitters.length === 0) warnings.push("Effect has no emitters");
+  if (graph.capacity.previewMax > 262_144) warnings.push("Preview capacity exceeds the recommended 262144-particle ceiling");
+  if (graph.archetypes.some((entry) => (entry.events ?? []).some((event) => event.count > 1024))) warnings.push("A particle event emits more than 1024 children");
   return warnings;
 }
 
 function resolveArchetypeCapacity(graph: ParticleEffectGraph2D): ParticleArchetypeCapacity2D[] {
   if (graph.archetypeCapacity) return [...graph.archetypeCapacity];
   const share = 1 / graph.archetypes.length;
-  return graph.archetypes.map((entry, index) => ({ archetypeId: entry.id, share, overflow: index === 0 ? 'reserve-priority' : 'recycle-oldest' }));
+  return graph.archetypes.map((entry, index) => ({
+    archetypeId: entry.id,
+    share,
+    overflow: index === 0 ? "reserve-priority" : "recycle-oldest",
+  }));
 }
 
 function canonicalJson2D(value: unknown): string {
-  if (Array.isArray(value)) return `[${value.map(canonicalJson2D).join(',')}]`;
-  if (typeof value === 'object' && value !== null) {
+  if (Array.isArray(value)) return `[${value.map(canonicalJson2D).join(",")}]`;
+  if (typeof value === "object" && value !== null) {
     const record = value as Readonly<Record<string, unknown>>;
-    return `{${Object.keys(record).sort().map((key) => `${JSON.stringify(key)}:${canonicalJson2D(record[key])}`).join(',')}}`;
+    return `{${Object.keys(record)
+      .sort()
+      .map((key) => `${JSON.stringify(key)}:${canonicalJson2D(record[key])}`)
+      .join(",")}}`;
   }
   return JSON.stringify(value);
 }
 
 function hashText2D(source: string): string {
   let hash = 2166136261;
-  for (let index = 0; index < source.length; index += 1) { hash ^= source.charCodeAt(index); hash = Math.imul(hash, 16777619); }
-  return (hash >>> 0).toString(16).padStart(8, '0');
+  for (let index = 0; index < source.length; index += 1) {
+    hash ^= source.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(16).padStart(8, "0");
 }
 
 function stableIds(ids: readonly string[]): Record<string, number> {
   const output: Record<string, number> = {};
-  ids.forEach((id, index) => { output[id] = index; });
+  ids.forEach((id, index) => {
+    output[id] = index;
+  });
   return output;
 }
 

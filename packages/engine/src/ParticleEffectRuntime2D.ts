@@ -1,15 +1,11 @@
-import { resolveParticleParameters2D } from './ParticleEffectAuthoring2D.js';
-import type { CompiledParticleProgram2D } from './ParticleEffectCompiler2D.js';
-import type {
-  ParticleEmitterDefinition2D,
-  ParticleEmitterStopMode2D,
-  ParticleParameterValue2D,
-} from './ParticleEffectGraph2D.js';
-import type { ParticleEffectDiagnostics2D, ParticlePalette2D, ParticleRenderTier2D } from './ParticleEffects2D.js';
-import type { GpuParticleStateSnapshot2D, GpuRenderTarget2D } from './Gpu2D.js';
-import { ParticleGraphScheduler2D } from './ParticleGraphScheduler2D.js';
+import { resolveParticleParameters2D } from "./ParticleEffectAuthoring2D.js";
+import type { CompiledParticleProgram2D } from "./ParticleEffectCompiler2D.js";
+import type { ParticleEmitterDefinition2D, ParticleEmitterStopMode2D, ParticleParameterValue2D } from "./ParticleEffectGraph2D.js";
+import type { ParticleEffectDiagnostics2D, ParticlePalette2D, ParticleRenderTier2D } from "./ParticleEffects2D.js";
+import type { GpuParticleStateSnapshot2D, GpuRenderTarget2D } from "./Gpu2D.js";
+import { ParticleGraphScheduler2D } from "./ParticleGraphScheduler2D.js";
 
-export type ParticleEffectInstanceStatus2D = 'idle' | 'running' | 'paused' | 'draining' | 'complete' | 'disposed';
+export type ParticleEffectInstanceStatus2D = "idle" | "running" | "paused" | "draining" | "complete" | "disposed";
 
 export interface ParticleTransform2D {
   readonly position: readonly [number, number];
@@ -53,6 +49,7 @@ export interface ParticleEmissionWriter2D {
   spread(value: number): ParticleEmissionWriter2D;
   power(value: number): ParticleEmissionWriter2D;
   seed(value: number): ParticleEmissionWriter2D;
+  inheritedVelocity(x: number, y: number): ParticleEmissionWriter2D;
   submit(): void;
   reset(): ParticleEmissionWriter2D;
 }
@@ -70,16 +67,28 @@ export interface ParticleSignalPayload2D {
   readonly value?: number;
 }
 
-export interface ParticleCircleCollider2D { readonly x: number; readonly y: number; readonly radius: number; readonly mode?: 'bounce' | 'kill' }
-export interface ParticleCapsuleCollider2D { readonly ax: number; readonly ay: number; readonly bx: number; readonly by: number; readonly radius: number; readonly mode?: 'bounce' | 'kill' }
+export interface ParticleCircleCollider2D {
+  readonly x: number;
+  readonly y: number;
+  readonly radius: number;
+  readonly mode?: "bounce" | "kill";
+}
+export interface ParticleCapsuleCollider2D {
+  readonly ax: number;
+  readonly ay: number;
+  readonly bx: number;
+  readonly by: number;
+  readonly radius: number;
+  readonly mode?: "bounce" | "kill";
+}
 export interface ParticleColliderSet2D {
   readonly circles?: readonly ParticleCircleCollider2D[];
   readonly capsules?: readonly ParticleCapsuleCollider2D[];
   readonly revision: number;
 }
 
-export type ParticleForceFalloff2D = 'constant' | 'inverse' | 'inverse-square';
-export type ParticleForceEnvelope2D = 'none' | 'linear' | 'smooth';
+export type ParticleForceFalloff2D = "constant" | "inverse" | "inverse-square";
+export type ParticleForceEnvelope2D = "none" | "linear" | "smooth";
 export interface ParticleAttractor2D {
   readonly x: number;
   readonly y: number;
@@ -91,6 +100,8 @@ export interface ParticleAttractor2D {
   readonly falloff?: ParticleForceFalloff2D;
   /** Additional tangential acceleration independent of the archetype profile. */
   readonly tangentialStrength?: number;
+  /** Direct radial acceleration added after archetype-scaled strength. */
+  readonly radialStrength?: number;
   /** Finite influence radius. Omit or use zero for an unbounded field. */
   readonly radius?: number;
   /** Attenuation from the center to the finite radius. */
@@ -105,8 +116,8 @@ export interface ParticleForceFieldSet2D {
   readonly revision: number;
 }
 
-export type ParticleDomainShape2D = 'rectangle' | 'circle';
-export type ParticleDomainBehavior2D = 'none' | 'kill' | 'bounce' | 'wrap';
+export type ParticleDomainShape2D = "rectangle" | "circle";
+export type ParticleDomainBehavior2D = "none" | "kill" | "bounce" | "wrap";
 export interface ParticleDomain2D {
   readonly revision: number;
   readonly shape: ParticleDomainShape2D;
@@ -119,6 +130,19 @@ export interface ParticleDomain2D {
   readonly margin?: number;
   /** Retained velocity/position scale after bounce or wrap. */
   readonly damping?: number;
+}
+export interface ParticleViewport2D {
+  readonly width: number;
+  readonly height: number;
+  readonly dpr: number;
+}
+export interface ParticleRenderParameters2D {
+  readonly pointScale?: number;
+  readonly intensity?: number;
+  readonly trailFade?: number;
+  readonly trailBloom?: number;
+  readonly trailBackground?: readonly [number, number, number];
+  readonly directComposite?: boolean;
 }
 
 export interface ParticleRuntimeEmission2D {
@@ -143,7 +167,7 @@ export interface ParticleEffectBackendDiagnostics2D extends ParticleEffectDiagno
   readonly eventBudgetDrops: number;
   readonly backendFallbackCount?: number;
   readonly validationFailures?: number;
-  readonly diagnosticAccuracy?: 'exact' | 'delayed' | 'estimated';
+  readonly diagnosticAccuracy?: "exact" | "delayed" | "estimated";
 }
 
 export interface ParticleEffectBackendResource2D {
@@ -154,6 +178,8 @@ export interface ParticleEffectBackendResource2D {
   setForceFields?(fields: ParticleForceFieldSet2D): void;
   setDomain?(domain: ParticleDomain2D): void;
   setEmitterSource?(emitterIndex: number, source: ParticleEmitterSourceOverride2D): void;
+  setViewport?(viewport: ParticleViewport2D): void;
+  setRenderParameters?(parameters: ParticleRenderParameters2D): void;
   setRenderScale?(scale: number): void;
   update(deltaSeconds: number, timescale: number): void;
   render(target: GpuRenderTarget2D, tier: ParticleRenderTier2D): void;
@@ -165,17 +191,19 @@ export interface ParticleEffectBackendResource2D {
 }
 
 export interface ParticleEffectRuntimeBackend2D {
-  readonly kind: 'webgl2' | 'webgpu' | 'test';
+  readonly kind: "webgl2" | "webgpu" | "test";
   create(program: CompiledParticleProgram2D, capacity: number): ParticleEffectBackendResource2D;
 }
 
 /** Capability/failure wrapper used for internal WebGPU -> WebGL2 fallback. */
 export class FallbackParticleEffectRuntimeBackend2D implements ParticleEffectRuntimeBackend2D {
-  readonly kind: ParticleEffectRuntimeBackend2D['kind'];
+  readonly kind: ParticleEffectRuntimeBackend2D["kind"];
   constructor(
     private readonly preferred: ParticleEffectRuntimeBackend2D,
     private readonly fallback: ParticleEffectRuntimeBackend2D,
-  ) { this.kind = preferred.kind; }
+  ) {
+    this.kind = preferred.kind;
+  }
   create(program: CompiledParticleProgram2D, capacity: number): ParticleEffectBackendResource2D {
     try {
       return new RecoveringParticleEffectBackendResource2D(program, capacity, this.preferred, this.fallback);
@@ -195,25 +223,96 @@ class RecoveringParticleEffectBackendResource2D implements ParticleEffectBackend
     preferred: ParticleEffectRuntimeBackend2D,
     private readonly fallback: ParticleEffectRuntimeBackend2D,
     initialFallbackCount = 0,
-  ) { this.resource = preferred.create(program, capacity); this.fallbackCount = initialFallbackCount; }
-  emit(value: ParticleRuntimeEmission2D): void { this.invoke((resource) => { resource.emit(value); }); }
-  setPalette(value: ParticlePalette2D): void { this.invoke((resource) => { resource.setPalette(value); }); }
-  setParameters(value: Readonly<Record<string, ParticleParameterValue2D>>): void { this.invoke((resource) => { resource.setParameters?.(value); }); }
-  setColliders(value: ParticleColliderSet2D): void { this.invoke((resource) => { resource.setColliders?.(value); }); }
-  setForceFields(value: ParticleForceFieldSet2D): void { this.invoke((resource) => { resource.setForceFields?.(value); }); }
-  setDomain(value: ParticleDomain2D): void { this.invoke((resource) => { resource.setDomain?.(value); }); }
-  setEmitterSource(emitterIndex: number, value: ParticleEmitterSourceOverride2D): void { this.invoke((resource) => { resource.setEmitterSource?.(emitterIndex, value); }); }
-  setRenderScale(value: number): void { this.invoke((resource) => { resource.setRenderScale?.(value); }); }
-  update(deltaSeconds: number, timescale: number): void { this.invoke((resource) => { resource.update(deltaSeconds, timescale); }); }
-  render(target: GpuRenderTarget2D, tier: ParticleRenderTier2D): void { this.invoke((resource) => { resource.render(target, tier); }); }
-  clear(): void { this.invoke((resource) => { resource.clear(); }); }
-  transferStateTo(target: ParticleEffectBackendResource2D): boolean { return this.resource.transferStateTo?.(target) ?? false; }
-  debugReadback(): GpuParticleStateSnapshot2D { const snapshot=this.resource.debugReadback?.();if(!snapshot)throw new Error('Particle backend does not support debug state snapshots');return snapshot; }
-  diagnostics(): ParticleEffectBackendDiagnostics2D { return { ...this.resource.diagnostics(), backendFallbackCount: this.fallbackCount }; }
-  dispose(): void { this.resource.dispose(); }
+  ) {
+    this.resource = preferred.create(program, capacity);
+    this.fallbackCount = initialFallbackCount;
+  }
+  emit(value: ParticleRuntimeEmission2D): void {
+    this.invoke((resource) => {
+      resource.emit(value);
+    });
+  }
+  setPalette(value: ParticlePalette2D): void {
+    this.invoke((resource) => {
+      resource.setPalette(value);
+    });
+  }
+  setParameters(value: Readonly<Record<string, ParticleParameterValue2D>>): void {
+    this.invoke((resource) => {
+      resource.setParameters?.(value);
+    });
+  }
+  setColliders(value: ParticleColliderSet2D): void {
+    this.invoke((resource) => {
+      resource.setColliders?.(value);
+    });
+  }
+  setForceFields(value: ParticleForceFieldSet2D): void {
+    this.invoke((resource) => {
+      resource.setForceFields?.(value);
+    });
+  }
+  setDomain(value: ParticleDomain2D): void {
+    this.invoke((resource) => {
+      resource.setDomain?.(value);
+    });
+  }
+  setEmitterSource(emitterIndex: number, value: ParticleEmitterSourceOverride2D): void {
+    this.invoke((resource) => {
+      resource.setEmitterSource?.(emitterIndex, value);
+    });
+  }
+  setViewport(value: ParticleViewport2D): void {
+    this.invoke((resource) => {
+      resource.setViewport?.(value);
+    });
+  }
+  setRenderParameters(value: ParticleRenderParameters2D): void {
+    this.invoke((resource) => {
+      resource.setRenderParameters?.(value);
+    });
+  }
+  setRenderScale(value: number): void {
+    this.invoke((resource) => {
+      resource.setRenderScale?.(value);
+    });
+  }
+  update(deltaSeconds: number, timescale: number): void {
+    this.invoke((resource) => {
+      resource.update(deltaSeconds, timescale);
+    });
+  }
+  render(target: GpuRenderTarget2D, tier: ParticleRenderTier2D): void {
+    this.invoke((resource) => {
+      resource.render(target, tier);
+    });
+  }
+  clear(): void {
+    this.invoke((resource) => {
+      resource.clear();
+    });
+  }
+  transferStateTo(target: ParticleEffectBackendResource2D): boolean {
+    return this.resource.transferStateTo?.(target) ?? false;
+  }
+  debugReadback(): GpuParticleStateSnapshot2D {
+    const snapshot = this.resource.debugReadback?.();
+    if (!snapshot) throw new Error("Particle backend does not support debug state snapshots");
+    return snapshot;
+  }
+  diagnostics(): ParticleEffectBackendDiagnostics2D {
+    return {
+      ...this.resource.diagnostics(),
+      backendFallbackCount: this.fallbackCount,
+    };
+  }
+  dispose(): void {
+    this.resource.dispose();
+  }
   private invoke(operation: (resource: ParticleEffectBackendResource2D) => void): void {
-    try { operation(this.resource); }
-    catch (error) {
+    try {
+      operation(this.resource);
+    } catch (error) {
       if (this.failed) throw error;
       this.failed = true;
       this.resource.dispose();
@@ -252,6 +351,8 @@ export interface ParticleEffectInstance2D {
   setForceFields(fields: ParticleForceFieldSet2D): void;
   setDomain(domain: ParticleDomain2D): void;
   setEmitterSource(emitterId: string, source: ParticleEmitterSourceOverride2D): void;
+  setViewport(viewport: ParticleViewport2D): void;
+  setRenderParameters(parameters: ParticleRenderParameters2D): void;
   setTimescale(value: number): void;
   setQualityTier(tier: ParticleRenderTier2D): void;
   setRenderScale(scale: number): void;
@@ -262,7 +363,7 @@ export interface ParticleEffectInstance2D {
 }
 
 export interface ParticleEffectsDiagnostics2D {
-  readonly backend: ParticleEffectRuntimeBackend2D['kind'];
+  readonly backend: ParticleEffectRuntimeBackend2D["kind"];
   readonly activeInstances: number;
   readonly registeredPrograms: number;
   readonly capacity: number;
@@ -278,7 +379,7 @@ export interface ParticleEffectsDiagnostics2D {
   readonly eventLosses: number;
   readonly backendFallbackCount: number;
   readonly allocationsAfterWarmup: number;
-  readonly diagnosticAccuracy: 'exact' | 'delayed' | 'estimated';
+  readonly diagnosticAccuracy: "exact" | "delayed" | "estimated";
 }
 
 export interface ParticleEffectProgramInspection2D {
@@ -291,12 +392,15 @@ export interface ParticleEffectProgramInspection2D {
   readonly archetypes: readonly string[];
   readonly emitters: readonly string[];
   readonly parameters: readonly string[];
-  readonly persistedBindings: readonly { readonly parameterId: string; readonly key: string }[];
+  readonly persistedBindings: readonly {
+    readonly parameterId: string;
+    readonly key: string;
+  }[];
   readonly renderPasses: Readonly<Record<ParticleRenderTier2D, readonly string[]>>;
 }
 
 export interface ParticleEffectsInspection2D {
-  readonly backend: ParticleEffectRuntimeBackend2D['kind'];
+  readonly backend: ParticleEffectRuntimeBackend2D["kind"];
   readonly programs: readonly ParticleEffectProgramInspection2D[];
   readonly instances: readonly ParticleEffectInstanceState2D[];
 }
@@ -305,6 +409,7 @@ export interface ParticleEffects2D {
   register(program: CompiledParticleProgram2D, options?: { readonly capacity?: number }): void;
   prewarm(effectId: string, count?: number): void;
   replace(program: CompiledParticleProgram2D): void;
+  setCapacity(effectId: string, capacity: number): void;
   createInstance(effectId: string, options?: ParticleEffectInstanceOptions2D): ParticleEffectInstance2D;
   update(deltaSeconds: number): void;
   render(target: GpuRenderTarget2D): void;
@@ -320,8 +425,15 @@ interface ProgramRecord {
   pooled: ParticleEffectBackendResource2D[];
 }
 
-const DEFAULT_TRANSFORM: ParticleTransform2D = Object.freeze({ position: [0, 0] as const, rotation: 0, scale: [1, 1] as const });
-const EMPTY_PALETTE: ParticlePalette2D = Object.freeze({ colors: [[1, 1, 1] as const], revision: 0 });
+const DEFAULT_TRANSFORM: ParticleTransform2D = Object.freeze({
+  position: [0, 0] as const,
+  rotation: 0,
+  scale: [1, 1] as const,
+});
+const EMPTY_PALETTE: ParticlePalette2D = Object.freeze({
+  colors: [[1, 1, 1] as const],
+  revision: 0,
+});
 
 export class EngineParticleEffects2D implements ParticleEffects2D {
   private readonly programs = new Map<string, ProgramRecord>();
@@ -335,16 +447,22 @@ export class EngineParticleEffects2D implements ParticleEffects2D {
     this.assertUsable();
     const id = program.effect.source.id;
     if (this.programs.has(id)) throw new Error(`Particle effect program is already registered: ${id}`);
-    const policy=program.effect.source.capacity, capacity=options.capacity??policy.default;
-    if(!Number.isSafeInteger(capacity)||capacity<policy.min||capacity>policy.max)throw new Error(`Particle effect capacity for ${id} is outside its compiled policy`);
-    this.programs.set(id, { program, capacity, instances: new Set(), pooled: [] });
+    const policy = program.effect.source.capacity,
+      capacity = options.capacity ?? policy.default;
+    if (!Number.isSafeInteger(capacity) || capacity < policy.min || capacity > policy.max) throw new Error(`Particle effect capacity for ${id} is outside its compiled policy`);
+    this.programs.set(id, {
+      program,
+      capacity,
+      instances: new Set(),
+      pooled: [],
+    });
   }
 
   prewarm(effectId: string, count = 1): void {
     this.assertUsable();
     const record = this.programs.get(effectId);
     if (!record) throw new Error(`Unknown compiled particle effect: ${effectId}`);
-    if (!Number.isSafeInteger(count) || count < 0 || count > 8) throw new Error('Particle effect prewarm count must be an integer between 0 and 8');
+    if (!Number.isSafeInteger(count) || count < 0 || count > 8) throw new Error("Particle effect prewarm count must be an integer between 0 and 8");
     while (record.pooled.length < count) record.pooled.push(this.backend.create(record.program, record.capacity));
   }
 
@@ -352,7 +470,10 @@ export class EngineParticleEffects2D implements ParticleEffects2D {
     this.assertUsable();
     const id = program.effect.source.id;
     const previous = this.programs.get(id);
-    if (!previous) { this.register(program); return; }
+    if (!previous) {
+      this.register(program);
+      return;
+    }
     for (const resource of previous.pooled.splice(0)) resource.dispose();
     previous.program = program;
     for (const instance of previous.instances) {
@@ -361,14 +482,37 @@ export class EngineParticleEffects2D implements ParticleEffects2D {
     }
   }
 
+  setCapacity(effectId: string, capacity: number): void {
+    this.assertUsable();
+    const record = this.programs.get(effectId);
+    if (!record) throw new Error(`Unknown compiled particle effect: ${effectId}`);
+    const policy = record.program.effect.source.capacity;
+    if (!Number.isSafeInteger(capacity) || capacity < policy.min || capacity > policy.max) throw new Error(`Particle effect capacity for ${effectId} is outside its compiled policy`);
+    if (capacity === record.capacity) return;
+    for (const resource of record.pooled.splice(0)) resource.dispose();
+    record.capacity = capacity;
+    for (const instance of record.instances) {
+      const replacement = this.backend.create(record.program, capacity);
+      instance.replaceProgram(record.program, replacement);
+    }
+  }
+
   createInstance(effectId: string, options: ParticleEffectInstanceOptions2D = {}): ParticleEffectInstance2D {
     this.assertUsable();
     const record = this.programs.get(effectId);
     if (!record) throw new Error(`Unknown compiled particle effect: ${effectId}`);
     const instance = new RuntimeParticleEffectInstance2D(
-      this.nextInstanceId++, record.program, record.pooled.pop() ?? this.backend.create(record.program, record.capacity), options,
-      (id, resource) => { this.removeInstance(effectId, id, resource); },
-      (referenceId) => { const child = this.createInstance(referenceId); child.start(); },
+      this.nextInstanceId++,
+      record.program,
+      record.pooled.pop() ?? this.backend.create(record.program, record.capacity),
+      options,
+      (id, resource) => {
+        this.removeInstance(effectId, id, resource);
+      },
+      (referenceId) => {
+        const child = this.createInstance(referenceId);
+        child.start();
+      },
     );
     this.instances.set(instance.id, instance);
     record.instances.add(instance);
@@ -377,7 +521,7 @@ export class EngineParticleEffects2D implements ParticleEffects2D {
 
   update(deltaSeconds: number): void {
     this.assertUsable();
-    if (!Number.isFinite(deltaSeconds) || deltaSeconds < 0) throw new Error('Particle runtime delta must be finite and non-negative');
+    if (!Number.isFinite(deltaSeconds) || deltaSeconds < 0) throw new Error("Particle runtime delta must be finite and non-negative");
     for (const instance of this.instances.values()) {
       const wasAdvancing = instance.isAdvancing;
       instance.update(deltaSeconds);
@@ -391,63 +535,124 @@ export class EngineParticleEffects2D implements ParticleEffects2D {
   }
 
   diagnostics(): ParticleEffectsDiagnostics2D {
-    let capacity = 0, activeEstimate = 0, spawnedParticles = 0, droppedParticles = 0, simulationPasses = 0, renderPasses = 0, uploadBytes = 0, allocatedBytes = 0;
-    let eventPasses = 0, eventAttempts = 0, eventLosses = 0, backendFallbackCount = 0, allocationsAfterWarmup = 0;
-    let diagnosticAccuracy: ParticleEffectsDiagnostics2D['diagnosticAccuracy'] = 'exact';
+    let capacity = 0,
+      activeEstimate = 0,
+      spawnedParticles = 0,
+      droppedParticles = 0,
+      simulationPasses = 0,
+      renderPasses = 0,
+      uploadBytes = 0,
+      allocatedBytes = 0;
+    let eventPasses = 0,
+      eventAttempts = 0,
+      eventLosses = 0,
+      backendFallbackCount = 0,
+      allocationsAfterWarmup = 0;
+    let diagnosticAccuracy: ParticleEffectsDiagnostics2D["diagnosticAccuracy"] = "exact";
     for (const instance of this.instances.values()) {
       const diagnostics = instance.diagnostics();
-      capacity += diagnostics.capacity; activeEstimate += diagnostics.activeEstimate; spawnedParticles += diagnostics.spawnedParticles;
-      droppedParticles += diagnostics.droppedParticles; simulationPasses += diagnostics.simulationPasses; renderPasses += diagnostics.renderPasses;
-      uploadBytes += diagnostics.uploadBytes; allocatedBytes += diagnostics.allocatedBytes;
-      eventPasses += diagnostics.eventCount; eventAttempts += diagnostics.eventAttempts;
+      capacity += diagnostics.capacity;
+      activeEstimate += diagnostics.activeEstimate;
+      spawnedParticles += diagnostics.spawnedParticles;
+      droppedParticles += diagnostics.droppedParticles;
+      simulationPasses += diagnostics.simulationPasses;
+      renderPasses += diagnostics.renderPasses;
+      uploadBytes += diagnostics.uploadBytes;
+      allocatedBytes += diagnostics.allocatedBytes;
+      eventPasses += diagnostics.eventCount;
+      eventAttempts += diagnostics.eventAttempts;
       eventLosses += diagnostics.eventOccupiedDrops + diagnostics.eventBudgetDrops + (diagnostics.eventContentionLosses ?? 0) + (diagnostics.eventGenerationDrops ?? 0);
-      backendFallbackCount += diagnostics.backendFallbackCount ?? 0; allocationsAfterWarmup += diagnostics.allocationsAfterWarmup ?? 0;
-      if (diagnostics.diagnosticAccuracy === undefined || diagnostics.diagnosticAccuracy === 'estimated') diagnosticAccuracy = 'estimated';
-      else if (diagnostics.diagnosticAccuracy === 'delayed' && diagnosticAccuracy === 'exact') diagnosticAccuracy = 'delayed';
+      backendFallbackCount += diagnostics.backendFallbackCount ?? 0;
+      allocationsAfterWarmup += diagnostics.allocationsAfterWarmup ?? 0;
+      if (diagnostics.diagnosticAccuracy === undefined || diagnostics.diagnosticAccuracy === "estimated") diagnosticAccuracy = "estimated";
+      else if (diagnostics.diagnosticAccuracy === "delayed" && diagnosticAccuracy === "exact") diagnosticAccuracy = "delayed";
     }
-    return Object.freeze({ backend: this.backend.kind, activeInstances: this.instances.size, registeredPrograms: this.programs.size, capacity, activeEstimate, spawnedParticles, droppedParticles, simulationPasses, renderPasses, uploadBytes, allocatedBytes, eventPasses, eventAttempts, eventLosses, backendFallbackCount, allocationsAfterWarmup, diagnosticAccuracy });
+    return Object.freeze({
+      backend: this.backend.kind,
+      activeInstances: this.instances.size,
+      registeredPrograms: this.programs.size,
+      capacity,
+      activeEstimate,
+      spawnedParticles,
+      droppedParticles,
+      simulationPasses,
+      renderPasses,
+      uploadBytes,
+      allocatedBytes,
+      eventPasses,
+      eventAttempts,
+      eventLosses,
+      backendFallbackCount,
+      allocationsAfterWarmup,
+      diagnosticAccuracy,
+    });
   }
 
   inspect(): ParticleEffectsInspection2D {
     this.assertUsable();
-    const programs = [...this.programs.entries()].map(([id, record]) => Object.freeze({
-      id,
-      graphHash: record.program.effect.graphHash,
-      abiHash: record.program.effect.abiHash,
-      stateAbiVersion: record.program.effect.stateAbiVersion,
-      capacity: record.capacity,
-      pooledResources: record.pooled.length,
-      archetypes: Object.freeze(record.program.effect.source.archetypes.map((entry) => entry.id)),
-      emitters: Object.freeze(record.program.effect.source.emitters.map((entry) => entry.id)),
-      parameters: Object.freeze(record.program.effect.source.parameters.map((entry) => entry.id)),
-      persistedBindings: Object.freeze(record.program.effect.persistedBindings.map((entry) => Object.freeze({ parameterId: entry.parameterId, key: entry.key }))),
-      renderPasses: Object.freeze(Object.fromEntries((['basic', 'enhanced', 'ultra'] as const).map((tier) => [tier, Object.freeze(record.program.renderPasses[tier].map((pass) => pass.kind))])) as Readonly<Record<ParticleRenderTier2D, readonly string[]>>),
-    }));
-    return Object.freeze({ backend: this.backend.kind, programs: Object.freeze(programs), instances: Object.freeze([...this.instances.values()].map((instance) => instance.state())) });
+    const programs = [...this.programs.entries()].map(([id, record]) =>
+      Object.freeze({
+        id,
+        graphHash: record.program.effect.graphHash,
+        abiHash: record.program.effect.abiHash,
+        stateAbiVersion: record.program.effect.stateAbiVersion,
+        capacity: record.capacity,
+        pooledResources: record.pooled.length,
+        archetypes: Object.freeze(record.program.effect.source.archetypes.map((entry) => entry.id)),
+        emitters: Object.freeze(record.program.effect.source.emitters.map((entry) => entry.id)),
+        parameters: Object.freeze(record.program.effect.source.parameters.map((entry) => entry.id)),
+        persistedBindings: Object.freeze(record.program.effect.persistedBindings.map((entry) => Object.freeze({ parameterId: entry.parameterId, key: entry.key }))),
+        renderPasses: Object.freeze(Object.fromEntries((["basic", "enhanced", "ultra"] as const).map((tier) => [tier, Object.freeze(record.program.renderPasses[tier].map((pass) => pass.kind))])) as Readonly<Record<ParticleRenderTier2D, readonly string[]>>),
+      }),
+    );
+    return Object.freeze({
+      backend: this.backend.kind,
+      programs: Object.freeze(programs),
+      instances: Object.freeze([...this.instances.values()].map((instance) => instance.state())),
+    });
   }
 
   dispose(): void {
     if (this.disposed) return;
     for (const instance of [...this.instances.values()]) instance.dispose();
     for (const record of this.programs.values()) for (const resource of record.pooled.splice(0)) resource.dispose();
-    this.instances.clear(); this.programs.clear(); this.disposed = true;
+    this.instances.clear();
+    this.programs.clear();
+    this.disposed = true;
   }
 
   private removeInstance(effectId: string, id: number, resource: ParticleEffectBackendResource2D): void {
     const instance = this.instances.get(id);
-    if (!instance) { resource.dispose(); return; }
+    if (!instance) {
+      resource.dispose();
+      return;
+    }
     this.instances.delete(id);
     const record = this.programs.get(effectId);
     record?.instances.delete(instance);
     resource.clear();
-    if (record && record.pooled.length < 2) record.pooled.push(resource); else resource.dispose();
+    if (record && record.pooled.length < 2) record.pooled.push(resource);
+    else resource.dispose();
   }
 
-  private assertUsable(): void { if (this.disposed) throw new Error('Particle effects runtime is disposed'); }
+  private assertUsable(): void {
+    if (this.disposed) throw new Error("Particle effects runtime is disposed");
+  }
 }
 
 class MutableEmission implements ParticleRuntimeEmission2D {
-  instanceId = 0; emitterIndex = 0; count = 0; positionX = 0; positionY = 0; direction = 0; spread = 0; power = 0; seed = 0; importance = 0; inheritedVelocityX = 0; inheritedVelocityY = 0;
+  instanceId = 0;
+  emitterIndex = 0;
+  count = 0;
+  positionX = 0;
+  positionY = 0;
+  direction = 0;
+  spread = 0;
+  power = 0;
+  seed = 0;
+  importance = 0;
+  inheritedVelocityX = 0;
+  inheritedVelocityY = 0;
 }
 
 class EmitterRuntime {
@@ -460,36 +665,110 @@ class EmitterRuntime {
   lastX = 0;
   lastY = 0;
 
-  constructor(readonly definition: ParticleEmitterDefinition2D, readonly index: number) {}
-  reset(): void { this.active = false; this.elapsed = 0; this.rateAccumulator = 0; this.burstIndex = 0; this.loops = 0; this.lastX = 0; this.lastY = 0; }
+  constructor(
+    readonly definition: ParticleEmitterDefinition2D,
+    readonly index: number,
+  ) {}
+  reset(): void {
+    this.active = false;
+    this.elapsed = 0;
+    this.rateAccumulator = 0;
+    this.burstIndex = 0;
+    this.loops = 0;
+    this.lastX = 0;
+    this.lastY = 0;
+  }
 }
 
 class MutableEmissionOverride implements ParticleEmissionOverride2D {
-  count?: number; position?: readonly [number, number]; direction?: number; spread?: number; power?: number; seed?: number; inheritedVelocity?: readonly [number, number];
+  count?: number;
+  position?: readonly [number, number];
+  direction?: number;
+  spread?: number;
+  power?: number;
+  seed?: number;
+  inheritedVelocity?: readonly [number, number];
   readonly point: [number, number] = [0, 0];
-  clear(): void { delete this.count; delete this.position; delete this.direction; delete this.spread; delete this.power; delete this.seed; delete this.inheritedVelocity; }
+  readonly velocity: [number, number] = [0, 0];
+  clear(): void {
+    delete this.count;
+    delete this.position;
+    delete this.direction;
+    delete this.spread;
+    delete this.power;
+    delete this.seed;
+    delete this.inheritedVelocity;
+  }
 }
 
 class RuntimeParticleEmitterHandle2D implements ParticleEmitterHandle2D, ParticleEmissionWriter2D {
   private readonly override = new MutableEmissionOverride();
-  constructor(readonly id: string, private readonly owner: RuntimeParticleEffectInstance2D) {}
-  emit(count?: number): void { this.override.clear(); if (count !== undefined) this.override.count = count; this.owner.emit(this.id, this.override); }
-  emitAt(x: number, y: number, count?: number): void { this.override.clear(); this.override.point[0] = x; this.override.point[1] = y; this.override.position = this.override.point; if (count !== undefined) this.override.count = count; this.owner.emit(this.id, this.override); }
-  writer(): ParticleEmissionWriter2D { return this.reset(); }
-  count(value: number): ParticleEmissionWriter2D { this.override.count = value; return this; }
-  position(x: number, y: number): ParticleEmissionWriter2D { this.override.point[0] = x; this.override.point[1] = y; this.override.position = this.override.point; return this; }
-  direction(value: number): ParticleEmissionWriter2D { this.override.direction = value; return this; }
-  spread(value: number): ParticleEmissionWriter2D { this.override.spread = value; return this; }
-  power(value: number): ParticleEmissionWriter2D { this.override.power = value; return this; }
-  seed(value: number): ParticleEmissionWriter2D { this.override.seed = value; return this; }
-  submit(): void { this.owner.emit(this.id, this.override); this.override.clear(); }
-  reset(): ParticleEmissionWriter2D { this.override.clear(); return this; }
+  constructor(
+    readonly id: string,
+    private readonly owner: RuntimeParticleEffectInstance2D,
+  ) {}
+  emit(count?: number): void {
+    this.override.clear();
+    if (count !== undefined) this.override.count = count;
+    this.owner.emit(this.id, this.override);
+  }
+  emitAt(x: number, y: number, count?: number): void {
+    this.override.clear();
+    this.override.point[0] = x;
+    this.override.point[1] = y;
+    this.override.position = this.override.point;
+    if (count !== undefined) this.override.count = count;
+    this.owner.emit(this.id, this.override);
+  }
+  writer(): ParticleEmissionWriter2D {
+    return this.reset();
+  }
+  count(value: number): ParticleEmissionWriter2D {
+    this.override.count = value;
+    return this;
+  }
+  position(x: number, y: number): ParticleEmissionWriter2D {
+    this.override.point[0] = x;
+    this.override.point[1] = y;
+    this.override.position = this.override.point;
+    return this;
+  }
+  direction(value: number): ParticleEmissionWriter2D {
+    this.override.direction = value;
+    return this;
+  }
+  spread(value: number): ParticleEmissionWriter2D {
+    this.override.spread = value;
+    return this;
+  }
+  power(value: number): ParticleEmissionWriter2D {
+    this.override.power = value;
+    return this;
+  }
+  seed(value: number): ParticleEmissionWriter2D {
+    this.override.seed = value;
+    return this;
+  }
+  inheritedVelocity(x: number, y: number): ParticleEmissionWriter2D {
+    this.override.velocity[0] = x;
+    this.override.velocity[1] = y;
+    this.override.inheritedVelocity = this.override.velocity;
+    return this;
+  }
+  submit(): void {
+    this.owner.emit(this.id, this.override);
+    this.override.clear();
+  }
+  reset(): ParticleEmissionWriter2D {
+    this.override.clear();
+    return this;
+  }
 }
 
 class RuntimeParticleEffectInstance2D implements ParticleEffectInstance2D {
   private program: CompiledParticleProgram2D;
   private backend: ParticleEffectBackendResource2D;
-  private statusValue: ParticleEffectInstanceStatus2D = 'idle';
+  private statusValue: ParticleEffectInstanceStatus2D = "idle";
   private elapsed = 0;
   private seed: number;
   private transform: ParticleTransform2D;
@@ -498,6 +777,25 @@ class RuntimeParticleEffectInstance2D implements ParticleEffectInstance2D {
   private timescale: number;
   private tier: ParticleRenderTier2D;
   private renderScale = 1;
+  private colliders: ParticleColliderSet2D = {
+    revision: 0,
+    circles: [],
+    capsules: [],
+  };
+  private forceFields: ParticleForceFieldSet2D = {
+    revision: 0,
+    attractors: [],
+  };
+  private domain: ParticleDomain2D = {
+    revision: 0,
+    shape: "rectangle",
+    behavior: "none",
+    center: [0, 0],
+    halfExtents: [1, 1],
+  };
+  private viewport?: ParticleViewport2D;
+  private renderParameters: ParticleRenderParameters2D = {};
+  private readonly emitterSources = new Map<number, ParticleEmitterSourceOverride2D>();
   private drainRemaining = 0;
   private readonly emitters: EmitterRuntime[];
   private readonly emitterHandles: Map<string, RuntimeParticleEmitterHandle2D>;
@@ -511,10 +809,15 @@ class RuntimeParticleEffectInstance2D implements ParticleEffectInstance2D {
     private readonly onDispose: (id: number, resource: ParticleEffectBackendResource2D) => void,
     onReference: (effectId: string) => void,
   ) {
-    this.program = program; this.backend = backend; this.seed = options.seed ?? mixSeed(id, 0x9e3779b9);
+    this.program = program;
+    this.backend = backend;
+    this.seed = options.seed ?? mixSeed(id, 0x9e3779b9);
     this.transform = options.transform ?? DEFAULT_TRANSFORM;
-    this.parameters = { ...resolveParticleParameters2D(program.effect.source, options.parameters) };
-    this.palette = options.palette ?? EMPTY_PALETTE; this.timescale = validateTimescale(options.timescale ?? 1);
+    this.parameters = {
+      ...resolveParticleParameters2D(program.effect.source, options.parameters),
+    };
+    this.palette = options.palette ?? EMPTY_PALETTE;
+    this.timescale = validateTimescale(options.timescale ?? 1);
     this.tier = options.qualityTier ?? program.effect.source.quality.defaultTier;
     this.emitters = program.effect.source.emitters.map((entry, index) => new EmitterRuntime(entry, index));
     this.emitterHandles = new Map(this.emitters.map((entry) => [entry.definition.id, new RuntimeParticleEmitterHandle2D(entry.definition.id, this)]));
@@ -522,60 +825,94 @@ class RuntimeParticleEffectInstance2D implements ParticleEffectInstance2D {
       program.effect.source,
       () => this.parameters,
       {
-        emit: (emitterId) => { this.activateGraphEmitter(emitterId); },
-        stop: (emitterId, mode) => { if (emitterId) { const emitter = this.emitters.find((entry) => entry.definition.id === emitterId); if (emitter) emitter.active = false; } else this.stop(mode); },
-        signal: (signal) => { this.scheduler.trigger({ kind: 'signal', signal }); },
+        emit: (emitterId) => {
+          this.activateGraphEmitter(emitterId);
+        },
+        stop: (emitterId, mode) => {
+          if (emitterId) {
+            const emitter = this.emitters.find((entry) => entry.definition.id === emitterId);
+            if (emitter) emitter.active = false;
+          } else this.stop(mode);
+        },
+        signal: (signal) => {
+          this.scheduler.trigger({ kind: "signal", signal });
+        },
         reference: onReference,
       },
       this.seed,
     );
     backend.setPalette(this.palette);
     backend.setParameters?.(this.parameters);
-    backend.setColliders?.({ revision: 0, circles: [], capsules: [] });
-    backend.setForceFields?.({ revision: 0, attractors: [] });
-    backend.setDomain?.({ revision: 0, shape: 'rectangle', behavior: 'none', center: [0, 0], halfExtents: [1, 1] });
+    backend.setColliders?.(this.colliders);
+    backend.setForceFields?.(this.forceFields);
+    backend.setDomain?.(this.domain);
     backend.setRenderScale?.(this.renderScale);
   }
 
-  get isAdvancing(): boolean { return this.statusValue === 'running' || this.statusValue === 'draining'; }
-  get isVisible(): boolean { return this.statusValue !== 'idle' && this.statusValue !== 'complete' && this.statusValue !== 'disposed'; }
-  get currentTimescale(): number { return this.timescale; }
-  get currentTier(): ParticleRenderTier2D { return this.tier; }
+  get isAdvancing(): boolean {
+    return this.statusValue === "running" || this.statusValue === "draining";
+  }
+  get isVisible(): boolean {
+    return this.statusValue !== "idle" && this.statusValue !== "complete" && this.statusValue !== "disposed";
+  }
+  get currentTimescale(): number {
+    return this.timescale;
+  }
+  get currentTier(): ParticleRenderTier2D {
+    return this.tier;
+  }
 
   start(): void {
     this.assertUsable();
-    if (this.statusValue === 'running') return;
-    this.statusValue = 'running';
-    this.emitters.forEach((emitter) => { emitter.reset(); });
+    if (this.statusValue === "running") return;
+    this.statusValue = "running";
+    this.emitters.forEach((emitter) => {
+      emitter.reset();
+    });
     this.scheduler.start();
   }
 
-  stop(mode: ParticleEmitterStopMode2D = 'drain'): void {
+  stop(mode: ParticleEmitterStopMode2D = "drain"): void {
     this.assertUsable();
     for (const emitter of this.emitters) emitter.active = false;
-    this.statusValue = mode === 'kill' ? 'complete' : 'draining';
-    if (mode === 'kill') this.backend.clear();
+    this.statusValue = mode === "kill" ? "complete" : "draining";
+    if (mode === "kill") this.backend.clear();
   }
 
-  pause(): void { this.assertUsable(); if (this.statusValue === 'running' || this.statusValue === 'draining') this.statusValue = 'paused'; }
-  resume(): void { this.assertUsable(); if (this.statusValue === 'paused') this.statusValue = 'running'; }
+  pause(): void {
+    this.assertUsable();
+    if (this.statusValue === "running" || this.statusValue === "draining") this.statusValue = "paused";
+  }
+  resume(): void {
+    this.assertUsable();
+    if (this.statusValue === "paused") this.statusValue = "running";
+  }
 
   restart(seed = mixSeed(this.seed, 0x85ebca6b)): void {
-    this.assertUsable(); this.seed = seed >>> 0; this.elapsed = 0; this.backend.clear(); this.emitters.forEach((emitter) => { emitter.reset(); }); this.scheduler.reset(this.seed); this.statusValue = 'idle'; this.start();
+    this.assertUsable();
+    this.seed = seed >>> 0;
+    this.elapsed = 0;
+    this.backend.clear();
+    this.emitters.forEach((emitter) => {
+      emitter.reset();
+    });
+    this.scheduler.reset(this.seed);
+    this.statusValue = "idle";
+    this.start();
   }
 
   trigger(signal: string, payload: ParticleSignalPayload2D = {}): void {
     this.assertUsable();
-    if (signal.trim().length === 0) throw new Error('Particle effect signal cannot be empty');
+    if (signal.trim().length === 0) throw new Error("Particle effect signal cannot be empty");
     if (payload.position) this.transform = { ...this.transform, position: payload.position };
-    this.scheduler.trigger({ kind: 'signal', signal });
+    this.scheduler.trigger({ kind: "signal", signal });
   }
 
   emit(emitterId: string, override: ParticleEmissionOverride2D = {}): void {
     this.assertUsable();
     const emitter = this.emitters.find((entry) => entry.definition.id === emitterId);
     if (!emitter) throw new Error(`Unknown particle emitter: ${emitterId}`);
-    if (this.statusValue === 'idle' || this.statusValue === 'complete') this.statusValue = 'running';
+    if (this.statusValue === "idle" || this.statusValue === "complete") this.statusValue = "running";
     this.submit(emitter, override.count ?? firstBurstCount(emitter.definition), override);
   }
   emitter(emitterId: string): ParticleEmitterHandle2D {
@@ -585,54 +922,128 @@ class RuntimeParticleEffectInstance2D implements ParticleEffectInstance2D {
     return handle;
   }
 
-  setTransform(transform: ParticleTransform2D): void { this.assertUsable(); validateTransform(transform); this.transform = transform; }
-  setParameter(name: string, value: ParticleParameterValue2D): void { this.assertUsable(); this.parameters = { ...resolveParticleParameters2D(this.program.effect.source, { ...this.parameters, [name]: value }) }; this.backend.setParameters?.(this.parameters); }
-  setPalette(palette: ParticlePalette2D): void { this.assertUsable(); this.palette = palette; this.backend.setPalette(palette); }
-  setColliders(colliders: ParticleColliderSet2D): void { this.assertUsable(); this.backend.setColliders?.(colliders); }
+  setTransform(transform: ParticleTransform2D): void {
+    this.assertUsable();
+    validateTransform(transform);
+    this.transform = transform;
+  }
+  setParameter(name: string, value: ParticleParameterValue2D): void {
+    this.assertUsable();
+    this.parameters = {
+      ...resolveParticleParameters2D(this.program.effect.source, {
+        ...this.parameters,
+        [name]: value,
+      }),
+    };
+    this.backend.setParameters?.(this.parameters);
+  }
+  setPalette(palette: ParticlePalette2D): void {
+    this.assertUsable();
+    this.palette = palette;
+    this.backend.setPalette(palette);
+  }
+  setColliders(colliders: ParticleColliderSet2D): void {
+    this.assertUsable();
+    this.colliders = colliders;
+    this.backend.setColliders?.(colliders);
+  }
   setForceFields(fields: ParticleForceFieldSet2D): void {
     this.assertUsable();
-    if (!Number.isSafeInteger(fields.revision) || fields.revision < 0) throw new Error('Particle force-field revision must be a non-negative integer');
-    if (fields.attractors.length > 16) throw new Error('Particle effects support at most 16 dynamic attractors');
+    if (!Number.isSafeInteger(fields.revision) || fields.revision < 0) throw new Error("Particle force-field revision must be a non-negative integer");
+    if (fields.attractors.length > 16) throw new Error("Particle effects support at most 16 dynamic attractors");
     for (const field of fields.attractors) {
-      if (![field.x, field.y, field.strength, field.softening ?? 1, field.tangentialStrength ?? 0, field.radius ?? 0, field.velocity?.[0] ?? 0, field.velocity?.[1] ?? 0, field.velocityCoupling ?? 0].every(Number.isFinite)) throw new Error('Particle attractor values must be finite');
-      if ((field.softening ?? 1) < 0) throw new Error('Particle attractor softening must be non-negative');
-      if ((field.radius ?? 0) < 0) throw new Error('Particle attractor radius must be non-negative');
-      if ((field.velocityCoupling ?? 0) < 0) throw new Error('Particle attractor velocity coupling must be non-negative');
+      if (![field.x, field.y, field.strength, field.softening ?? 1, field.tangentialStrength ?? 0, field.radialStrength ?? 0, field.radius ?? 0, field.velocity?.[0] ?? 0, field.velocity?.[1] ?? 0, field.velocityCoupling ?? 0].every(Number.isFinite)) throw new Error("Particle attractor values must be finite");
+      if ((field.softening ?? 1) < 0) throw new Error("Particle attractor softening must be non-negative");
+      if ((field.radius ?? 0) < 0) throw new Error("Particle attractor radius must be non-negative");
+      if ((field.velocityCoupling ?? 0) < 0) throw new Error("Particle attractor velocity coupling must be non-negative");
     }
+    this.forceFields = fields;
     this.backend.setForceFields?.(fields);
   }
   setDomain(domain: ParticleDomain2D): void {
     this.assertUsable();
-    if (!Number.isSafeInteger(domain.revision) || domain.revision < 0) throw new Error('Particle domain revision must be a non-negative integer');
+    if (!Number.isSafeInteger(domain.revision) || domain.revision < 0) throw new Error("Particle domain revision must be a non-negative integer");
     const halfExtents = domain.halfExtents ?? [0, 0];
-    if (![domain.center[0], domain.center[1], halfExtents[0], halfExtents[1], domain.radius ?? 0, domain.margin ?? 0, domain.damping ?? 1].every(Number.isFinite)) throw new Error('Particle domain values must be finite');
-    if (domain.shape === 'rectangle' && (halfExtents[0] <= 0 || halfExtents[1] <= 0)) throw new Error('Rectangle particle domains require positive half-extents');
-    if (domain.shape === 'circle' && (domain.radius ?? 0) <= 0) throw new Error('Circle particle domains require a positive radius');
-    if ((domain.margin ?? 0) < 0) throw new Error('Particle domain margin must be non-negative');
-    if ((domain.damping ?? 1) < 0 || (domain.damping ?? 1) > 1) throw new Error('Particle domain damping must be between zero and one');
+    if (![domain.center[0], domain.center[1], halfExtents[0], halfExtents[1], domain.radius ?? 0, domain.margin ?? 0, domain.damping ?? 1].every(Number.isFinite)) throw new Error("Particle domain values must be finite");
+    if (domain.shape === "rectangle" && (halfExtents[0] <= 0 || halfExtents[1] <= 0)) throw new Error("Rectangle particle domains require positive half-extents");
+    if (domain.shape === "circle" && (domain.radius ?? 0) <= 0) throw new Error("Circle particle domains require a positive radius");
+    if ((domain.margin ?? 0) < 0) throw new Error("Particle domain margin must be non-negative");
+    if ((domain.damping ?? 1) < 0 || (domain.damping ?? 1) > 1) throw new Error("Particle domain damping must be between zero and one");
+    this.domain = domain;
     this.backend.setDomain?.(domain);
   }
   setEmitterSource(emitterId: string, source: ParticleEmitterSourceOverride2D): void {
-    this.assertUsable(); const index=this.emitters.findIndex((entry)=>entry.definition.id===emitterId);
-    if(index<0)throw new Error(`Unknown particle emitter: ${emitterId}`);
-    const values=[source.radius,source.innerRadius,source.length,source.arc,source.spread].filter((value):value is number=>value!==undefined);
-    if(values.some((value)=>!Number.isFinite(value)||value<0))throw new Error('Particle emitter source overrides must be finite and non-negative');
-    if(source.innerRadius!==undefined&&source.radius!==undefined&&source.innerRadius>source.radius)throw new Error('Particle emitter inner radius cannot exceed its radius');
-    this.backend.setEmitterSource?.(index,source);
+    this.assertUsable();
+    const index = this.emitters.findIndex((entry) => entry.definition.id === emitterId);
+    if (index < 0) throw new Error(`Unknown particle emitter: ${emitterId}`);
+    const values = [source.radius, source.innerRadius, source.length, source.arc, source.spread].filter((value): value is number => value !== undefined);
+    if (values.some((value) => !Number.isFinite(value) || value < 0)) throw new Error("Particle emitter source overrides must be finite and non-negative");
+    if (source.innerRadius !== undefined && source.radius !== undefined && source.innerRadius > source.radius) throw new Error("Particle emitter inner radius cannot exceed its radius");
+    this.emitterSources.set(index, source);
+    this.backend.setEmitterSource?.(index, source);
   }
-  setTimescale(value: number): void { this.assertUsable(); this.timescale = validateTimescale(value); }
-  setQualityTier(tier: ParticleRenderTier2D): void { this.assertUsable(); if (!this.program.effect.source.renderRecipes.recipes.some((entry) => entry.tier === tier)) throw new Error(`Particle effect does not render tier: ${tier}`); this.tier = tier; }
-  setRenderScale(scale: number): void { this.assertUsable(); if (!Number.isFinite(scale) || scale < 0.0625 || scale > 1) throw new Error('Particle render scale must be between 0.0625 and 1'); this.renderScale = scale; this.backend.setRenderScale?.(scale); }
+  setViewport(viewport: ParticleViewport2D): void {
+    this.assertUsable();
+    if (![viewport.width, viewport.height, viewport.dpr].every(Number.isFinite) || viewport.width <= 0 || viewport.height <= 0 || viewport.dpr <= 0) throw new Error("Particle viewport dimensions and DPR must be positive and finite");
+    this.viewport = viewport;
+    this.backend.setViewport?.(viewport);
+  }
+  setRenderParameters(parameters: ParticleRenderParameters2D): void {
+    this.assertUsable();
+    const numeric = [parameters.pointScale, parameters.intensity, parameters.trailFade, parameters.trailBloom, ...(parameters.trailBackground ?? [])].filter((value): value is number => value !== undefined);
+    if (numeric.some((value) => !Number.isFinite(value) || value < 0)) throw new Error("Particle render parameters must be finite and non-negative");
+    if (parameters.trailFade !== undefined && parameters.trailFade > 1) throw new Error("Particle trail fade must be between zero and one");
+    this.renderParameters = { ...this.renderParameters, ...parameters };
+    this.backend.setRenderParameters?.(this.renderParameters);
+  }
+  setTimescale(value: number): void {
+    this.assertUsable();
+    this.timescale = validateTimescale(value);
+  }
+  setQualityTier(tier: ParticleRenderTier2D): void {
+    this.assertUsable();
+    if (!this.program.effect.source.renderRecipes.recipes.some((entry) => entry.tier === tier)) throw new Error(`Particle effect does not render tier: ${tier}`);
+    this.tier = tier;
+  }
+  setRenderScale(scale: number): void {
+    this.assertUsable();
+    if (!Number.isFinite(scale) || scale < 0.0625 || scale > 1) throw new Error("Particle render scale must be between 0.0625 and 1");
+    this.renderScale = scale;
+    this.backend.setRenderScale?.(scale);
+  }
 
   state(): ParticleEffectInstanceState2D {
-    return Object.freeze({ id: this.id, effectId: this.program.effect.source.id, status: this.statusValue, elapsed: this.elapsed, seed: this.seed, timescale: this.timescale, qualityTier: this.tier, activeEmitters: this.emitters.reduce((count, emitter) => count + Number(emitter.active), 0) });
+    return Object.freeze({
+      id: this.id,
+      effectId: this.program.effect.source.id,
+      status: this.statusValue,
+      elapsed: this.elapsed,
+      seed: this.seed,
+      timescale: this.timescale,
+      qualityTier: this.tier,
+      activeEmitters: this.emitters.reduce((count, emitter) => count + Number(emitter.active), 0),
+    });
   }
-  diagnostics(): ParticleEffectBackendDiagnostics2D { return this.backend.diagnostics(); }
-  debugSnapshot(): GpuParticleStateSnapshot2D { const snapshot=this.backend.debugReadback?.();if(!snapshot)throw new Error(`Particle backend does not support debug state snapshots: ${this.program.effect.source.id}`);return snapshot; }
-  dispose(): void { if (this.statusValue === 'disposed') return; this.statusValue = 'disposed'; this.onDispose(this.id, this.backend); }
+  diagnostics(): ParticleEffectBackendDiagnostics2D {
+    return this.backend.diagnostics();
+  }
+  debugSnapshot(): GpuParticleStateSnapshot2D {
+    const snapshot = this.backend.debugReadback?.();
+    if (!snapshot) throw new Error(`Particle backend does not support debug state snapshots: ${this.program.effect.source.id}`);
+    return snapshot;
+  }
+  dispose(): void {
+    if (this.statusValue === "disposed") return;
+    this.statusValue = "disposed";
+    this.onDispose(this.id, this.backend);
+  }
 
-  updateBackend(deltaSeconds: number): void { this.backend.update(deltaSeconds, this.timescale); }
-  renderBackend(target: GpuRenderTarget2D): void { this.backend.render(target, this.tier); }
+  updateBackend(deltaSeconds: number): void {
+    this.backend.update(deltaSeconds, this.timescale);
+  }
+  renderBackend(target: GpuRenderTarget2D): void {
+    this.backend.render(target, this.tier);
+  }
 
   update(deltaSeconds: number): void {
     if (!this.isAdvancing) return;
@@ -640,24 +1051,44 @@ class RuntimeParticleEffectInstance2D implements ParticleEffectInstance2D {
     this.elapsed += delta;
     this.scheduler.update(delta);
     let active = false;
-    for (const emitter of this.emitters) { if (emitter.active) { active = true; this.advanceEmitter(emitter, delta); } }
-    if (!active && this.statusValue === 'running') this.statusValue = 'draining';
-    if (!active && this.statusValue === 'draining') {
+    for (const emitter of this.emitters) {
+      if (emitter.active) {
+        active = true;
+        this.advanceEmitter(emitter, delta);
+      }
+    }
+    if (!active && this.statusValue === "running") this.statusValue = "draining";
+    if (!active && this.statusValue === "draining") {
       this.drainRemaining = Math.max(0, this.drainRemaining - delta);
-      if (this.drainRemaining === 0) this.statusValue = 'complete';
+      if (this.drainRemaining === 0) this.statusValue = "complete";
     }
   }
 
   replaceProgram(program: CompiledParticleProgram2D, backend: ParticleEffectBackendResource2D): void {
     const compatible = program.effect.abiHash === this.program.effect.abiHash;
-    if (compatible) this.backend.transferStateTo?.(backend);
+    const stateTransferred = compatible && (this.backend.transferStateTo?.(backend) ?? false);
     this.backend.dispose();
-    this.program = program; this.backend = backend; this.parameters = { ...resolveParticleParameters2D(program.effect.source, this.parameters) }; backend.setPalette(this.palette); backend.setParameters?.(this.parameters); backend.setRenderScale?.(this.renderScale);
-    if (!compatible) {
+    this.program = program;
+    this.backend = backend;
+    this.parameters = {
+      ...resolveParticleParameters2D(program.effect.source, this.parameters),
+    };
+    backend.setPalette(this.palette);
+    backend.setParameters?.(this.parameters);
+    backend.setColliders?.(this.colliders);
+    backend.setForceFields?.(this.forceFields);
+    backend.setDomain?.(this.domain);
+    for (const [emitterIndex, source] of this.emitterSources) backend.setEmitterSource?.(emitterIndex, source);
+    if (this.viewport) backend.setViewport?.(this.viewport);
+    backend.setRenderParameters?.(this.renderParameters);
+    backend.setRenderScale?.(this.renderScale);
+    if (!stateTransferred) {
       this.elapsed = 0;
-      this.emitters.forEach((emitter) => { emitter.reset(); });
+      this.emitters.forEach((emitter) => {
+        emitter.reset();
+      });
       this.scheduler.reset(this.seed);
-      this.statusValue = 'idle';
+      this.statusValue = "idle";
       this.start();
     }
   }
@@ -677,12 +1108,17 @@ class RuntimeParticleEffectInstance2D implements ParticleEffectInstance2D {
     if (rate > 0) {
       emitter.rateAccumulator += rate * delta;
       const count = Math.min(Math.floor(emitter.rateAccumulator), emitter.definition.limits.maxPerFrame ?? Number.MAX_SAFE_INTEGER);
-      if (count > 0) { emitter.rateAccumulator -= count; this.submit(emitter, count); }
+      if (count > 0) {
+        emitter.rateAccumulator -= count;
+        this.submit(emitter, count);
+      }
     }
     const duration = timeline.duration;
     if (duration !== undefined && emitter.elapsed >= duration) {
       if (timeline.loop && (timeline.maxLoops === undefined || emitter.loops + 1 < timeline.maxLoops)) {
-        emitter.elapsed %= Math.max(duration, Number.EPSILON); emitter.burstIndex = 0; emitter.loops += 1;
+        emitter.elapsed %= Math.max(duration, Number.EPSILON);
+        emitter.burstIndex = 0;
+        emitter.loops += 1;
       } else emitter.active = false;
     }
   }
@@ -692,9 +1128,13 @@ class RuntimeParticleEffectInstance2D implements ParticleEffectInstance2D {
     const count = Math.max(0, Math.min(Math.round(requestedCount * qualityScale), emitter.definition.limits.maxPerFrame ?? Number.MAX_SAFE_INTEGER));
     if (count === 0) return;
     const emission = emitter.emission;
-    emission.instanceId = this.id; emission.emitterIndex = emitter.index; emission.count = count;
-    emission.positionX = override.position?.[0] ?? this.transform.position[0]; emission.positionY = override.position?.[1] ?? this.transform.position[1];
-    emission.direction = override.direction ?? this.transform.rotation; emission.spread = override.spread ?? sourceNumber(emitter.definition.initialization?.spread, this.parameters, this.seed, emitter.index, 0);
+    emission.instanceId = this.id;
+    emission.emitterIndex = emitter.index;
+    emission.count = count;
+    emission.positionX = override.position?.[0] ?? this.transform.position[0];
+    emission.positionY = override.position?.[1] ?? this.transform.position[1];
+    emission.direction = override.direction ?? this.transform.rotation;
+    emission.spread = override.spread ?? sourceNumber(emitter.definition.initialization?.spread, this.parameters, this.seed, emitter.index, 0);
     emission.power = override.power ?? sourceNumber(emitter.definition.initialization?.power, this.parameters, this.seed, emitter.index, 1);
     emission.seed = override.seed ?? mixSeed(this.seed, emitter.index + Math.round(this.elapsed * 1000));
     emission.importance = importanceCode(emitter.definition.limits.importance);
@@ -709,25 +1149,53 @@ class RuntimeParticleEffectInstance2D implements ParticleEffectInstance2D {
     const emitter = this.emitters.find((entry) => entry.definition.id === emitterId);
     if (!emitter) throw new Error(`Unknown particle emitter: ${emitterId}`);
     const timeline = emitter.definition.timeline;
-    if (timeline.manual) { this.submit(emitter, firstBurstCount(emitter.definition)); return; }
-    emitter.reset(); emitter.active = true; emitter.elapsed = -(timeline.startDelay ?? 0);
+    if (timeline.manual) {
+      this.submit(emitter, firstBurstCount(emitter.definition));
+      return;
+    }
+    emitter.reset();
+    emitter.active = true;
+    emitter.elapsed = -(timeline.startDelay ?? 0);
     if (timeline.prewarm && (timeline.duration ?? 0) > 0) this.advanceEmitter(emitter, timeline.duration ?? 0);
   }
 
-  private assertUsable(): void { if (this.statusValue === 'disposed') throw new Error('Particle effect instance is disposed'); }
+  private assertUsable(): void {
+    if (this.statusValue === "disposed") throw new Error("Particle effect instance is disposed");
+  }
 }
 
-function firstBurstCount(emitter: ParticleEmitterDefinition2D): number { return emitter.timeline.bursts?.[0]?.count ?? 1; }
-function importanceCode(importance: ParticleEmitterDefinition2D['limits']['importance']): number { return ['cosmetic', 'secondary', 'primary', 'critical'].indexOf(importance); }
-function validateTimescale(value: number): number { if (!Number.isFinite(value) || value < 0 || value > 16) throw new Error('Particle effect timescale must be between 0 and 16'); return value; }
-function validateTransform(transform: ParticleTransform2D): void { if (![...transform.position, transform.rotation, ...transform.scale].every(Number.isFinite)) throw new Error('Particle transform values must be finite'); }
-function mixSeed(a: number, b: number): number { let value = (a ^ b) >>> 0; value = Math.imul(value ^ (value >>> 16), 0x7feb352d); value = Math.imul(value ^ (value >>> 15), 0x846ca68b); return (value ^ (value >>> 16)) >>> 0; }
-function random01(seed: number): number { return mixSeed(seed, 0x27d4eb2d) / 0x1_0000_0000; }
-function evaluateRate(source: import('./ParticleEffectGraph2D.js').ParticleValueSource2D | undefined, parameters: Readonly<Record<string, ParticleParameterValue2D>>, seed: number, salt: number): number { return sourceNumber(source, parameters, seed, salt, 0); }
-function sourceNumber(source: import('./ParticleEffectGraph2D.js').ParticleValueSource2D | undefined, parameters: Readonly<Record<string, ParticleParameterValue2D>>, seed: number, salt: number, fallback: number): number {
+function firstBurstCount(emitter: ParticleEmitterDefinition2D): number {
+  return emitter.timeline.bursts?.[0]?.count ?? 1;
+}
+function importanceCode(importance: ParticleEmitterDefinition2D["limits"]["importance"]): number {
+  return ["cosmetic", "secondary", "primary", "critical"].indexOf(importance);
+}
+function validateTimescale(value: number): number {
+  if (!Number.isFinite(value) || value < 0 || value > 16) throw new Error("Particle effect timescale must be between 0 and 16");
+  return value;
+}
+function validateTransform(transform: ParticleTransform2D): void {
+  if (![...transform.position, transform.rotation, ...transform.scale].every(Number.isFinite)) throw new Error("Particle transform values must be finite");
+}
+function mixSeed(a: number, b: number): number {
+  let value = (a ^ b) >>> 0;
+  value = Math.imul(value ^ (value >>> 16), 0x7feb352d);
+  value = Math.imul(value ^ (value >>> 15), 0x846ca68b);
+  return (value ^ (value >>> 16)) >>> 0;
+}
+function random01(seed: number): number {
+  return mixSeed(seed, 0x27d4eb2d) / 0x1_0000_0000;
+}
+function evaluateRate(source: import("./ParticleEffectGraph2D.js").ParticleValueSource2D | undefined, parameters: Readonly<Record<string, ParticleParameterValue2D>>, seed: number, salt: number): number {
+  return sourceNumber(source, parameters, seed, salt, 0);
+}
+function sourceNumber(source: import("./ParticleEffectGraph2D.js").ParticleValueSource2D | undefined, parameters: Readonly<Record<string, ParticleParameterValue2D>>, seed: number, salt: number, fallback: number): number {
   if (!source) return fallback;
-  if (source.kind === 'constant') return source.value;
-  if (source.kind === 'parameter') { const value = parameters[source.parameterId]; return typeof value === 'number' ? value * (source.scale ?? 1) + (source.offset ?? 0) : fallback; }
-  if (source.kind === 'random') return source.min + (source.max - source.min) * random01(mixSeed(seed, salt));
+  if (source.kind === "constant") return source.value;
+  if (source.kind === "parameter") {
+    const value = parameters[source.parameterId];
+    return typeof value === "number" ? value * (source.scale ?? 1) + (source.offset ?? 0) : fallback;
+  }
+  if (source.kind === "random") return source.min + (source.max - source.min) * random01(mixSeed(seed, salt));
   return source.curve.keys[0]?.value ?? fallback;
 }
