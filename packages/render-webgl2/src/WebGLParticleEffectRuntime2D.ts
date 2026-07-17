@@ -122,7 +122,8 @@ class WebGLParticleEffectResource2D implements ParticleEffectBackendResource2D {
     const renderPasses = Object.fromEntries(
       [
         ...new Set(
-          program.renderPasses.enhanced
+          program.renderPasses.basic
+            .concat(program.renderPasses.enhanced)
             .concat(program.renderPasses.ultra)
             .filter((pass) => pass.kind === "streaks")
             .map((pass) => pass.id),

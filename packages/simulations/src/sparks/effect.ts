@@ -64,7 +64,7 @@ export const SPARKS_PARTICLE_EFFECT: ParticleEffectDefinition2D = validatePartic
   renderRecipes: {
     defaultTier: 'enhanced',
     recipes: [
-      { tier: 'basic', points: true, blend: 'additive' },
+      { tier: 'basic', points: true, streaks: true, blend: 'additive' },
       { tier: 'enhanced', points: true, streaks: true, blend: 'additive' },
       { tier: 'ultra', points: true, streaks: true, trails: true, bloom: true, blend: 'additive' },
     ],
@@ -113,7 +113,7 @@ export const SPARKS_PARTICLE_GRAPH = defineParticleEffect2D({
     { id: 'core-intensity', kind: 'number', defaultValue: 3.65, min: 0, max: 8 },
     { id: 'primary-size', kind: 'number', defaultValue: 1, min: 0, max: 3 },
     { id: 'primary-size-variability', kind: 'number', defaultValue: 0.56, min: 0, max: 2 },
-    { id: 'primary-length', kind: 'number', defaultValue: 1, min: 0, max: 8 },
+    { id: 'primary-length', kind: 'number', defaultValue: 1, min: 0, max: 12 },
     { id: 'primary-length-variability', kind: 'number', defaultValue: 0.38, min: 0, max: 2 },
     { id: 'bounce-size', kind: 'number', defaultValue: 0.42, min: 0.02, max: 3 },
     { id: 'bounce-size-variability', kind: 'number', defaultValue: 0.72, min: 0, max: 2 },

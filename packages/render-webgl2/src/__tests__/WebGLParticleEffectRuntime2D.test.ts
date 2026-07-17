@@ -10,7 +10,7 @@ const definition: ParticleEffectDefinition2D = {
   id: 'webgl-extension-test', capacity: { min: 4, default: 16, max: 32, previewMax: 8 },
   archetypes: [{ id: 'spark', spawn: { shape: 'point', spread: 0 }, motion: { gravity: 0, drag: 0 }, lifecycle: { lifetime: 1 }, appearance: { size: { start: 1, end: 0 }, alpha: { start: 1, end: 0 }, intensity: { start: 1, end: 0 } } }],
   modules: { motion: true, lifecycle: true },
-  renderRecipes: { defaultTier: 'basic', recipes: [{ tier: 'basic', points: true, blend: 'additive' }] },
+  renderRecipes: { defaultTier: 'basic', recipes: [{ tier: 'basic', points: true, streaks: true, blend: 'additive' }] },
 };
 
 describe('WebGLParticleEffectRuntimeBackend2D extension bindings', () => {
@@ -33,7 +33,11 @@ describe('WebGLParticleEffectRuntimeBackend2D extension bindings', () => {
       diagnostics: () => ({ commandCapacity: 64, queuedCommands: 0, droppedCommands: 0, spawnedParticles: 0, simulationPasses: 0, eventPasses: 0, renderPasses: 0, uploadBytes: 0, contextGeneration: 1, rebuildCount: 0 }),
       dispose: vi.fn(),
     };
-    const gpu = { createParticleSystem: () => particles } as unknown as Gpu2DService;
+    let particleOptions: Parameters<Gpu2DService['createParticleSystem']>[1] | undefined;
+    const gpu = { createParticleSystem: (_id: string, options: Parameters<Gpu2DService['createParticleSystem']>[1]) => {
+      particleOptions = options;
+      return particles;
+    } } as unknown as Gpu2DService;
     const base = adaptParticleEffectDefinition2D(definition);
     const extension = {
       id: 'gain-module', supports: ['webgl2', 'webgpu'] as const, cpuReference: () => undefined,
@@ -51,6 +55,7 @@ describe('WebGLParticleEffectRuntimeBackend2D extension bindings', () => {
     resource.setExtensionBindings?.({ uCustomSimulation: 2, uCustomRender: 0.5, uCustomTexture: texture });
     resource.update(1 / 60, 1);
     resource.render({ width: 64, height: 64 }, 'basic');
+    expect(particleOptions?.renderPasses).toHaveProperty('basic.streaks');
     expect(calls).toEqual(['uCustomSimulation:2', 'uCustomRender:0.5']);
     expect(uniformTexture).toHaveBeenCalledWith({ name: 'uCustomTexture' }, texture, 8);
   });

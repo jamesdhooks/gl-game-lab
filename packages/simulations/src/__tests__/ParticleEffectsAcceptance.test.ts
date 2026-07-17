@@ -54,6 +54,8 @@ describe("shared particle effect acceptance", () => {
 
   it("compiles all three proof scenes through the reusable emitter graph architecture", () => {
     expect(SPARKS_PARTICLE_GRAPH.emitters.map((emitter) => emitter.id)).toEqual(["core-contact", "welding", "pinwheel", "shower", "collision-bounce"]);
+    expect(SPARKS_PARTICLE_GRAPH.renderRecipes.recipes.find((recipe) => recipe.tier === 'basic')).toMatchObject({ points: true, streaks: true });
+    expect(SPARKS_PARTICLE_GRAPH.parameters.find((parameter) => parameter.id === 'primary-length')).toMatchObject({ min: 0, max: 12 });
     expect(FIREWORKS_PARTICLE_GRAPH.emitters.map((emitter) => emitter.id)).toEqual([
       "shell-launch",
       "primary-peony",

@@ -229,7 +229,7 @@ export function createCompiledSparksPlugin(initial: SparksConfig = SPARKS_DEFAUL
           trailBackground: background,
           directComposite: renderTier(config) !== 'ultra',
           paletteTransition: 0.18,
-          streakScale: sparksNumber(config, 'trailContinuity'),
+          streakScale: renderTier(config) === 'basic' ? 0.45 : sparksNumber(config, 'trailContinuity'),
           colorMode: 'seeded',
         });
         if (collidersChanged) publishColliders(effect);
