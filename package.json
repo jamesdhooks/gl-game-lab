@@ -7,7 +7,7 @@
   "scripts": {
     "build": "pnpm --recursive --if-present build",
     "typecheck": "pnpm --recursive --if-present typecheck",
-    "test": "pnpm --recursive --if-present test",
+    "test": "pnpm --recursive --if-present test && node --test scripts/particle-benchmark-policy.test.mjs",
     "check:boundaries": "node scripts/check-boundaries.mjs",
     "check:hygiene": "node scripts/check-source-hygiene.mjs",
     "check:catalog": "node scripts/verify-release-catalog.mjs",

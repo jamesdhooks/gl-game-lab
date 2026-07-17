@@ -4,6 +4,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright-core';
 import { startDemoServer, waitForServer } from './browser-harness.mjs';
+import { evaluateParticleBenchmarkGate } from './particle-benchmark-policy.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const demo = path.join(root, 'packages', 'demo');
@@ -55,7 +56,7 @@ try {
       const report = JSON.parse(await reportElement.textContent());
       await page.getByRole('button', { name: 'Save report' }).click();
       await page.waitForFunction(() => [...document.querySelectorAll('p')].some((entry) => entry.textContent?.startsWith('Saved docs/benchmarks/particle/')), undefined, { timeout: 10_000 });
-      results.push({ ...report, pageErrors: errors, gate: evaluateGate(report, mobile) });
+      results.push({ ...report, pageErrors: errors, gate: evaluateParticleBenchmarkGate(report, mobile) });
     } finally {
       await page.close();
     }
@@ -74,23 +75,6 @@ try {
 } finally {
   server.stop();
   await browser?.close().catch(() => undefined);
-}
-
-function evaluateGate(report, mobileMode) {
-  const { capacity, tier } = report.configuration;
-  const budget = mobileMode ? { fps: 30, gpuP95: 33.34 }
-    : capacity === 65_536 && tier === 'ultra' ? { fps: 60, gpuP95: 8 }
-    : capacity === 147_456 && tier === 'ultra' ? { fps: 60, gpuP95: 12 }
-      : capacity === 262_144 && tier === 'enhanced' ? { fps: 55, gpuP95: 15 }
-        : capacity === 589_824 && tier === 'basic' ? { fps: 45, gpuP95: 20 }
-          : { fps: 0, gpuP95: Number.POSITIVE_INFINITY };
-  const gpuPass = !report.gpuMs.available || report.gpuMs.p95 < budget.gpuP95;
-  return {
-    budget,
-    fpsPass: report.fps.average >= budget.fps,
-    gpuPass,
-    passed: report.fps.average >= budget.fps && gpuPass,
-  };
 }
 
 function findBrowserExecutable() {

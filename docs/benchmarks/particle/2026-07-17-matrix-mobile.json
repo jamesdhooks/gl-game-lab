@@ -50,7 +50,9 @@
       "pageErrors": [],
       "gate": {
         "budget": {
-          "fps": 30,
+          "fpsTarget": 30,
+          "minimumAverageFps": 30,
+          "refreshToleranceFps": 0,
           "gpuP95": 33.34
         },
         "fpsPass": true,
@@ -104,7 +106,9 @@
       "pageErrors": [],
       "gate": {
         "budget": {
-          "fps": 30,
+          "fpsTarget": 30,
+          "minimumAverageFps": 30,
+          "refreshToleranceFps": 0,
           "gpuP95": 33.34
         },
         "fpsPass": true,
@@ -158,7 +162,9 @@
       "pageErrors": [],
       "gate": {
         "budget": {
-          "fps": 30,
+          "fpsTarget": 30,
+          "minimumAverageFps": 30,
+          "refreshToleranceFps": 0,
           "gpuP95": 33.34
         },
         "fpsPass": true,
@@ -167,5 +173,9 @@
       }
     }
   ],
-  "passed": true
+  "passed": true,
+  "evaluationPolicy": {
+    "id": "display-refresh-tolerant-v1",
+    "note": "60 FPS gates require at least 59 average FPS; GPU p95 budgets are unchanged."
+  }
 }

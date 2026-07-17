@@ -47,7 +47,18 @@
         "allocationsAfterWarmup": 0,
         "diagnosticAccuracy": "estimated"
       },
-      "pageErrors": []
+      "pageErrors": [],
+      "gate": {
+        "budget": {
+          "fpsTarget": 60,
+          "minimumAverageFps": 59,
+          "refreshToleranceFps": 1,
+          "gpuP95": 8
+        },
+        "fpsPass": true,
+        "gpuPass": true,
+        "passed": true
+      }
     },
     {
       "schemaVersion": 1,
@@ -92,7 +103,18 @@
         "allocationsAfterWarmup": 0,
         "diagnosticAccuracy": "estimated"
       },
-      "pageErrors": []
+      "pageErrors": [],
+      "gate": {
+        "budget": {
+          "fpsTarget": 60,
+          "minimumAverageFps": 59,
+          "refreshToleranceFps": 1,
+          "gpuP95": 12
+        },
+        "fpsPass": true,
+        "gpuPass": true,
+        "passed": true
+      }
     },
     {
       "schemaVersion": 1,
@@ -137,7 +159,18 @@
         "allocationsAfterWarmup": 0,
         "diagnosticAccuracy": "estimated"
       },
-      "pageErrors": []
+      "pageErrors": [],
+      "gate": {
+        "budget": {
+          "fpsTarget": 55,
+          "minimumAverageFps": 55,
+          "refreshToleranceFps": 0,
+          "gpuP95": 15
+        },
+        "fpsPass": true,
+        "gpuPass": true,
+        "passed": true
+      }
     },
     {
       "schemaVersion": 1,
@@ -182,7 +215,18 @@
         "allocationsAfterWarmup": 0,
         "diagnosticAccuracy": "estimated"
       },
-      "pageErrors": []
+      "pageErrors": [],
+      "gate": {
+        "budget": {
+          "fpsTarget": 45,
+          "minimumAverageFps": 45,
+          "refreshToleranceFps": 0,
+          "gpuP95": 20
+        },
+        "fpsPass": true,
+        "gpuPass": true,
+        "passed": true
+      }
     },
     {
       "schemaVersion": 1,
@@ -227,7 +271,18 @@
         "allocationsAfterWarmup": 0,
         "diagnosticAccuracy": "estimated"
       },
-      "pageErrors": []
+      "pageErrors": [],
+      "gate": {
+        "budget": {
+          "fpsTarget": 60,
+          "minimumAverageFps": 59,
+          "refreshToleranceFps": 1,
+          "gpuP95": 8
+        },
+        "fpsPass": true,
+        "gpuPass": true,
+        "passed": true
+      }
     },
     {
       "schemaVersion": 1,
@@ -272,7 +327,18 @@
         "allocationsAfterWarmup": 0,
         "diagnosticAccuracy": "estimated"
       },
-      "pageErrors": []
+      "pageErrors": [],
+      "gate": {
+        "budget": {
+          "fpsTarget": 60,
+          "minimumAverageFps": 59,
+          "refreshToleranceFps": 1,
+          "gpuP95": 12
+        },
+        "fpsPass": true,
+        "gpuPass": true,
+        "passed": true
+      }
     },
     {
       "schemaVersion": 1,
@@ -317,7 +383,18 @@
         "allocationsAfterWarmup": 0,
         "diagnosticAccuracy": "estimated"
       },
-      "pageErrors": []
+      "pageErrors": [],
+      "gate": {
+        "budget": {
+          "fpsTarget": 55,
+          "minimumAverageFps": 55,
+          "refreshToleranceFps": 0,
+          "gpuP95": 15
+        },
+        "fpsPass": true,
+        "gpuPass": true,
+        "passed": true
+      }
     },
     {
       "schemaVersion": 1,
@@ -362,7 +439,18 @@
         "allocationsAfterWarmup": 0,
         "diagnosticAccuracy": "estimated"
       },
-      "pageErrors": []
+      "pageErrors": [],
+      "gate": {
+        "budget": {
+          "fpsTarget": 45,
+          "minimumAverageFps": 45,
+          "refreshToleranceFps": 0,
+          "gpuP95": 20
+        },
+        "fpsPass": true,
+        "gpuPass": true,
+        "passed": true
+      }
     },
     {
       "schemaVersion": 1,
@@ -407,7 +495,18 @@
         "allocationsAfterWarmup": 0,
         "diagnosticAccuracy": "estimated"
       },
-      "pageErrors": []
+      "pageErrors": [],
+      "gate": {
+        "budget": {
+          "fpsTarget": 60,
+          "minimumAverageFps": 59,
+          "refreshToleranceFps": 1,
+          "gpuP95": 8
+        },
+        "fpsPass": true,
+        "gpuPass": true,
+        "passed": true
+      }
     },
     {
       "schemaVersion": 1,
@@ -452,7 +551,18 @@
         "allocationsAfterWarmup": 0,
         "diagnosticAccuracy": "estimated"
       },
-      "pageErrors": []
+      "pageErrors": [],
+      "gate": {
+        "budget": {
+          "fpsTarget": 60,
+          "minimumAverageFps": 59,
+          "refreshToleranceFps": 1,
+          "gpuP95": 12
+        },
+        "fpsPass": true,
+        "gpuPass": true,
+        "passed": true
+      }
     },
     {
       "schemaVersion": 1,
@@ -497,7 +607,18 @@
         "allocationsAfterWarmup": 0,
         "diagnosticAccuracy": "estimated"
       },
-      "pageErrors": []
+      "pageErrors": [],
+      "gate": {
+        "budget": {
+          "fpsTarget": 55,
+          "minimumAverageFps": 55,
+          "refreshToleranceFps": 0,
+          "gpuP95": 15
+        },
+        "fpsPass": true,
+        "gpuPass": true,
+        "passed": true
+      }
     },
     {
       "schemaVersion": 1,
@@ -542,7 +663,23 @@
         "allocationsAfterWarmup": 0,
         "diagnosticAccuracy": "estimated"
       },
-      "pageErrors": []
+      "pageErrors": [],
+      "gate": {
+        "budget": {
+          "fpsTarget": 45,
+          "minimumAverageFps": 45,
+          "refreshToleranceFps": 0,
+          "gpuP95": 20
+        },
+        "fpsPass": true,
+        "gpuPass": true,
+        "passed": true
+      }
     }
-  ]
+  ],
+  "evaluationPolicy": {
+    "id": "display-refresh-tolerant-v1",
+    "note": "60 FPS gates require at least 59 average FPS; GPU p95 budgets are unchanged."
+  },
+  "passed": true
 }
