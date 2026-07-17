@@ -20,6 +20,7 @@
     "parity:capture:ball-pit:modes": "pnpm --filter @hooksjam/gl-game-lab-react build && pnpm --filter @hooksjam/gl-game-lab-demo build && node scripts/capture-ball-pit-parity.mjs --mode-scenarios",
     "performance:capture": "node scripts/capture-performance.mjs",
     "particle:benchmark": "node scripts/run-particle-benchmark-matrix.mjs",
+    "particle:capture": "node scripts/capture-particle-visuals.mjs",
     "browser:release": "node scripts/verify-browser-release.mjs"
   },
   "devDependencies": {

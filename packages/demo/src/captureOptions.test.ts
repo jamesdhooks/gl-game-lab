@@ -12,7 +12,14 @@ describe('parseDemoCaptureOptions', () => {
       modeId: undefined,
       styleId: undefined,
       scenarioId: undefined,
+      settings: {},
     });
+  });
+
+  it('accepts bounded primitive setting overrides for deterministic visual captures', () => {
+    const settings = encodeURIComponent(JSON.stringify({ renderStyle: 'ultra', burstPattern: 'ring', particleSize: 2 }));
+    expect(parseDemoCaptureOptions(`?capture=1&settings=${settings}`).settings).toEqual({ renderStyle: 'ultra', burstPattern: 'ring', particleSize: 2 });
+    expect(() => parseDemoCaptureOptions('?capture=1&settings=%7Bbad')).toThrow('valid JSON');
   });
 
   it('accepts an explicit capture identity', () => {

@@ -9,6 +9,7 @@ import bundledSceneDefaults from 'virtual:gl-game-lab-scene-defaults';
 import bundledPreviewProfiles from 'virtual:gl-game-lab-preview-profiles';
 import './index.css';
 import { parseDemoCaptureOptions } from './captureOptions.js';
+import { particleCaptureInputEvents } from './particleCaptureScenarios.js';
 import { ballPitCaptureInputEvents } from './ballPitCaptureScenarios.js';
 import { loadDemoCatalog, loadDemoExperience, loadLifecycleAlternate } from './experienceLoader.js';
 import { paginateGallery } from './galleryPagination.js';
@@ -991,6 +992,7 @@ function DiagnosticExperienceHost(): JSX.Element {
         {...(capture.enabled ? { seed: capture.seed } : {})}
         {...(capture.enabled && capture.modeId ? { initialModeId: capture.modeId } : {})}
         {...(capture.enabled && capture.styleId ? { initialStyleId: capture.styleId } : {})}
+        {...(capture.enabled ? { initialSettingsOverride: capture.settings } : {})}
         showChrome={false}
         showDiagnostics={showDiagnostics}
         useLocalSceneDefaults={false}
@@ -999,7 +1001,9 @@ function DiagnosticExperienceHost(): JSX.Element {
         {...(capture.enabled ? { fixedFrameCapture: {
           frameNumber: capture.frameNumber,
           fixedDeltaSeconds: capture.fixedDeltaSeconds,
-          inputEvents: experience.id === 'ball-pit' ? ballPitCaptureInputEvents(capture.scenarioId) : [],
+          inputEvents: experience.id === 'ball-pit'
+            ? ballPitCaptureInputEvents(capture.scenarioId)
+            : particleCaptureInputEvents(experience.id, capture.scenarioId),
         } } : {})}
         className="h-full w-full"
         canvasClassName="game-canvas h-full w-full touch-none"

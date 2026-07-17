@@ -103,6 +103,8 @@ export interface ExperienceRuntimeProps {
   readonly canvasClassName?: string;
   readonly initialModeId?: string;
   readonly initialStyleId?: string;
+  /** Deterministic tooling/capture overrides. Values are sanitized against declared settings. */
+  readonly initialSettingsOverride?: Readonly<Record<string, ExperienceSettingValue>>;
   readonly showChrome?: boolean;
   readonly onReady?: (engine: GameEngine, controller: ExperienceRuntimeController | undefined) => void;
   readonly onError?: (error: unknown) => void;
@@ -248,6 +250,7 @@ function EmbeddedExperienceRuntime({
   canvasClassName,
   initialModeId,
   initialStyleId,
+  initialSettingsOverride,
   onReady,
   onError,
   seed,
@@ -259,7 +262,7 @@ function EmbeddedExperienceRuntime({
 }: ExperienceRuntimeProps): JSX.Element {
   const defaultModeId = initialModeId ?? definition.modes?.[0]?.id ?? 'default';
   const defaultStyleId = initialStyleId ?? definition.styleManifest?.defaultStyleId ?? 'default';
-  const initialSettings = useMemo(() => settingDefaults(definition, useLocalSceneDefaults), [definition, useLocalSceneDefaults]);
+  const initialSettings = useMemo(() => applyInitialSettingOverrides(definition, settingDefaults(definition, useLocalSceneDefaults), initialSettingsOverride), [definition, initialSettingsOverride, useLocalSceneDefaults]);
   const createPlugins = useCallback(() => definition.createPlugins({
     profile,
     modeId: defaultModeId,
@@ -1267,6 +1270,31 @@ function settingDefaults(definition: ExperienceDefinition, includeLocalSceneDefa
     }
   }
   return Object.freeze(values);
+}
+
+function applyInitialSettingOverrides(
+  definition: ExperienceDefinition,
+  baseline: Readonly<Record<string, ExperienceSettingValue>>,
+  overrides: Readonly<Record<string, ExperienceSettingValue>> | undefined,
+): Readonly<Record<string, ExperienceSettingValue>> {
+  if (!overrides) return baseline;
+  const next = { ...baseline };
+  for (const setting of definition.settings ?? []) {
+    const value = overrides[setting.key];
+    if (value === undefined) continue;
+    if (setting.type === 'number') {
+      if (typeof value !== 'number' || !Number.isFinite(value)) continue;
+      const snapped = setting.numericScale === 'powerOfTwo'
+        ? 2 ** Math.round(Math.log2(Math.max(1, value)))
+        : setting.min + Math.round((value - setting.min) / setting.step) * setting.step;
+      next[setting.key] = Math.max(setting.min, Math.min(setting.max, Number(snapped.toFixed(10))));
+    } else if (setting.type === 'boolean') {
+      if (typeof value === 'boolean') next[setting.key] = value;
+    } else if (setting.type === 'select') {
+      if (typeof value === 'string' && setting.options.some((option) => option.value === value)) next[setting.key] = value;
+    } else if (typeof value === 'string') next[setting.key] = value;
+  }
+  return Object.freeze(next);
 }
 
 function readTimeScale(settings: Readonly<Record<string, ExperienceSettingValue>>): number {

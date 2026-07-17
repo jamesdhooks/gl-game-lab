@@ -1,4 +1,5 @@
 import type { ExperienceLaunchProfile } from '@hooksjam/gl-game-lab-engine';
+import type { ExperienceSettingValue } from '@hooksjam/gl-game-lab-engine';
 
 export interface DemoCaptureOptions {
   readonly enabled: boolean;
@@ -9,6 +10,7 @@ export interface DemoCaptureOptions {
   readonly modeId: string | undefined;
   readonly styleId: string | undefined;
   readonly scenarioId: string | undefined;
+  readonly settings: Readonly<Record<string, ExperienceSettingValue>>;
 }
 
 export function parseDemoCaptureOptions(search: string): DemoCaptureOptions {
@@ -22,7 +24,24 @@ export function parseDemoCaptureOptions(search: string): DemoCaptureOptions {
     modeId: optionalIdentifier(parameters.get('mode')),
     styleId: optionalIdentifier(parameters.get('style')),
     scenarioId: optionalIdentifier(parameters.get('scenario')),
+    settings: settingsParameter(parameters.get('settings')),
   });
+}
+
+function settingsParameter(value: string | null): Readonly<Record<string, ExperienceSettingValue>> {
+  if (value === null) return Object.freeze({});
+  if (value.length > 4_096) throw new Error('Capture settings payload is too large');
+  let parsed: unknown;
+  try { parsed = JSON.parse(value); } catch { throw new Error('Capture settings must be valid JSON'); }
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) throw new Error('Capture settings must be an object');
+  const settings: Record<string, ExperienceSettingValue> = {};
+  for (const [key, setting] of Object.entries(parsed)) {
+    if (!/^[a-zA-Z][a-zA-Z0-9-]{0,63}$/.test(key)) throw new Error(`Invalid capture setting key: ${key}`);
+    if (typeof setting !== 'number' && typeof setting !== 'boolean' && typeof setting !== 'string') throw new Error(`Invalid capture setting value: ${key}`);
+    if (typeof setting === 'number' && !Number.isFinite(setting)) throw new Error(`Invalid capture setting value: ${key}`);
+    settings[key] = setting;
+  }
+  return Object.freeze(settings);
 }
 
 function profileParameter(value: string | null): ExperienceLaunchProfile {
