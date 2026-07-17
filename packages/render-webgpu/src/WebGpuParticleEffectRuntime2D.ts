@@ -7,6 +7,7 @@ const MAX_PALETTE = 16;
 const MAX_COLLIDERS = 16;
 const STORAGE_COPY_USAGE = 0x80 | 0x08;
 const UNIFORM_COPY_USAGE = 0x40 | 0x08;
+const INDIRECT_COPY_USAGE = 0x100 | 0x08;
 
 export interface ParticleWebGpuBuffer2D {
   destroy(): void;
@@ -40,6 +41,7 @@ export interface ParticleWebGpuRenderPass2D {
   setPipeline(pipeline: ParticleWebGpuRenderPipeline2D): void;
   setBindGroup(index: number, bindGroup: ParticleWebGpuBindGroup2D): void;
   draw(vertexCount: number, instanceCount?: number): void;
+  drawIndirect(indirectBuffer: ParticleWebGpuBuffer2D, indirectOffset: number): void;
   end(): void;
 }
 export interface ParticleWebGpuRenderPassDescriptor2D {
@@ -92,6 +94,7 @@ export interface WebGpuParticleEffectRenderBindings2D {
   readonly archetypeIntensity: ParticleWebGpuBuffer2D;
   readonly palette: ParticleWebGpuBuffer2D;
   readonly renderConfig: ParticleWebGpuBuffer2D;
+  readonly indirectDraw: ParticleWebGpuBuffer2D;
   readonly paletteCount: number;
   readonly capacity: number;
 }
@@ -127,6 +130,7 @@ class WebGpuParticleEffectResource2D implements ParticleEffectBackendResource2D 
   private readonly stateC: ParticleWebGpuBuffer2D;
   private readonly commands: ParticleWebGpuBuffer2D;
   private readonly frame: ParticleWebGpuBuffer2D;
+  private readonly indirectDraw: ParticleWebGpuBuffer2D;
   private readonly motion: ParticleWebGpuBuffer2D;
   private readonly motionData: Float32Array;
   private readonly sources: ParticleWebGpuBuffer2D;
@@ -178,6 +182,7 @@ class WebGpuParticleEffectResource2D implements ParticleEffectBackendResource2D 
   private readonly eventAttemptsByTrigger: Record<import("@hooksjam/gl-game-lab-engine").ParticleEventTrigger2D, number> = { birth: 0, age: 0, death: 0, collision: 0 };
   private readonly eventAttemptsByPriority: Record<"primary" | "secondary" | "cosmetic", number> = { primary: 0, secondary: 0, cosmetic: 0 };
   private readonly frameData = new ArrayBuffer(32);
+  private readonly indirectDrawData: Uint32Array;
   private readonly frameFloats = new Float32Array(this.frameData);
   private readonly frameUints = new Uint32Array(this.frameData);
   private readonly frameBytes = new Uint8Array(this.frameData);
@@ -249,6 +254,13 @@ class WebGpuParticleEffectResource2D implements ParticleEffectBackendResource2D 
       size: this.frameData.byteLength,
       usage: UNIFORM_COPY_USAGE,
     });
+    this.indirectDrawData = new Uint32Array([6, capacity, 0, 0]);
+    this.indirectDraw = device.createBuffer({
+      label: `${id}.indirect-draw`,
+      size: this.indirectDrawData.byteLength,
+      usage: INDIRECT_COPY_USAGE,
+    });
+    device.queue.writeBuffer(this.indirectDraw, 0, this.indirectDrawData);
     const motionData = new Float32Array(Math.max(1, program.effect.source.archetypes.length) * 4);
     this.motionData = motionData;
     program.effect.source.archetypes.forEach((archetype, index) => {
@@ -720,6 +732,7 @@ class WebGpuParticleEffectResource2D implements ParticleEffectBackendResource2D 
       archetypeIntensity: this.archetypeIntensity,
       palette: this.palette,
       renderConfig: this.renderConfig,
+      indirectDraw: this.indirectDraw,
       paletteCount: this.paletteCount,
       capacity: this.capacity,
     });
@@ -778,6 +791,7 @@ class WebGpuParticleEffectResource2D implements ParticleEffectBackendResource2D 
         + this.intensityData.byteLength
         + this.paletteData.byteLength
         + this.renderConfigData.byteLength
+        + this.indirectDrawData.byteLength
         + (this.eventQueue
           ? this.capacity * 3 * 16 + this.zeroEventCounters.byteLength + this.eventParameterData.byteLength
           : 0),
@@ -802,6 +816,7 @@ class WebGpuParticleEffectResource2D implements ParticleEffectBackendResource2D 
     this.stateC.destroy();
     this.commands.destroy();
     this.frame.destroy();
+    this.indirectDraw.destroy();
     this.motion.destroy();
     this.archetypeSize.destroy();
     this.archetypeLength.destroy();

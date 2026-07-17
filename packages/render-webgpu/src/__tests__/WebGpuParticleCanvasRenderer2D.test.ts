@@ -18,6 +18,7 @@ class Buffer implements ParticleWebGpuBuffer2D { destroy(): void {} }
 function fixture() {
   const submit = vi.fn();
   const draw = vi.fn();
+  const drawIndirect = vi.fn();
   const renderPasses: unknown[] = [];
   const textureDestroy = vi.fn();
   const device: ParticleWebGpuDevice2D = {
@@ -33,7 +34,7 @@ function fixture() {
       beginComputePass: () => ({ setPipeline: vi.fn(), setBindGroup: vi.fn(), dispatchWorkgroups: vi.fn(), end: vi.fn() }),
       beginRenderPass: (options) => {
         renderPasses.push(options);
-        return { setPipeline: vi.fn(), setBindGroup: vi.fn(), draw, end: vi.fn() };
+        return { setPipeline: vi.fn(), setBindGroup: vi.fn(), draw, drawIndirect, end: vi.fn() };
       },
       finish: () => ({}),
     }),
@@ -44,7 +45,7 @@ function fixture() {
     getCurrentTexture: () => ({ createView: () => ({}), destroy: vi.fn() }),
   };
   const canvas = { width: 1, height: 1, style: {} } as HTMLCanvasElement;
-  return { device, context, canvas, submit, draw, renderPasses, textureDestroy };
+  return { device, context, canvas, submit, draw, drawIndirect, renderPasses, textureDestroy };
 }
 
 const DEFINITION: ParticleEffectDefinition2D = {
@@ -73,12 +74,12 @@ describe('WebGpuParticleCanvasRenderer2D', () => {
     const buffer = new Buffer();
     renderer.render(program, [buffer, buffer, buffer], { width: 320, height: 180 } as GpuRenderTarget2D, 'basic', {
       state: [buffer, buffer, buffer], archetypeSize: buffer, archetypeLength: buffer, archetypeAlpha: buffer,
-      archetypeIntensity: buffer, palette: buffer, renderConfig: buffer, paletteCount: 1, capacity: 16,
+      archetypeIntensity: buffer, palette: buffer, renderConfig: buffer, indirectDraw: buffer, paletteCount: 1, capacity: 16,
     });
     await Promise.resolve();
     expect(state.canvas.width).toBe(320);
     expect(state.canvas.height).toBe(180);
-    expect(state.draw).toHaveBeenCalledWith(6, 16);
+    expect(state.drawIndirect).toHaveBeenCalledWith(buffer, 0);
     expect(state.submit).toHaveBeenCalledTimes(1);
     expect(renderer.diagnostics()).toMatchObject({ submittedFrames: 1, particleDraws: 1, trailPasses: 0 });
     renderer.dispose();
@@ -91,10 +92,11 @@ describe('WebGpuParticleCanvasRenderer2D', () => {
     const buffer = new Buffer();
     renderer.render(program, [buffer, buffer, buffer], { width: 256, height: 256 } as GpuRenderTarget2D, 'ultra', {
       state: [buffer, buffer, buffer], archetypeSize: buffer, archetypeLength: buffer, archetypeAlpha: buffer,
-      archetypeIntensity: buffer, palette: buffer, renderConfig: buffer, paletteCount: 1, capacity: 16,
+      archetypeIntensity: buffer, palette: buffer, renderConfig: buffer, indirectDraw: buffer, paletteCount: 1, capacity: 16,
     });
     await Promise.resolve();
-    expect(state.draw.mock.calls).toEqual(expect.arrayContaining([[3], [6, 16], [6, 16]]));
+    expect(state.draw).toHaveBeenCalledWith(3);
+    expect(state.drawIndirect).toHaveBeenCalledTimes(2);
     expect(renderer.diagnostics()).toMatchObject({ submittedFrames: 1, particleDraws: 2, trailPasses: 1, compositePasses: 1 });
     renderer.dispose();
     expect(state.textureDestroy).toHaveBeenCalledTimes(2);
@@ -109,7 +111,7 @@ describe('WebGpuParticleCanvasRenderer2D', () => {
     expect(state.canvas.style.visibility).toBe('hidden');
     expect(() => renderer.render(program, [buffer, buffer, buffer], { width: 16, height: 16 } as GpuRenderTarget2D, 'basic', {
       state: [buffer, buffer, buffer], archetypeSize: buffer, archetypeLength: buffer, archetypeAlpha: buffer,
-      archetypeIntensity: buffer, palette: buffer, renderConfig: buffer, paletteCount: 1, capacity: 16,
+      archetypeIntensity: buffer, palette: buffer, renderConfig: buffer, indirectDraw: buffer, paletteCount: 1, capacity: 16,
     })).toThrow('device was lost');
   });
 });

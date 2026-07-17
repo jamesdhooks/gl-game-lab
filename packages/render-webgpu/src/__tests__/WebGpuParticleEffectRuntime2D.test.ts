@@ -17,7 +17,7 @@ function deviceFixture() {
     createBindGroup: () => ({}),
     createCommandEncoder: () => ({
       beginComputePass: () => ({ setPipeline: vi.fn(), setBindGroup: vi.fn(), dispatchWorkgroups, end: vi.fn() }),
-      beginRenderPass: () => ({ setPipeline: vi.fn(), setBindGroup: vi.fn(), draw: vi.fn(), end: vi.fn() }),
+      beginRenderPass: () => ({ setPipeline: vi.fn(), setBindGroup: vi.fn(), draw: vi.fn(), drawIndirect: vi.fn(), end: vi.fn() }),
       finish: () => ({}),
     }),
   };
@@ -36,6 +36,10 @@ describe('WebGpuParticleEffectRuntimeBackend2D', () => {
     const backend = new WebGpuParticleEffectRuntimeBackend2D(fixture.device, { render });
     const program = compileParticleProgram2D(compileParticleEffect2D(adaptParticleEffectDefinition2D(definition)));
     const resource = backend.create(program, 512);
+    const indirect = fixture.buffers.find((buffer) => buffer.label?.endsWith('.indirect-draw'));
+    const indirectUpload = fixture.writeBuffer.mock.calls.find((call) => call[0] === indirect);
+    expect(indirect).toBeDefined();
+    expect([...(indirectUpload?.[2] as Uint32Array)]).toEqual([6, 512, 0, 0]);
     fixture.writeBuffer.mockClear();
     resource.emit({ instanceId: 1, emitterIndex: 0, count: 40, positionX: 10, positionY: 20, direction: 0, spread: 1, power: 30, seed: 8, importance: 3 });
     resource.update(1 / 60, 1);
@@ -44,7 +48,7 @@ describe('WebGpuParticleEffectRuntimeBackend2D', () => {
     expect(fixture.submit).toHaveBeenCalledTimes(1);
     resource.render({ width: 384, height: 384 } as GpuRenderTarget2D, 'basic');
     expect(render).toHaveBeenCalledTimes(1);
-    expect(render.mock.calls[0]![4]).toMatchObject({ paletteCount: 1 });
+    expect(render.mock.calls[0]![4]).toMatchObject({ paletteCount: 1, indirectDraw: indirect });
     expect(resource.diagnostics()).toMatchObject({ spawnedParticles: 40, simulationPasses: 1, renderPasses: 1 });
     resource.dispose();
   });

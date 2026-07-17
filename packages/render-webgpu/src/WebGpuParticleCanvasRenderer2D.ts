@@ -200,13 +200,13 @@ export class WebGpuParticleCanvasRenderer2D {
     if (recipe.some((entry) => entry.kind === 'streaks')) {
       pass.setPipeline(set.streaks);
       pass.setBindGroup(0, createBindings(set.streaks));
-      pass.draw(6, job.bindings.capacity);
+      pass.drawIndirect(job.bindings.indirectDraw, 0);
       this.particleDraws += 1;
     }
     if (recipe.some((entry) => entry.kind === 'points')) {
       pass.setPipeline(set.points);
       pass.setBindGroup(0, createBindings(set.points));
-      pass.draw(6, job.bindings.capacity);
+      pass.drawIndirect(job.bindings.indirectDraw, 0);
       this.particleDraws += 1;
     }
     pass.end();
