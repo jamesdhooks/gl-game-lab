@@ -374,10 +374,39 @@ function ImmersiveExperienceRuntime({
   const playStateRef = useRef<RuntimeSelectionState>({ modeId: playDefaultModeId, styleId: playDefaultStyleId, settings: sceneSettings });
   const playStateExperienceIdRef = useRef(definition.id);
   const previewInitialSelectionRef = useRef<RuntimeSelectionState>({ modeId: defaultModeId, styleId: defaultStyleId, settings: initialSettings });
+  const runtimeSynchronizationRef = useRef({
+    definitionId: definition.id,
+    playDefaultModeId,
+    playDefaultStyleId,
+    previewEnabled,
+    profile,
+    sceneSettings,
+    showIntroCard,
+  });
   previewInitialSelectionRef.current = { modeId: defaultModeId, styleId: defaultStyleId, settings: initialSettings };
   onReadyRef.current = onReady;
 
   useEffect(() => {
+    const previous = runtimeSynchronizationRef.current;
+    const next = {
+      definitionId: definition.id,
+      playDefaultModeId,
+      playDefaultStyleId,
+      previewEnabled,
+      profile,
+      sceneSettings,
+      showIntroCard,
+    };
+    runtimeSynchronizationRef.current = next;
+    if (
+      previous.definitionId === next.definitionId
+      && previous.playDefaultModeId === next.playDefaultModeId
+      && previous.playDefaultStyleId === next.playDefaultStyleId
+      && previous.previewEnabled === next.previewEnabled
+      && previous.profile === next.profile
+      && previous.sceneSettings === next.sceneSettings
+      && previous.showIntroCard === next.showIntroCard
+    ) return;
     if (playStateExperienceIdRef.current !== definition.id) {
       playStateExperienceIdRef.current = definition.id;
       playStateRef.current = { modeId: playDefaultModeId, styleId: playDefaultStyleId, settings: sceneSettings };
