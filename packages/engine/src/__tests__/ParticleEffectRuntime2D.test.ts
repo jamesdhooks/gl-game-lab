@@ -286,6 +286,26 @@ describe("EngineParticleEffects2D", () => {
     runtime.dispose();
   });
 
+  it("resolves graph coordinate spaces and emitter transform inheritance into emissions and source geometry", () => {
+    const backend = new TestBackend(), runtime = new EngineParticleEffects2D(backend);
+    const base = adaptParticleEffectDefinition2D(definition);
+    const graph = {
+      ...base,
+      emitters: [{
+        ...base.emitters[0]!, source: { kind: "disc" as const, radius: 2 },
+        transform: { space: "effect" as const, inheritPosition: true, inheritRotation: true, inheritScale: true },
+      }],
+      graph: { root: { kind: "transform" as const, space: "world" as const, child: { kind: "emit" as const, emitterId: "spark" } } },
+    };
+    runtime.register(compileParticleProgram2D(compileParticleEffect2D(graph)));
+    const instance = runtime.createInstance(definition.id, { transform: { position: [1, 2], rotation: 0.25, scale: [1, 1] } });
+    instance.setCoordinateTransform("world", { position: [20, 30], rotation: 1.5, scale: [2, 3] });
+    instance.start();
+    expect(backend.resources[0]!.emissions[0]).toMatchObject({ positionX: 20, positionY: 30, direction: 1.5 });
+    expect(backend.resources[0]!.emitterSources.get(0)).toMatchObject({ radius: 6 });
+    runtime.dispose();
+  });
+
   it("executes burst cycles, distance emission, per-frame limits, and conservative max-alive limits", () => {
     const backend = new TestBackend();
     const runtime = new EngineParticleEffects2D(backend);
@@ -429,7 +449,7 @@ describe("EngineParticleEffects2D", () => {
       viewport: { width: 320, height: 180, dpr: 2 },
       renderParameters: { pointScale: 1.5, trailFade: 0.9 },
     });
-    expect(backend.resources[1]!.emitterSources.get(0)).toEqual({ radius: 10 });
+    expect(backend.resources[1]!.emitterSources.get(0)).toMatchObject({ radius: 10 });
     expect(instance.state()).toMatchObject({
       status: "running",
       elapsed: 0,

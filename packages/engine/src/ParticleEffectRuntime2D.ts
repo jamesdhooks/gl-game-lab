@@ -2,7 +2,7 @@ import { resolveParticleParameters2D } from "./ParticleEffectAuthoring2D.js";
 import { compileParticleEffect2D, type ParticleEffectGraph2D } from "./ParticleEffectGraph2D.js";
 import { compileParticleProgram2D, type ParticleModuleCompilerExtension2D } from "./ParticleEffectCompiler2D.js";
 import type { CompiledParticleProgram2D } from "./ParticleEffectCompiler2D.js";
-import type { ParticleEmitterDefinition2D, ParticleEmitterStopMode2D, ParticleParameterValue2D } from "./ParticleEffectGraph2D.js";
+import type { ParticleCoordinateSpace2D, ParticleEmitterDefinition2D, ParticleEmitterStopMode2D, ParticleParameterValue2D } from "./ParticleEffectGraph2D.js";
 import type { ParticleEffectDiagnostics2D, ParticlePalette2D, ParticleRenderTier2D } from "./ParticleEffects2D.js";
 import type { GpuParticleStateSnapshot2D, GpuRenderTarget2D } from "./Gpu2D.js";
 import { ParticleGraphScheduler2D, type ParticleGraphEffectReference2D, type ParticleGraphExecutionContext2D } from "./ParticleGraphScheduler2D.js";
@@ -18,6 +18,7 @@ export interface ParticleTransform2D {
 export interface ParticleEffectInstanceOptions2D {
   readonly seed?: number;
   readonly transform?: ParticleTransform2D;
+  readonly coordinateTransforms?: Partial<Readonly<Record<ParticleCoordinateSpace2D, ParticleTransform2D>>>;
   readonly parameters?: Readonly<Record<string, ParticleParameterValue2D>>;
   readonly palette?: ParticlePalette2D;
   readonly timescale?: number;
@@ -461,6 +462,7 @@ export interface ParticleEffectInstance2D {
   emit(emitterId: string, override?: ParticleEmissionOverride2D): void;
   emitter(emitterId: string): ParticleEmitterHandle2D;
   setTransform(transform: ParticleTransform2D): void;
+  setCoordinateTransform(space: ParticleCoordinateSpace2D, transform: ParticleTransform2D): void;
   setParameter(name: string, value: ParticleParameterValue2D): void;
   setPalette(palette: ParticlePalette2D): void;
   setColliders(colliders: ParticleColliderSet2D): void;
@@ -1040,6 +1042,7 @@ class RuntimeParticleEffectInstance2D implements ParticleEffectInstance2D {
   private elapsed = 0;
   private seed: number;
   private transform: ParticleTransform2D;
+  private readonly coordinateTransforms: Partial<Record<ParticleCoordinateSpace2D, ParticleTransform2D>>;
   private inheritedVelocity: readonly [number, number];
   private parameters: Record<string, ParticleParameterValue2D>;
   private palette: ParticlePalette2D;
@@ -1091,6 +1094,7 @@ class RuntimeParticleEffectInstance2D implements ParticleEffectInstance2D {
     this.backend = backend;
     this.seed = options.seed ?? mixSeed(id, 0x9e3779b9);
     this.transform = options.transform ?? DEFAULT_TRANSFORM;
+    this.coordinateTransforms = { ...(options.coordinateTransforms ?? {}) };
     this.inheritedVelocity = options.inheritedVelocity ?? [0, 0];
     this.parameters = {
       ...resolveParticleParameters2D(program.effect.source, options.parameters),
@@ -1133,6 +1137,7 @@ class RuntimeParticleEffectInstance2D implements ParticleEffectInstance2D {
     backend.setForceFields?.(this.forceFields);
     backend.setDomain?.(this.domain);
     backend.setRenderScale?.(this.renderScale);
+    for (const emitter of this.emitters) this.applyEmitterSource(emitter);
   }
 
   get isAdvancing(): boolean {
@@ -1220,6 +1225,13 @@ class RuntimeParticleEffectInstance2D implements ParticleEffectInstance2D {
     this.assertUsable();
     validateTransform(transform);
     this.transform = transform;
+    for (const emitter of this.emitters) this.applyEmitterSource(emitter);
+  }
+  setCoordinateTransform(space: ParticleCoordinateSpace2D, transform: ParticleTransform2D): void {
+    this.assertUsable();
+    validateTransform(transform);
+    this.coordinateTransforms[space] = transform;
+    for (const emitter of this.emitters) this.applyEmitterSource(emitter);
   }
   setParameter(name: string, value: ParticleParameterValue2D): void {
     this.assertUsable();
@@ -1274,7 +1286,7 @@ class RuntimeParticleEffectInstance2D implements ParticleEffectInstance2D {
     if (values.some((value) => !Number.isFinite(value) || value < 0)) throw new Error("Particle emitter source overrides must be finite and non-negative");
     if (source.innerRadius !== undefined && source.radius !== undefined && source.innerRadius > source.radius) throw new Error("Particle emitter inner radius cannot exceed its radius");
     this.emitterSources.set(index, source);
-    this.backend.setEmitterSource?.(index, source);
+    this.applyEmitterSource(this.emitters[index]!);
   }
   setEventParameters(archetypeId: string, eventIndex: number, parameters: ParticleEventParameters2D): void {
     this.assertUsable();
@@ -1341,6 +1353,7 @@ class RuntimeParticleEffectInstance2D implements ParticleEffectInstance2D {
     const velocityScale = inherit?.velocity ?? 0;
     return {
       transform: this.transform,
+      coordinateTransforms: this.coordinateTransforms,
       ...(Object.keys(mapped).length > 0 ? { parameters: mapped } : {}),
       ...(inherit?.palette ? { palette: this.palette } : {}),
       ...(inherit?.seed ? { seed: mixSeed(this.seed, this.id) } : {}),
@@ -1442,7 +1455,7 @@ class RuntimeParticleEffectInstance2D implements ParticleEffectInstance2D {
     backend.setColliders?.(this.colliders);
     backend.setForceFields?.(this.forceFields);
     backend.setDomain?.(this.domain);
-    for (const [emitterIndex, source] of this.emitterSources) backend.setEmitterSource?.(emitterIndex, source);
+    for (const emitter of this.emitters) this.applyEmitterSource(emitter);
     for (const [key, parameters] of this.eventParameters) {
       const [archetypeIndex, eventIndex] = key.split(":").map(Number);
       backend.setEventParameters?.(archetypeIndex!, eventIndex!, parameters);
@@ -1482,7 +1495,7 @@ class RuntimeParticleEffectInstance2D implements ParticleEffectInstance2D {
     }
     const distanceRate = evaluateRate(timeline.distanceRate, this.parameters, this.seed, emitter.index + 0x4000, emitter.graphContext.parameterMap);
     if (distanceRate > 0) {
-      const x = this.transform.position[0], y = this.transform.position[1];
+      const pose = resolveEmitterPose(emitter.definition, emitter.graphContext, this.transform, this.coordinateTransforms), x = pose.position[0], y = pose.position[1];
       const distance = Math.hypot(x - emitter.lastX, y - emitter.lastY);
       emitter.lastX = x; emitter.lastY = y;
       emitter.distanceAccumulator += distanceRate * distance;
@@ -1536,12 +1549,13 @@ class RuntimeParticleEffectInstance2D implements ParticleEffectInstance2D {
     );
     if (count === 0) return;
     const emission = emitter.emission;
+    const pose = resolveEmitterPose(emitter.definition, emitter.graphContext, this.transform, this.coordinateTransforms);
     emission.instanceId = this.id;
     emission.emitterIndex = emitter.index;
     emission.count = count;
-    emission.positionX = override.position?.[0] ?? this.transform.position[0];
-    emission.positionY = override.position?.[1] ?? this.transform.position[1];
-    emission.direction = override.direction ?? this.transform.rotation;
+    emission.positionX = override.position?.[0] ?? pose.position[0];
+    emission.positionY = override.position?.[1] ?? pose.position[1];
+    emission.direction = override.direction ?? pose.rotation;
     emission.spread = override.spread ?? sourceNumber(emitter.definition.initialization?.spread, this.parameters, this.seed, emitter.index, 0, emitter.graphContext.parameterMap);
     emission.power = override.power ?? sourceNumber(emitter.definition.initialization?.power, this.parameters, this.seed, emitter.index, 1, emitter.graphContext.parameterMap);
     emission.seed = override.seed ?? mixSeed(this.seed, emitter.index + Math.round(this.elapsed * 1000));
@@ -1565,17 +1579,42 @@ class RuntimeParticleEffectInstance2D implements ParticleEffectInstance2D {
     if (!emitter) throw new Error(`Unknown particle emitter: ${emitterId}`);
     const timeline = emitter.definition.timeline;
     if (timeline.manual) {
+      emitter.graphContext = graphContext;
+      this.applyEmitterSource(emitter);
       this.submit(emitter, firstBurstCount(emitter.definition));
       return;
     }
     emitter.reset();
     emitter.graphContext = graphContext;
+    this.applyEmitterSource(emitter);
     emitter.active = true;
     emitter.elapsed = -(timeline.startDelay ?? 0);
-    emitter.lastX = this.transform.position[0];
-    emitter.lastY = this.transform.position[1];
+    const pose = resolveEmitterPose(emitter.definition, graphContext, this.transform, this.coordinateTransforms);
+    emitter.lastX = pose.position[0];
+    emitter.lastY = pose.position[1];
     this.scheduler.trigger({ kind: "emitter-start", emitterId });
     if (timeline.prewarm && (timeline.duration ?? 0) > 0) this.advanceEmitter(emitter, timeline.duration ?? 0);
+  }
+
+  private applyEmitterSource(emitter: EmitterRuntime): void {
+    if (!this.backend.setEmitterSource) return;
+    const source = emitter.definition.source;
+    if (!["point", "disc", "line", "cone", "arc", "ring", "radial", "spiral", "pinwheel", "shower", "annulus", "rectangle"].includes(source.kind)) return;
+    const authored = this.emitterSources.get(emitter.index) ?? {};
+    const pose = resolveEmitterPose(emitter.definition, emitter.graphContext, this.transform, this.coordinateTransforms);
+    const spatialScale = pose.scale;
+    const radius = authored.radius ?? ("radius" in source ? source.radius : source.kind === "rectangle" ? source.width * 0.5 : undefined);
+    const innerRadius = authored.innerRadius ?? ("innerRadius" in source ? source.innerRadius : source.kind === "rectangle" ? source.height * 0.5 : undefined);
+    const length = authored.length ?? ("length" in source ? source.length : undefined);
+    const arc = authored.arc ?? ("arc" in source ? source.arc : undefined);
+    const spread = authored.spread ?? ("spread" in source ? source.spread : undefined);
+    this.backend.setEmitterSource(emitter.index, {
+      ...(radius === undefined ? {} : { radius: radius * spatialScale }),
+      ...(innerRadius === undefined ? {} : { innerRadius: innerRadius * spatialScale }),
+      ...(length === undefined ? {} : { length: length * spatialScale }),
+      ...(arc === undefined ? {} : { arc }),
+      ...(spread === undefined ? {} : { spread }),
+    });
   }
 
   private updateAdaptiveLod(deltaSeconds: number): void {
@@ -1681,6 +1720,24 @@ function validateTimescale(value: number): number {
 }
 function validateTransform(transform: ParticleTransform2D): void {
   if (![...transform.position, transform.rotation, ...transform.scale].every(Number.isFinite)) throw new Error("Particle transform values must be finite");
+}
+
+function resolveEmitterPose(
+  emitter: ParticleEmitterDefinition2D,
+  context: ParticleGraphExecutionContext2D,
+  effectTransform: ParticleTransform2D,
+  coordinateTransforms: Partial<Readonly<Record<ParticleCoordinateSpace2D, ParticleTransform2D>>>,
+): { readonly position: readonly [number, number]; readonly rotation: number; readonly scale: number } {
+  const space = context.space ?? emitter.transform.space;
+  const transform = coordinateTransforms[space] ?? effectTransform;
+  const inheritPosition = emitter.transform.inheritPosition ?? true;
+  const inheritRotation = emitter.transform.inheritRotation ?? true;
+  const inheritScale = emitter.transform.inheritScale ?? true;
+  return {
+    position: inheritPosition ? transform.position : [0, 0],
+    rotation: inheritRotation ? transform.rotation : 0,
+    scale: inheritScale ? Math.max(Math.abs(transform.scale[0]), Math.abs(transform.scale[1])) : 1,
+  };
 }
 function mixSeed(a: number, b: number): number {
   let value = (a ^ b) >>> 0;
