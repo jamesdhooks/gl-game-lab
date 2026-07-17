@@ -32,6 +32,8 @@ describe('ParticleEffectCompiler2D', () => {
     const program = compileParticleProgram2D(compileParticleEffect2D(adaptParticleEffectDefinition2D(definition)));
     expect(program.webgl2.simulation.source).toContain('layout(location=2) out vec4 outMetadata');
     expect(program.webgl2.simulation.source).toContain('stateB.xy += vec2');
+    expect(program.webgl2.simulation.source).toContain('stateB.z += (stateB.w + motion.w) * uDt');
+    expect(program.webgl2.simulation.source).not.toContain('stateB.w += motion.w');
     expect(program.webgl2.simulation.source).toContain('uAttractorData[16]');
     expect(program.webgl2.simulation.source).toContain('fieldIndex>=uAttractorCount');
     expect(program.webgl2.simulation.source).toContain('iteration < 6');
@@ -66,6 +68,7 @@ describe('ParticleEffectCompiler2D', () => {
     expect(program.webgpu.simulation.source).toContain('archetypeForce[archetype]');
     expect(program.webgpu.simulation.source).toContain('emitterInitialization[emitter]');
     expect(program.webgpu.simulation.source).toContain('turbulenceAngle');
+    expect(program.webgpu.simulation.source).toContain('stateB[i].angularVelocity + motion.w');
     expect(program.webgpu.simulation.source).toContain('frame.attractorCount');
     expect(program.webgpu.simulation.source).toContain('archetypeCollision[archetype]');
     expect(program.webgpu.simulation.source).toContain('circleColliders[collider]');
@@ -88,6 +91,28 @@ describe('ParticleEffectCompiler2D', () => {
   it('deduplicates generated programs through stable source hashes', () => {
     const effect = compileParticleEffect2D(adaptParticleEffectDefinition2D(definition));
     expect(compileParticleProgram2D(effect).webgl2.simulation.hash).toBe(compileParticleProgram2D(effect).webgl2.simulation.hash);
+  });
+
+  it('matches the reviewed backend shader golden', () => {
+    const program = compileParticleProgram2D(compileParticleEffect2D(adaptParticleEffectDefinition2D(definition)));
+    expect({
+      webgl2: {
+        simulation: program.webgl2.simulation.source,
+        event: program.webgl2.event?.source,
+        eventClaimVertex: program.webgl2.eventClaimVertex?.source,
+        eventClaimFragment: program.webgl2.eventClaimFragment?.source,
+        vertex: program.webgl2.vertex.source,
+        streakVertex: program.webgl2.streakVertex.source,
+        fragment: program.webgl2.fragment.source,
+      },
+      webgpu: {
+        simulation: program.webgpu.simulation.source,
+        event: program.webgpu.event?.source,
+        eventResolve: program.webgpu.eventResolve?.source,
+        render: program.webgpu.render.source,
+      },
+      reflection: program.reflection,
+    }).toMatchSnapshot();
   });
 
   it('hydrates validated build artifacts without regenerating shaders', () => {

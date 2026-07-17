@@ -325,6 +325,7 @@ export {
   sampleParticleSpawnReference2D,
   type ParticleReferenceSpawn2D,
   type ParticleReferenceState2D,
+  type ParticleReferenceIntegrationContext2D,
 } from './ParticleModuleReference2D.js';
 export {
   ParticleGraphScheduler2D,

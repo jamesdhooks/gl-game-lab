@@ -284,8 +284,7 @@ void main() {
       stateB.xy+=((radial*radialStrength+vec2(-radial.y,radial.x)*tangentialStrength)*falloff+velocityField.xy*velocityField.z)*envelope*uDt;
     }
     ${turbulence ? "float noise = hash21(stateA.xy + stateC.zz); stateB.xy += vec2(cos(noise * 6.2831853), sin(noise * 6.2831853)) * motion.z * uDt;" : ""}
-    stateB.w += motion.w * uDt;
-    stateB.z += stateB.w * uDt;
+    stateB.z += (stateB.w + motion.w) * uDt;
     float particleSpeed=length(stateB.xy);if(force.w>0.0&&particleSpeed>force.w)stateB.xy*=force.w/particleSpeed;
     stateA.xy += stateB.xy * uDt;
     int domainShape=int(uParticleDomainOptions.x+.5),domainBehavior=int(uParticleDomainOptions.y+.5);
@@ -715,7 +714,7 @@ fn simulate(@builtin(global_invocation_id) gid: vec3<u32>) {
         stateB[i].velocity+=((radial*radialStrength+vec2<f32>(-radial.y,radial.x)*tangentialStrength)*falloff+field.velocity.xy*field.velocity.z)*envelope*frame.delta;
       }
     }
-    stateB[i].rotation += stateB[i].angularVelocity * frame.delta;
+    stateB[i].rotation += (stateB[i].angularVelocity + motion.w) * frame.delta;
     let particleSpeed=length(stateB[i].velocity);if(force.w>0.0&&particleSpeed>force.w){stateB[i].velocity*=force.w/particleSpeed;}
     stateA[i].position += stateB[i].velocity * frame.delta;
     let domainShape=u32(domain.options.x+0.5); let domainBehavior=u32(domain.options.y+0.5);

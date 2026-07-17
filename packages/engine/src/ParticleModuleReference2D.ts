@@ -17,9 +17,17 @@ export interface ParticleReferenceSpawn2D {
   readonly angle: number;
 }
 
-export function integrateParticleReference2D(state: ParticleReferenceState2D, motion: ParticleMotionProfile2D, delta: number, attractor?: ParticleAttractor2D): void {
+export interface ParticleReferenceIntegrationContext2D {
+  readonly colorSeed?: number;
+  readonly turbulenceBackend?: "webgl2" | "webgpu";
+}
+
+export function integrateParticleReference2D(state: ParticleReferenceState2D, motion: ParticleMotionProfile2D, delta: number, attractor?: ParticleAttractor2D, context: ParticleReferenceIntegrationContext2D = {}): void {
   state.age += delta;
   state.vy += motion.gravity * delta;
+  const damping = Math.exp(-Math.max(0, motion.drag) * delta);
+  state.vx *= damping;
+  state.vy *= damping;
   if (attractor && ((motion.radialAcceleration ?? 0) !== 0 || (motion.tangentialAcceleration ?? 0) !== 0 || (attractor.velocityCoupling ?? 0) !== 0)) {
     const dx = attractor.x - state.x,
       dy = attractor.y - state.y,
@@ -29,7 +37,7 @@ export function integrateParticleReference2D(state: ParticleReferenceState2D, mo
       ny = rawLength > 1e-6 ? dy / rawLength : 0;
     const radius = attractor.radius ?? 0;
     if (radius > 0 && rawLength >= radius) {
-      applyMotionTail(state, motion, delta);
+      applyMotionTail(state, motion, delta, context);
       return;
     }
     const envelope = forceEnvelope(attractor, rawLength),
@@ -40,22 +48,32 @@ export function integrateParticleReference2D(state: ParticleReferenceState2D, mo
     state.vx += ((nx * radial - ny * tangential) * falloff + (attractor.velocity?.[0] ?? 0) * (attractor.velocityCoupling ?? 0)) * envelope * delta;
     state.vy += ((ny * radial + nx * tangential) * falloff + (attractor.velocity?.[1] ?? 0) * (attractor.velocityCoupling ?? 0)) * envelope * delta;
   }
-  applyMotionTail(state, motion, delta);
+  applyMotionTail(state, motion, delta, context);
 }
 
-function applyMotionTail(state: ParticleReferenceState2D, motion: ParticleMotionProfile2D, delta: number): void {
-  const damping = Math.exp(-Math.max(0, motion.drag) * delta);
-  state.vx *= damping;
-  state.vy *= damping;
+function applyMotionTail(state: ParticleReferenceState2D, motion: ParticleMotionProfile2D, delta: number, context: ParticleReferenceIntegrationContext2D): void {
+  const turbulence = motion.turbulence ?? 0;
+  if (turbulence !== 0) {
+    const noise = context.turbulenceBackend === "webgl2"
+      ? fract(Math.sin((state.x + (context.colorSeed ?? 0)) * 127.1 + (state.y + (context.colorSeed ?? 0)) * 311.7) * 43758.5453123)
+      : fract(Math.sin(((context.colorSeed ?? 0) + state.age * 1.37 + state.x * 0.013 + state.y * 0.017) * 91.3458 + 17.123) * 47453.5453);
+    const angle = noise * Math.PI * 2;
+    state.vx += Math.cos(angle) * turbulence * delta;
+    state.vy += Math.sin(angle) * turbulence * delta;
+  }
   const speed = Math.hypot(state.vx, state.vy),
     maxSpeed = motion.maxSpeed ?? 0;
   if (maxSpeed > 0 && speed > maxSpeed) {
     state.vx *= maxSpeed / speed;
     state.vy *= maxSpeed / speed;
   }
-  state.rotation += state.angularVelocity * delta;
+  state.rotation += (state.angularVelocity + (motion.angularVelocity ?? 0)) * delta;
   state.x += state.vx * delta;
   state.y += state.vy * delta;
+}
+
+function fract(value: number): number {
+  return value - Math.floor(value);
 }
 function forceEnvelope(attractor: ParticleAttractor2D, distance: number): number {
   const radius = attractor.radius ?? 0;
